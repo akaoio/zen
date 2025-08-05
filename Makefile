@@ -1,12 +1,12 @@
 # ZEN Language Makefile
 CC = gcc
-CFLAGS = -g -Wall -Wextra -Werror -std=c11
+CFLAGS = -g -Wall -Wextra -Werror -std=c11 -Isrc/include
 LDFLAGS = 
 PREFIX ?= /usr/local
 
 # Main executable
 exec = zen
-sources = $(wildcard src/*.c)
+sources = $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c src/stdlib/*.c)
 objects = $(sources:.c=.o)
 
 # Directories
@@ -45,9 +45,6 @@ format:
 format-check:
 	find src -name '*.c' -o -name '*.h' | xargs clang-format --dry-run --Werror
 
-# Project structure validation
-validate:
-	node scripts/validate_structure.js
 
 # Linting (when cppcheck is available)
 lint:
@@ -78,6 +75,24 @@ debug-lexer: $(exec)
 debug-ast: $(exec)
 	./$(exec) --debug-ast
 
+# Manifest enforcement
+enforce:
+	node scripts/enforce_manifest.js
+
+enforce-generate:
+	node scripts/enforce_manifest.js --generate
+
+# Project visualization
+vision:
+	@node scripts/vision.js
+
+# Setup development environment
+setup-dev: setup-hooks
+	@echo "Development environment ready!"
+
+setup-hooks:
+	./scripts/setup_hooks.sh
+
 # Help
 help:
 	@echo "ZEN Language Makefile targets:"
@@ -87,10 +102,13 @@ help:
 	@echo "  make uninstall    - Remove installed zen"
 	@echo "  make format       - Format code with clang-format"
 	@echo "  make format-check - Check code formatting"
-	@echo "  make validate     - Validate project structure"
+	@echo "  make enforce      - Enforce manifest compliance"
+	@echo "  make enforce-generate - Generate stubs from manifest"
+	@echo "  make vision       - Visualize project structure and status"
 	@echo "  make lint         - Run static analysis"
 	@echo "  make test         - Run all tests"
 	@echo "  make valgrind     - Check for memory leaks"
+	@echo "  make setup-dev    - Setup development environment"
 	@echo "  make help         - Show this help message"
 
-.PHONY: all clean install uninstall format format-check validate lint test test-unit test-integration valgrind coverage debug-lexer debug-ast help
+.PHONY: all clean install uninstall format format-check lint test test-unit test-integration valgrind coverage debug-lexer debug-ast enforce enforce-generate vision setup-dev setup-hooks help
