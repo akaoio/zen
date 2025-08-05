@@ -68,6 +68,11 @@
           "signature": "char* lexer_get_current_char_as_string(lexer_T* lexer)",
           "description": "Get current character as string",
           "returns": "char*"
+        },
+        {
+          "name": "lexer_free",
+          "signature": "void lexer_free(lexer_T* lexer)",
+          "description": "Free lexer instance and cleanup resources"
         }
       ],
       "includes": ["zen/core/lexer.h"],
@@ -254,6 +259,11 @@
           "signature": "int parser_peek_for_object_literal(parser_T* parser)",
           "description": "Look ahead to determine if parsing an object literal",
           "returns": "int"
+        },
+        {
+          "name": "parser_free",
+          "signature": "void parser_free(parser_T* parser)",
+          "description": "Free parser instance and cleanup resources"
         }
       ]
     },
@@ -319,6 +329,78 @@
           "name": "ast_free",
           "signature": "void ast_free(AST_T* ast)",
           "description": "Free an AST node and all its children recursively"
+        },
+        {
+          "name": "ast_new_compound",
+          "signature": "AST_T* ast_new_compound(AST_T** statements, size_t count)",
+          "description": "Create a new compound AST node with multiple statements",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_variable_definition",
+          "signature": "AST_T* ast_new_variable_definition(const char* name, AST_T* value)",
+          "description": "Create a new variable definition AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_variable",
+          "signature": "AST_T* ast_new_variable(const char* name)",
+          "description": "Create a new variable AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_function_call",
+          "signature": "AST_T* ast_new_function_call(const char* name, AST_T** args, size_t arg_count)",
+          "description": "Create a new function call AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_function_definition",
+          "signature": "AST_T* ast_new_function_definition(const char* name, AST_T** args, size_t arg_count, AST_T* body)",
+          "description": "Create a new function definition AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_if_statement",
+          "signature": "AST_T* ast_new_if_statement(AST_T* condition, AST_T* then_branch, AST_T* else_branch)",
+          "description": "Create a new if statement AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_while_loop",
+          "signature": "AST_T* ast_new_while_loop(AST_T* condition, AST_T* body)",
+          "description": "Create a new while loop AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_for_loop",
+          "signature": "AST_T* ast_new_for_loop(const char* iterator, AST_T* iterable, AST_T* body)",
+          "description": "Create a new for loop AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_return_statement",
+          "signature": "AST_T* ast_new_return_statement(AST_T* value)",
+          "description": "Create a new return statement AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_property_access",
+          "signature": "AST_T* ast_new_property_access(AST_T* object, const char* property)",
+          "description": "Create a new property access AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_assignment",
+          "signature": "AST_T* ast_new_assignment(AST_T* left, AST_T* right)",
+          "description": "Create a new assignment AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_noop",
+          "signature": "AST_T* ast_new_noop(void)",
+          "description": "Create a new no-operation AST node",
+          "returns": "AST_T*"
         }
       ]
     },
@@ -330,6 +412,11 @@
           "signature": "token_T* init_token(int type, char* value)",
           "description": "Create new token",
           "returns": "token_T*"
+        },
+        {
+          "name": "token_free",
+          "signature": "void token_free(token_T* token)",
+          "description": "Free token instance and cleanup resources"
         }
       ]
     },
@@ -366,6 +453,11 @@
           "signature": "AST_T* scope_get_variable_definition(scope_T* scope, const char* name)",
           "description": "Get variable definition from scope",
           "returns": "AST_T*"
+        },
+        {
+          "name": "scope_free",
+          "signature": "void scope_free(scope_T* scope)",
+          "description": "Free scope instance and cleanup resources"
         }
       ]
     },
@@ -427,12 +519,154 @@
           "description": "Visit compound node",
           "returns": "AST_T*",
           "doxygen_required": true
+        },
+        {
+          "name": "visitor_free",
+          "signature": "void visitor_free(visitor_T* visitor)",
+          "description": "Free visitor instance and cleanup resources"
         }
       ]
     },
     "src/core/error.c": {
       "description": "Error handling and reporting",
-      "functions": []
+      "functions": [
+        {
+          "name": "error_new",
+          "signature": "Value* error_new(const char* message)",
+          "description": "Create a new error Value with a message",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_new_with_code",
+          "signature": "Value* error_new_with_code(const char* message, int code)",
+          "description": "Create a new error Value with a message and error code",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_new_formatted",
+          "signature": "Value* error_new_formatted(const char* format, ...)",
+          "description": "Create a formatted error Value with printf-style formatting",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_is_error",
+          "signature": "bool error_is_error(const Value* value)",
+          "description": "Check if a Value is an error",
+          "returns": "bool"
+        },
+        {
+          "name": "error_get_message",
+          "signature": "const char* error_get_message(const Value* error)",
+          "description": "Get error message from an error Value",
+          "returns": "const char*"
+        },
+        {
+          "name": "error_get_code",
+          "signature": "int error_get_code(const Value* error)",
+          "description": "Get error code from an error Value",
+          "returns": "int"
+        },
+        {
+          "name": "error_print",
+          "signature": "void error_print(const Value* error, const char* prefix)",
+          "description": "Print error to stderr with optional prefix"
+        },
+        {
+          "name": "error_print_simple",
+          "signature": "void error_print_simple(const Value* error)",
+          "description": "Print error to stderr with Error prefix"
+        },
+        {
+          "name": "error_has_code",
+          "signature": "bool error_has_code(const Value* error, int code)",
+          "description": "Check if a Value represents a specific error code",
+          "returns": "bool"
+        },
+        {
+          "name": "error_has_message",
+          "signature": "bool error_has_message(const Value* error, const char* message_substring)",
+          "description": "Check if a Value contains a specific error message",
+          "returns": "bool"
+        },
+        {
+          "name": "error_null_pointer",
+          "signature": "Value* error_null_pointer(const char* operation)",
+          "description": "Create null pointer error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_type_mismatch",
+          "signature": "Value* error_type_mismatch(const char* expected, const char* actual)",
+          "description": "Create type mismatch error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_division_by_zero",
+          "signature": "Value* error_division_by_zero(void)",
+          "description": "Create division by zero error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_index_out_of_bounds",
+          "signature": "Value* error_index_out_of_bounds(size_t index, size_t length)",
+          "description": "Create index out of bounds error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_invalid_argument",
+          "signature": "Value* error_invalid_argument(const char* function_name, const char* argument_description)",
+          "description": "Create invalid argument error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_memory_allocation",
+          "signature": "Value* error_memory_allocation(void)",
+          "description": "Create memory allocation error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_file_not_found",
+          "signature": "Value* error_file_not_found(const char* filename)",
+          "description": "Create file not found error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_parsing_failed",
+          "signature": "Value* error_parsing_failed(const char* context)",
+          "description": "Create parsing failed error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_undefined_variable",
+          "signature": "Value* error_undefined_variable(const char* variable_name)",
+          "description": "Create undefined variable error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_undefined_function",
+          "signature": "Value* error_undefined_function(const char* function_name)",
+          "description": "Create undefined function error",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_propagate",
+          "signature": "Value* error_propagate(Value* value)",
+          "description": "Propagate error or return value unchanged",
+          "returns": "Value*"
+        },
+        {
+          "name": "error_occurred",
+          "signature": "bool error_occurred(Value** values, size_t count)",
+          "description": "Check if any value in array is an error",
+          "returns": "bool"
+        },
+        {
+          "name": "error_first_error",
+          "signature": "Value* error_first_error(Value** values, size_t count)",
+          "description": "Get first error from array of values",
+          "returns": "Value*"
+        }
+      ]
     },
     "src/core/memory.c": {
       "description": "Memory management utilities",
@@ -644,6 +878,82 @@
           "signature": "void value_unref(Value* value)",
           "description": "Decrement reference count and free if zero",
           "doxygen_required": true
+        },
+        {
+          "name": "value_new_class",
+          "signature": "Value* value_new_class(const char* name, const char* parent_name)",
+          "description": "Create a new class value",
+          "returns": "Value*",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_instance",
+          "signature": "Value* value_new_instance(Value* class_def)",
+          "description": "Create a new instance of a class",
+          "returns": "Value*",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_class_add_method",
+          "signature": "void value_class_add_method(Value* class_val, const char* method_name, Value* method_func)",
+          "description": "Add a method to a class value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_class_get_method",
+          "signature": "Value* value_class_get_method(Value* class_val, const char* method_name)",
+          "description": "Get a method from a class value",
+          "returns": "Value*",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_instance_set_property",
+          "signature": "void value_instance_set_property(Value* instance, const char* property_name, Value* value)",
+          "description": "Set a property on an instance",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_instance_get_property",
+          "signature": "Value* value_instance_get_property(Value* instance, const char* property_name)",
+          "description": "Get a property from an instance",
+          "returns": "Value*",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_error",
+          "signature": "Value* value_new_error(const char* message, int error_code)",
+          "description": "Create an error value for stdlib functions",
+          "returns": "Value*"
+        },
+        {
+          "name": "value_is_truthy_public",
+          "signature": "bool value_is_truthy_public(const Value* value)",
+          "description": "Check if value is truthy (for conditional expressions)",
+          "returns": "bool"
+        },
+        {
+          "name": "value_to_number_or_nan",
+          "signature": "double value_to_number_or_nan(const Value* value)",
+          "description": "Safe conversion to number for stdlib operations",
+          "returns": "double"
+        },
+        {
+          "name": "value_to_string_safe",
+          "signature": "char* value_to_string_safe(const Value* value)",
+          "description": "Enhanced string conversion with better error handling",
+          "returns": "char*"
+        },
+        {
+          "name": "value_is_comparable",
+          "signature": "bool value_is_comparable(const Value* a, const Value* b)",
+          "description": "Check if two values can be compared",
+          "returns": "bool"
+        },
+        {
+          "name": "value_get_length",
+          "signature": "size_t value_get_length(const Value* value)",
+          "description": "Get the length of a value for stdlib length() function",
+          "returns": "size_t"
         }
       ]
     },
@@ -831,6 +1141,24 @@
           "signature": "bool zen_file_exists(const char* filepath)",
           "description": "Check if file exists",
           "returns": "bool"
+        },
+        {
+          "name": "zen_load_json_file",
+          "signature": "Value* zen_load_json_file(const char* filepath)",
+          "description": "Load and parse a JSON file",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_load_yaml_file",
+          "signature": "Value* zen_load_yaml_file(const char* filepath)",
+          "description": "Load and parse a YAML file",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_resolve_module_path",
+          "signature": "char* zen_resolve_module_path(const char* module_path)",
+          "description": "Resolve a module path to an absolute file path",
+          "returns": "char*"
         }
       ]
     },
@@ -1176,6 +1504,24 @@
           "name": "zen_stdlib_json_stringify",
           "signature": "Value* zen_stdlib_json_stringify(Value** args, size_t argc)",
           "description": "Convert value to JSON string"
+        },
+        {
+          "name": "zen_stdlib_count",
+          "signature": "size_t zen_stdlib_count()",
+          "description": "Get count of available stdlib functions",
+          "returns": "size_t"
+        },
+        {
+          "name": "zen_stdlib_get",
+          "signature": "const ZenStdlibFunction* zen_stdlib_get(const char* name)",
+          "description": "Get stdlib function by name",
+          "returns": "const ZenStdlibFunction*"
+        },
+        {
+          "name": "zen_stdlib_get_all",
+          "signature": "const ZenStdlibFunction* zen_stdlib_get_all()",
+          "description": "Get all stdlib functions",
+          "returns": "const ZenStdlibFunction*"
         }
       ]
     },
@@ -1661,6 +2007,78 @@
           "name": "value_unref",
           "signature": "void value_unref(Value* value)",
           "description": "Decrement reference count and free if zero",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_class",
+          "signature": "Value* value_new_class(const char* name, const char* parent_name)",
+          "description": "Create a new class value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_instance",
+          "signature": "Value* value_new_instance(Value* class_def)",
+          "description": "Create a new instance of a class",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_class_add_method",
+          "signature": "void value_class_add_method(Value* class_val, const char* method_name, Value* method_func)",
+          "description": "Add a method to a class value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_class_get_method",
+          "signature": "Value* value_class_get_method(Value* class_val, const char* method_name)",
+          "description": "Get a method from a class value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_instance_set_property",
+          "signature": "void value_instance_set_property(Value* instance, const char* property_name, Value* value)",
+          "description": "Set a property on an instance",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_instance_get_property",
+          "signature": "Value* value_instance_get_property(Value* instance, const char* property_name)",
+          "description": "Get a property from an instance",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_error", 
+          "signature": "Value* value_new_error(const char* message, int error_code)",
+          "description": "Create an error value for stdlib functions",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_is_truthy_public",
+          "signature": "bool value_is_truthy_public(const Value* value)",
+          "description": "Check if value is truthy (for conditional expressions)",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_to_number_or_nan",
+          "signature": "double value_to_number_or_nan(const Value* value)",
+          "description": "Safe conversion to number for stdlib operations",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_to_string_safe", 
+          "signature": "char* value_to_string_safe(const Value* value)",
+          "description": "Enhanced string conversion with better error handling",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_is_comparable",
+          "signature": "bool value_is_comparable(const Value* a, const Value* b)",
+          "description": "Check if two values can be compared",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_get_length",
+          "signature": "size_t value_get_length(const Value* value)",
+          "description": "Get the length of a value for stdlib length() function",
           "doxygen_required": true
         }
       ]
