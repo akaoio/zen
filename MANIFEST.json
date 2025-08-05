@@ -1,0 +1,525 @@
+{
+  "version": "1.0.0",
+  "description": "ZEN Language Implementation Manifest - Complete specification of all files, functions, and structures",
+  "enforcement": {
+    "strict": true,
+    "allow_new_files": false,
+    "allow_new_functions": false,
+    "allow_signature_changes": false
+  },
+  "files": {
+    "src/core/lexer.c": {
+      "description": "Tokenization and lexical analysis",
+      "functions": [
+        {
+          "name": "init_lexer",
+          "signature": "lexer_T* init_lexer(char* contents)",
+          "description": "Create a new lexer instance",
+          "returns": "lexer_T*"
+        },
+        {
+          "name": "lexer_advance",
+          "signature": "void lexer_advance(lexer_T* lexer)",
+          "description": "Advance lexer position"
+        },
+        {
+          "name": "lexer_skip_whitespace",
+          "signature": "void lexer_skip_whitespace(lexer_T* lexer)",
+          "description": "Skip whitespace and track indentation"
+        },
+        {
+          "name": "lexer_get_next_token",
+          "signature": "token_T* lexer_get_next_token(lexer_T* lexer)",
+          "description": "Get next token",
+          "returns": "token_T*"
+        },
+        {
+          "name": "lexer_collect_string",
+          "signature": "token_T* lexer_collect_string(lexer_T* lexer)",
+          "description": "Collect string token",
+          "returns": "token_T*"
+        },
+        {
+          "name": "lexer_collect_id",
+          "signature": "token_T* lexer_collect_id(lexer_T* lexer)",
+          "description": "Collect identifier token",
+          "returns": "token_T*"
+        },
+        {
+          "name": "lexer_advance_with_token",
+          "signature": "token_T* lexer_advance_with_token(lexer_T* lexer, token_T* token)",
+          "description": "Advance and return token",
+          "returns": "token_T*"
+        },
+        {
+          "name": "lexer_get_current_char_as_string",
+          "signature": "char* lexer_get_current_char_as_string(lexer_T* lexer)",
+          "description": "Get current character as string",
+          "returns": "char*"
+        }
+      ],
+      "includes": ["zen/core/lexer.h"],
+      "private_functions": []
+    },
+    "src/core/parser.c": {
+      "description": "Recursive descent parser",
+      "functions": [
+        {
+          "name": "parser_new",
+          "signature": "Parser* parser_new(Lexer* lexer)",
+          "description": "Create parser instance"
+        },
+        {
+          "name": "parser_free",
+          "signature": "void parser_free(Parser* parser)",
+          "description": "Free parser memory"
+        },
+        {
+          "name": "parser_parse",
+          "signature": "AST_Node* parser_parse(Parser* parser)",
+          "description": "Parse input and return AST",
+          "returns": "AST_Node*"
+        },
+        {
+          "name": "parser_parse_statement",
+          "signature": "AST_Node* parser_parse_statement(Parser* parser)",
+          "description": "Parse a single statement"
+        },
+        {
+          "name": "parser_parse_expression",
+          "signature": "AST_Node* parser_parse_expression(Parser* parser)",
+          "description": "Parse expression with precedence"
+        },
+        {
+          "name": "parser_parse_function_def",
+          "signature": "AST_Node* parser_parse_function_def(Parser* parser)",
+          "description": "Parse function definition"
+        },
+        {
+          "name": "parser_parse_if_statement",
+          "signature": "AST_Node* parser_parse_if_statement(Parser* parser)",
+          "description": "Parse if/elif/else"
+        }
+      ]
+    },
+    "src/core/ast.c": {
+      "description": "Abstract Syntax Tree implementation",
+      "rename_from": "src/AST.c",
+      "functions": [
+        {
+          "name": "ast_node_new",
+          "signature": "AST_Node* ast_node_new(AST_NodeType type)",
+          "description": "Create new AST node"
+        },
+        {
+          "name": "ast_node_free",
+          "signature": "void ast_node_free(AST_Node* node)",
+          "description": "Free AST node and children"
+        },
+        {
+          "name": "ast_node_add_child",
+          "signature": "void ast_node_add_child(AST_Node* parent, AST_Node* child)",
+          "description": "Add child to AST node"
+        }
+      ]
+    },
+    "src/types/value.c": {
+      "description": "Value type system",
+      "functions": [
+        {
+          "name": "value_new",
+          "signature": "Value* value_new(ValueType type)",
+          "description": "Create new value"
+        },
+        {
+          "name": "value_new_string",
+          "signature": "Value* value_new_string(const char* str)",
+          "description": "Create string value"
+        },
+        {
+          "name": "value_new_number",
+          "signature": "Value* value_new_number(double num)",
+          "description": "Create number value"
+        },
+        {
+          "name": "value_new_boolean",
+          "signature": "Value* value_new_boolean(bool val)",
+          "description": "Create boolean value"
+        },
+        {
+          "name": "value_new_null",
+          "signature": "Value* value_new_null(void)",
+          "description": "Create null value"
+        },
+        {
+          "name": "value_copy",
+          "signature": "Value* value_copy(const Value* value)",
+          "description": "Deep copy value"
+        },
+        {
+          "name": "value_free",
+          "signature": "void value_free(Value* value)",
+          "description": "Free value memory"
+        },
+        {
+          "name": "value_to_string",
+          "signature": "char* value_to_string(const Value* value)",
+          "description": "Convert value to string representation"
+        },
+        {
+          "name": "value_equals",
+          "signature": "bool value_equals(const Value* a, const Value* b)",
+          "description": "Compare two values for equality"
+        },
+        {
+          "name": "value_type_name",
+          "signature": "const char* value_type_name(ValueType type)",
+          "description": "Get string name of value type"
+        }
+      ]
+    },
+    "src/types/array.c": {
+      "description": "Array implementation",
+      "functions": [
+        {
+          "name": "array_new",
+          "signature": "Value* array_new(size_t initial_capacity)",
+          "description": "Create new array"
+        },
+        {
+          "name": "array_push",
+          "signature": "void array_push(Value* array, Value* item)",
+          "description": "Add item to end of array"
+        },
+        {
+          "name": "array_pop",
+          "signature": "Value* array_pop(Value* array)",
+          "description": "Remove and return last item"
+        },
+        {
+          "name": "array_get",
+          "signature": "Value* array_get(Value* array, size_t index)",
+          "description": "Get item at index"
+        },
+        {
+          "name": "array_set",
+          "signature": "void array_set(Value* array, size_t index, Value* item)",
+          "description": "Set item at index"
+        },
+        {
+          "name": "array_length",
+          "signature": "size_t array_length(const Value* array)",
+          "description": "Get array length"
+        }
+      ]
+    },
+    "src/types/object.c": {
+      "description": "Object/hash map implementation",
+      "functions": [
+        {
+          "name": "object_new",
+          "signature": "Value* object_new(void)",
+          "description": "Create new object"
+        },
+        {
+          "name": "object_set",
+          "signature": "void object_set(Value* object, const char* key, Value* value)",
+          "description": "Set key-value pair"
+        },
+        {
+          "name": "object_get",
+          "signature": "Value* object_get(Value* object, const char* key)",
+          "description": "Get value by key"
+        },
+        {
+          "name": "object_has",
+          "signature": "bool object_has(Value* object, const char* key)",
+          "description": "Check if key exists"
+        },
+        {
+          "name": "object_delete",
+          "signature": "void object_delete(Value* object, const char* key)",
+          "description": "Remove key-value pair"
+        },
+        {
+          "name": "object_keys",
+          "signature": "Value* object_keys(Value* object)",
+          "description": "Get array of keys"
+        }
+      ]
+    },
+    "src/runtime/operators.c": {
+      "description": "Operator implementations",
+      "functions": [
+        {
+          "name": "op_add",
+          "signature": "Value* op_add(Value* a, Value* b)",
+          "description": "Addition operator"
+        },
+        {
+          "name": "op_subtract",
+          "signature": "Value* op_subtract(Value* a, Value* b)",
+          "description": "Subtraction operator"
+        },
+        {
+          "name": "op_multiply",
+          "signature": "Value* op_multiply(Value* a, Value* b)",
+          "description": "Multiplication operator"
+        },
+        {
+          "name": "op_divide",
+          "signature": "Value* op_divide(Value* a, Value* b)",
+          "description": "Division operator"
+        },
+        {
+          "name": "op_modulo",
+          "signature": "Value* op_modulo(Value* a, Value* b)",
+          "description": "Modulo operator"
+        },
+        {
+          "name": "op_equals",
+          "signature": "Value* op_equals(Value* a, Value* b)",
+          "description": "Equality comparison"
+        },
+        {
+          "name": "op_not_equals",
+          "signature": "Value* op_not_equals(Value* a, Value* b)",
+          "description": "Inequality comparison"
+        },
+        {
+          "name": "op_less_than",
+          "signature": "Value* op_less_than(Value* a, Value* b)",
+          "description": "Less than comparison"
+        },
+        {
+          "name": "op_greater_than",
+          "signature": "Value* op_greater_than(Value* a, Value* b)",
+          "description": "Greater than comparison"
+        },
+        {
+          "name": "op_logical_and",
+          "signature": "Value* op_logical_and(Value* a, Value* b)",
+          "description": "Logical AND"
+        },
+        {
+          "name": "op_logical_or",
+          "signature": "Value* op_logical_or(Value* a, Value* b)",
+          "description": "Logical OR"
+        },
+        {
+          "name": "op_logical_not",
+          "signature": "Value* op_logical_not(Value* a)",
+          "description": "Logical NOT"
+        }
+      ]
+    },
+    "src/stdlib/io.c": {
+      "description": "File I/O operations",
+      "rename_from": "src/io.c",
+      "functions": [
+        {
+          "name": "io_read_file",
+          "signature": "char* io_read_file(const char* path)",
+          "description": "Read entire file to string"
+        },
+        {
+          "name": "io_write_file",
+          "signature": "bool io_write_file(const char* path, const char* content)",
+          "description": "Write string to file"
+        },
+        {
+          "name": "io_file_exists",
+          "signature": "bool io_file_exists(const char* path)",
+          "description": "Check if file exists"
+        }
+      ]
+    },
+    "src/stdlib/json.c": {
+      "description": "JSON parsing and generation using cJSON",
+      "functions": [
+        {
+          "name": "json_parse",
+          "signature": "Value* json_parse(const char* json_string)",
+          "description": "Parse JSON string to Value"
+        },
+        {
+          "name": "json_stringify",
+          "signature": "char* json_stringify(const Value* value)",
+          "description": "Convert Value to JSON string"
+        },
+        {
+          "name": "value_to_cjson",
+          "signature": "cJSON* value_to_cjson(const Value* value)",
+          "description": "Convert Value to cJSON object"
+        },
+        {
+          "name": "cjson_to_value",
+          "signature": "Value* cjson_to_value(const cJSON* json)",
+          "description": "Convert cJSON to Value"
+        }
+      ]
+    }
+  },
+  "headers": {
+    "src/include/zen/core/lexer.h": {
+      "description": "Lexer public interface",
+      "structs": [
+        {
+          "name": "Lexer",
+          "fields": [
+            "const char* input",
+            "size_t position",
+            "size_t line",
+            "size_t column",
+            "Stack* indent_stack"
+          ]
+        }
+      ],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/token.h": {
+      "description": "Token definitions",
+      "enums": [
+        {
+          "name": "TokenType",
+          "values": [
+            "TOKEN_EOF",
+            "TOKEN_NEWLINE",
+            "TOKEN_INDENT",
+            "TOKEN_DEDENT",
+            "TOKEN_ID",
+            "TOKEN_NUMBER",
+            "TOKEN_STRING",
+            "TOKEN_TRUE",
+            "TOKEN_FALSE",
+            "TOKEN_NULL",
+            "TOKEN_SET",
+            "TOKEN_FUNCTION",
+            "TOKEN_RETURN",
+            "TOKEN_IF",
+            "TOKEN_ELIF",
+            "TOKEN_ELSE",
+            "TOKEN_THEN",
+            "TOKEN_WHILE",
+            "TOKEN_FOR",
+            "TOKEN_IN",
+            "TOKEN_BREAK",
+            "TOKEN_CONTINUE",
+            "TOKEN_CLASS",
+            "TOKEN_EXTENDS",
+            "TOKEN_IMPORT",
+            "TOKEN_EXPORT",
+            "TOKEN_FROM",
+            "TOKEN_AS",
+            "TOKEN_TRY",
+            "TOKEN_CATCH",
+            "TOKEN_THROW",
+            "TOKEN_EQUALS",
+            "TOKEN_NOT_EQUALS",
+            "TOKEN_LESS_THAN",
+            "TOKEN_GREATER_THAN",
+            "TOKEN_LESS_EQUALS",
+            "TOKEN_GREATER_EQUALS",
+            "TOKEN_PLUS",
+            "TOKEN_MINUS",
+            "TOKEN_MULTIPLY",
+            "TOKEN_DIVIDE",
+            "TOKEN_MODULO",
+            "TOKEN_AND",
+            "TOKEN_OR",
+            "TOKEN_NOT",
+            "TOKEN_COMMA",
+            "TOKEN_DOT",
+            "TOKEN_COLON",
+            "TOKEN_QUESTION",
+            "TOKEN_LPAREN",
+            "TOKEN_RPAREN",
+            "TOKEN_LBRACKET",
+            "TOKEN_RBRACKET"
+          ]
+        }
+      ],
+      "structs": [
+        {
+          "name": "Token",
+          "fields": [
+            "TokenType type",
+            "char* value",
+            "size_t line",
+            "size_t column"
+          ]
+        }
+      ]
+    },
+    "src/include/zen/types/value.h": {
+      "description": "Value type system",
+      "enums": [
+        {
+          "name": "ValueType",
+          "values": [
+            "VALUE_NULL",
+            "VALUE_BOOLEAN", 
+            "VALUE_NUMBER",
+            "VALUE_STRING",
+            "VALUE_ARRAY",
+            "VALUE_OBJECT",
+            "VALUE_FUNCTION",
+            "VALUE_ERROR"
+          ]
+        }
+      ],
+      "structs": [
+        {
+          "name": "Value",
+          "fields": [
+            "ValueType type",
+            "size_t ref_count",
+            "union data"
+          ]
+        }
+      ]
+    }
+  },
+  "tests": {
+    "tests/unit/lexer_test.c": {
+      "test_functions": [
+        "test_lexer_new",
+        "test_lexer_scan_identifier",
+        "test_lexer_scan_number",
+        "test_lexer_scan_string",
+        "test_lexer_scan_operators",
+        "test_lexer_indentation",
+        "test_lexer_keywords"
+      ]
+    },
+    "tests/unit/parser_test.c": {
+      "test_functions": [
+        "test_parser_variable_declaration",
+        "test_parser_function_definition",
+        "test_parser_expressions",
+        "test_parser_control_flow",
+        "test_parser_error_handling"
+      ]
+    },
+    "tests/unit/value_test.c": {
+      "test_functions": [
+        "test_value_creation",
+        "test_value_copy",
+        "test_value_equality",
+        "test_value_to_string",
+        "test_value_memory"
+      ]
+    }
+  },
+  "build": {
+    "source_directories": ["src/core", "src/types", "src/runtime", "src/stdlib"],
+    "include_directories": ["src/include"],
+    "output": "zen",
+    "libraries": ["cjson", "yaml", "pcre2", "curl"],
+    "flags": {
+      "debug": "-g -Wall -Wextra -Werror -O0",
+      "release": "-O3 -DNDEBUG"
+    }
+  }
+}

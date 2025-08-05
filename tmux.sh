@@ -46,7 +46,7 @@ if [ "$SHOW_HELP" = "1" ]; then
 Usage: ./tmux.sh [--session N] [--attach-session] [--new-terminal] [help]
 
 This script creates or attaches to a tmux session with 4 Claude instances
-running in horizontal panes for XMD swarm development.
+running in horizontal panes for ZEN swarm development.
 
 Options:
   --session N       Use/create session number N (default: 1)
@@ -98,9 +98,9 @@ Window Management:
 SWARM AGENT TIPS:
 ═════════════════
 • Each pane runs an independent Claude instance
-• Use @agent-swarm in each pane to activate swarm mode
-• Agents coordinate through swarm/*.yaml log files
-• Check memory/ folders for agent-specific context
+• Use "swarm-N work" to activate swarm N (where N is 1-4)
+• Each swarm has its own queen, architect, and 6 specialized workers
+• Agents work in isolated workspaces: workspace/<swarm-id>-<agent-id>/
 
 USAGE EXAMPLES:
 ══════════════
@@ -114,9 +114,9 @@ Create and attach to session 3:
 Open new terminal window for session 2:
   ./tmux.sh --session 2 --new-terminal
 
-To kill a specific session: tmux kill-session -t xmd-swarm-N
+To kill a specific session: tmux kill-session -t zen-swarm-N
 To list sessions: tmux ls
-To reattach later: ./tmux.sh --session N or tmux attach -t xmd-swarm-N
+To reattach later: ./tmux.sh --session N or tmux attach -t zen-swarm-N
 
 EOF
     exit 0
@@ -138,15 +138,15 @@ create_session_panes() {
     # Select layout to make all panes equal size horizontally
     tmux select-layout -t "$session_name:0" even-horizontal
     
-    # Send claude.sh command to each pane
-    tmux send-keys -t "$session_name:0.0" './claude.sh' C-m
-    tmux send-keys -t "$session_name:0.1" './claude.sh' C-m
-    tmux send-keys -t "$session_name:0.2" './claude.sh' C-m
-    tmux send-keys -t "$session_name:0.3" './claude.sh' C-m
+    # Send claude.sh command to each pane with swarm info
+    tmux send-keys -t "$session_name:0.0" 'echo "=== Pane 1: Use \"swarm-1 work\" to activate swarm-1 ===" && ./claude.sh' C-m
+    tmux send-keys -t "$session_name:0.1" 'echo "=== Pane 2: Use \"swarm-2 work\" to activate swarm-2 ===" && ./claude.sh' C-m
+    tmux send-keys -t "$session_name:0.2" 'echo "=== Pane 3: Use \"swarm-3 work\" to activate swarm-3 ===" && ./claude.sh' C-m
+    tmux send-keys -t "$session_name:0.3" 'echo "=== Pane 4: Use \"swarm-4 work\" to activate swarm-4 ===" && ./claude.sh' C-m
 }
 
 # Create session name based on session number
-SESSION_NAME="xmd-swarm-$SESSION_NUM"
+SESSION_NAME="zen-swarm-$SESSION_NUM"
 
 # Check if tmux session already exists
 tmux has-session -t "$SESSION_NAME" 2>/dev/null

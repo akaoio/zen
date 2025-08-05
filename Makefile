@@ -3,11 +3,12 @@ CC = gcc
 CFLAGS = -g -Wall -Wextra -Werror -std=c11 -Isrc/include
 LDFLAGS = 
 PREFIX ?= /usr/local
+BUILD_DIR ?= .
 
 # Main executable
-exec = zen
+exec = $(BUILD_DIR)/zen
 sources = $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c src/stdlib/*.c)
-objects = $(sources:.c=.o)
+objects = $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
 
 # Directories
 SRCDIR = src
@@ -18,9 +19,11 @@ TOOLDIR = tools
 all: $(exec)
 
 $(exec): $(objects)
+	@mkdir -p $(dir $@)
 	$(CC) $(objects) $(CFLAGS) $(LDFLAGS) -o $(exec)
 
-%.o: %.c
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $< -o $@
 
 # Installation
@@ -37,6 +40,7 @@ clean:
 	-rm -f *.o
 	-rm -f src/*.o
 	-rm -f $(exec)
+	-rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/src
 
 # Code formatting
 format:

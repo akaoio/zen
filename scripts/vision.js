@@ -17,9 +17,12 @@ const colors = {
     green: '\x1b[32m',    // Complete
     blue: '\x1b[34m',     // Directory
     gray: '\x1b[90m',     // Metadata
+    magenta: '\x1b[35m',  // Desired (not yet created)
+    cyan: '\x1b[36m',     // Future feature
     reset: '\x1b[0m',
     bold: '\x1b[1m',
-    dim: '\x1b[2m'
+    dim: '\x1b[2m',
+    italic: '\x1b[3m'
 };
 
 // Tree drawing characters
@@ -36,6 +39,7 @@ class ProjectVision {
         this.manifestPath = path.join(projectRoot, 'MANIFEST.json');
         this.fileStatuses = new Map();
         this.functionStatuses = new Map();
+        this.activeTasks = new Map(); // Map of file -> agent working on it
     }
 
     loadManifest() {
@@ -147,7 +151,8 @@ class ProjectVision {
      */
     analyzeFile(filePath, fileSpec) {
         if (!fs.existsSync(filePath)) {
-            return { status: 'missing', functions: {} };
+            // Check if this is a desired future file
+            return { status: 'desired', functions: {} };
         }
 
         const content = fs.readFileSync(filePath, 'utf8');
@@ -158,7 +163,7 @@ class ProjectVision {
             // Check if function exists
             const funcRegex = new RegExp(`\\b${func.name}\\s*\\(`, 'g');
             if (!funcRegex.test(content)) {
-                functionStatuses[func.name] = 'missing';
+                functionStatuses[func.name] = 'desired';
                 continue;
             }
 
@@ -205,8 +210,11 @@ class ProjectVision {
             fileStatus = 'missing';
         } else if (funcValues.some(s => s === 'missing')) {
             fileStatus = 'missing';
-        } else if (funcValues.every(s => s === 'stub' || s === 'incomplete')) {
-            // If ALL functions are stubs or incomplete, the file is a stub
+        } else if (funcValues.every(s => s === 'desired')) {
+            // If ALL functions are desired (not implemented), the file is a stub
+            fileStatus = 'stub';
+        } else if (funcValues.every(s => s === 'stub' || s === 'incomplete' || s === 'desired')) {
+            // If ALL functions are stubs, incomplete, or desired, the file is a stub
             fileStatus = 'stub';
         } else if (funcValues.some(s => s === 'stub')) {
             fileStatus = 'stub';
@@ -231,6 +239,8 @@ class ProjectVision {
             case 'stub': return colors.red;
             case 'incomplete': return colors.yellow;
             case 'complete': return colors.green;
+            case 'desired': return colors.magenta;
+            case 'future': return colors.cyan;
             default: return colors.reset;
         }
     }
@@ -260,6 +270,8 @@ class ProjectVision {
                 case 'incomplete': return 50;
                 case 'stub': return 10;
                 case 'missing': return 0;
+                case 'desired': return 0;
+                case 'future': return 0;
                 default: return 0;
             }
         } else if (node._type === 'directory') {
@@ -298,6 +310,8 @@ class ProjectVision {
             case 'stub': return '○';
             case 'incomplete': return '◐';
             case 'complete': return '●';
+            case 'desired': return '◇';  // Empty diamond for desired files
+            case 'future': return '⟡';   // Special symbol for future features
             default: return '?';
         }
     }
@@ -349,7 +363,7 @@ class ProjectVision {
             const fullPath = path.join(this.projectRoot, headerPath);
             
             // Check header implementation status
-            let headerStatus = 'missing';
+            let headerStatus = 'desired';
             if (fs.existsSync(fullPath)) {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 // Check if it's just a stub header (too small or has TODO comments)
@@ -412,8 +426,16 @@ class ProjectVision {
                 const progress = this.calculateProgress(node);
                 const progressColor = this.getProgressColor(progress);
                 const desc = node._spec?.description ? colors.gray + ' # ' + node._spec.description + colors.reset : '';
+                
+                // Check if an agent is working on this file
+                const activeTask = this.activeTasks.get(node._path);
+                const agentIndicator = activeTask 
+                    ? ` ${colors.cyan}[${activeTask.agent}]${colors.reset}` 
+                    : '';
+                
                 console.log(prefix + connector + color + symbol + ' ' + name + colors.reset + 
-                          ' ' + progressColor + `[${progress}%]` + colors.reset + desc);
+                          ' ' + progressColor + `[${progress}%]` + colors.reset + 
+                          agentIndicator + desc);
                 
                 // Print functions if it's a file with functions
                 if (node._type === 'file' && node._functions && Object.keys(node._functions).length > 0) {
@@ -452,8 +474,8 @@ class ProjectVision {
      */
     generateStats(tree) {
         let stats = {
-            files: { total: 0, complete: 0, incomplete: 0, stub: 0, missing: 0 },
-            functions: { total: 0, complete: 0, incomplete: 0, stub: 0, missing: 0 }
+            files: { total: 0, complete: 0, incomplete: 0, stub: 0, missing: 0, desired: 0 },
+            functions: { total: 0, complete: 0, incomplete: 0, stub: 0, missing: 0, desired: 0 }
         };
 
         const processNode = (node) => {
@@ -464,7 +486,9 @@ class ProjectVision {
                 if (node._functions) {
                     for (const [, status] of Object.entries(node._functions)) {
                         stats.functions.total++;
-                        stats.functions[status]++;
+                        if (stats.functions[status] !== undefined) {
+                            stats.functions[status]++;
+                        }
                     }
                 }
             } else if (node._type === 'directory' || !node._type) {
@@ -493,6 +517,7 @@ class ProjectVision {
         console.log(`  ${colors.yellow}◐ Incomplete:  ${stats.files.incomplete}/${stats.files.total}${colors.reset}`);
         console.log(`  ${colors.red}○ Stubs:       ${stats.files.stub}/${stats.files.total}${colors.reset}`);
         console.log(`  ${colors.red}✗ Missing:     ${stats.files.missing}/${stats.files.total}${colors.reset}`);
+        console.log(`  ${colors.magenta}◇ Desired:     ${stats.files.desired}/${stats.files.total}${colors.reset}`);
         
         // Functions
         console.log('\n' + colors.bold + 'Functions:' + colors.reset);
@@ -514,10 +539,81 @@ class ProjectVision {
     }
 
     /**
+     * Load active tasks from tasks folder
+     */
+    loadActiveTasks() {
+        const tasksDir = path.join(this.projectRoot, 'tasks');
+        if (!fs.existsSync(tasksDir)) return [];
+        
+        const now = Date.now() / 1000; // Current unix timestamp
+        const maxAge = 3600 * 24; // 24 hours - tasks older than this are considered abandoned
+        const tasks = [];
+        
+        const taskFiles = fs.readdirSync(tasksDir)
+            .filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
+            .sort((a, b) => b.localeCompare(a));
+            
+        for (const file of taskFiles) {
+            try {
+                const filePath = path.join(tasksDir, file);
+                const content = fs.readFileSync(filePath, 'utf8');
+                
+                // Parse task
+                const agent = content.match(/agent:\s*(.+)/)?.[1]?.trim() || 'unknown';
+                const task = content.match(/task:\s*(.+)/)?.[1]?.trim() || 'No description';
+                const created = parseInt(content.match(/created:\s*(\d+)/)?.[1] || '0');
+                const completed = /completed:\s*true/i.test(content);
+                const filesMatch = content.match(/files:\s*\n((?:\s*-\s*.+\n)*)/);
+                const files = [];
+                
+                if (filesMatch) {
+                    const fileLines = filesMatch[1].trim().split('\n');
+                    for (const line of fileLines) {
+                        const file = line.match(/^\s*-\s*(.+)/)?.[1]?.trim();
+                        if (file) files.push(file);
+                    }
+                }
+                
+                // Check latest step for success/fail status
+                const success = /success:\s*true/i.test(content);
+                const fail = /fail:\s*true/i.test(content);
+                const isComplete = completed;
+                const isOld = (now - created) > maxAge;
+                
+                if (!isComplete && !isOld && files.length > 0) {
+                    // Active task - map files to agent
+                    for (const file of files) {
+                        this.activeTasks.set(file, { agent, task, created });
+                    }
+                }
+                
+                tasks.push({
+                    file: file,
+                    agent,
+                    task,
+                    created,
+                    files,
+                    success,
+                    fail,
+                    isComplete,
+                    isOld
+                });
+            } catch (e) {
+                // Skip invalid task files
+            }
+        }
+        
+        return tasks;
+    }
+
+    /**
      * Run vision
      */
     run() {
         const manifest = this.loadManifest();
+        
+        // Load active tasks before building tree
+        const tasks = this.loadActiveTasks();
         
         console.log(colors.bold + '🔮 ZEN Project Vision' + colors.reset);
         console.log('=' .repeat(50));
@@ -525,10 +621,16 @@ class ProjectVision {
         console.log();
         
         console.log(colors.bold + 'Legend:' + colors.reset);
-        console.log(`  ${colors.green}● Complete${colors.reset}     - Fully implemented with proper documentation`);
-        console.log(`  ${colors.yellow}◐ Incomplete${colors.reset}   - Partially implemented (some functions complete)`);
-        console.log(`  ${colors.red}○ Stub${colors.reset}         - Stub/fake/TODO implementation only`);
-        console.log(`  ${colors.red}✗ Missing${colors.reset}      - File or function does not exist`);
+        console.log(colors.dim + 'Reality:' + colors.reset);
+        console.log(`  ${colors.green}● Complete${colors.reset}     - Fully implemented with documentation`);
+        console.log(`  ${colors.yellow}◐ Incomplete${colors.reset}   - Partially implemented`);
+        console.log(`  ${colors.red}○ Stub${colors.reset}         - Stub/TODO implementation`);
+        console.log(`  ${colors.red}✗ Missing${colors.reset}      - Required but not created`);
+        console.log(colors.dim + 'Desire:' + colors.reset);
+        console.log(`  ${colors.magenta}◇ Desired${colors.reset}      - Planned future file/feature`);
+        console.log(`  ${colors.cyan}⟡ Future${colors.reset}       - Long-term vision`);
+        console.log(colors.dim + 'Agents:' + colors.reset);
+        console.log(`  ${colors.cyan}[agent-id]${colors.reset}     - Agent actively working on file`);
         console.log();
         
         const treeStructure = this.buildDirectoryTree(manifest);
@@ -542,6 +644,196 @@ class ProjectVision {
         
         const stats = this.generateStats(treeStructure);
         this.printStats(stats);
+        
+        // Show latest tasks from swarm
+        this.showLatestTasks(tasks);
+    }
+    
+    /**
+     * Calculate agent fitness scores based on task history
+     */
+    calculateAgentFitness(allTasks) {
+        const agentStats = new Map();
+        
+        // Process all tasks to build agent statistics
+        allTasks.forEach(task => {
+            if (!agentStats.has(task.agent)) {
+                agentStats.set(task.agent, {
+                    totalTasks: 0,
+                    successTasks: 0,
+                    failedTasks: 0,
+                    activeTasks: 0,
+                    completionRate: 0,
+                    successRate: 0,
+                    fitnessScore: 0,
+                    role: this.detectAgentRole(task.agent)
+                });
+            }
+            
+            const stats = agentStats.get(task.agent);
+            stats.totalTasks++;
+            
+            if (!task.isComplete && !task.isOld) {
+                stats.activeTasks++;
+            } else if (task.success) {
+                stats.successTasks++;
+            } else if (task.fail) {
+                stats.failedTasks++;
+            }
+        });
+        
+        // Calculate metrics for each agent
+        agentStats.forEach((stats, agent) => {
+            const completedTasks = stats.successTasks + stats.failedTasks;
+            stats.completionRate = completedTasks / stats.totalTasks;
+            stats.successRate = completedTasks > 0 ? stats.successTasks / completedTasks : 0;
+            
+            // Fitness score: weighted combination of completion rate and success rate
+            // Penalize agents with only active tasks (no completions)
+            if (completedTasks === 0) {
+                stats.fitnessScore = 0;
+            } else {
+                stats.fitnessScore = (stats.completionRate * 0.3 + stats.successRate * 0.7) * 100;
+            }
+        });
+        
+        return agentStats;
+    }
+    
+    /**
+     * Detect agent role from agent ID
+     */
+    detectAgentRole(agentId) {
+        if (agentId.includes('queen')) return 'queen';
+        if (agentId.includes('architect')) return 'architect';
+        if (agentId.includes('worker')) return 'worker';
+        return 'unknown';
+    }
+    
+    /**
+     * Get fitness color based on score
+     */
+    getFitnessColor(score) {
+        if (score >= 80) return colors.green;
+        if (score >= 60) return colors.yellow;
+        if (score >= 40) return colors.gray;
+        return colors.red;
+    }
+
+    /**
+     * Show latest tasks from tasks/ folder
+     */
+    showLatestTasks(allTasks) {
+        console.log('\n' + colors.bold + '📋 Swarm Activity:' + colors.reset);
+        console.log('─'.repeat(80));
+        
+        if (!allTasks || allTasks.length === 0) {
+            console.log(colors.dim + '  No tasks found' + colors.reset);
+            return;
+        }
+        
+        // Calculate agent fitness
+        const agentFitness = this.calculateAgentFitness(allTasks);
+        
+        // Separate active and completed tasks
+        const activeTasks = allTasks.filter(t => !t.isComplete && !t.isOld);
+        const recentCompleted = allTasks.filter(t => t.isComplete).slice(0, 10);
+        
+        // Show active tasks
+        if (activeTasks.length > 0) {
+            console.log('\n' + colors.bold + 'Active Tasks:' + colors.reset);
+            activeTasks.forEach(task => {
+                const timeStr = this.formatTimestamp(task.file);
+                const taskDesc = task.task.length > 50 
+                    ? task.task.substring(0, 47) + '...'
+                    : task.task;
+                
+                console.log(`  ${colors.yellow}◐${colors.reset} ${colors.cyan}[${task.agent}]${colors.reset} ${taskDesc}`);
+                console.log(`     ${colors.dim}Started: ${timeStr}${colors.reset}`);
+                if (task.files.length > 0) {
+                    console.log(`     ${colors.dim}Files: ${task.files.join(', ')}${colors.reset}`);
+                }
+            });
+        }
+        
+        // Show recent completed tasks
+        if (recentCompleted.length > 0) {
+            console.log('\n' + colors.bold + 'Recent Completed:' + colors.reset);
+            recentCompleted.forEach(task => {
+                const timeStr = this.formatTimestamp(task.file);
+                const statusSymbol = task.success ? colors.green + '✓' : colors.red + '✗';
+                const statusText = task.success ? 'Success' : 'Failed';
+                const taskDesc = task.task.length > 50 
+                    ? task.task.substring(0, 47) + '...'
+                    : task.task;
+                
+                console.log(`  ${statusSymbol}${colors.reset} ${colors.cyan}[${task.agent}]${colors.reset} ${taskDesc}`);
+                console.log(`     ${colors.dim}${statusText} at ${timeStr}${colors.reset}`);
+                if (task.files.length > 0) {
+                    console.log(`     ${colors.dim}Files: ${task.files.join(', ')}${colors.reset}`);
+                }
+            });
+        }
+        
+        // Show agent fitness scores
+        console.log('\n' + colors.bold + '🏆 Agent Fitness Scores:' + colors.reset);
+        console.log('─'.repeat(80));
+        
+        // Group agents by role
+        const agentsByRole = new Map();
+        agentFitness.forEach((stats, agent) => {
+            if (!agentsByRole.has(stats.role)) {
+                agentsByRole.set(stats.role, []);
+            }
+            agentsByRole.get(stats.role).push({ agent, stats });
+        });
+        
+        // Show best agent for each role
+        ['queen', 'architect', 'worker'].forEach(role => {
+            const agents = agentsByRole.get(role) || [];
+            if (agents.length > 0) {
+                // Sort by fitness score
+                agents.sort((a, b) => b.stats.fitnessScore - a.stats.fitnessScore);
+                
+                console.log('\n' + colors.bold + `${role.charAt(0).toUpperCase() + role.slice(1)} Agents:` + colors.reset);
+                
+                agents.forEach(({ agent, stats }, index) => {
+                    const fitnessColor = this.getFitnessColor(stats.fitnessScore);
+                    const crown = index === 0 && stats.fitnessScore > 0 ? ' 👑' : '';
+                    
+                    console.log(`  ${colors.cyan}[${agent}]${colors.reset}${crown}`);
+                    console.log(`    Fitness: ${fitnessColor}${stats.fitnessScore.toFixed(1)}%${colors.reset} | ` +
+                               `Tasks: ${stats.totalTasks} | ` +
+                               `Success: ${colors.green}${stats.successTasks}${colors.reset} | ` +
+                               `Failed: ${colors.red}${stats.failedTasks}${colors.reset} | ` +
+                               `Active: ${colors.yellow}${stats.activeTasks}${colors.reset}`);
+                    console.log(`    Success Rate: ${stats.successRate > 0 ? colors.green : colors.gray}${(stats.successRate * 100).toFixed(1)}%${colors.reset} | ` +
+                               `Completion Rate: ${stats.completionRate > 0 ? colors.green : colors.gray}${(stats.completionRate * 100).toFixed(1)}%${colors.reset}`);
+                });
+            }
+        });
+        
+        // Summary
+        const totalActive = activeTasks.length;
+        const totalSuccess = allTasks.filter(t => t.success).length;
+        const totalFailed = allTasks.filter(t => t.fail).length;
+        
+        console.log('\n' + colors.bold + 'Overall Summary:' + colors.reset);
+        console.log(`  Total Tasks: ${allTasks.length} | ` +
+                    `Active: ${colors.yellow}${totalActive}${colors.reset} | ` +
+                    `Success: ${colors.green}${totalSuccess}${colors.reset} | ` +
+                    `Failed: ${colors.red}${totalFailed}${colors.reset}`);
+    }
+    
+    /**
+     * Format timestamp from filename
+     */
+    formatTimestamp(filename) {
+        const dateMatch = filename.match(/(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/);
+        if (dateMatch) {
+            return `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]} ${dateMatch[4]}:${dateMatch[5]}`;
+        }
+        return filename.replace('.yaml', '').replace('.yml', '');
     }
 }
 

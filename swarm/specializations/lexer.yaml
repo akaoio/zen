@@ -1,0 +1,28 @@
+name: lexer
+description: "tokenization and lexical analysis"
+keywords: "tokens, tokenize, lexing, scanner"
+details: |
+  - Token recognition and classification
+  - Indentation-based block handling
+  - Operator parsing and precedence
+  - String and number literal parsing
+  - Comment handling
+focus_areas: |
+  - Efficient character stream processing
+  - Lookahead and buffering strategies
+  - Error recovery and reporting
+  - Token caching for performance
+key_patterns: |
+  ```c
+  // Consume characters matching predicate
+  while (predicate(lexer_peek(lex))) {
+      lexer_advance(lex);
+  }
+  
+  // State machine for complex tokens
+  switch (state) {
+      case STATE_NUMBER_INT:
+          if (ch == '.') state = STATE_NUMBER_FLOAT;
+          break;
+  }
+  ```

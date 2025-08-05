@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+⚠️ **CRITICAL**: This project enforces strict compliance through `MANIFEST.json`. You MUST follow the manifest exactly or your code will be rejected by git hooks.
+
 ## Project Overview
 
 ZEN is a lightweight, mobile-friendly, markdown-compatible scripting language with minimal syntax. The project implements a comprehensive interpreter for a natural language-inspired programming language.
@@ -9,28 +11,29 @@ ZEN is a lightweight, mobile-friendly, markdown-compatible scripting language wi
 **Key Resources:**
 - Language Specification: `docs/idea.md` (complete 564-line spec)
 - Architecture Document: `ARCHITECTURE.md` (complete codebase vision)
+- **Manifest**: `MANIFEST.json` (🔒 ENFORCED specification of ALL files/functions)
+- Enforcement Guide: `ENFORCEMENT.md` (how the enforcement system works)
 - Current Implementation: Minimal subset in C
 
 ## Development Commands
 
-### Build & Run
+### Essential Commands
 ```bash
-# Build the interpreter
-make clean && make
+# 🔒 ENFORCEMENT (Always use these!)
+make enforce              # Check manifest compliance
+make enforce-generate     # Generate code stubs from manifest
+make setup-dev           # Setup git hooks (one-time)
 
-# Run REPL
-./zen
+# Build & Run
+make clean && make       # Build the interpreter
+./zen                    # Run REPL
+./zen filename.zen       # Run a ZEN file
 
-# Run a ZEN file
-./zen filename.zen
+# Development
+make format              # Format code
+make test               # Run tests (when implemented)
 
-# Run tests (when implemented)
-make test
-
-# Format code (when implemented)
-make format
-
-# Install
+# Installation
 sudo make install PREFIX=/usr/local
 ```
 
@@ -186,12 +189,57 @@ if average student.scores >= 80
 - Classes/OOP
 - Async features
 
+## 🔒 CRITICAL: Code Enforcement System
+
+**IMPORTANT**: This project uses a strict enforcement system. ALL code changes MUST comply with `MANIFEST.json`.
+
+### Enforcement Commands
+```bash
+# ALWAYS run before making changes
+make enforce              # Check current compliance
+make enforce-generate     # Generate stub code from manifest
+
+# One-time setup (REQUIRED)
+make setup-dev           # Enable git hooks for automatic enforcement
+```
+
+### Enforcement Rules
+1. **NO new files** without updating `MANIFEST.json` first
+2. **NO function signature changes** without manifest update
+3. **NO unauthorized functions** - all functions must be in manifest
+4. **EXACT signatures required** - must match character-for-character
+
+### Working with the Manifest
+
+Before implementing ANY function:
+1. Check `MANIFEST.json` for the exact signature
+2. Copy the signature exactly as specified
+3. Implement following the signature contract
+
+Example from manifest:
+```json
+{
+  "name": "lexer_new",
+  "signature": "Lexer* lexer_new(const char* input)",
+  "description": "Create a new lexer instance"
+}
+```
+
+Your implementation MUST match:
+```c
+Lexer* lexer_new(const char* input) {  // Exact signature!
+    // Implementation here
+}
+```
+
 ## Development Workflow
 
-1. **Before implementing**: Review `docs/idea.md` for exact syntax
-2. **During implementation**: Follow existing patterns in codebase
-3. **After implementation**: Run tests, update docs, format code
-4. **Before committing**: Ensure all tests pass, no memory leaks
+1. **Check manifest first**: Look up function in `MANIFEST.json`
+2. **Run enforcement**: `make enforce` to see current state
+3. **Generate stubs**: `make enforce-generate` if needed
+4. **Implement exactly**: Follow manifest signatures precisely
+5. **Validate**: `make enforce` before committing
+6. **Commit**: Git hooks will enforce compliance automatically
 
 ## Debugging Tips
 
