@@ -65,7 +65,10 @@ class DNAAssembler {
             'prime-directive',
             'sub-agent-context',
             'project-context',
+            'multi-swarm-awareness',  // Multi-swarm system awareness
             'queen-capabilities',
+            'manifest-access-control',  // Queen read-only manifest access
+            'persistence-engine',  // Never stop until 100% complete
             'workflow-start',
             'task-management',
             'command-shortcuts',
@@ -103,7 +106,10 @@ class DNAAssembler {
             'prime-directive',
             'sub-agent-context',
             'project-context',
+            'multi-swarm-awareness',  // Multi-swarm system awareness
             'architect-capabilities',
+            'manifest-access-control',  // Architect exclusive manifest write access
+            'persistence-engine',  // Never stop until 100% complete
             'architect-workflow',  // Mandatory task creation for architects
             'task-management',
             'command-shortcuts',
@@ -162,7 +168,10 @@ class DNAAssembler {
             'prime-directive',
             'sub-agent-context',
             'project-context',
+            'multi-swarm-awareness',  // Multi-swarm system awareness
             'worker-capabilities',
+            'manifest-access-control',  // Worker read-only manifest access
+            'persistence-engine',  // Never stop until 100% complete
             'workflow-start',
             'workspace-isolation',
             'task-management',

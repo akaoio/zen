@@ -23,18 +23,18 @@ The swarm consists of three agent types:
 
 ```bash
 # Initialize the swarm with basic agents
-./swarm.sh init
+../swarm.sh init
 
 # Create a named swarm with all workers
-./swarm.sh create-swarm swarm-1
+../swarm.sh create-swarm swarm-1
 
 # Add specialized workers to default swarm
-./swarm.sh add-worker runtime
-./swarm.sh add-worker types
-./swarm.sh add-worker memory
+../swarm.sh add-worker runtime
+../swarm.sh add-worker types
+../swarm.sh add-worker memory
 
 # Check swarm status
-./swarm.sh status
+../swarm.sh status
 ```
 
 ## Using the Swarm
@@ -153,7 +153,7 @@ The assembled DNA files are created dynamically:
 
 3. Generate the agent:
    ```bash
-   ./swarm.sh add-worker optimizer
+   ../swarm.sh add-worker optimizer
    ```
 
 ### Modifying Components

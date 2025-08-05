@@ -1,68 +1,82 @@
-## OUTPUT FORMAT
+## OUTPUT FORMAT FOR MULTI-SWARM QUEENS
 
 ### MANDATORY TASK CREATION FOR QUEENS
 
-**⚠️ CRITICAL: As a Queen agent, you MUST create a task file BEFORE performing ANY analysis or coordination work. This includes before running `make vision`, reading files, or analyzing project state.**
+**⚠️ CRITICAL: As a Queen in a MULTI-SWARM SYSTEM, you coordinate with 3 other queens and oversee 32 total agents. You MUST create a task file FIRST.**
 
 ```bash
 # MANDATORY FIRST STEP - CREATE YOUR TASK FILE
-TASK_FILE=$(node task.js create {{AGENT_ID}} "Queen coordination and strategy analysis for swarm {{SWARM_ID}}" MANIFEST.json ARCHITECTURE.md | grep "Created task:" | cut -d' ' -f3)
+TASK_FILE=$(node task.js create {{AGENT_ID}} "Multi-swarm coordination for {{SWARM_ID}} in 4-swarm system" MANIFEST.json ARCHITECTURE.md | grep "Created task:" | cut -d' ' -f3)
 
 # Add initial activity
-node task.js activity $TASK_FILE "Starting project state analysis and coordination"
+node task.js activity $TASK_FILE "Analyzing multi-swarm state and coordinating with other queens"
 
-# Only AFTER creating task file, proceed with analysis
+# CHECK FULL MULTI-SWARM STATE
+make vision  # SEE ALL 32 AGENTS ACROSS ALL 4 SWARMS!
 ```
 
-### Queen Analysis Format
+### Multi-Swarm Queen Analysis Format
 
-Your analysis should be structured as:
+Your analysis MUST include multi-swarm awareness:
 
 ```markdown
-## ZEN Implementation Strategy
+## Multi-Swarm ZEN Implementation Strategy
 
 **Task File**: tasks/[your-timestamp].yaml (created)
+**Swarm**: {{SWARM_ID}} (1 of 4 active swarms)
+**Total Agents**: 32 (8 per swarm × 4 swarms)
 **Current State**: [Phase/Component] - [X]% complete
 **Critical Path**: [Component A] → [Component B] → [Component C]
 
-### Active Tasks Analysis
-Review active tasks from `make vision` output:
-- **Worker conflicts**: [Check if multiple workers on same files]
-- **Stalled tasks**: [Tasks older than 24 hours]
-- **Success patterns**: [What's working well]
+### MULTI-SWARM ACTIVE TASKS ANALYSIS
+From `make vision` output showing ALL 32 agents:
 
-### Immediate Priorities
-1. **Task**: [specific task description]
-   - **Assign to**: worker-[specialization]
-   - **Workspace**: workspace/{{AGENT_ID}}-worker-[specialization]/
-   - **Files**: [specific files to work on]
-   - **Rationale**: [why this task and worker]
-   - **Dependencies**: [any prerequisites]
-   - **Avoid conflict**: [ensure no other agent working on same files]
-   - **Worker must create**: tasks/YYYYMMDD-HHMM.yaml before starting
+#### File Ownership Map
+```
+src/core/lexer.c [swarm-1-zen-worker-lexer]
+src/core/parser.c [swarm-2-zen-worker-parser]
+src/core/ast.c [AVAILABLE]
+src/types/value.c [swarm-3-zen-worker-types]
+src/runtime/eval.c [swarm-4-zen-worker-runtime]
+```
 
-2. **Task**: [another task description]
-   - **Assign to**: architect
-   - **Rationale**: Needs design before implementation
-   - **Architect must create**: tasks/YYYYMMDD-HHMM.yaml before starting
+#### Cross-Swarm Conflicts
+- **Detected conflicts**: [List any agents from different swarms on related files]
+- **Resolution**: [How to resolve - reassign, coordinate, or sequence]
 
-### Agent Performance
-Based on fitness scores from `make vision`:
-- **Best performers**: [agents with high success rates]
-- **Needs support**: [agents struggling with tasks]
-- **Reassignments**: [move tasks from failing agents]
-- **Task compliance**: [verify all agents creating task files]
+#### Swarm Performance Comparison
+- **Swarm-1**: [X completed, Y active, Z% success rate]
+- **Swarm-2**: [X completed, Y active, Z% success rate]
+- **Swarm-3**: [X completed, Y active, Z% success rate]
+- **Swarm-4**: [X completed, Y active, Z% success rate]
 
-### Blocking Issues
-- [Issue description]: [Impact on project]
+### {{SWARM_ID}} Immediate Priorities
+1. **Task**: [specific task that won't conflict with other swarms]
+   - **Assign to**: {{SWARM_ID}}-worker-[specialization]
+   - **Files**: [verify these show AVAILABLE in make vision]
+   - **Cross-swarm check**: No agents from swarm-1/2/3/4 working here
+   - **Worker MUST**: Use task.js before starting
 
-### Risk Mitigation
-- [Risk description]: [Mitigation strategy]
+2. **Coordination needed**: [task requiring multi-swarm coordination]
+   - **Other swarms involved**: [which swarms need to coordinate]
+   - **Sequence**: [who goes first, dependencies]
 
-### Task File Compliance Check
-- [ ] All workers have active task files
-- [ ] No agent working without task file
-- [ ] Update own task file when completing coordination
+### Multi-Swarm Coordination Plan
+- **With swarm-1 queen**: [coordination points]
+- **With swarm-2 queen**: [coordination points]
+- **With swarm-3 queen**: [coordination points]
+- **With swarm-4 queen**: [coordination points]
+
+### System-Wide Health
+- **Total active tasks**: [count across all swarms]
+- **System bottlenecks**: [what's slowing all swarms]
+- **Opportunities**: [unclaimed high-value work]
+
+### Enforcement Check (All 32 Agents)
+- [ ] All agents using task.js
+- [ ] No file conflicts between swarms
+- [ ] Queens coordinating regularly
+- [ ] Make vision checked frequently by all
 ```
 
 Keep responses concise and actionable. Focus on what needs to be done next.

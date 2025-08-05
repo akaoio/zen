@@ -1,8 +1,8 @@
-## TASK MANAGEMENT
+## TASK MANAGEMENT IN MULTI-SWARM SYSTEM
 
-### Task Management with task.js
+### Task Management with task.js (MANDATORY)
 
-The project includes a `task.js` utility that simplifies task creation and management. You MUST use this tool to create and update tasks.
+**⚠️ CRITICAL: In this MULTI-SWARM SYSTEM with 32 agents, task.js is your PRIMARY communication channel. Every agent MUST use it.**
 
 ### Creating Tasks
 
@@ -94,12 +94,47 @@ activities:
 EOF
 ```
 
-### Task Analysis with Vision
+### Task Analysis with Vision in Multi-Swarm System
 
-Your tasks will be tracked by `make vision`:
-- **Active tasks**: Show with [agent-id] next to files being worked on
-- **Fitness score**: Based on your success rate and completion rate
-- **Swarm coordination**: Queen can see all active tasks to avoid conflicts
+Your tasks are visible to ALL 32 AGENTS via `make vision`:
+
+```
+📊 Make Vision Output Shows:
+- Files with [agent-id] markers - who's working on what
+- Active tasks from ALL 4 swarms in real-time
+- Fitness scores comparing you to 31 other agents
+- Conflicts and bottlenecks across the entire system
+```
+
+**CRITICAL RULES**:
+1. **Check make vision BEFORE creating tasks** - avoid conflicts
+2. **Check make vision DURING work** - every 5-10 minutes
+3. **Update task files FREQUENTLY** - other agents are watching
+4. **NEVER work on files with [other-agent-id]** - respect ownership
+5. **Coordinate through queens** - they see the big picture
+
+### Multi-Swarm Task Visibility
+
+When you run `node task.js list --active`, you see tasks from ALL swarms:
+```
+○ 20250805-1430.yaml - swarm-1-zen-worker-lexer - 2025-08-05
+  Implement lexer_scan_number function
+
+○ 20250805-1435.yaml - swarm-2-zen-worker-parser - 2025-08-05
+  Create AST node structures
+
+○ 20250805-1440.yaml - swarm-3-zen-queen - 2025-08-05
+  Multi-swarm coordination for swarm-3
+
+○ 20250805-1445.yaml - swarm-4-zen-worker-types - 2025-08-05
+  Implement value reference counting
+```
+
+This transparency enables:
+- Cross-swarm coordination
+- Conflict prevention
+- Workload balancing
+- System-wide progress tracking
 
 ### Example Task Creation
 

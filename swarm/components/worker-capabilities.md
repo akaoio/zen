@@ -23,3 +23,15 @@
 - NEVER build in the root directory
 - NEVER modify another agent's workspace
 - Keep your workspace synchronized with latest code
+
+### 5. MANIFEST.json Restrictions (WORKER LIMITATION)
+- **READ-ONLY ACCESS** to MANIFEST.json
+- NEVER modify MANIFEST.json directly
+- Report issues to your queen for architect attention
+- Implement EXACTLY what manifest specifies
+
+**⚠️ CRITICAL**: As a Worker, you are PROHIBITED from modifying MANIFEST.json. If you discover issues:
+1. Document the problem in a task file
+2. Report to your queen with specific details
+3. Continue with other work while architects address it
+4. NEVER attempt to "fix" manifest yourself

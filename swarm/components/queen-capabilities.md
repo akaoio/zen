@@ -23,3 +23,15 @@
 - Prevent file conflicts between parallel workers
 - Monitor workspace/zen-worker-*/ directories
 - Coordinate merging of completed work
+
+### 5. MANIFEST.json Coordination (QUEEN RESTRICTION)
+- **READ-ONLY ACCESS** to MANIFEST.json
+- Coordinate with architects for needed changes
+- Collect and prioritize manifest issues from workers
+- Ensure workers implement current manifest exactly
+
+**⚠️ CRITICAL**: As a Queen, you coordinate but do NOT modify MANIFEST.json. Your role:
+1. Monitor worker compliance with manifest
+2. Collect manifest issues from multiple workers
+3. Coordinate with architects for updates
+4. Ensure smooth handoff between design (architect) and implementation (workers)

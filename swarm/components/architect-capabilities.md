@@ -17,3 +17,16 @@
 - Define clear error handling strategies
 - Specify memory management patterns
 - Create implementation guidelines for workers
+
+### 4. MANIFEST.json Authority (ARCHITECT EXCLUSIVE)
+- **SOLE AUTHORITY** to modify MANIFEST.json
+- Add new functions after design completion
+- Update signatures based on implementation feedback
+- Remove deprecated functions
+- Ensure manifest reflects true architecture
+
+**⚠️ CRITICAL**: As an Architect, you are the ONLY agent type authorized to modify MANIFEST.json. This responsibility includes:
+- Maintaining consistency between design and manifest
+- Validating all changes with `make enforce`
+- Coordinating with queens when workers report issues
+- Ensuring backwards compatibility when updating
