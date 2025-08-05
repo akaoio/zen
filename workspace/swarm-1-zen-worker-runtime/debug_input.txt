@@ -1,0 +1,4 @@
+set x "hello"
+print "Debug: about to print x"
+print x
+exit

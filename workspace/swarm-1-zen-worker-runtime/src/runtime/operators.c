@@ -2,109 +2,38 @@
  * operators.c
  * Operator implementations
  * 
- * This file implements all operators for the ZEN language.
- * ZEN uses dynamic typing with type coercion following JavaScript-like semantics.
+ * This file implements all ZEN operators with proper type coercion and error handling
+ * DO NOT modify function signatures without updating the manifest
  */
 
-#include "zen/types/value.h"
+#define _GNU_SOURCE
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <math.h>
+#include <stdbool.h>
+#include <limits.h>
+#include "../include/zen/types/value.h"
 
-/* Helper functions for type coercion */
-
-/**
- * @brief Convert value to number for arithmetic operations
- * @param value Value to convert
- * @return double Numeric representation
- */
-static double value_to_number(const Value* value) {
-    if (!value) return 0.0;
-    
-    switch (value->type) {
-        case VALUE_NULL:
-            return 0.0;
-        case VALUE_BOOLEAN:
-            return value->data.boolean ? 1.0 : 0.0;
-        case VALUE_NUMBER:
-            return value->data.number;
-        case VALUE_STRING:
-            if (!value->data.string || strlen(value->data.string) == 0) {
-                return 0.0;
-            }
-            // Try to parse as number
-            char* endptr;
-            double result = strtod(value->data.string, &endptr);
-            // If entire string was consumed, it's a valid number
-            if (*endptr == '\0') {
-                return result;
-            }
-            // Otherwise it's NaN
-            return NAN;
-        case VALUE_ARRAY:
-            // Empty array is 0, array with one element converts that element
-            // TODO: Implement when arrays are available
-            return NAN;
-        case VALUE_OBJECT:
-            return NAN;
-        case VALUE_FUNCTION:
-            return NAN;
-        case VALUE_ERROR:
-            return NAN;
-    }
-    return NAN;
-}
-
-/**
- * @brief Convert value to boolean for logical operations
- * @param value Value to convert
- * @return bool Boolean representation
- */
-static bool value_to_boolean(const Value* value) {
-    if (!value) return false;
-    
-    switch (value->type) {
-        case VALUE_NULL:
-            return false;
-        case VALUE_BOOLEAN:
-            return value->data.boolean;
-        case VALUE_NUMBER:
-            // 0, NaN, -0 are false, everything else is true
-            return value->data.number != 0.0 && !isnan(value->data.number);
-        case VALUE_STRING:
-            // Empty string is false, non-empty is true
-            return value->data.string && strlen(value->data.string) > 0;
-        case VALUE_ARRAY:
-            // Arrays are always truthy (even empty ones in ZEN)
-            return true;
-        case VALUE_OBJECT:
-            // Objects are always truthy
-            return true;
-        case VALUE_FUNCTION:
-            // Functions are always truthy
-            return true;
-        case VALUE_ERROR:
-            // Errors are truthy
-            return true;
-    }
-    return false;
-}
-
-/* Arithmetic operators */
+/* Forward declarations for helper functions */
+static Value* create_error(const char* message);
+static bool to_number(const Value* value, double* result);
+static char* concat_strings(const char* a, const char* b);
+static bool is_truthy(const Value* value);
+static int compare_values(const Value* a, const Value* b);
 
 /**
  * @brief Addition operator
- * @param a First operand
- * @param b Second operand
- * @return Value* Result of a + b
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Result of addition operation or error value
  */
 Value* op_add(Value* a, Value* b) {
     if (!a || !b) {
-        return value_new_null();
+        return create_error("Null operand in addition");
     }
     
-    // String concatenation has priority
+    /* String concatenation has highest priority */
     if (a->type == VALUE_STRING || b->type == VALUE_STRING) {
         char* a_str = value_to_string(a);
         char* b_str = value_to_string(b);
@@ -112,237 +41,401 @@ Value* op_add(Value* a, Value* b) {
         if (!a_str || !b_str) {
             free(a_str);
             free(b_str);
-            return value_new_null();
+            return create_error("Failed to convert operand to string");
         }
         
-        size_t len = strlen(a_str) + strlen(b_str) + 1;
-        char* result_str = malloc(len);
-        if (!result_str) {
-            free(a_str);
-            free(b_str);
-            return value_new_null();
-        }
-        
-        strcpy(result_str, a_str);
-        strcat(result_str, b_str);
-        
-        Value* result = value_new_string(result_str);
-        
+        char* result = concat_strings(a_str, b_str);
         free(a_str);
         free(b_str);
-        free(result_str);
         
-        return result;
+        if (!result) {
+            return create_error("String concatenation failed");
+        }
+        
+        Value* str_val = value_new_string(result);
+        free(result);
+        return str_val;
     }
     
-    // Numeric addition
-    double a_num = value_to_number(a);
-    double b_num = value_to_number(b);
+    /* Numeric addition */
+    double a_num, b_num;
+    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
+        return create_error("Cannot convert operands to numbers for addition");
+    }
     
     return value_new_number(a_num + b_num);
 }
 
 /**
  * @brief Subtraction operator
- * @param a First operand
- * @param b Second operand
- * @return Value* Result of a - b
+ * @param a Left operand value
+ * @param b Right operand value  
+ * @return Result of subtraction operation or error value
  */
 Value* op_subtract(Value* a, Value* b) {
     if (!a || !b) {
-        return value_new_null();
+        return create_error("Null operand in subtraction");
     }
     
-    double a_num = value_to_number(a);
-    double b_num = value_to_number(b);
+    double a_num, b_num;
+    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
+        return create_error("Cannot convert operands to numbers for subtraction");
+    }
     
     return value_new_number(a_num - b_num);
 }
 
 /**
  * @brief Multiplication operator
- * @param a First operand
- * @param b Second operand
- * @return Value* Result of a * b
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Result of multiplication operation or error value
  */
 Value* op_multiply(Value* a, Value* b) {
     if (!a || !b) {
-        return value_new_null();
+        return create_error("Null operand in multiplication");
     }
     
-    double a_num = value_to_number(a);
-    double b_num = value_to_number(b);
+    double a_num, b_num;
+    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
+        return create_error("Cannot convert operands to numbers for multiplication");
+    }
     
     return value_new_number(a_num * b_num);
 }
 
 /**
  * @brief Division operator
- * @param a First operand (dividend)
- * @param b Second operand (divisor) 
- * @return Value* Result of a / b
+ * @param a Left operand value (dividend)
+ * @param b Right operand value (divisor)
+ * @return Result of division operation or error value
  */
 Value* op_divide(Value* a, Value* b) {
     if (!a || !b) {
-        return value_new_null();
+        return create_error("Null operand in division");
     }
     
-    double a_num = value_to_number(a);
-    double b_num = value_to_number(b);
+    double a_num, b_num;
+    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
+        return create_error("Cannot convert operands to numbers for division");
+    }
     
-    // Division by zero returns Infinity or -Infinity
+    if (b_num == 0.0) {
+        return create_error("Division by zero");
+    }
+    
     return value_new_number(a_num / b_num);
 }
 
 /**
  * @brief Modulo operator
- * @param a First operand
- * @param b Second operand
- * @return Value* Result of a % b
+ * @param a Left operand value (dividend)
+ * @param b Right operand value (divisor)
+ * @return Result of modulo operation or error value
  */
 Value* op_modulo(Value* a, Value* b) {
     if (!a || !b) {
-        return value_new_null();
+        return create_error("Null operand in modulo");
     }
     
-    double a_num = value_to_number(a);
-    double b_num = value_to_number(b);
+    double a_num, b_num;
+    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
+        return create_error("Cannot convert operands to numbers for modulo");
+    }
     
-    // Use fmod for floating point modulo
+    if (b_num == 0.0) {
+        return create_error("Modulo by zero");
+    }
+    
     return value_new_number(fmod(a_num, b_num));
 }
 
-/* Comparison operators */
-
 /**
  * @brief Equality comparison
- * @param a First operand
- * @param b Second operand
- * @return Value* Boolean result of a = b (note: ZEN uses = for equality)
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Boolean value indicating equality or error value
  */
 Value* op_equals(Value* a, Value* b) {
+    if (!a || !b) {
+        return create_error("Null operand in equality comparison");
+    }
+    
     return value_new_boolean(value_equals(a, b));
 }
 
 /**
  * @brief Inequality comparison
- * @param a First operand
- * @param b Second operand
- * @return Value* Boolean result of a != b
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Boolean value indicating inequality or error value
  */
 Value* op_not_equals(Value* a, Value* b) {
+    if (!a || !b) {
+        return create_error("Null operand in inequality comparison");
+    }
+    
     return value_new_boolean(!value_equals(a, b));
 }
 
 /**
  * @brief Less than comparison
- * @param a First operand
- * @param b Second operand
- * @return Value* Boolean result of a < b
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Boolean value indicating if a < b or error value
  */
 Value* op_less_than(Value* a, Value* b) {
     if (!a || !b) {
-        return value_new_boolean(false);
+        return create_error("Null operand in less than comparison");
     }
     
-    // For strings, use lexicographic comparison
-    if (a->type == VALUE_STRING && b->type == VALUE_STRING) {
-        if (!a->data.string || !b->data.string) {
-            return value_new_boolean(false);
-        }
-        return value_new_boolean(strcmp(a->data.string, b->data.string) < 0);
+    int cmp = compare_values(a, b);
+    if (cmp == INT_MIN) {
+        return create_error("Cannot compare values of incompatible types");
     }
     
-    // For numbers, convert both to numbers
-    double a_num = value_to_number(a);
-    double b_num = value_to_number(b);
-    
-    // Handle NaN: any comparison with NaN is false
-    if (isnan(a_num) || isnan(b_num)) {
-        return value_new_boolean(false);
-    }
-    
-    return value_new_boolean(a_num < b_num);
+    return value_new_boolean(cmp < 0);
 }
 
 /**
  * @brief Greater than comparison
- * @param a First operand
- * @param b Second operand
- * @return Value* Boolean result of a > b
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Boolean value indicating if a > b or error value
  */
 Value* op_greater_than(Value* a, Value* b) {
     if (!a || !b) {
-        return value_new_boolean(false);
+        return create_error("Null operand in greater than comparison");
     }
     
-    // For strings, use lexicographic comparison
-    if (a->type == VALUE_STRING && b->type == VALUE_STRING) {
-        if (!a->data.string || !b->data.string) {
-            return value_new_boolean(false);
-        }
-        return value_new_boolean(strcmp(a->data.string, b->data.string) > 0);
+    int cmp = compare_values(a, b);
+    if (cmp == INT_MIN) {
+        return create_error("Cannot compare values of incompatible types");
     }
     
-    // For numbers, convert both to numbers
-    double a_num = value_to_number(a);
-    double b_num = value_to_number(b);
-    
-    // Handle NaN: any comparison with NaN is false
-    if (isnan(a_num) || isnan(b_num)) {
-        return value_new_boolean(false);
-    }
-    
-    return value_new_boolean(a_num > b_num);
+    return value_new_boolean(cmp > 0);
 }
-
-/* Logical operators */
 
 /**
  * @brief Logical AND
- * @param a First operand
- * @param b Second operand
- * @return Value* Result of a & b (ZEN uses & for logical AND)
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Result of logical AND operation or error value
  */
 Value* op_logical_and(Value* a, Value* b) {
-    if (!a) {
-        return value_new_boolean(false);
+    if (!a || !b) {
+        return create_error("Null operand in logical AND");
     }
     
-    // Short-circuit: if a is falsy, return a
-    if (!value_to_boolean(a)) {
+    /* Short-circuit evaluation: if a is falsy, return a */
+    if (!is_truthy(a)) {
         return value_ref(a);
     }
     
-    // Otherwise return b
-    return b ? value_ref(b) : value_new_null();
+    /* Otherwise return b */
+    return value_ref(b);
 }
 
 /**
  * @brief Logical OR
- * @param a First operand
- * @param b Second operand
- * @return Value* Result of a | b (ZEN uses | for logical OR)
+ * @param a Left operand value
+ * @param b Right operand value
+ * @return Result of logical OR operation or error value
  */
 Value* op_logical_or(Value* a, Value* b) {
-    if (!a) {
-        return b ? value_ref(b) : value_new_null();
+    if (!a || !b) {
+        return create_error("Null operand in logical OR");
     }
     
-    // Short-circuit: if a is truthy, return a
-    if (value_to_boolean(a)) {
+    /* Short-circuit evaluation: if a is truthy, return a */
+    if (is_truthy(a)) {
         return value_ref(a);
     }
     
-    // Otherwise return b
-    return b ? value_ref(b) : value_new_null();
+    /* Otherwise return b */
+    return value_ref(b);
 }
 
 /**
  * @brief Logical NOT
- * @param a Operand
- * @return Value* Boolean result of !a
+ * @param a Operand value to negate
+ * @return Boolean value indicating logical negation or error value
  */
 Value* op_logical_not(Value* a) {
-    return value_new_boolean(!value_to_boolean(a));
+    if (!a) {
+        return create_error("Null operand in logical NOT");
+    }
+    
+    return value_new_boolean(!is_truthy(a));
+}
+
+/* Helper function implementations */
+
+/**
+ * @brief Create an error value with a message
+ * @param message Error message
+ * @return Error value
+ */
+static Value* create_error(const char* message) {
+    Value* error = value_new(VALUE_ERROR);
+    if (error && message) {
+        error->as.error = malloc(sizeof(ZenError));
+        if (error->as.error) {
+            error->as.error->message = strdup(message);
+            error->as.error->code = -1;
+        }
+    }
+    return error;
+}
+
+/**
+ * @brief Convert a value to a number
+ * @param value Value to convert
+ * @param result Pointer to store the result
+ * @return true if conversion successful, false otherwise
+ */
+static bool to_number(const Value* value, double* result) {
+    if (!value || !result) {
+        return false;
+    }
+    
+    switch (value->type) {
+        case VALUE_NUMBER:
+            *result = value->as.number;
+            return true;
+            
+        case VALUE_BOOLEAN:
+            *result = value->as.boolean ? 1.0 : 0.0;
+            return true;
+            
+        case VALUE_NULL:
+            *result = 0.0;
+            return true;
+            
+        case VALUE_STRING:
+            if (value->as.string && value->as.string->data) {
+                char* endptr;
+                *result = strtod(value->as.string->data, &endptr);
+                return *endptr == '\0' && endptr != value->as.string->data;
+            }
+            return false;
+            
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Concatenate two strings
+ * @param a First string
+ * @param b Second string
+ * @return Concatenated string (caller must free)
+ */
+static char* concat_strings(const char* a, const char* b) {
+    if (!a || !b) {
+        return NULL;
+    }
+    
+    size_t len_a = strlen(a);
+    size_t len_b = strlen(b);
+    size_t total_len = len_a + len_b + 1;
+    
+    char* result = malloc(total_len);
+    if (!result) {
+        return NULL;
+    }
+    
+    strcpy(result, a);
+    strcat(result, b);
+    
+    return result;
+}
+
+/**
+ * @brief Check if a value is truthy
+ * @param value Value to check
+ * @return true if truthy, false if falsy
+ */
+static bool is_truthy(const Value* value) {
+    if (!value) {
+        return false;
+    }
+    
+    switch (value->type) {
+        case VALUE_NULL:
+            return false;
+            
+        case VALUE_BOOLEAN:
+            return value->as.boolean;
+            
+        case VALUE_NUMBER:
+            return value->as.number != 0.0 && !isnan(value->as.number);
+            
+        case VALUE_STRING:
+            return value->as.string && value->as.string->data && strlen(value->as.string->data) > 0;
+            
+        case VALUE_ARRAY:
+            return value->as.array && value->as.array->length > 0;
+            
+        case VALUE_OBJECT:
+            return value->as.object && value->as.object->length > 0;
+            
+        case VALUE_ERROR:
+            return false;
+            
+        default:
+            return true;
+    }
+}
+
+/**
+ * @brief Compare two values for ordering
+ * @param a First value
+ * @param b Second value
+ * @return -1 if a < b, 0 if a == b, 1 if a > b, INT_MIN on error
+ */
+static int compare_values(const Value* a, const Value* b) {
+    if (!a || !b) {
+        return INT_MIN;
+    }
+    
+    /* Same type comparisons */
+    if (a->type == b->type) {
+        switch (a->type) {
+            case VALUE_NULL:
+                return 0;
+                
+            case VALUE_BOOLEAN:
+                if (a->as.boolean == b->as.boolean) return 0;
+                return a->as.boolean ? 1 : -1;
+                
+            case VALUE_NUMBER: {
+                double diff = a->as.number - b->as.number;
+                if (diff < 0) return -1;
+                if (diff > 0) return 1;
+                return 0;
+            }
+            
+            case VALUE_STRING:
+                if (!a->as.string || !a->as.string->data || !b->as.string || !b->as.string->data) {
+                    return INT_MIN;
+                }
+                return strcmp(a->as.string->data, b->as.string->data);
+                
+            default:
+                return INT_MIN; /* Cannot compare arrays, objects, etc. */
+        }
+    }
+    
+    /* Different type comparisons - try to convert to numbers */
+    double a_num, b_num;
+    if (to_number(a, &a_num) && to_number(b, &b_num)) {
+        double diff = a_num - b_num;
+        if (diff < 0) return -1;
+        if (diff > 0) return 1;
+        return 0;
+    }
+    
+    /* Cannot compare */
+    return INT_MIN;
 }

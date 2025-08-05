@@ -1,0 +1,26 @@
+# Function definitions and calls
+function add x y
+    return x + y
+
+function multiply x y
+    return x * y
+
+function greet name
+    return "Hello, " + name + "!"
+
+function factorial n
+    if n <= 1
+        return 1
+    else
+        return n * factorial (n - 1)
+
+# Test the functions
+set sum add 10 5
+set product multiply 7 8
+set greeting greet "ZEN"
+set fact factorial 5
+
+print sum
+print product
+print greeting
+print "5! = " + fact

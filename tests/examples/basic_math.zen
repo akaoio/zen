@@ -1,0 +1,17 @@
+# Basic arithmetic operations
+set a 10
+set b 5
+
+set sum a + b
+set difference a - b
+set product a * b
+set quotient a / b
+set remainder a % b
+
+print "a = " + a
+print "b = " + b
+print "Sum: " + sum
+print "Difference: " + difference
+print "Product: " + product
+print "Quotient: " + quotient
+print "Remainder: " + remainder

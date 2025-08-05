@@ -46,6 +46,18 @@
           "returns": "token_T*"
         },
         {
+          "name": "lexer_collect_number",
+          "signature": "token_T* lexer_collect_number(lexer_T* lexer)",
+          "description": "Collect number token",
+          "returns": "token_T*"
+        },
+        {
+          "name": "lexer_keyword_type",
+          "signature": "int lexer_keyword_type(const char* value)",
+          "description": "Get token type for keyword",
+          "returns": "int"
+        },
+        {
           "name": "lexer_advance_with_token",
           "signature": "token_T* lexer_advance_with_token(lexer_T* lexer, token_T* token)",
           "description": "Advance and return token",
@@ -65,40 +77,183 @@
       "description": "Recursive descent parser",
       "functions": [
         {
-          "name": "parser_new",
-          "signature": "Parser* parser_new(Lexer* lexer)",
-          "description": "Create parser instance"
+          "name": "init_parser",
+          "signature": "parser_T* init_parser(lexer_T* lexer)",
+          "description": "Create parser instance",
+          "returns": "parser_T*"
         },
         {
-          "name": "parser_free",
-          "signature": "void parser_free(Parser* parser)",
-          "description": "Free parser memory"
+          "name": "parser_eat",
+          "signature": "void parser_eat(parser_T* parser, int token_type)",
+          "description": "Consume expected token type"
         },
         {
           "name": "parser_parse",
-          "signature": "AST_Node* parser_parse(Parser* parser)",
+          "signature": "AST_T* parser_parse(parser_T* parser, scope_T* scope)",
           "description": "Parse input and return AST",
-          "returns": "AST_Node*"
+          "returns": "AST_T*"
         },
         {
           "name": "parser_parse_statement",
-          "signature": "AST_Node* parser_parse_statement(Parser* parser)",
-          "description": "Parse a single statement"
+          "signature": "AST_T* parser_parse_statement(parser_T* parser, scope_T* scope)",
+          "description": "Parse a single statement",
+          "returns": "AST_T*"
         },
         {
-          "name": "parser_parse_expression",
-          "signature": "AST_Node* parser_parse_expression(Parser* parser)",
-          "description": "Parse expression with precedence"
+          "name": "parser_parse_statements",
+          "signature": "AST_T* parser_parse_statements(parser_T* parser, scope_T* scope)",
+          "description": "Parse multiple statements",
+          "returns": "AST_T*"
         },
         {
-          "name": "parser_parse_function_def",
-          "signature": "AST_Node* parser_parse_function_def(Parser* parser)",
-          "description": "Parse function definition"
+          "name": "parser_parse_expr",
+          "signature": "AST_T* parser_parse_expr(parser_T* parser, scope_T* scope)",
+          "description": "Parse expression",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_function_call",
+          "signature": "AST_T* parser_parse_function_call(parser_T* parser, scope_T* scope)",
+          "description": "Parse function call",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_variable_definition",
+          "signature": "AST_T* parser_parse_variable_definition(parser_T* parser, scope_T* scope)",
+          "description": "Parse variable definition",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_function_definition",
+          "signature": "AST_T* parser_parse_function_definition(parser_T* parser, scope_T* scope)",
+          "description": "Parse function definition",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_variable",
+          "signature": "AST_T* parser_parse_variable(parser_T* parser, scope_T* scope)",
+          "description": "Parse variable reference",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_string",
+          "signature": "AST_T* parser_parse_string(parser_T* parser, scope_T* scope)",
+          "description": "Parse string literal",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_id",
+          "signature": "AST_T* parser_parse_id(parser_T* parser, scope_T* scope)",
+          "description": "Parse identifier",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_binary_expr",
+          "signature": "AST_T* parser_parse_binary_expr(parser_T* parser, scope_T* scope, int min_precedence)",
+          "description": "Parse binary expression with operator precedence",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_unary_expr",
+          "signature": "AST_T* parser_parse_unary_expr(parser_T* parser, scope_T* scope)",
+          "description": "Parse unary expression (-, !, etc.)",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_primary_expr",
+          "signature": "AST_T* parser_parse_primary_expr(parser_T* parser, scope_T* scope)",
+          "description": "Parse primary expression (literals, variables, parenthesized expressions)",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_id_or_object",
+          "signature": "AST_T* parser_parse_id_or_object(parser_T* parser, scope_T* scope)",
+          "description": "Parse identifier or object literal based on context",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_number",
+          "signature": "AST_T* parser_parse_number(parser_T* parser, scope_T* scope)",
+          "description": "Parse number literal",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_boolean",
+          "signature": "AST_T* parser_parse_boolean(parser_T* parser, scope_T* scope)",
+          "description": "Parse boolean literal (true/false)",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_null",
+          "signature": "AST_T* parser_parse_null(parser_T* parser, scope_T* scope)",
+          "description": "Parse null literal",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_array",
+          "signature": "AST_T* parser_parse_array(parser_T* parser, scope_T* scope)",
+          "description": "Parse array literal with comma-separated elements",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_object",
+          "signature": "AST_T* parser_parse_object(parser_T* parser, scope_T* scope)",
+          "description": "Parse object literal with key-value pairs",
+          "returns": "AST_T*"
         },
         {
           "name": "parser_parse_if_statement",
-          "signature": "AST_Node* parser_parse_if_statement(Parser* parser)",
-          "description": "Parse if/elif/else"
+          "signature": "AST_T* parser_parse_if_statement(parser_T* parser, scope_T* scope)",
+          "description": "Parse if/elif/else statement",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_while_loop",
+          "signature": "AST_T* parser_parse_while_loop(parser_T* parser, scope_T* scope)",
+          "description": "Parse while loop statement",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_for_loop",
+          "signature": "AST_T* parser_parse_for_loop(parser_T* parser, scope_T* scope)",
+          "description": "Parse for loop statement",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_return_statement",
+          "signature": "AST_T* parser_parse_return_statement(parser_T* parser, scope_T* scope)",
+          "description": "Parse return statement",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_break_statement",
+          "signature": "AST_T* parser_parse_break_statement(parser_T* parser, scope_T* scope)",
+          "description": "Parse break statement",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_parse_continue_statement",
+          "signature": "AST_T* parser_parse_continue_statement(parser_T* parser, scope_T* scope)",
+          "description": "Parse continue statement",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "parser_get_precedence",
+          "signature": "int parser_get_precedence(int token_type)",
+          "description": "Get operator precedence for token type",
+          "returns": "int"
+        },
+        {
+          "name": "parser_is_binary_operator",
+          "signature": "int parser_is_binary_operator(int token_type)",
+          "description": "Check if token type is a binary operator",
+          "returns": "int"
+        },
+        {
+          "name": "parser_peek_for_object_literal",
+          "signature": "int parser_peek_for_object_literal(parser_T* parser)",
+          "description": "Look ahead to determine if parsing an object literal",
+          "returns": "int"
         }
       ]
     },
@@ -107,19 +262,311 @@
       "rename_from": "src/AST.c",
       "functions": [
         {
-          "name": "ast_node_new",
-          "signature": "AST_Node* ast_node_new(AST_NodeType type)",
-          "description": "Create new AST node"
+          "name": "init_ast",
+          "signature": "AST_T* init_ast(int type)",
+          "description": "Create new AST node",
+          "returns": "AST_T*"
         },
         {
-          "name": "ast_node_free",
-          "signature": "void ast_node_free(AST_Node* node)",
-          "description": "Free AST node and children"
+          "name": "ast_new_number",
+          "signature": "AST_T* ast_new_number(double value)",
+          "description": "Create a new number AST node",
+          "returns": "AST_T*"
         },
         {
-          "name": "ast_node_add_child",
-          "signature": "void ast_node_add_child(AST_Node* parent, AST_Node* child)",
-          "description": "Add child to AST node"
+          "name": "ast_new_boolean",
+          "signature": "AST_T* ast_new_boolean(int value)",
+          "description": "Create a new boolean AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_null",
+          "signature": "AST_T* ast_new_null(void)",
+          "description": "Create a new null AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_string",
+          "signature": "AST_T* ast_new_string(const char* value)",
+          "description": "Create a new string AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_binary_op",
+          "signature": "AST_T* ast_new_binary_op(int operator_type, AST_T* left, AST_T* right)",
+          "description": "Create a new binary operation AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_unary_op",
+          "signature": "AST_T* ast_new_unary_op(int operator_type, AST_T* operand)",
+          "description": "Create a new unary operation AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_array",
+          "signature": "AST_T* ast_new_array(AST_T** elements, size_t size)",
+          "description": "Create a new array AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_new_object",
+          "signature": "AST_T* ast_new_object(char** keys, AST_T** values, size_t size)",
+          "description": "Create a new object AST node",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "ast_free",
+          "signature": "void ast_free(AST_T* ast)",
+          "description": "Free an AST node and all its children recursively"
+        }
+      ]
+    },
+    "src/core/token.c": {
+      "description": "Token implementation",
+      "functions": [
+        {
+          "name": "init_token",
+          "signature": "token_T* init_token(int type, char* value)",
+          "description": "Create new token",
+          "returns": "token_T*"
+        }
+      ]
+    },
+    "src/core/scope.c": {
+      "description": "Scope and symbol table management",
+      "functions": [
+        {
+          "name": "init_scope",
+          "signature": "scope_T* init_scope()",
+          "description": "Create new scope instance",
+          "returns": "scope_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "scope_add_function_definition",
+          "signature": "AST_T* scope_add_function_definition(scope_T* scope, AST_T* fdef)",
+          "description": "Add function definition to scope",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "scope_get_function_definition",
+          "signature": "AST_T* scope_get_function_definition(scope_T* scope, const char* fname)",
+          "description": "Get function definition from scope",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "scope_add_variable_definition",
+          "signature": "AST_T* scope_add_variable_definition(scope_T* scope, AST_T* vdef)",
+          "description": "Add variable definition to scope",
+          "returns": "AST_T*"
+        },
+        {
+          "name": "scope_get_variable_definition",
+          "signature": "AST_T* scope_get_variable_definition(scope_T* scope, const char* name)",
+          "description": "Get variable definition from scope",
+          "returns": "AST_T*"
+        }
+      ]
+    },
+    "src/core/visitor.c": {
+      "description": "AST visitor pattern implementation",
+      "functions": [
+        {
+          "name": "init_visitor",
+          "signature": "visitor_T* init_visitor()",
+          "description": "Create new visitor instance",
+          "returns": "visitor_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit",
+          "signature": "AST_T* visitor_visit(visitor_T* visitor, AST_T* node)",
+          "description": "Visit AST node",
+          "returns": "AST_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_variable_definition",
+          "signature": "AST_T* visitor_visit_variable_definition(visitor_T* visitor, AST_T* node)",
+          "description": "Visit variable definition node",
+          "returns": "AST_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_function_definition",
+          "signature": "AST_T* visitor_visit_function_definition(visitor_T* visitor, AST_T* node)",
+          "description": "Visit function definition node",
+          "returns": "AST_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_variable",
+          "signature": "AST_T* visitor_visit_variable(visitor_T* visitor, AST_T* node)",
+          "description": "Visit variable node",
+          "returns": "AST_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_function_call",
+          "signature": "AST_T* visitor_visit_function_call(visitor_T* visitor, AST_T* node)",
+          "description": "Visit function call node",
+          "returns": "AST_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_string",
+          "signature": "AST_T* visitor_visit_string(visitor_T* visitor, AST_T* node)",
+          "description": "Visit string node",
+          "returns": "AST_T*",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_compound",
+          "signature": "AST_T* visitor_visit_compound(visitor_T* visitor, AST_T* node)",
+          "description": "Visit compound node",
+          "returns": "AST_T*",
+          "doxygen_required": true
+        }
+      ]
+    },
+    "src/core/error.c": {
+      "description": "Error handling and reporting",
+      "functions": []
+    },
+    "src/core/memory.c": {
+      "description": "Memory management utilities",
+      "functions": [
+        {
+          "name": "memory_alloc",
+          "signature": "void* memory_alloc(size_t size)",
+          "description": "Safe memory allocation with zero initialization",
+          "returns": "void*"
+        },
+        {
+          "name": "memory_realloc",
+          "signature": "void* memory_realloc(void* ptr, size_t new_size)",
+          "description": "Safe memory reallocation",
+          "returns": "void*"
+        },
+        {
+          "name": "memory_free",
+          "signature": "void memory_free(void* ptr)",
+          "description": "Safe memory deallocation"
+        },
+        {
+          "name": "memory_strdup",
+          "signature": "char* memory_strdup(const char* str)",
+          "description": "Duplicate a null-terminated string",
+          "returns": "char*"
+        },
+        {
+          "name": "memory_ref_inc",
+          "signature": "size_t memory_ref_inc(size_t* ref_count)",
+          "description": "Increment reference count atomically",
+          "returns": "size_t"
+        },
+        {
+          "name": "memory_ref_dec",
+          "signature": "size_t memory_ref_dec(size_t* ref_count)",
+          "description": "Decrement reference count atomically",
+          "returns": "size_t"
+        },
+        {
+          "name": "memory_ref_get",
+          "signature": "size_t memory_ref_get(const size_t* ref_count)",
+          "description": "Get reference count value atomically",
+          "returns": "size_t"
+        },
+        {
+          "name": "memory_debug_enable",
+          "signature": "void memory_debug_enable(bool enable)",
+          "description": "Enable or disable memory debugging"
+        },
+        {
+          "name": "memory_debug_is_enabled",
+          "signature": "bool memory_debug_is_enabled(void)",
+          "description": "Check if memory debugging is enabled",
+          "returns": "bool"
+        },
+        {
+          "name": "memory_get_stats",
+          "signature": "void memory_get_stats(MemoryStats* stats)",
+          "description": "Get current memory allocation statistics"
+        },
+        {
+          "name": "memory_reset_stats",
+          "signature": "void memory_reset_stats(void)",
+          "description": "Reset memory allocation statistics"
+        },
+        {
+          "name": "memory_print_leak_report",
+          "signature": "void memory_print_leak_report(void)",
+          "description": "Print memory leak report to stderr"
+        },
+        {
+          "name": "memory_check_leaks",
+          "signature": "size_t memory_check_leaks(void)",
+          "description": "Check for memory leaks",
+          "returns": "size_t"
+        },
+        {
+          "name": "memory_debug_cleanup",
+          "signature": "void memory_debug_cleanup(void)",
+          "description": "Clean up memory debugging system"
+        },
+        {
+          "name": "memory_validate_ptr",
+          "signature": "bool memory_validate_ptr(const void* ptr, size_t expected_size)",
+          "description": "Validate a memory pointer",
+          "returns": "bool"
+        },
+        {
+          "name": "memory_is_tracked",
+          "signature": "bool memory_is_tracked(const void* ptr)",
+          "description": "Check if pointer is tracked by memory system",
+          "returns": "bool"
+        },
+        {
+          "name": "memory_debug_alloc",
+          "signature": "void* memory_debug_alloc(size_t size, const char* file, int line)",
+          "description": "Debug allocation with file and line tracking",
+          "returns": "void*"
+        },
+        {
+          "name": "memory_debug_realloc",
+          "signature": "void* memory_debug_realloc(void* ptr, size_t new_size, const char* file, int line)",
+          "description": "Debug reallocation with file and line tracking",
+          "returns": "void*"
+        },
+        {
+          "name": "memory_debug_free",
+          "signature": "void memory_debug_free(void* ptr, const char* file, int line)",
+          "description": "Debug free with file and line tracking"
+        },
+        {
+          "name": "memory_debug_strdup",
+          "signature": "char* memory_debug_strdup(const char* str, const char* file, int line)",
+          "description": "Debug string duplication with file and line tracking",
+          "returns": "char*"
+        }
+      ]
+    },
+    "src/main.c": {
+      "description": "Main entry point for ZEN interpreter",
+      "functions": [
+        {
+          "name": "print_help",
+          "signature": "void print_help()",
+          "description": "Print help information",
+          "doxygen_required": true
+        },
+        {
+          "name": "main",
+          "signature": "int main(int argc, char* argv[])",
+          "description": "Main entry point",
+          "returns": "int",
+          "doxygen_required": true
         }
       ]
     },
@@ -129,62 +576,74 @@
         {
           "name": "value_new",
           "signature": "Value* value_new(ValueType type)",
-          "description": "Create new value"
+          "description": "Create new value",
+          "doxygen_required": true
         },
         {
           "name": "value_new_string",
           "signature": "Value* value_new_string(const char* str)",
-          "description": "Create string value"
+          "description": "Create string value",
+          "doxygen_required": true
         },
         {
           "name": "value_new_number",
           "signature": "Value* value_new_number(double num)",
-          "description": "Create number value"
+          "description": "Create number value",
+          "doxygen_required": true
         },
         {
           "name": "value_new_boolean",
           "signature": "Value* value_new_boolean(bool val)",
-          "description": "Create boolean value"
+          "description": "Create boolean value",
+          "doxygen_required": true
         },
         {
           "name": "value_new_null",
           "signature": "Value* value_new_null(void)",
-          "description": "Create null value"
+          "description": "Create null value",
+          "doxygen_required": true
         },
         {
           "name": "value_copy",
           "signature": "Value* value_copy(const Value* value)",
-          "description": "Deep copy value"
+          "description": "Deep copy value",
+          "doxygen_required": true
         },
         {
           "name": "value_free",
           "signature": "void value_free(Value* value)",
-          "description": "Free value memory"
+          "description": "Free value memory",
+          "doxygen_required": true
         },
         {
           "name": "value_to_string",
           "signature": "char* value_to_string(const Value* value)",
-          "description": "Convert value to string representation"
+          "description": "Convert value to string representation",
+          "doxygen_required": true
         },
         {
           "name": "value_equals",
           "signature": "bool value_equals(const Value* a, const Value* b)",
-          "description": "Compare two values for equality"
+          "description": "Compare two values for equality",
+          "doxygen_required": true
         },
         {
           "name": "value_type_name",
           "signature": "const char* value_type_name(ValueType type)",
-          "description": "Get string name of value type"
+          "description": "Get string name of value type",
+          "doxygen_required": true
         },
         {
           "name": "value_ref",
           "signature": "Value* value_ref(Value* value)",
-          "description": "Increment reference count of value"
+          "description": "Increment reference count of value",
+          "doxygen_required": true
         },
         {
           "name": "value_unref",
           "signature": "void value_unref(Value* value)",
-          "description": "Decrement reference count and free if zero"
+          "description": "Decrement reference count and free if zero",
+          "doxygen_required": true
         }
       ]
     },
@@ -328,19 +787,50 @@
       "rename_from": "src/io.c",
       "functions": [
         {
-          "name": "io_read_file",
-          "signature": "char* io_read_file(const char* path)",
-          "description": "Read entire file to string"
+          "name": "get_file_contents",
+          "signature": "char* get_file_contents(const char* filepath)",
+          "description": "Read entire file to string",
+          "returns": "char*"
         },
         {
-          "name": "io_write_file",
-          "signature": "bool io_write_file(const char* path, const char* content)",
-          "description": "Write string to file"
+          "name": "zen_print",
+          "signature": "void zen_print(const Value* value)",
+          "description": "Print Value to stdout with newline"
         },
         {
-          "name": "io_file_exists",
-          "signature": "bool io_file_exists(const char* path)",
-          "description": "Check if file exists"
+          "name": "zen_print_no_newline",
+          "signature": "void zen_print_no_newline(const Value* value)",
+          "description": "Print Value to stdout without newline"
+        },
+        {
+          "name": "zen_input",
+          "signature": "char* zen_input(void)",
+          "description": "Read a line from stdin",
+          "returns": "char*"
+        },
+        {
+          "name": "zen_input_prompt",
+          "signature": "char* zen_input_prompt(const char* prompt)",
+          "description": "Read a line from stdin with prompt",
+          "returns": "char*"
+        },
+        {
+          "name": "zen_write_file",
+          "signature": "bool zen_write_file(const char* filepath, const char* content)",
+          "description": "Write string to file",
+          "returns": "bool"
+        },
+        {
+          "name": "zen_append_file",
+          "signature": "bool zen_append_file(const char* filepath, const char* content)",
+          "description": "Append string to file",
+          "returns": "bool"
+        },
+        {
+          "name": "zen_file_exists",
+          "signature": "bool zen_file_exists(const char* filepath)",
+          "description": "Check if file exists",
+          "returns": "bool"
         }
       ]
     },
@@ -368,6 +858,366 @@
           "description": "Convert cJSON to Value"
         }
       ]
+    },
+    "src/stdlib/convert.c": {
+      "description": "Type conversion utilities",
+      "functions": [
+        {
+          "name": "zen_to_string",
+          "signature": "Value* zen_to_string(const Value* value)",
+          "description": "Convert any value to string"
+        },
+        {
+          "name": "zen_to_number",
+          "signature": "Value* zen_to_number(const Value* value)",
+          "description": "Convert value to number"
+        },
+        {
+          "name": "zen_to_boolean",
+          "signature": "Value* zen_to_boolean(const Value* value)",
+          "description": "Convert value to boolean"
+        },
+        {
+          "name": "zen_type_of",
+          "signature": "Value* zen_type_of(const Value* value)",
+          "description": "Get type name of value"
+        },
+        {
+          "name": "zen_is_type",
+          "signature": "Value* zen_is_type(const Value* value, const char* type_name)",
+          "description": "Check if value is of specific type"
+        },
+        {
+          "name": "zen_parse_int",
+          "signature": "Value* zen_parse_int(const Value* str_value, const Value* base_value)",
+          "description": "Parse integer from string"
+        },
+        {
+          "name": "zen_parse_float",
+          "signature": "Value* zen_parse_float(const Value* str_value)",
+          "description": "Parse float from string"
+        }
+      ]
+    },
+    "src/stdlib/math.c": {
+      "description": "Mathematical functions and constants",
+      "functions": [
+        {
+          "name": "zen_math_abs",
+          "signature": "Value* zen_math_abs(const Value* num_value)",
+          "description": "Absolute value function"
+        },
+        {
+          "name": "zen_math_floor",
+          "signature": "Value* zen_math_floor(const Value* num_value)",
+          "description": "Floor function"
+        },
+        {
+          "name": "zen_math_ceil",
+          "signature": "Value* zen_math_ceil(const Value* num_value)",
+          "description": "Ceiling function"
+        },
+        {
+          "name": "zen_math_round",
+          "signature": "Value* zen_math_round(const Value* num_value)",
+          "description": "Round function"
+        },
+        {
+          "name": "zen_math_sqrt",
+          "signature": "Value* zen_math_sqrt(const Value* num_value)",
+          "description": "Square root function"
+        },
+        {
+          "name": "zen_math_pow",
+          "signature": "Value* zen_math_pow(const Value* base_value, const Value* exp_value)",
+          "description": "Power function"
+        },
+        {
+          "name": "zen_math_sin",
+          "signature": "Value* zen_math_sin(const Value* num_value)",
+          "description": "Sine function"
+        },
+        {
+          "name": "zen_math_cos",
+          "signature": "Value* zen_math_cos(const Value* num_value)",
+          "description": "Cosine function"
+        },
+        {
+          "name": "zen_math_tan",
+          "signature": "Value* zen_math_tan(const Value* num_value)",
+          "description": "Tangent function"
+        },
+        {
+          "name": "zen_math_log",
+          "signature": "Value* zen_math_log(const Value* num_value)",
+          "description": "Natural logarithm function"
+        },
+        {
+          "name": "zen_math_random",
+          "signature": "Value* zen_math_random()",
+          "description": "Random number generator"
+        },
+        {
+          "name": "zen_math_random_int",
+          "signature": "Value* zen_math_random_int(const Value* min_value, const Value* max_value)",
+          "description": "Random integer in range"
+        },
+        {
+          "name": "zen_math_min",
+          "signature": "Value* zen_math_min(const Value* a_value, const Value* b_value)",
+          "description": "Minimum of two values"
+        },
+        {
+          "name": "zen_math_max",
+          "signature": "Value* zen_math_max(const Value* a_value, const Value* b_value)",
+          "description": "Maximum of two values"
+        },
+        {
+          "name": "zen_math_is_nan",
+          "signature": "Value* zen_math_is_nan(const Value* num_value)",
+          "description": "Check if value is NaN"
+        },
+        {
+          "name": "zen_math_is_infinite",
+          "signature": "Value* zen_math_is_infinite(const Value* num_value)",
+          "description": "Check if value is infinite"
+        }
+      ]
+    },
+    "src/stdlib/stdlib.c": {
+      "description": "Standard library functions",
+      "functions": [
+        {
+          "name": "zen_stdlib_print",
+          "signature": "Value* zen_stdlib_print(Value** args, size_t argc)",
+          "description": "Print values to stdout"
+        },
+        {
+          "name": "zen_stdlib_input",
+          "signature": "Value* zen_stdlib_input(Value** args, size_t argc)",
+          "description": "Read input from stdin"
+        },
+        {
+          "name": "zen_stdlib_read_file",
+          "signature": "Value* zen_stdlib_read_file(Value** args, size_t argc)",
+          "description": "Read file contents"
+        },
+        {
+          "name": "zen_stdlib_write_file",
+          "signature": "Value* zen_stdlib_write_file(Value** args, size_t argc)",
+          "description": "Write content to file"
+        },
+        {
+          "name": "zen_stdlib_append_file",
+          "signature": "Value* zen_stdlib_append_file(Value** args, size_t argc)",
+          "description": "Append content to file"
+        },
+        {
+          "name": "zen_stdlib_file_exists",
+          "signature": "Value* zen_stdlib_file_exists(Value** args, size_t argc)",
+          "description": "Check if file exists"
+        },
+        {
+          "name": "zen_stdlib_length",
+          "signature": "Value* zen_stdlib_length(Value** args, size_t argc)",
+          "description": "Get length of string, array, or object"
+        },
+        {
+          "name": "zen_stdlib_upper",
+          "signature": "Value* zen_stdlib_upper(Value** args, size_t argc)",
+          "description": "Convert string to uppercase"
+        },
+        {
+          "name": "zen_stdlib_lower",
+          "signature": "Value* zen_stdlib_lower(Value** args, size_t argc)",
+          "description": "Convert string to lowercase"
+        },
+        {
+          "name": "zen_stdlib_trim",
+          "signature": "Value* zen_stdlib_trim(Value** args, size_t argc)",
+          "description": "Trim whitespace from string"
+        },
+        {
+          "name": "zen_stdlib_split",
+          "signature": "Value* zen_stdlib_split(Value** args, size_t argc)",
+          "description": "Split string by delimiter"
+        },
+        {
+          "name": "zen_stdlib_contains",
+          "signature": "Value* zen_stdlib_contains(Value** args, size_t argc)",
+          "description": "Check if string contains substring"
+        },
+        {
+          "name": "zen_stdlib_replace",
+          "signature": "Value* zen_stdlib_replace(Value** args, size_t argc)",
+          "description": "Replace substring in string"
+        },
+        {
+          "name": "zen_stdlib_abs",
+          "signature": "Value* zen_stdlib_abs(Value** args, size_t argc)",
+          "description": "Absolute value function"
+        },
+        {
+          "name": "zen_stdlib_floor",
+          "signature": "Value* zen_stdlib_floor(Value** args, size_t argc)",
+          "description": "Floor function"
+        },
+        {
+          "name": "zen_stdlib_ceil",
+          "signature": "Value* zen_stdlib_ceil(Value** args, size_t argc)",
+          "description": "Ceiling function"
+        },
+        {
+          "name": "zen_stdlib_round",
+          "signature": "Value* zen_stdlib_round(Value** args, size_t argc)",
+          "description": "Round function"
+        },
+        {
+          "name": "zen_stdlib_sqrt",
+          "signature": "Value* zen_stdlib_sqrt(Value** args, size_t argc)",
+          "description": "Square root function"
+        },
+        {
+          "name": "zen_stdlib_pow",
+          "signature": "Value* zen_stdlib_pow(Value** args, size_t argc)",
+          "description": "Power function"
+        },
+        {
+          "name": "zen_stdlib_sin",
+          "signature": "Value* zen_stdlib_sin(Value** args, size_t argc)",
+          "description": "Sine function"
+        },
+        {
+          "name": "zen_stdlib_cos",
+          "signature": "Value* zen_stdlib_cos(Value** args, size_t argc)",
+          "description": "Cosine function"
+        },
+        {
+          "name": "zen_stdlib_tan",
+          "signature": "Value* zen_stdlib_tan(Value** args, size_t argc)",
+          "description": "Tangent function"
+        },
+        {
+          "name": "zen_stdlib_log",
+          "signature": "Value* zen_stdlib_log(Value** args, size_t argc)",
+          "description": "Natural logarithm function"
+        },
+        {
+          "name": "zen_stdlib_random",
+          "signature": "Value* zen_stdlib_random(Value** args, size_t argc)",
+          "description": "Random number generator"
+        },
+        {
+          "name": "zen_stdlib_random_int",
+          "signature": "Value* zen_stdlib_random_int(Value** args, size_t argc)",
+          "description": "Random integer in range"
+        },
+        {
+          "name": "zen_stdlib_min",
+          "signature": "Value* zen_stdlib_min(Value** args, size_t argc)",
+          "description": "Minimum of two values"
+        },
+        {
+          "name": "zen_stdlib_max",
+          "signature": "Value* zen_stdlib_max(Value** args, size_t argc)",
+          "description": "Maximum of two values"
+        },
+        {
+          "name": "zen_stdlib_is_nan",
+          "signature": "Value* zen_stdlib_is_nan(Value** args, size_t argc)",
+          "description": "Check if value is NaN"
+        },
+        {
+          "name": "zen_stdlib_is_infinite",
+          "signature": "Value* zen_stdlib_is_infinite(Value** args, size_t argc)",
+          "description": "Check if value is infinite"
+        },
+        {
+          "name": "zen_stdlib_to_string",
+          "signature": "Value* zen_stdlib_to_string(Value** args, size_t argc)",
+          "description": "Convert value to string"
+        },
+        {
+          "name": "zen_stdlib_to_number",
+          "signature": "Value* zen_stdlib_to_number(Value** args, size_t argc)",
+          "description": "Convert value to number"
+        },
+        {
+          "name": "zen_stdlib_to_boolean",
+          "signature": "Value* zen_stdlib_to_boolean(Value** args, size_t argc)",
+          "description": "Convert value to boolean"
+        },
+        {
+          "name": "zen_stdlib_type_of",
+          "signature": "Value* zen_stdlib_type_of(Value** args, size_t argc)",
+          "description": "Get type name of value"
+        },
+        {
+          "name": "zen_stdlib_is_type",
+          "signature": "Value* zen_stdlib_is_type(Value** args, size_t argc)",
+          "description": "Check if value is of specific type"
+        },
+        {
+          "name": "zen_stdlib_parse_int",
+          "signature": "Value* zen_stdlib_parse_int(Value** args, size_t argc)",
+          "description": "Parse integer from string"
+        },
+        {
+          "name": "zen_stdlib_parse_float",
+          "signature": "Value* zen_stdlib_parse_float(Value** args, size_t argc)",
+          "description": "Parse float from string"
+        },
+        {
+          "name": "zen_stdlib_json_parse",
+          "signature": "Value* zen_stdlib_json_parse(Value** args, size_t argc)",
+          "description": "Parse JSON string"
+        },
+        {
+          "name": "zen_stdlib_json_stringify",
+          "signature": "Value* zen_stdlib_json_stringify(Value** args, size_t argc)",
+          "description": "Convert value to JSON string"
+        }
+      ]
+    },
+    "src/stdlib/string.c": {
+      "description": "String manipulation functions",
+      "functions": [
+        {
+          "name": "zen_string_length",
+          "signature": "Value* zen_string_length(const Value* str_value)",
+          "description": "Get string length"
+        },
+        {
+          "name": "zen_string_upper",
+          "signature": "Value* zen_string_upper(const Value* str_value)",
+          "description": "Convert string to uppercase"
+        },
+        {
+          "name": "zen_string_lower",
+          "signature": "Value* zen_string_lower(const Value* str_value)",
+          "description": "Convert string to lowercase"
+        },
+        {
+          "name": "zen_string_trim",
+          "signature": "Value* zen_string_trim(const Value* str_value)",
+          "description": "Remove whitespace from both ends"
+        },
+        {
+          "name": "zen_string_split",
+          "signature": "Value* zen_string_split(const Value* str_value, const char* delimiter)",
+          "description": "Split string by delimiter"
+        },
+        {
+          "name": "zen_string_contains",
+          "signature": "Value* zen_string_contains(const Value* str_value, const char* substring)",
+          "description": "Check if string contains substring"
+        },
+        {
+          "name": "zen_string_replace",
+          "signature": "Value* zen_string_replace(const Value* str_value, const char* search, const char* replace)",
+          "description": "Replace substring in string"
+        }
+      ]
     }
   },
   "headers": {
@@ -375,16 +1225,266 @@
       "description": "Lexer public interface",
       "structs": [
         {
-          "name": "Lexer",
+          "name": "LEXER_STRUCT",
           "fields": [
-            "const char* input",
-            "size_t position",
-            "size_t line",
-            "size_t column",
-            "Stack* indent_stack"
+            "char c",
+            "unsigned int i",
+            "char* contents",
+            "int current_indent",
+            "int* indent_stack",
+            "int indent_stack_size",
+            "int at_line_start"
           ]
         }
       ],
+      "typedefs": [
+        "typedef struct LEXER_STRUCT lexer_T"
+      ],
+      "enums": []
+    },
+    "src/include/zen/core/parser.h": {
+      "description": "Parser public interface",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/ast.h": {
+      "description": "AST node definitions",
+      "structs": [
+        {
+          "name": "AST_STRUCT",
+          "fields": [
+            "enum type",
+            "struct SCOPE_STRUCT* scope",
+            "char* variable_definition_variable_name",
+            "struct AST_STRUCT* variable_definition_value",
+            "struct AST_STRUCT* function_definition_body",
+            "char* function_definition_name",
+            "struct AST_STRUCT** function_definition_args",
+            "size_t function_definition_args_size",
+            "char* variable_name",
+            "char* function_call_name",
+            "struct AST_STRUCT** function_call_arguments",
+            "size_t function_call_arguments_size",
+            "char* string_value",
+            "double number_value",
+            "int boolean_value",
+            "struct AST_STRUCT** array_elements",
+            "size_t array_size",
+            "char** object_keys",
+            "struct AST_STRUCT** object_values",
+            "size_t object_size",
+            "int operator_type",
+            "struct AST_STRUCT* left",
+            "struct AST_STRUCT* right",
+            "struct AST_STRUCT* operand",
+            "struct AST_STRUCT* condition",
+            "struct AST_STRUCT* then_branch",
+            "struct AST_STRUCT* else_branch",
+            "struct AST_STRUCT* loop_condition",
+            "struct AST_STRUCT* loop_body",
+            "char* iterator_variable",
+            "struct AST_STRUCT* iterable",
+            "struct AST_STRUCT* for_body",
+            "struct AST_STRUCT* return_value",
+            "char* class_name",
+            "char* parent_class",
+            "struct AST_STRUCT** class_methods",
+            "size_t class_methods_size",
+            "struct AST_STRUCT* object",
+            "char* property_name",
+            "char* import_path",
+            "char** import_names",
+            "size_t import_names_size",
+            "struct AST_STRUCT* try_block",
+            "struct AST_STRUCT* catch_block",
+            "char* exception_variable",
+            "struct AST_STRUCT* exception_value",
+            "struct AST_STRUCT** lambda_args",
+            "size_t lambda_args_size",
+            "struct AST_STRUCT* lambda_body",
+            "struct AST_STRUCT** compound_value",
+            "size_t compound_size"
+          ]
+        }
+      ],
+      "typedefs": [
+        "typedef struct AST_STRUCT AST_T"
+      ],
+      "enums": [
+        {
+          "name": "AST_NODE_TYPE",
+          "values": [
+            "AST_VARIABLE_DEFINITION",
+            "AST_FUNCTION_DEFINITION",
+            "AST_VARIABLE",
+            "AST_FUNCTION_CALL",
+            "AST_COMPOUND",
+            "AST_NOOP",
+            "AST_STRING",
+            "AST_NUMBER",
+            "AST_BOOLEAN",
+            "AST_NULL",
+            "AST_ARRAY",
+            "AST_OBJECT",
+            "AST_BINARY_OP",
+            "AST_UNARY_OP",
+            "AST_ASSIGNMENT",
+            "AST_IF_STATEMENT",
+            "AST_WHILE_LOOP",
+            "AST_FOR_LOOP",
+            "AST_BREAK",
+            "AST_CONTINUE",
+            "AST_RETURN",
+            "AST_CLASS_DEFINITION",
+            "AST_METHOD_CALL",
+            "AST_PROPERTY_ACCESS",
+            "AST_IMPORT",
+            "AST_EXPORT",
+            "AST_TRY_CATCH",
+            "AST_THROW",
+            "AST_LAMBDA",
+            "AST_AWAIT",
+            "AST_ASYNC_FUNCTION"
+          ]
+        }
+      ]
+    },
+    "src/include/zen/core/scope.h": {
+      "description": "Scope and symbol table definitions",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/visitor.h": {
+      "description": "AST visitor pattern definitions",
+      "structs": [],
+      "typedefs": [],
+      "enums": [],
+      "function_declarations": [
+        {
+          "name": "init_visitor",
+          "signature": "visitor_T* init_visitor()",
+          "description": "Create new visitor instance",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit",
+          "signature": "AST_T* visitor_visit(visitor_T* visitor, AST_T* node)",
+          "description": "Visit AST node",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_variable_definition",
+          "signature": "AST_T* visitor_visit_variable_definition(visitor_T* visitor, AST_T* node)",
+          "description": "Visit variable definition node",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_function_definition",
+          "signature": "AST_T* visitor_visit_function_definition(visitor_T* visitor, AST_T* node)",
+          "description": "Visit function definition node",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_variable",
+          "signature": "AST_T* visitor_visit_variable(visitor_T* visitor, AST_T* node)",
+          "description": "Visit variable node",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_function_call",
+          "signature": "AST_T* visitor_visit_function_call(visitor_T* visitor, AST_T* node)",
+          "description": "Visit function call node",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_string",
+          "signature": "AST_T* visitor_visit_string(visitor_T* visitor, AST_T* node)",
+          "description": "Visit string node",
+          "doxygen_required": true
+        },
+        {
+          "name": "visitor_visit_compound",
+          "signature": "AST_T* visitor_visit_compound(visitor_T* visitor, AST_T* node)",
+          "description": "Visit compound node",
+          "doxygen_required": true
+        }
+      ]
+    },
+    "src/include/zen/core/error.h": {
+      "description": "Error handling definitions",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/memory.h": {
+      "description": "Memory management definitions",
+      "structs": [
+        {
+          "name": "MemoryStats",
+          "fields": [
+            "size_t total_allocated",
+            "size_t total_freed",
+            "size_t current_allocated",
+            "size_t peak_allocated",
+            "size_t allocation_count",
+            "size_t free_count"
+          ]
+        },
+        {
+          "name": "MemoryBlock",
+          "fields": [
+            "void* ptr",
+            "size_t size",
+            "const char* file",
+            "int line",
+            "struct MemoryBlock* next"
+          ]
+        }
+      ],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/runtime/operators.h": {
+      "description": "Operator function declarations",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/io.h": {
+      "description": "I/O function declarations",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/convert.h": {
+      "description": "Type conversion function declarations",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/json.h": {
+      "description": "JSON parsing function declarations",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/math.h": {
+      "description": "Mathematical function declarations",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/stdlib.h": {
+      "description": "Standard library function declarations",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/string.h": {
+      "description": "String manipulation function declarations",
+      "structs": [],
       "typedefs": [],
       "enums": []
     },
@@ -452,14 +1552,15 @@
       ],
       "structs": [
         {
-          "name": "Token",
+          "name": "TOKEN_STRUCT",
           "fields": [
-            "TokenType type",
-            "char* value",
-            "size_t line",
-            "size_t column"
+            "enum type",
+            "char* value"
           ]
         }
+      ],
+      "typedefs": [
+        "typedef struct TOKEN_STRUCT token_T"
       ]
     },
     "src/include/zen/types/value.h": {
@@ -487,6 +1588,80 @@
             "size_t ref_count",
             "union data"
           ]
+        }
+      ],
+      "function_declarations": [
+        {
+          "name": "value_new",
+          "signature": "Value* value_new(ValueType type)",
+          "description": "Create new value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_string",
+          "signature": "Value* value_new_string(const char* str)",
+          "description": "Create string value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_number",
+          "signature": "Value* value_new_number(double num)",
+          "description": "Create number value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_boolean",
+          "signature": "Value* value_new_boolean(bool val)",
+          "description": "Create boolean value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_new_null",
+          "signature": "Value* value_new_null(void)",
+          "description": "Create null value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_copy",
+          "signature": "Value* value_copy(const Value* value)",
+          "description": "Deep copy value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_free",
+          "signature": "void value_free(Value* value)",
+          "description": "Free value memory",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_to_string",
+          "signature": "char* value_to_string(const Value* value)",
+          "description": "Convert value to string representation",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_equals",
+          "signature": "bool value_equals(const Value* a, const Value* b)",
+          "description": "Compare two values for equality",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_type_name",
+          "signature": "const char* value_type_name(ValueType type)",
+          "description": "Get string name of value type",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_ref",
+          "signature": "Value* value_ref(Value* value)",
+          "description": "Increment reference count of value",
+          "doxygen_required": true
+        },
+        {
+          "name": "value_unref",
+          "signature": "void value_unref(Value* value)",
+          "description": "Decrement reference count and free if zero",
+          "doxygen_required": true
         }
       ]
     }

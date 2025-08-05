@@ -1,0 +1,4 @@
+print "Hello"
+set x 42
+print x
+exit

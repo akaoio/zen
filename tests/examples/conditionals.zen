@@ -1,0 +1,29 @@
+# Conditional statements
+set age 25
+set score 85
+
+if age >= 18
+    print "You are an adult"
+else
+    print "You are a minor"
+
+if score >= 90
+    print "Grade: A"
+elif score >= 80
+    print "Grade: B"
+elif score >= 70
+    print "Grade: C"
+elif score >= 60
+    print "Grade: D"
+else
+    print "Grade: F"
+
+# Boolean operations
+set is_adult age >= 18
+set is_passing score >= 60
+set can_vote is_adult & is_passing
+
+if can_vote
+    print "Eligible to vote"
+else
+    print "Not eligible to vote"

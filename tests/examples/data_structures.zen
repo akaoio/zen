@@ -1,0 +1,24 @@
+# ZEN data structures examples
+
+# Arrays using comma syntax
+set numbers 1, 2, 3, 4, 5
+set fruits "apple", "banana", "cherry"
+set mixed 42, "hello", true, null
+
+# Objects using key-value syntax
+set person name "Alice", age 30, active true
+set config debug true, timeout 5000, retries 3
+
+# Nested structures
+set student 
+    name "Bob",
+    grades 85, 92, 78, 88,
+    info 
+        email "bob@example.com",
+        phone "555-1234"
+
+# Using the data
+print "First number: " + numbers[0]
+print "Person name: " + person.name
+print "Person age: " + person.age
+print "Student email: " + student.info.email

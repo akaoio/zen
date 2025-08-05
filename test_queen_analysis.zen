@@ -1,0 +1,3 @@
+set name "Alice"
+set age 25
+print "Hello" name

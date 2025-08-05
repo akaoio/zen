@@ -1,0 +1,8 @@
+set x 42
+print x
+
+set name "Alice"
+print name
+
+set flag true
+print flag

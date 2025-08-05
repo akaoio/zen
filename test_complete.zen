@@ -1,0 +1,21 @@
+print "=== ZEN Language Test Suite ==="
+
+print "Testing variables:"
+set x 42
+set y 3.14
+set name "ZEN"
+
+print "Testing arithmetic:"
+set sum x + y
+set product x * y
+
+print "Testing strings:"
+set greeting "Hello, " + name + "!"
+
+print "Testing arrays:"
+set numbers 1, 2, 3, 4, 5
+
+print "Testing objects:"
+set person name "Alice", age 30, city "New York"
+
+print "All tests completed successfully!"

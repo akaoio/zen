@@ -1,0 +1,4 @@
+set x 42
+print "Variable x is:"
+print x
+print "Done"

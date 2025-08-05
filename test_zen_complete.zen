@@ -1,0 +1,58 @@
+# Complete ZEN Language Test Program
+# Tests all major language features implemented by swarm-2
+
+# Basic variables and arithmetic
+set x 42
+set y 3.14
+set result x + y
+set name "ZEN Language"
+
+# String operations  
+set greeting "Hello, " + name
+set message greeting + "!"
+
+# Boolean operations
+set is_ready true
+set is_testing false
+set both_true is_ready & is_testing
+set either_true is_ready | is_testing
+
+# Comparison operations
+set x_greater y < x
+set equal_check x = 42
+set not_equal y != x
+
+# Mathematical operations
+set sum x + y
+set difference x - y  
+set product x * y
+set quotient x / y
+set remainder x % 5
+
+# Conditional statements
+if x > 40
+    set status "large number"
+else
+    set status "small number"
+
+# Function definition and call
+function greet person
+    return "Hello, " + person
+
+set personal_greeting greet "World"
+
+# Array operations
+set numbers 1, 2, 3, 4, 5
+set mixed_array 42, "text", true, 3.14
+
+# Object/dictionary operations  
+set person name "Alice", age 30, active true
+
+# Print results to verify functionality
+print "=== ZEN Language Complete Test ==="
+print "Basic arithmetic: " + result
+print greeting
+print "Status: " + status
+print personal_greeting
+print "Comparison result: " + x_greater
+print "=== Test Complete ==="

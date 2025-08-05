@@ -1,0 +1,5 @@
+print "Before variable definition"
+set x 42
+print "After variable definition, before print"
+print x
+print "After print"
