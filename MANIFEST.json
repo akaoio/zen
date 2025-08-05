@@ -175,6 +175,16 @@
           "name": "value_type_name",
           "signature": "const char* value_type_name(ValueType type)",
           "description": "Get string name of value type"
+        },
+        {
+          "name": "value_ref",
+          "signature": "Value* value_ref(Value* value)",
+          "description": "Increment reference count of value"
+        },
+        {
+          "name": "value_unref",
+          "signature": "void value_unref(Value* value)",
+          "description": "Decrement reference count and free if zero"
         }
       ]
     },

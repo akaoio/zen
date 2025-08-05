@@ -67,6 +67,7 @@ class DNAAssembler {
             'project-context',
             'queen-capabilities',
             'workflow-start',
+            'task-management',
             'command-shortcuts',
             'queen-output'
         ];
@@ -103,7 +104,8 @@ class DNAAssembler {
             'sub-agent-context',
             'project-context',
             'architect-capabilities',
-            'workflow-start',
+            'architect-workflow',  // Mandatory task creation for architects
+            'task-management',
             'command-shortcuts',
             'coding-standards',
             'architect-output'
@@ -163,6 +165,7 @@ class DNAAssembler {
             'worker-capabilities',
             'workflow-start',
             'workspace-isolation',
+            'task-management',
             'command-shortcuts',
             'coding-standards'
         ];
