@@ -40,7 +40,7 @@ clean:
 	-rm -f *.o
 	-rm -f src/*.o
 	-rm -f $(exec)
-	-rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/src
+	-rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/src/*.o
 
 # Code formatting
 format:

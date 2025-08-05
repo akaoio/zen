@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <string.h>
-#include "include/lexer.h"
-#include "include/parser.h"
-#include "include/visitor.h"
-#include "include/io.h"
+#include "zen/core/lexer.h"
+#include "zen/core/parser.h"
+#include "zen/core/visitor.h"
+#include "zen/stdlib/io.h"
 
 #define MAX_LIMIT 20
 void print_help()

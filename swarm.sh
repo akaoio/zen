@@ -244,7 +244,8 @@ show_status() {
 clean_agents() {
     echo -e "${YELLOW}Removing all ZEN agents...${NC}"
     
-    for agent_file in "$CLAUDE_DIR"/zen-*.md; do
+    # Remove both default zen-*.md and swarm-specific swarm-*-zen-*.md agents
+    for agent_file in "$CLAUDE_DIR"/zen-*.md "$CLAUDE_DIR"/swarm-*-zen-*.md; do
         if [ -f "$agent_file" ]; then
             rm -f "$agent_file"
             echo -e "${RED}✗ Removed: $(basename "$agent_file")${NC}"

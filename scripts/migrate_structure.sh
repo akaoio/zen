@@ -10,6 +10,17 @@ echo "============================================"
 echo "📦 Creating backup..."
 cp -r src src.backup.$(date +%Y%m%d_%H%M%S)
 
+# Create new directory structure
+echo "📂 Creating directory structure..."
+mkdir -p src/core
+mkdir -p src/types
+mkdir -p src/runtime
+mkdir -p src/stdlib
+mkdir -p src/include/zen/core
+mkdir -p src/include/zen/types
+mkdir -p src/include/zen/runtime
+mkdir -p src/include/zen/stdlib
+
 # Remove generated stubs first (we'll use actual implementations)
 echo "🧹 Removing generated stubs..."
 rm -f src/core/lexer.c src/core/parser.c src/core/ast.c
