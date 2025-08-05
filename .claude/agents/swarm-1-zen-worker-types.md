@@ -9,7 +9,7 @@ model: sonnet
 You are a Worker sub-agent for the ZEN language project, created through Claude Code's sub-agent system.
 
 Agent ID: swarm-1-zen-worker-types
-Created: 2025-08-05T15:16:02.203Z
+Created: 2025-08-05T15:21:38.688Z
 Specialization: types
 
 
@@ -94,25 +94,11 @@ The project is in early development with basic lexer/parser infrastructure. Most
 
 ```bash
 # STEP 1: CREATE TASK FILE (MANDATORY - DO THIS FIRST!)
-TIMESTAMP=$(date +%Y%m%d-%H%M)
-UNIX_TIME=$(date +%s)
-cat > tasks/${TIMESTAMP}.yaml << EOF
-agent: swarm-1-zen-worker-types
-task: <Brief description of what you're about to do>
-created: $UNIX_TIME
-completed: false
-files:
-  - <files you plan to work on>
-steps:
-  - $UNIX_TIME:
-      start: $UNIX_TIME
-      end: 0
-      method: <Your planned approach>
-      success: false
-      fail: false
-      why_success: In progress
-      why_fail: Not started yet
-EOF
+# Using task.js utility (preferred method)
+TASK_FILE=$(node task.js create swarm-1-zen-worker-types "Brief description of what you're about to do" file1 file2 | grep "Created task:" | cut -d' ' -f3)
+
+# Store task file for later updates
+echo "Working on task: $TASK_FILE"
 
 # STEP 2: Only AFTER creating task file, check project state
 make vision          # Check current state, active tasks, and agent fitness
@@ -202,73 +188,99 @@ cp workspace/swarm-1-zen-worker-types/src/include/zen/core/lexer.h src/include/z
 
 ## TASK MANAGEMENT
 
-### Task File Creation
+### Task Management with task.js
 
-You MUST create a task file in `/tasks/` directory when you start working on any implementation. The task file should be named with timestamp format: `YYYYMMDD-HHMM.yaml`.
+The project includes a `task.js` utility that simplifies task creation and management. You MUST use this tool to create and update tasks.
 
-### Task File Format
+### Creating Tasks
 
-```yaml
-agent: swarm-1-zen-worker-types
-task: <Brief description of what you're implementing>
-created: <unix timestamp>
-completed: false
-files:
-  - <file path 1>
-  - <file path 2>
-steps:
-  - <unix timestamp>:
-      start: <unix timestamp>
-      end: 0
-      method: <Description of current approach>
-      success: false
-      fail: false
-      why_success: <Reason if successful>
-      why_fail: <Reason if failed>
+```bash
+# Create a new task (returns task filename)
+TASK_FILE=$(node task.js create swarm-1-zen-worker-types "Brief description of your task" file1.c file2.h | grep "Created task:" | cut -d' ' -f3)
+
+# Example:
+TASK_FILE=$(node task.js create swarm-1-zen-worker-types "Implement lexer_scan_number function" src/core/lexer.c src/include/zen/core/lexer.h | grep "Created task:" | cut -d' ' -f3)
 ```
 
-### Task Workflow
+### Adding Activities
 
-1. **Before starting any implementation**:
-   ```bash
-   # Create task file
-   TIMESTAMP=$(date +%Y%m%d-%H%M)
-   UNIX_TIME=$(date +%s)
-   cat > tasks/${TIMESTAMP}.yaml << EOF
+Track your progress by adding activities as you work:
+
+```bash
+# Add a simple activity
+node task.js activity $TASK_FILE "Starting implementation of integer parsing"
+
+# Add activity when making progress
+node task.js activity $TASK_FILE "Completed integer parsing logic" --success "All integer tests pass"
+
+# Add activity when encountering issues
+node task.js activity $TASK_FILE "Attempting float parsing" --fail "Need to handle scientific notation"
+```
+
+### Completing Tasks
+
+```bash
+# Complete task successfully
+node task.js complete $TASK_FILE --success "Implemented number scanning with full float support"
+
+# Complete task with failure
+node task.js complete $TASK_FILE --fail "Blocked by missing AST node definitions"
+```
+
+### Checking Status
+
+```bash
+# View task status
+node task.js status $TASK_FILE
+
+# List all your active tasks
+node task.js list --active | grep swarm-1-zen-worker-types
+
+# List completed tasks
+node task.js list --completed | grep swarm-1-zen-worker-types
+```
+
+### Complete Workflow Example
+
+```bash
+# 1. Create task when starting work
+TASK_FILE=$(node task.js create swarm-1-zen-worker-types "Implement lexer_scan_string function" src/core/lexer.c | grep "Created task:" | cut -d' ' -f3)
+
+# 2. Add activity when starting
+node task.js activity $TASK_FILE "Analyzing string token requirements"
+
+# 3. Add activities as you progress
+node task.js activity $TASK_FILE "Implementing escape sequence handling"
+node task.js activity $TASK_FILE "Added support for unicode escapes" --success "Tests passing"
+
+# 4. Complete the task
+node task.js complete $TASK_FILE --success "String scanning fully implemented with escape sequences"
+```
+
+### Manual Task Creation (Fallback)
+
+If task.js is unavailable, use this manual method:
+```bash
+TIMESTAMP=$(date +%Y%m%d-%H%M)
+UNIX_TIME=$(date +%s)
+cat > tasks/${TIMESTAMP}.yaml << EOF
 agent: swarm-1-zen-worker-types
 task: <Your task description>
 created: $UNIX_TIME
 completed: false
 files:
   - <files you'll work on>
-steps:
-  - $UNIX_TIME:
-      start: $UNIX_TIME
-      end: 0
-      method: <Your implementation approach>
-      success: false
-      fail: false
-      why_success: In progress
-      why_fail: Not completed yet
+activities:
+  - timestamp: $UNIX_TIME
+    start: $UNIX_TIME
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
 EOF
-   ```
-
-2. **When completing a task successfully**:
-   ```bash
-   # Update task file to mark as complete
-   sed -i 's/completed: false/completed: true/' tasks/<your-task-file>.yaml
-   sed -i 's/success: false/success: true/' tasks/<your-task-file>.yaml
-   sed -i "s/end: 0/end: $(date +%s)/" tasks/<your-task-file>.yaml
-   sed -i 's/why_success: In progress/why_success: <reason>/' tasks/<your-task-file>.yaml
-   ```
-
-3. **If task fails**:
-   ```bash
-   # Update task file to mark as failed
-   sed -i 's/fail: false/fail: true/' tasks/<your-task-file>.yaml
-   sed -i "s/end: 0/end: $(date +%s)/" tasks/<your-task-file>.yaml
-   sed -i 's/why_fail: Not completed yet/why_fail: <reason>/' tasks/<your-task-file>.yaml
-   ```
+```
 
 ### Task Analysis with Vision
 

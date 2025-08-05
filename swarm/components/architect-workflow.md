@@ -6,25 +6,11 @@
 
 ```bash
 # STEP 1: CREATE TASK FILE (MANDATORY - DO THIS FIRST!)
-TIMESTAMP=$(date +%Y%m%d-%H%M)
-UNIX_TIME=$(date +%s)
-cat > tasks/${TIMESTAMP}.yaml << EOF
-agent: {{AGENT_ID}}
-task: <Brief description of design work>
-created: $UNIX_TIME
-completed: false
-files:
-  - <design documents you'll create/modify>
-steps:
-  - $UNIX_TIME:
-      start: $UNIX_TIME
-      end: 0
-      method: <Your design approach>
-      success: false
-      fail: false
-      why_success: In progress
-      why_fail: Not started yet
-EOF
+# Using task.js utility (required)
+TASK_FILE=$(node task.js create {{AGENT_ID}} "Brief description of design work" design_docs_to_create | grep "Created task:" | cut -d' ' -f3)
+
+# Add initial activity
+node task.js activity $TASK_FILE "Starting architectural design and analysis"
 
 # STEP 2: Only AFTER creating task file, proceed with design work
 ```

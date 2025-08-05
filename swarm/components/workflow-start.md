@@ -6,25 +6,11 @@
 
 ```bash
 # STEP 1: CREATE TASK FILE (MANDATORY - DO THIS FIRST!)
-TIMESTAMP=$(date +%Y%m%d-%H%M)
-UNIX_TIME=$(date +%s)
-cat > tasks/${TIMESTAMP}.yaml << EOF
-agent: {{AGENT_ID}}
-task: <Brief description of what you're about to do>
-created: $UNIX_TIME
-completed: false
-files:
-  - <files you plan to work on>
-steps:
-  - $UNIX_TIME:
-      start: $UNIX_TIME
-      end: 0
-      method: <Your planned approach>
-      success: false
-      fail: false
-      why_success: In progress
-      why_fail: Not started yet
-EOF
+# Using task.js utility (preferred method)
+TASK_FILE=$(node task.js create {{AGENT_ID}} "Brief description of what you're about to do" file1 file2 | grep "Created task:" | cut -d' ' -f3)
+
+# Store task file for later updates
+echo "Working on task: $TASK_FILE"
 
 # STEP 2: Only AFTER creating task file, check project state
 make vision          # Check current state, active tasks, and agent fitness

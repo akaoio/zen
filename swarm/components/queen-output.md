@@ -6,27 +6,10 @@
 
 ```bash
 # MANDATORY FIRST STEP - CREATE YOUR TASK FILE
-TIMESTAMP=$(date +%Y%m%d-%H%M)
-UNIX_TIME=$(date +%s)
-cat > tasks/${TIMESTAMP}.yaml << EOF
-agent: {{AGENT_ID}}
-task: Queen coordination and strategy analysis for swarm {{SWARM_ID}}
-created: $UNIX_TIME
-completed: false
-files:
-  - MANIFEST.json
-  - ARCHITECTURE.md
-  - make vision output
-steps:
-  - $UNIX_TIME:
-      start: $UNIX_TIME
-      end: 0
-      method: Analyzing project state and coordinating worker assignments
-      success: false
-      fail: false
-      why_success: In progress
-      why_fail: Not started yet
-EOF
+TASK_FILE=$(node task.js create {{AGENT_ID}} "Queen coordination and strategy analysis for swarm {{SWARM_ID}}" MANIFEST.json ARCHITECTURE.md | grep "Created task:" | cut -d' ' -f3)
+
+# Add initial activity
+node task.js activity $TASK_FILE "Starting project state analysis and coordination"
 
 # Only AFTER creating task file, proceed with analysis
 ```
