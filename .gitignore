@@ -1,79 +1,66 @@
-
-# Created by https://www.gitignore.io/api/vim,c
-# Edit at https://www.gitignore.io/?templates=vim,c
-
-### C ###
-# Prerequisites
-*.d
-
-# Object files
+# Compiled output
+zen
 *.o
-*.ko
-*.obj
-*.elf
-
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
 *.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
 *.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
 *.out
-*.app
-*.i*86
-*.x86_64
-*.hex
+
+# Build directories
+build/
+cmake-build-*/
+.cmake/
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Debug files
 *.dSYM/
-*.su
-*.idb
-*.pdb
+core
+vgcore.*
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+# Coverage files
+*.gcda
+*.gcno
+*.gcov
+coverage/
+lcov.info
 
-### Vim ###
-# Swap
-[._]*.s[a-v][a-z]
-[._]*.sw[a-p]
-[._]s[a-rt-v][a-z]
-[._]ss[a-gi-z]
-[._]sw[a-p]
+# Test output
+test_results/
+*.log
 
-# Session
-Session.vim
-Sessionx.vim
+# Package files
+*.tar.gz
+*.zip
+*.deb
+*.rpm
 
-# Temporary
-.netrwhist
-*~
-# Auto-generated tag files
-tags
-# Persistent undo
-[._]*.un~
+# Dependencies (if using package managers)
+vendor/
+deps/
 
-# End of https://www.gitignore.io/api/vim,c
+# Generated documentation
+docs/api/html/
+docs/api/latex/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Node modules (for any JS tooling)
+node_modules/
+
+# Python cache (for validation scripts)
+__pycache__/
+*.pyc
+*.pyo

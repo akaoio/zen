@@ -1,21 +1,96 @@
+# ZEN Language Makefile
+CC = gcc
+CFLAGS = -g -Wall -Wextra -Werror -std=c11
+LDFLAGS = 
+PREFIX ?= /usr/local
+
+# Main executable
 exec = zen
 sources = $(wildcard src/*.c)
 objects = $(sources:.c=.o)
-flags = -g
 
+# Directories
+SRCDIR = src
+TESTDIR = tests
+TOOLDIR = tools
+
+# Default target
+all: $(exec)
 
 $(exec): $(objects)
-	gcc $(objects) $(flags) -o $(exec)
+	$(CC) $(objects) $(CFLAGS) $(LDFLAGS) -o $(exec)
 
-%.o: %.c include/%.h
-	gcc -c $(flags) $< -o $@
+%.o: %.c
+	$(CC) -c $(CFLAGS) $< -o $@
 
-install:
-	make
+# Installation
+install: $(exec)
+	mkdir -p $(PREFIX)/bin
 	cp ./zen $(PREFIX)/bin/zen
 
+uninstall:
+	rm -f $(PREFIX)/bin/zen
+
+# Cleaning
 clean:
 	-rm -f *.out
 	-rm -f *.o
 	-rm -f src/*.o
-	-rm -f zen
+	-rm -f $(exec)
+
+# Code formatting
+format:
+	find src -name '*.c' -o -name '*.h' | xargs clang-format -i
+
+format-check:
+	find src -name '*.c' -o -name '*.h' | xargs clang-format --dry-run --Werror
+
+# Project structure validation
+validate:
+	node scripts/validate_structure.js
+
+# Linting (when cppcheck is available)
+lint:
+	@which cppcheck > /dev/null 2>&1 && cppcheck --enable=all --error-exitcode=1 src/ || echo "cppcheck not installed, skipping lint"
+
+# Testing targets (for future implementation)
+test:
+	@echo "Tests not yet implemented"
+
+test-unit:
+	@echo "Unit tests not yet implemented"
+
+test-integration:
+	@echo "Integration tests not yet implemented"
+
+# Memory checking (when valgrind is available)
+valgrind: $(exec)
+	@which valgrind > /dev/null 2>&1 && valgrind --leak-check=full --show-leak-kinds=all ./$(exec) || echo "valgrind not installed"
+
+# Coverage (for future implementation)
+coverage:
+	@echo "Coverage not yet implemented"
+
+# Debug helpers
+debug-lexer: $(exec)
+	./$(exec) --debug-lexer
+
+debug-ast: $(exec)
+	./$(exec) --debug-ast
+
+# Help
+help:
+	@echo "ZEN Language Makefile targets:"
+	@echo "  make              - Build the zen interpreter"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make install      - Install zen to PREFIX/bin (default: /usr/local)"
+	@echo "  make uninstall    - Remove installed zen"
+	@echo "  make format       - Format code with clang-format"
+	@echo "  make format-check - Check code formatting"
+	@echo "  make validate     - Validate project structure"
+	@echo "  make lint         - Run static analysis"
+	@echo "  make test         - Run all tests"
+	@echo "  make valgrind     - Check for memory leaks"
+	@echo "  make help         - Show this help message"
+
+.PHONY: all clean install uninstall format format-check validate lint test test-unit test-integration valgrind coverage debug-lexer debug-ast help

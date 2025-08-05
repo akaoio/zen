@@ -1,0 +1,56 @@
+# ZEN C Code Style Configuration
+# Based on Linux kernel style with modifications
+
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+BreakBeforeBraces: Linux
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: false
+
+# Pointer alignment
+PointerAlignment: Right
+
+# Function style
+AlwaysBreakAfterReturnType: None
+AlignAfterOpenBracket: Align
+BinPackParameters: false
+BinPackArguments: false
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpacesInCStyleCastParentheses: false
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Line length
+ColumnLimit: 100
+
+# Comments
+AlignTrailingComments: true
+SpacesBeforeTrailingComments: 2
+
+# Include sorting
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex:           '^"zen'
+    Priority:        1
+  - Regex:           '^<.*\.h>'
+    Priority:        2
+  - Regex:           '^<.*>'
+    Priority:        3
+  - Regex:           '.*'
+    Priority:        4
+
+# Other settings
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+SortIncludes: true
+
+# Macros
+AlignConsecutiveMacros: true
+
+# Struct/Enum style
+AllowShortEnumsOnASingleLine: false
+AlignConsecutiveDeclarations: false
