@@ -1,0 +1,4 @@
+set a 3
+set b 7  
+set c a * b + 2
+print c

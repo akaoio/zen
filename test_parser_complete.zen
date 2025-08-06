@@ -1,0 +1,9 @@
+set x 42
+set name "Alice"
+set numbers 1, 2, 3, 4, 5
+set person name "Bob", age 25
+
+print x
+print name
+print numbers
+print person

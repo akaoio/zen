@@ -1,0 +1,36 @@
+# Test comprehensive value system integration
+
+set x 42
+set y 3.14
+set name "ZEN"
+set flag true
+set nothing null
+
+print x
+print y 
+print name
+print flag
+print nothing
+
+# Test arithmetic with type coercion
+set result x + y
+print result
+
+# Test string concatenation
+set greeting "Hello, " + name
+print greeting
+
+# Test boolean operations
+set test flag and true
+print test
+
+# Test array operations
+set numbers 1, 2, 3, 4, 5
+print numbers
+print numbers.length
+
+# Test object operations
+set person name "Alice", age 30, active true
+print person
+print person.name
+print person.age

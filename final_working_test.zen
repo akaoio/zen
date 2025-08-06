@@ -1,0 +1,21 @@
+print "=== ZEN Language Working Features ==="
+
+print "1. Print statements work perfectly"
+
+print "2. String concatenation works:"
+print "Hello " + "ZEN" + " Language!"
+
+print "3. Arithmetic operations work:"
+print 5 + 3
+print 10 - 4  
+print 6 * 7
+print 20 / 4
+
+print "4. Complex expressions work:"
+print (10 + 5) * 2 - 3
+
+print "5. Variable definitions work:"
+set x 42
+set message "Success!"
+
+print "=== ZEN is functional! ==="

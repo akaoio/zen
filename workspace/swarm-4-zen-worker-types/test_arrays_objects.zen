@@ -1,0 +1,41 @@
+# Comprehensive test of ZEN array and object functionality
+
+print "=== Testing Arrays ==="
+
+# Create and manipulate arrays
+set numbers 1, 2, 3, 4, 5
+print numbers
+
+# Test array operations
+set fruits "apple", "banana", "cherry"
+print fruits
+
+print "=== Testing Objects ==="
+
+# Create and manipulate objects
+set person name "Alice", age 30, active true
+print person
+
+# Test nested structures
+set data 
+    users [
+        {name "Alice", age 30},
+        {name "Bob", age 25}
+    ],
+    config {
+        debug true,
+        timeout 5000
+    }
+
+print "=== Testing Complex Data Structures ==="
+
+# Test array of objects
+set students [
+    {name "Alice", grade 95},
+    {name "Bob", grade 87},
+    {name "Charlie", grade 92}
+]
+
+print students
+
+print "=== Array and Object Integration Test Complete ==="

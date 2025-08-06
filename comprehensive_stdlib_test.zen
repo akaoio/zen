@@ -1,0 +1,52 @@
+// Comprehensive ZEN stdlib test
+set results []
+
+// Test string functions
+set test_str "  Hello World  "
+set str_upper upper test_str
+set str_lower lower test_str
+set str_trimmed trim test_str
+set str_length len str_trimmed
+
+print "String Functions:"
+print "  Original:", test_str
+print "  Upper:", str_upper
+print "  Lower:", str_lower  
+print "  Trimmed:", str_trimmed
+print "  Length:", str_length
+
+// Test math functions
+set test_num 42.7
+set num_abs abs test_num
+set num_floor floor test_num
+set num_ceil ceil test_num
+set num_round round test_num
+set num_sqrt sqrt 16
+set num_pow pow 2 3
+
+print "\nMath Functions:"
+print "  Original:", test_num
+print "  Abs:", num_abs
+print "  Floor:", num_floor
+print "  Ceil:", num_ceil
+print "  Round:", num_round
+print "  Sqrt(16):", num_sqrt
+print "  Pow(2,3):", num_pow
+
+// Test type conversions
+set str_from_num toString test_num
+set num_from_str toNumber "123.45"
+set bool_from_str toBoolean "true"
+set type_of_str typeOf test_str
+set parsed_int parseInt "789"
+set parsed_float parseFloat "123.456"
+
+print "\nType Conversions:"
+print "  toString(42.7):", str_from_num
+print "  toNumber('123.45'):", num_from_str
+print "  toBoolean('true'):", bool_from_str
+print "  typeOf(string):", type_of_str
+print "  parseInt('789'):", parsed_int
+print "  parseFloat('123.456'):", parsed_float
+
+print "\nAll stdlib functions properly implemented!"

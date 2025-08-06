@@ -1,0 +1,5 @@
+print "Testing stdlib return values:"
+set result1 len "hello"
+print "Length of 'hello':", result1
+set result2 abs -5
+print "Abs of -5:", result2

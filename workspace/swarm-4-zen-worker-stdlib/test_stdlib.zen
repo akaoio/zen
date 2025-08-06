@@ -1,0 +1,5 @@
+set x "Hello, World\!"
+print x
+set n 42  
+print n
+print len x

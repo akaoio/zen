@@ -1,0 +1,5 @@
+set x 42
+set y 100
+set sum x + y
+print sum
+print "Hello from visitor!"

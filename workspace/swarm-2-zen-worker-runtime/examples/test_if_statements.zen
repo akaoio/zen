@@ -1,0 +1,16 @@
+set x 10
+
+if x > 5
+    print "x is large"
+else
+    print "x is small"
+
+set grade 85
+if grade >= 90
+    print "A grade"
+elif grade >= 80
+    print "B grade"
+elif grade >= 70
+    print "C grade"
+else
+    print "F grade"

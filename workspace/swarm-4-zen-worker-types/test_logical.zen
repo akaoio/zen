@@ -1,0 +1,6 @@
+set a true
+set b false
+set result1 a and b
+print result1
+set result2 a or b
+print result2

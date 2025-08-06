@@ -147,6 +147,8 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
+                printf("DEBUG: File contents: '%s'\n", file_contents);
+                
                 lexer_T* lexer = init_lexer(file_contents);
                 if (!lexer) {
                     fprintf(stderr, "Error: Failed to create lexer for file '%s'\n", argv[i]);
@@ -159,11 +161,13 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
+                printf("DEBUG: About to parse statements\n");
                 AST_T* root = parser_parse_statements(parser, global_scope);
                 if (!root) {
                     fprintf(stderr, "Error: Failed to parse file '%s'\n", argv[i]);
                     return 1;
                 }
+                printf("DEBUG: Parsed successfully, root type: %d\n", root->type);
                 
                 visitor_T* visitor = init_visitor();
                 if (!visitor) {
@@ -171,7 +175,17 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                visitor_visit(visitor, root);
+                AST_T* result = visitor_visit(visitor, root);
+                
+                // CRITICAL: Free all allocated resources to prevent memory leaks
+                if (result) {
+                    ast_free(result);
+                }
+                visitor_free(visitor);
+                ast_free(root);
+                parser_free(parser);
+                lexer_free(lexer);
+                free(file_contents);
                 
             } else {
                 print_help();
@@ -201,6 +215,9 @@ int main(int argc, char* argv[])
             }
         }
     }
+    
+    // CRITICAL: Free global scope before exit
+    scope_free(global_scope);
     
     return 0;
 }

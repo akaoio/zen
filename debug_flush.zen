@@ -1,0 +1,6 @@
+function test
+    print "hello from function"
+
+print "before function call"
+test
+print "after function call"

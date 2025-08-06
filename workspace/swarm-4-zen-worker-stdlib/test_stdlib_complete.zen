@@ -1,0 +1,41 @@
+# Test all stdlib functions that were marked as stubs
+
+# String functions
+set test_string "  Hello World  "
+print upper(test_string)
+print lower(test_string) 
+print trim(test_string)
+
+# Math functions
+print abs(-5)
+print floor(3.7)
+print ceil(3.2)
+print round(3.5)
+print sqrt(16)
+print pow(2, 3)
+print sin(3.14159/2)
+print cos(0)
+print tan(0)
+print log(2.71828)
+
+# Min/max
+print min(5, 3)
+print max(5, 3)
+
+# Type conversion
+print toString(42)
+print toNumber("123")
+print toBoolean(1)
+print typeOf("hello")
+
+# Parsing
+print parseInt("42")
+print parseFloat("3.14")
+
+# JSON
+set obj name "Alice", age 30
+print jsonStringify(obj)
+set json_str "{\"name\":\"Bob\",\"age\":25}"
+set parsed jsonParse(json_str)
+print parsed.name
+print parsed.age

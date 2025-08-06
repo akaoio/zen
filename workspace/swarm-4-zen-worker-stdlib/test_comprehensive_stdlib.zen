@@ -1,0 +1,83 @@
+# Comprehensive ZEN stdlib function tests
+
+print "=== TESTING BASIC FUNCTIONS ==="
+
+# Test print
+print "Hello World"
+
+# Test string functions
+set str "hello world"
+print "Original string: " + str
+
+# Test len function
+set length len str
+print "Length: " + length
+
+# Test string case functions  
+set upper_str upper str
+print "Uppercase: " + upper_str
+
+set lower_str lower "HELLO"
+print "Lowercase: " + lower_str
+
+# Test trim
+set trimmed trim "  hello  "
+print "Trimmed: '" + trimmed + "'"
+
+print "=== TESTING MATH FUNCTIONS ==="
+
+# Test basic math
+print "abs(-5): " + abs -5
+print "floor(4.7): " + floor 4.7
+print "ceil(4.2): " + ceil 4.2
+print "round(4.6): " + round 4.6
+print "sqrt(16): " + sqrt 16
+
+# Test trigonometry  
+print "sin(0): " + sin 0
+print "cos(0): " + cos 0
+
+# Test min/max
+print "min(5, 3): " + min 5 3
+print "max(5, 3): " + max 5 3
+
+print "=== TESTING TYPE CONVERSION ==="
+
+# Test type conversion
+set num_str toString 42
+print "Number to string: " + num_str
+
+set str_num toNumber "123"
+print "String to number: " + str_num
+
+set bool_val toBoolean 1
+print "Number to boolean: " + bool_val
+
+# Test type checking
+print "Type of 42: " + typeOf 42
+print "Type of 'hello': " + typeOf "hello"
+
+print "=== TESTING ARRAY FUNCTIONS ==="
+
+# Test array length
+set arr 1, 2, 3, 4, 5
+print "Array length: " + len arr
+
+print "=== TESTING JSON FUNCTIONS ==="
+
+# Test JSON
+set json_str jsonStringify 42
+print "JSON stringify: " + json_str
+
+set parsed jsonParse json_str  
+print "JSON parse: " + parsed
+
+print "=== TESTING FILE I/O ==="
+
+# Test file operations
+set content "Hello from ZEN!"
+writeFile "/tmp/zen_test.txt" content
+set read_content readFile "/tmp/zen_test.txt" 
+print "File content: " + read_content
+
+print "=== ALL TESTS COMPLETE ==="

@@ -1,0 +1,6 @@
+set counter 1
+print "initial counter:"
+print counter
+set counter counter + 1
+print "after increment:"
+print counter

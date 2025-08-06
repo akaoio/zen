@@ -1,0 +1,4 @@
+print "REPL Test"
+set x 5
+x
+exit

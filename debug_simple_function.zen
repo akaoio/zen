@@ -1,0 +1,5 @@
+function hello
+    return 42
+
+set result hello
+print result

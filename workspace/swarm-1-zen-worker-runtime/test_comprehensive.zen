@@ -1,0 +1,17 @@
+set x 10
+set y 20
+set result x + y
+print "Result is: " + result
+
+function greet name
+    print "Hello, " + name
+    return "Greeting sent"
+
+set greeting greet "World"
+print greeting
+
+set numbers 1, 2, 3, 4
+set total 0
+for num in numbers
+    set total total + num
+print "Sum: " + total

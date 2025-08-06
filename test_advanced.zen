@@ -1,0 +1,4 @@
+set x 42
+print x
+set y "hello"
+print y

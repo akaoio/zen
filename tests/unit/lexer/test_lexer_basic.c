@@ -7,7 +7,18 @@
 #include "zen/core/lexer.h"
 #include "zen/core/token.h"
 
-TEST_SUITE(lexer_basic_tests)
+// Forward declare tests
+DECLARE_TEST(test_lexer_initialization);
+DECLARE_TEST(test_lexer_advance);
+DECLARE_TEST(test_lexer_skip_whitespace);
+DECLARE_TEST(test_lexer_keywords);
+DECLARE_TEST(test_lexer_identifiers);
+DECLARE_TEST(test_lexer_numbers);
+DECLARE_TEST(test_lexer_strings);
+DECLARE_TEST(test_lexer_operators);
+DECLARE_TEST(test_lexer_punctuation);
+DECLARE_TEST(test_lexer_indentation);
+DECLARE_TEST(test_lexer_complete_program);
 
 TEST(test_lexer_initialization) {
     char* input = "set x 42";
@@ -16,20 +27,20 @@ TEST(test_lexer_initialization) {
     ASSERT_NOT_NULL(lexer);
     ASSERT_STR_EQ(lexer->contents, input);
     ASSERT_EQ(lexer->i, 0);
-    ASSERT_EQ(lexer->current_char, 's');
+    ASSERT_EQ(lexer->c, 's');
 }
 
 TEST(test_lexer_advance) {
     char* input = "abc";
     lexer_T* lexer = init_lexer(input);
     
-    ASSERT_EQ(lexer->current_char, 'a');
+    ASSERT_EQ(lexer->c, 'a');
     lexer_advance(lexer);
-    ASSERT_EQ(lexer->current_char, 'b');
+    ASSERT_EQ(lexer->c, 'b');
     lexer_advance(lexer);
-    ASSERT_EQ(lexer->current_char, 'c');
+    ASSERT_EQ(lexer->c, 'c');
     lexer_advance(lexer);
-    ASSERT_EQ(lexer->current_char, '\0');
+    ASSERT_EQ(lexer->c, '\0');
 }
 
 TEST(test_lexer_skip_whitespace) {
@@ -37,7 +48,7 @@ TEST(test_lexer_skip_whitespace) {
     lexer_T* lexer = init_lexer(input);
     
     lexer_skip_whitespace(lexer);
-    ASSERT_EQ(lexer->current_char, 'h');
+    ASSERT_EQ(lexer->c, 'h');
 }
 
 TEST(test_lexer_keywords) {
@@ -48,37 +59,37 @@ TEST(test_lexer_keywords) {
     
     // Test "set"
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_ID);
+    ASSERT_EQ(token->type, TOKEN_SET);
     ASSERT_STR_EQ(token->value, "set");
     
     // Test "function"
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_ID);
+    ASSERT_EQ(token->type, TOKEN_FUNCTION);
     ASSERT_STR_EQ(token->value, "function");
     
     // Test "if"
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_ID);
+    ASSERT_EQ(token->type, TOKEN_IF);
     ASSERT_STR_EQ(token->value, "if");
     
     // Test "else"
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_ID);
+    ASSERT_EQ(token->type, TOKEN_ELSE);
     ASSERT_STR_EQ(token->value, "else");
     
     // Test "while"
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_ID);
+    ASSERT_EQ(token->type, TOKEN_WHILE);
     ASSERT_STR_EQ(token->value, "while");
     
     // Test "for"
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_ID);
+    ASSERT_EQ(token->type, TOKEN_FOR);
     ASSERT_STR_EQ(token->value, "for");
     
     // Test "return"
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_ID);
+    ASSERT_EQ(token->type, TOKEN_RETURN);
     ASSERT_STR_EQ(token->value, "return");
 }
 
@@ -207,10 +218,10 @@ TEST(test_lexer_operators) {
     ASSERT_EQ(token->type, TOKEN_GREATER_THAN);
     
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_LESS_THAN_OR_EQUAL);
+    ASSERT_EQ(token->type, TOKEN_LESS_EQUALS);
     
     token = lexer_get_next_token(lexer);
-    ASSERT_EQ(token->type, TOKEN_GREATER_THAN_OR_EQUAL);
+    ASSERT_EQ(token->type, TOKEN_GREATER_EQUALS);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_AND);
@@ -293,4 +304,16 @@ TEST(test_lexer_complete_program) {
     ASSERT_EQ(token->type, TOKEN_EOF);
 }
 
-END_TEST_SUITE
+TEST_SUITE_BEGIN(lexer_basic_tests)
+    RUN_TEST(test_lexer_initialization);
+    RUN_TEST(test_lexer_advance);
+    RUN_TEST(test_lexer_skip_whitespace);
+    RUN_TEST(test_lexer_keywords);
+    RUN_TEST(test_lexer_identifiers);
+    RUN_TEST(test_lexer_numbers);
+    RUN_TEST(test_lexer_strings);
+    RUN_TEST(test_lexer_operators);
+    RUN_TEST(test_lexer_punctuation);
+    RUN_TEST(test_lexer_indentation);
+    RUN_TEST(test_lexer_complete_program);
+TEST_SUITE_END

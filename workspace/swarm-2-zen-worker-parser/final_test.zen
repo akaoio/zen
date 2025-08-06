@@ -1,0 +1,4 @@
+set x 42
+set y 8
+set result x + y
+print result

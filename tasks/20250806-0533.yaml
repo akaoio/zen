@@ -1,0 +1,48 @@
+agent: swarm-1-zen-worker-lexer
+task: 'URGENT: Fix test framework macro incompatibility breaking all tests'
+created: 1754433194
+completed: true
+files:
+  - tests/unit/lexer/test_lexer_advanced.c
+  - tests/framework/test.h
+activities:
+  - timestamp: 1754433194
+    start: 1754433194
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754433214
+    start: 1754433214
+    end: 0
+    method: Fixed TEST_SUITE macro format - testing compilation
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754433221
+    start: 1754433221
+    end: 0
+    method: 'Multiple issues found: 1) TEST functions defined inside main(), 2) Missing includes, 3) Wrong token types - restructuring test file'
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754433276
+    start: 1754433276
+    end: 0
+    method: Fixed test structure, includes, and token types - testing compilation again
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754433294
+    start: 1754433294
+    end: 1754433308
+    method: Fixed long_name string comparison warning - testing final compilation
+    success: true
+    fail: false
+    why_success: 'EMERGENCY RESOLVED: Fixed test framework macro incompatibility - all tests can now compile successfully'
+    why_fail: ''

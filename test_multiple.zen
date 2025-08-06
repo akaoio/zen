@@ -1,0 +1,4 @@
+set name "Alice"
+set age 25
+print name
+print age

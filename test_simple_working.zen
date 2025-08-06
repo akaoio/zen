@@ -1,0 +1,3 @@
+print "Testing basic print"
+set msg "hello"
+print msg

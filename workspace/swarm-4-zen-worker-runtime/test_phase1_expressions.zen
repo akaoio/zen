@@ -1,0 +1,30 @@
+print "=== Phase 1: Expression Tests ==="
+
+set x 5 + 3 * 2
+print "x = 5 + 3 * 2 =", x
+
+set y 10 - 4
+print "y = 10 - 4 =", y
+
+set z 8 / 2
+print "z = 8 / 2 =", z
+
+set a x > 10
+print "a = x > 10 =", a
+
+set b 5 = 5
+print "b = 5 = 5 =", b
+
+set c 3 < 7
+print "c = 3 < 7 =", c
+
+set d true & false
+print "d = true & false =", d
+
+set e true | false
+print "e = true | false =", e
+
+set f !false
+print "f = !false =", f
+
+print "=== Phase 1 Complete ==="

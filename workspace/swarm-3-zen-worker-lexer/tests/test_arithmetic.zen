@@ -1,0 +1,5 @@
+print 10 + 5
+print 20 - 8
+print 6 * 7
+print 15 / 3
+print 17 % 5

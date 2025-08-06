@@ -1,0 +1,4 @@
+set x 20
+set y 4
+set result x / y
+print result

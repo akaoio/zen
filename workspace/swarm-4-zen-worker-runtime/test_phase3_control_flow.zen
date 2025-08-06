@@ -1,0 +1,11 @@
+print "=== Phase 3: Control Flow Tests ==="
+
+set x 15
+print "Testing if statements with x =", x
+
+if x = 15
+    print "x equals 15"
+else
+    print "x is something else"
+
+print "=== Phase 3 Complete ==="

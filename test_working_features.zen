@@ -1,0 +1,17 @@
+print "=== ZEN Language Demonstration ==="
+print ""
+
+// Basic arithmetic
+set x 10
+set y 5
+print "x = " + toString x
+print "y = " + toString y
+print "x + y = " + toString x + y
+print "x * y = " + toString x * y
+
+// Variables and expressions  
+set result x * 2 + y
+print "x * 2 + y = " + toString result
+
+print ""
+print "=== Test completed successfully! ==="

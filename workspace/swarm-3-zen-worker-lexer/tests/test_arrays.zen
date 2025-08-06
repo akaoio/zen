@@ -1,0 +1,3 @@
+print 1, 2, 3, 4, 5
+print "apple", "banana", "cherry"
+print 42, "hello", "world"

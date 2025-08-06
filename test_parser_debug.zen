@@ -1,0 +1,3 @@
+print "hello"
+len "test"
+abs(5)

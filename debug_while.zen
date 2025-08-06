@@ -1,0 +1,7 @@
+set i 0
+print "Before while loop, i = " + i
+while i < 2
+    print "In loop, i = " + i  
+    set i i + 1
+    print "After increment, i = " + i
+print "After while loop, i = " + i

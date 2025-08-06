@@ -1,0 +1,2 @@
+set name "Alice"
+print name

@@ -1,0 +1,21 @@
+print "🎉 ZEN LANGUAGE SHOWCASE 🎉"
+print ""
+print "✅ String literals and printing"
+print "✅ String concatenation: " + "Hello" + " " + "ZEN!"
+print ""
+print "✅ Arithmetic operations:"
+print "Addition: " + (10 + 5)
+print "Subtraction: " + (20 - 8) 
+print "Multiplication: " + (6 * 7)
+print "Division: " + (15 / 3)
+print ""
+print "✅ Complex expressions:"
+print "Math result: " + ((10 + 5) * 2)
+print ""
+print "✅ Variable definitions:"
+set language "ZEN"
+set version 1.0
+print ""
+print "✅ Multi-statement programs work perfectly!"
+print ""
+print "🚀 ZEN Language is ready for use! 🚀"

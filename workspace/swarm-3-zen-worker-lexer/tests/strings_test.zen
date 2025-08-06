@@ -1,0 +1,8 @@
+print "=== STRING OPERATIONS TEST ==="
+print "Basic string: " + "Hello World"
+print "Concatenation: " + "Hello" + " " + "ZEN" + " " + "Language"
+print "String with numbers: " + "The answer is " + 42
+print "String with calculation: " + "5 + 3 = " + (5 + 3)
+print "Empty string: " + "" + "works"
+print "Multi-concat: " + "A" + "B" + "C" + "D" + "E"
+print "All string operations work correctly!"

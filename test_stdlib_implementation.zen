@@ -1,0 +1,31 @@
+# Test ZEN Standard Library Implementation
+# This file tests the key stdlib functions
+
+# String functions
+set message "Hello, World!"
+print "Original message: " + message
+print "Uppercase: " + upper(message)
+print "Lowercase: " + lower(message)
+print "Length: " + len(message)
+
+# Math functions
+set number 42.7
+print "Number: " + number
+print "Absolute: " + abs(number)
+print "Floor: " + floor(number)
+print "Ceiling: " + ceil(number)
+print "Square root: " + sqrt(number)
+
+# Type conversion
+set str_num "123"
+set parsed = parseInt(str_num)
+print "Parsed integer: " + parsed
+print "Type of parsed: " + typeOf(parsed)
+
+# Boolean conversion
+set truthy_val = toBoolean("hello")
+set falsy_val = toBoolean("")
+print "Boolean('hello'): " + truthy_val
+print "Boolean(''): " + falsy_val
+
+print "ZEN Standard Library Test Complete!"

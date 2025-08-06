@@ -1,0 +1,7 @@
+set grade 85
+if grade >= 90
+    print "A grade"
+elif grade >= 80
+    print "B grade"
+else
+    print "C grade"

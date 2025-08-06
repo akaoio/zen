@@ -1,0 +1,6 @@
+set x 42
+set y x + 8  
+print x
+print y
+set message "Hello, ZEN!"
+print message

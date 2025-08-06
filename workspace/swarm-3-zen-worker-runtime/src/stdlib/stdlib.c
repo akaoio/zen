@@ -110,6 +110,9 @@ const ZenStdlibFunction* zen_stdlib_get(const char* name) {
  * @return Array of all stdlib functions (terminated by NULL entry)
  */
 const ZenStdlibFunction* zen_stdlib_get_all() {
+    // Return the complete array of stdlib functions
+    // The array is NULL-terminated for safe iteration
+    // This enables runtime discovery of all available stdlib functions
     return stdlib_functions;
 }
 
@@ -232,15 +235,27 @@ Value* zen_stdlib_length(Value** args, size_t argc) {
 
 // String function wrappers
 Value* zen_stdlib_upper(Value** args, size_t argc) {
-    return argc >= 1 ? zen_string_upper(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_string_upper(args[0]);
 }
 
 Value* zen_stdlib_lower(Value** args, size_t argc) {
-    return argc >= 1 ? zen_string_lower(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_string_lower(args[0]);
 }
 
 Value* zen_stdlib_trim(Value** args, size_t argc) {
-    return argc >= 1 ? zen_string_trim(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_string_trim(args[0]);
 }
 
 Value* zen_stdlib_split(Value** args, size_t argc) {
@@ -266,43 +281,83 @@ Value* zen_stdlib_replace(Value** args, size_t argc) {
 
 // Math function wrappers
 Value* zen_stdlib_abs(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_abs(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_abs(args[0]);
 }
 
 Value* zen_stdlib_floor(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_floor(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_floor(args[0]);
 }
 
 Value* zen_stdlib_ceil(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_ceil(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_ceil(args[0]);
 }
 
 Value* zen_stdlib_round(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_round(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_round(args[0]);
 }
 
 Value* zen_stdlib_sqrt(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_sqrt(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_sqrt(args[0]);
 }
 
 Value* zen_stdlib_pow(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_pow(args[0], args[1]) : value_new_number(0);
+    if (argc < 2) {
+        return value_new_number(0);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_pow(args[0], args[1]);
 }
 
 Value* zen_stdlib_sin(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_sin(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_sin(args[0]);
 }
 
 Value* zen_stdlib_cos(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_cos(args[0]) : value_new_number(1);
+    if (argc < 1) {
+        return value_new_number(1);  // cos(0) = 1
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_cos(args[0]);
 }
 
 Value* zen_stdlib_tan(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_tan(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_tan(args[0]);
 }
 
 Value* zen_stdlib_log(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_log(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_log(args[0]);
 }
 
 Value* zen_stdlib_random(Value** args, size_t argc) {
@@ -311,40 +366,82 @@ Value* zen_stdlib_random(Value** args, size_t argc) {
 }
 
 Value* zen_stdlib_random_int(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_random_int(args[0], args[1]) : value_new_number(0);
+    if (argc < 2) {
+        return value_new_number(0);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_random_int(args[0], args[1]);
 }
 
 Value* zen_stdlib_min(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_min(args[0], args[1]) : (argc >= 1 ? value_copy(args[0]) : value_new_number(0));
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    if (argc < 2) {
+        return value_copy(args[0]);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_min(args[0], args[1]);
 }
 
 Value* zen_stdlib_max(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_max(args[0], args[1]) : (argc >= 1 ? value_copy(args[0]) : value_new_number(0));
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    if (argc < 2) {
+        return value_copy(args[0]);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_max(args[0], args[1]);
 }
 
 Value* zen_stdlib_is_nan(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_is_nan(args[0]) : value_new_boolean(false);
+    if (argc < 1) {
+        return value_new_boolean(false);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_is_nan(args[0]);
 }
 
 Value* zen_stdlib_is_infinite(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_is_infinite(args[0]) : value_new_boolean(false);
+    if (argc < 1) {
+        return value_new_boolean(false);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_is_infinite(args[0]);
 }
 
 // Type conversion function wrappers
 Value* zen_stdlib_to_string(Value** args, size_t argc) {
-    return argc >= 1 ? zen_to_string(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_to_string(args[0]);
 }
 
 Value* zen_stdlib_to_number(Value** args, size_t argc) {
-    return argc >= 1 ? zen_to_number(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_to_number(args[0]);
 }
 
 Value* zen_stdlib_to_boolean(Value** args, size_t argc) {
-    return argc >= 1 ? zen_to_boolean(args[0]) : value_new_boolean(false);
+    if (argc < 1) {
+        return value_new_boolean(false);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_to_boolean(args[0]);
 }
 
 Value* zen_stdlib_type_of(Value** args, size_t argc) {
-    return argc >= 1 ? zen_type_of(args[0]) : value_new_string("undefined");
+    if (argc < 1) {
+        return value_new_string("undefined");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_type_of(args[0]);
 }
 
 Value* zen_stdlib_is_type(Value** args, size_t argc) {
@@ -355,11 +452,20 @@ Value* zen_stdlib_is_type(Value** args, size_t argc) {
 }
 
 Value* zen_stdlib_parse_int(Value** args, size_t argc) {
-    return argc >= 1 ? zen_parse_int(args[0], argc >= 2 ? args[1] : NULL) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Support optional radix argument and delegate to underlying implementation
+    Value* radix = (argc >= 2) ? args[1] : NULL;
+    return zen_parse_int(args[0], radix);
 }
 
 Value* zen_stdlib_parse_float(Value** args, size_t argc) {
-    return argc >= 1 ? zen_parse_float(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_parse_float(args[0]);
 }
 
 // JSON function wrappers

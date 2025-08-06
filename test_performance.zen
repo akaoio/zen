@@ -1,0 +1,19 @@
+set x 1
+set y 2
+set z 3
+
+set result1 x + y * z - x / y + z
+set result2 result1 + result1 * result1 - result1 / result1
+
+set name "Alice"
+set greeting "Hello, " + name + "!"
+
+set numbers 1, 2, 3, 4, 5
+
+set i 0
+while i < 3
+    set i i + 1
+
+print result1
+print result2
+print greeting

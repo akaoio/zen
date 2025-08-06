@@ -1,0 +1,9 @@
+set x 10
+set y 20
+print "Testing basic variables:"
+print x
+print y
+
+set sum x + y
+print "Sum:"
+print sum

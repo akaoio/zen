@@ -1,0 +1,9 @@
+set i 0
+print "Initial i = " + i
+print "About to enter while loop"
+while i < 2
+    print "LOOP START: i = " + i
+    print "Setting i to i + 1"
+    set i i + 1  
+    print "LOOP END: i = " + i
+print "Final i = " + i

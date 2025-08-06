@@ -1,0 +1,2 @@
+set obj name "Alice", age 25
+print obj

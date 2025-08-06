@@ -1,0 +1,6 @@
+set x 10
+set y 3
+print "x + y =", x + y
+print "x - y =", x - y  
+print "x * y =", x * y
+print "x / y =", x / y

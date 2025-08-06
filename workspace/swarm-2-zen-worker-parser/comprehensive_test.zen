@@ -1,0 +1,27 @@
+set x 5
+set y 10
+
+set result1 x + y
+print "x + y =", result1
+
+set result2 x - y  
+print "x - y =", result2
+
+set result3 x * y
+print "x * y =", result3
+
+set result4 x / y
+print "x / y =", result4
+
+set name "ZEN"
+set greeting "Hello " + name
+print greeting
+
+set a 2
+set b 3  
+set c 4
+set complex a + b * c - 1
+print "2 + 3 * 4 - 1 =", complex
+
+set paren_result (a + b) * c
+print "(2 + 3) * 4 =", paren_result

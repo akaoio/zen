@@ -1,0 +1,3 @@
+print "Hello ZEN"
+set name "Alice"
+print name

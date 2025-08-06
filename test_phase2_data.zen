@@ -1,0 +1,15 @@
+set numbers 1, 2, 3, 4, 5
+print "Array:"
+print numbers
+
+set first numbers[0]
+print "First element:"
+print first
+
+set person name "John", age 30, city "New York"
+print "Object:"
+print person
+
+set name person.name
+print "Person name:"
+print name

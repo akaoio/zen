@@ -1,0 +1,8 @@
+function greet name
+    print "Hello, " + name
+
+greet "World"
+
+set numbers 1, 2, 3, 4
+for num in numbers
+    print num * 2

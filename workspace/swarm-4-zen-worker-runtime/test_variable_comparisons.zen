@@ -1,0 +1,5 @@
+set x 10
+set y 15
+print x = y
+print x < y
+print x > y

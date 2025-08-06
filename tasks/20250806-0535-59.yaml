@@ -1,0 +1,15 @@
+agent: swarm-1-zen-worker-types
+task: Fix TEST_SUITE macros in test_value_basic.c
+created: 1754433359
+completed: false
+files:
+  - tests/unit/value/test_value_basic.c
+activities:
+  - timestamp: 1754433359
+    start: 1754433359
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

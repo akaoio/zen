@@ -1,0 +1,42 @@
+// Comprehensive stdlib function test
+print "=== ZEN Standard Library Test ==="
+print
+
+// Test 1: Functions that work with direct calls  
+print "Testing direct function calls:"
+print "hello world"
+
+// Test 2: String functions with variables
+print
+print "Testing string functions:"
+set message "Hello ZEN!"
+print message
+set msg_upper upper message
+print "Uppercase:", msg_upper
+set msg_lower lower message  
+print "Lowercase:", msg_lower
+set msg_len len message
+print "Length:", msg_len
+
+// Test 3: Math functions
+print
+print "Testing math functions:"
+set num 16.5
+set abs_val abs -3
+print "Absolute of -3:", abs_val
+set sqrt_val sqrt num
+print "Square root of 16.5:", sqrt_val
+set floor_val floor num
+print "Floor of 16.5:", floor_val
+
+// Test 4: Type conversion functions
+print
+print "Testing type conversion:"
+set str_num "42"
+set converted toNumber str_num
+print "String '42' to number:", converted
+set num_str toString 123
+print "Number 123 to string:", num_str
+
+print
+print "=== Test Complete ==="

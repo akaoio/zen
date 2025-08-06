@@ -1,0 +1,4 @@
+set str "hello"
+print str
+print "About to call len..."
+len str

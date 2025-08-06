@@ -1,0 +1,7 @@
+set counter 0
+while counter < 1
+    print "in loop"
+    print counter
+    set counter 2
+    print "updated counter:"
+    print counter

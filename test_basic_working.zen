@@ -1,0 +1,18 @@
+# Basic ZEN test
+set x 10
+set y 20  
+set result x + y
+print "Result: " + result
+
+set message "Hello ZEN"
+print message
+
+# Math function test
+set number abs(-5)
+print "Absolute value: " + number
+
+# Conditional test
+if result > 15
+    print "Result is greater than 15"
+
+print "Test complete"

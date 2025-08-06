@@ -1,0 +1,8 @@
+print "=== ARRAY-LIKE SYNTAX TEST ==="
+print "Numbers:" , 1, 2, 3, 4, 5
+print "Strings:" , "apple", "banana", "cherry"
+print "Mixed:" , 42, "hello", 123, "world"
+print "Single item:" , 999
+print "With calculations:" , (10 + 5), (20 * 2), (100 / 4)
+print "Empty and items:" , "" , "non-empty", ""
+print "All comma-separated syntax works correctly!"

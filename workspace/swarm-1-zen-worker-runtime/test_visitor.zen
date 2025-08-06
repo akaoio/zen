@@ -1,0 +1,3 @@
+set x 42
+set y 13
+print x + y

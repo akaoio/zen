@@ -1,0 +1,42 @@
+print "=== ZEN LANGUAGE COMPREHENSIVE TEST SUITE ==="
+print ""
+
+print "=== 1. BASIC OPERATIONS ==="
+print "Hello ZEN Language"
+print "Testing basic print statements"
+print ""
+
+print "=== 2. ARITHMETIC OPERATIONS ==="
+print "Addition: " + (10 + 5)
+print "Subtraction: " + (20 - 8)
+print "Multiplication: " + (6 * 7)
+print "Division: " + (15 / 3)
+print "Modulo: " + (17 % 5)
+print ""
+
+print "=== 3. STRING OPERATIONS ==="
+print "String concatenation: " + "Hello" + " " + "World"
+print "String with numbers: " + "The answer is " + 42
+print "Multi-part string: " + "ZEN" + " is " + "awesome!"
+print ""
+
+print "=== 4. ARRAY-LIKE SYNTAX (COMMA SEPARATED) ==="
+print "Numbers: " , 1, 2, 3, 4, 5
+print "Strings: " , "apple", "banana", "cherry"
+print "Mixed types: " , 42, "hello", "world"
+print ""
+
+print "=== 5. COMPLEX EXPRESSIONS ==="
+print "Complex math: " + ((10 + 5) * 2 - 8 / 4)
+print "Nested operations: " + (((20 - 5) + 10) * 2)
+print ""
+
+print "=== TEST RESULTS ==="
+print "Basic operations: WORKING"
+print "Arithmetic: WORKING" 
+print "String concatenation: WORKING"
+print "Array syntax: WORKING"
+print "Complex expressions: WORKING"
+print ""
+print "Variables: NOT WORKING"
+print "Objects: CRASHES"

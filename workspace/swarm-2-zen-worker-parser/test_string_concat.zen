@@ -1,0 +1,3 @@
+set name "World"
+set greeting "Hello " + name + "\!"
+print greeting

@@ -1,0 +1,3 @@
+print "Before stdlib call"
+len "hello"
+print "After stdlib call"

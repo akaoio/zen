@@ -1,0 +1,17 @@
+# Test memoization performance with repeated expressions
+set x 5
+set y x + 2
+set z y * 3
+set result y + z + x
+print result
+
+# Test compound assignment (advanced syntax)
+set a 10
+a += 5
+a *= 2
+print a
+
+# Test ternary operator
+set condition true
+set value condition ? 100 : 200
+print value

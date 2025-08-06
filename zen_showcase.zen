@@ -1,0 +1,65 @@
+print "=== ZEN Language Showcase ==="
+
+# Variables and expressions
+set name "ZEN Language"
+set version 1.0
+set description name + " v" + version
+print description
+
+# Arithmetic and comparisons
+set x 10
+set y 5
+print "x + y = " + (x + y)
+print "x > y = " + (x > y)
+print "x = y = " + (x = y)
+
+# Arrays
+set numbers [1, 2, 3, 4, 5]
+set fruits ["apple", "banana", "cherry"]
+print "Numbers: " + numbers
+print "Fruits: " + fruits
+
+# Objects
+set person name "Alice", age 30, city "New York"
+set config host "localhost", port 8080, debug true
+print "Person: " + person
+print "Config: " + config
+
+# Control flow - if statements
+if x > y
+    print "x is greater than y"
+else
+    print "x is not greater than y"
+
+# Control flow - for loops  
+print "Counting with numbers:"
+for n in numbers
+    print "Number: " + n
+
+print "Fruit list:"
+for fruit in fruits
+    print "- " + fruit
+
+# Function definitions and calls
+function calculate a b operation
+    if operation = "add"
+        return a + b
+    elif operation = "multiply"
+        return a * b
+    else
+        return 0
+
+set sum calculate 15 25 "add"
+set product calculate 4 7 "multiply"
+print "Sum: " + sum
+print "Product: " + product
+
+function factorial n
+    if n <= 1
+        return 1
+    else
+        return n * factorial (n - 1)
+
+print "Factorial of 5: " + factorial 5
+
+print "=== ZEN Language Features Complete! ==="

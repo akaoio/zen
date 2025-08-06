@@ -1,0 +1,6 @@
+set x "hello"
+set y 42
+set active true
+print x
+print y
+print active

@@ -1,0 +1,3 @@
+print "Hello ZEN!"
+set x 5 + 3
+print "Result: " + toString x

@@ -1,0 +1,8 @@
+set numbers [1, 2, 3, 4, 5]
+print numbers
+
+set fruits ["apple", "banana", "cherry"]
+print fruits
+
+set person name "Alice", age 30, city "New York"
+print person
