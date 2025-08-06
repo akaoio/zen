@@ -1,0 +1,31 @@
+agent: swarm-1-zen-worker-memory
+task: 'URGENT: Fix memory_realloc corruption bug preventing multi-statement programs'
+created: 1754472325
+completed: true
+files:
+  - src/core/memory.c
+activities:
+  - timestamp: 1754472325
+    start: 1754472325
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754472344
+    start: 1754472344
+    end: 0
+    method: Found the bug in memory_realloc - it zeros entire buffer instead of preserving existing data
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754472460
+    start: 1754472460
+    end: 1754472673
+    method: CONFIRMED BUG - memory_realloc still corrupts first element. Debug shows statements[0] becomes null after realloc.
+    success: true
+    fail: false
+    why_success: 'CRITICAL BUG FIXED! memory_realloc() was zeroing entire buffer instead of just new portion. Fix: only zero when old_size > 0. Multi-statement programs now work correctly.'
+    why_fail: ''

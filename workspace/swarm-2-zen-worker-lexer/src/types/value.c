@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <math.h>  // For NAN, INFINITY, isnan, isinf, floor
 #include "zen/types/value.h"
+#include "zen/core/memory.h"
 
 // Internal helper functions
 static void value_free_data(Value* value);
@@ -564,7 +565,7 @@ static void value_free_data(Value* value) {
         case VALUE_ERROR:
             if (value->as.error) {
                 if (value->as.error->message) {
-                    free(value->as.error->message);
+                    memory_free(value->as.error->message);
                 }
                 free(value->as.error);
                 value->as.error = NULL;

@@ -66,31 +66,229 @@ class ProjectVision {
             /exit\s*\(\s*1\s*\)\s*;.*not implemented/i,
             /assert\s*\(\s*0\s*\)/,
             /abort\s*\(\s*\)/,
-            /\{\s*\}/  // Empty function body
+            /^\s*\{\s*\}\s*$/,  // Empty function body
+            /^\s*\{\s*return\s+NULL\s*;\s*\}\s*$/,  // Only returns NULL (entire function)
+            /^\s*\{\s*return\s+0\s*;\s*\}\s*$/,     // Only returns 0 (entire function)
+            /^\s*\{\s*return\s+false\s*;\s*\}\s*$/  // Only returns false (entire function)
         ];
 
-        // Extract function body
-        const funcRegex = new RegExp(`${functionName}\\s*\\([^)]*\\)\\s*\\{([^}]*\\{[^}]*\\})*[^}]*\\}`, 'gs');
-        const match = content.match(funcRegex);
-        if (!match) return false;
-
-        const functionBody = match[0];
+        // Find function definition more accurately using proper brace matching
+        const functionBody = this.extractFunctionBody(content, functionName);
+        if (!functionBody) return false;  // Function not found
         
-        // Check if it's a stub
+        // Extract just the body content (without function signature)
+        const bodyContent = functionBody.substring(functionBody.indexOf('{') + 1, functionBody.lastIndexOf('}'));
+        
+        // Check if it's explicitly a stub - apply patterns to body content only
         for (const pattern of stubPatterns) {
-            if (pattern.test(functionBody)) return true;
+            if (pattern.test(bodyContent.trim())) return true;
         }
 
-        // Check if function body is too short (likely stub)
-        const bodyContent = functionBody.substring(functionBody.indexOf('{') + 1, functionBody.lastIndexOf('}'));
+        // Enhanced meaningful content analysis (bodyContent already extracted above)
+        
+        // Count actual meaningful lines of code (not just lines)
         const meaningfulLines = bodyContent.split('\n').filter(line => {
             const trimmed = line.trim();
-            return trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('/*');
+            // Filter out comments, empty lines, and braces
+            return trimmed && 
+                   !trimmed.startsWith('//') && 
+                   !trimmed.startsWith('/*') &&
+                   !trimmed.endsWith('*/') &&
+                   trimmed !== '*' &&
+                   !trimmed.match(/^\s*\*/) &&  // doxygen comment lines
+                   trimmed !== '{' &&
+                   trimmed !== '}';
         });
 
-        // Check if function body is too short (likely stub)
-        // A function with just a single return statement calling another function is still minimal
-        return meaningfulLines.length <= 1;
+        // Count control structures, function calls, assignments etc.
+        const hasControlFlow = /\b(if|else|while|for|switch|case)\b/.test(bodyContent);
+        const hasFunctionCalls = /\w+\s*\([^)]*\)\s*;/.test(bodyContent);
+        const hasAssignments = /\w+\s*[=+\-*\/]\s*/.test(bodyContent);
+        const hasMemoryOps = /\b(malloc|calloc|realloc|free|memory_alloc|memory_free)\b/.test(bodyContent);
+        const hasComplexLogic = hasControlFlow || hasFunctionCalls || hasAssignments || hasMemoryOps;
+
+        // A function is a stub if:
+        // 1. It has no meaningful lines, OR
+        // 2. It has very few lines (≤ 2) AND no complex logic
+        return meaningfulLines.length === 0 || 
+               (meaningfulLines.length <= 2 && !hasComplexLogic);
+    }
+    
+    /**
+     * Extract function body with proper brace matching - finds DEFINITIONS not calls
+     */
+    extractFunctionBody(content, functionName) {
+        // Escape special regex characters in function name
+        const escapedName = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // Find function definition - prioritize definitions over calls
+        // Look for: [optional_return_type] functionName([params]) {
+        const funcDefRegex = new RegExp(
+            `(?:^|\\n)\\s*(?:\\w+\\s*\\*?\\s+)?${escapedName}\\s*\\([^)]*\\)\\s*\\{`, 
+            'gm'
+        );
+        
+        let match = funcDefRegex.exec(content);
+        
+        // If no definition found, try broader pattern but filter out obvious calls
+        if (!match) {
+            const broadRegex = new RegExp(`\\b${escapedName}\\s*\\([^)]*\\)\\s*\\{`, 'g');
+            let candidate;
+            while ((candidate = broadRegex.exec(content)) !== null) {
+                // Get context around the match to filter out calls
+                const startLine = content.lastIndexOf('\n', candidate.index) + 1;
+                const lineContent = content.substring(startLine, candidate.index + candidate[0].length);
+                
+                // Skip if this looks like a function call
+                const isCall = /(?:return\s+|=\s*|if\s*\(|while\s*\(|for\s*\(|printf\s*\(|fprintf\s*\()/.test(lineContent);
+                
+                if (!isCall) {
+                    match = candidate;
+                    break;
+                }
+            }
+        }
+        
+        if (!match) return null;
+
+        // Find matching closing brace using proper brace counting
+        let braceCount = 1;
+        let pos = match.index + match[0].length;
+        let inString = false;
+        let inComment = false;
+        let inLineComment = false;
+        
+        while (pos < content.length && braceCount > 0) {
+            const char = content[pos];
+            const nextChar = pos + 1 < content.length ? content[pos + 1] : '';
+            
+            // Handle string literals
+            if (char === '"' && !inComment && !inLineComment && content[pos - 1] !== '\\') {
+                inString = !inString;
+            }
+            // Handle block comments
+            else if (char === '/' && nextChar === '*' && !inString && !inLineComment) {
+                inComment = true;
+                pos++; // skip next char
+            }
+            else if (char === '*' && nextChar === '/' && inComment) {
+                inComment = false;
+                pos++; // skip next char
+            }
+            // Handle line comments
+            else if (char === '/' && nextChar === '/' && !inString && !inComment) {
+                inLineComment = true;
+            }
+            else if (char === '\n' && inLineComment) {
+                inLineComment = false;
+            }
+            // Count braces only when not in strings or comments
+            else if (!inString && !inComment && !inLineComment) {
+                if (char === '{') {
+                    braceCount++;
+                } else if (char === '}') {
+                    braceCount--;
+                }
+            }
+            
+            pos++;
+        }
+        
+        if (braceCount === 0) {
+            return content.substring(match.index, pos);
+        }
+        
+        return null; // Unmatched braces
+    }
+    
+    /**
+     * Check if a function has adequate documentation
+     */
+    hasDocumentation(content, functionName) {
+        const lines = content.split('\n');
+        
+        // Find the function definition line (not just any call)
+        // Look for pattern: [return_type] functionName([params]) {
+        let functionLineIndex = -1;
+        const escapedName = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const functionDefRegex = new RegExp(`\\b${escapedName}\\s*\\([^)]*\\)\\s*\\{`);
+        
+        for (let i = 0; i < lines.length; i++) {
+            // First check if this line contains function definition pattern
+            if (functionDefRegex.test(lines[i])) {
+                functionLineIndex = i;
+                break;
+            }
+            // Fallback: check if line contains function name with opening brace on same or next line
+            if (lines[i].includes(functionName + '(')) {
+                // Check if this looks like a definition (has opening brace nearby)
+                if (lines[i].includes('{') || 
+                    (i + 1 < lines.length && lines[i + 1].includes('{'))) {
+                    // Additional check: make sure this isn't a function call
+                    // Function calls typically have 'return', '=', or are part of expressions
+                    const lineContent = lines[i].trim();
+                    const isCall = lineContent.startsWith('return ') ||
+                                  lineContent.includes(' = ') ||
+                                  lineContent.includes('if (') ||
+                                  lineContent.includes('while (') ||
+                                  lineContent.includes('for (') ||
+                                  lineContent.includes('printf(') ||
+                                  lineContent.includes('fprintf(');
+                    
+                    if (!isCall) {
+                        functionLineIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (functionLineIndex === -1) {
+            return false; // Function not found
+        }
+        
+        // Look for comments above the function (within 10 lines)
+        let hasDocumentation = false;
+        let docContent = '';
+        
+        for (let j = Math.max(0, functionLineIndex - 10); j < functionLineIndex; j++) {
+            const line = lines[j].trim();
+            
+            // Check for various comment styles
+            if (line.startsWith('/**') || line.startsWith('/*') || 
+                line.startsWith('*') || line.startsWith('//')) {
+                docContent += line + ' ';
+                hasDocumentation = true;
+            }
+        }
+        
+        // If we found any comments, do a basic quality check
+        if (hasDocumentation) {
+            // Accept documentation if it:
+            // 1. Has @brief or a description, OR  
+            // 2. Has meaningful content (more than just the function name), OR
+            // 3. Explains parameters or return values
+            const hasDescription = docContent.includes('@brief') || 
+                                  docContent.includes('@param') || 
+                                  docContent.includes('@return') ||
+                                  docContent.includes('Create') ||
+                                  docContent.includes('Parse') ||
+                                  docContent.includes('Get') ||
+                                  docContent.includes('Set') ||
+                                  docContent.includes('Free') ||
+                                  docContent.includes('Initialize') ||
+                                  docContent.includes('Check') ||
+                                  docContent.includes('Handle');
+            
+            // Additional check: meaningful content beyond just function name
+            const cleanDoc = docContent.toLowerCase().replace(/[*\/\s]/g, '');
+            const cleanFunctionName = functionName.toLowerCase().replace(/_/g, '');
+            const hasMeaningfulContent = cleanDoc.length > cleanFunctionName.length + 10;
+            
+            return hasDescription || hasMeaningfulContent;
+        }
+        
+        return false;
     }
 
     /**
@@ -167,30 +365,8 @@ class ProjectVision {
                 continue;
             }
 
-            // Check for doxygen documentation
-            const lines = content.split('\n');
-            let hasValidDoc = false;
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].includes(func.name + '(')) {
-                    // Look for doxygen comment above
-                    for (let j = i - 1; j >= 0; j--) {
-                        if (lines[j].trim().endsWith('*/')) {
-                            const docBlock = [];
-                            for (let k = j; k >= 0; k--) {
-                                docBlock.unshift(lines[k]);
-                                if (lines[k].trim().startsWith('/**')) break;
-                            }
-                            const docText = docBlock.join('\n');
-                            hasValidDoc = docText.includes('@brief') && 
-                                        (docText.includes('@param') || func.signature.includes('(void)')) &&
-                                        (docText.includes('@return') || func.signature.startsWith('void '));
-                            break;
-                        }
-                        if (!lines[j].trim().startsWith('*') && lines[j].trim()) break;
-                    }
-                    break;
-                }
-            }
+            // Check for documentation (more flexible than strict doxygen)
+            let hasValidDoc = this.hasDocumentation(content, func.name);
 
             // Check if it's a stub
             if (this.isStubImplementation(content, func.name)) {

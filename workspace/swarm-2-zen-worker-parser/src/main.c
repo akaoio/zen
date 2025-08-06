@@ -6,6 +6,7 @@
 #include "zen/core/parser.h"
 #include "zen/core/visitor.h"
 #include "zen/core/scope.h"
+#include "zen/core/memory.h"
 #include "zen/stdlib/io.h"
 
 #define MAX_INPUT_SIZE 1024
@@ -147,8 +148,6 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                printf("DEBUG: File contents: '%s'\n", file_contents);
-                
                 lexer_T* lexer = init_lexer(file_contents);
                 if (!lexer) {
                     fprintf(stderr, "Error: Failed to create lexer for file '%s'\n", argv[i]);
@@ -161,13 +160,11 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                printf("DEBUG: About to parse statements\n");
                 AST_T* root = parser_parse_statements(parser, global_scope);
                 if (!root) {
                     fprintf(stderr, "Error: Failed to parse file '%s'\n", argv[i]);
                     return 1;
                 }
-                printf("DEBUG: Parsed successfully, root type: %d\n", root->type);
                 
                 visitor_T* visitor = init_visitor();
                 if (!visitor) {
@@ -175,7 +172,45 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                visitor_visit(visitor, root);
+                // Execute the parsed AST - this performs all side effects (print, variable assignments, etc.)
+                AST_T* result = visitor_visit(visitor, root);
+                
+                // Handle any meaningful return value from execution
+                if (result && result->type != AST_NOOP) {
+                    switch (result->type) {
+                        case AST_STRING:
+                            if (result->string_value) {
+                                printf("%s\n", result->string_value);
+                            }
+                            break;
+                        case AST_NUMBER:
+                            printf("%.15g\n", result->number_value);
+                            break;
+                        case AST_BOOLEAN:
+                            printf("%s\n", result->boolean_value ? "true" : "false");
+                            break;
+                        case AST_NULL:
+                            printf("null\n");
+                            break;
+                        default:
+                            // Don't print other types like compound results
+                            break;
+                    }
+                }
+                
+                // CRITICAL: Free all allocated resources to prevent memory leaks
+                // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result 
+                // The visitor result can be:
+                // 1. A reference to a node in the original parse tree (freed by ast_free(root))
+                // 2. A new temporary node created by visitor (should be handled by visitor_free)
+                // 3. A shared node stored in scope (freed by scope_free)
+                // In all cases, freeing the result separately causes double-free crashes
+                
+                visitor_free(visitor);
+                ast_free(root);  // This will free the entire parse tree
+                parser_free(parser);
+                lexer_free(lexer);
+                free(file_contents);
                 
             } else {
                 print_help();
@@ -205,6 +240,12 @@ int main(int argc, char* argv[])
             }
         }
     }
+    
+    // CRITICAL: Free global scope before exit
+    scope_free(global_scope);
+    
+    // CRITICAL: Cleanup memory debugging system to prevent false leak reports
+    memory_debug_cleanup();
     
     return 0;
 }

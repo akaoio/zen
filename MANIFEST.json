@@ -73,6 +73,61 @@
           "name": "lexer_free",
           "signature": "void lexer_free(lexer_T* lexer)",
           "description": "Free lexer instance and cleanup resources"
+        },
+        {
+          "name": "lexer_create_enhanced",
+          "signature": "lexer_T* lexer_create_enhanced(char* contents, const LexerConfig* config)",
+          "description": "Create enhanced lexer with configuration options"
+        },
+        {
+          "name": "lexer_peek_token", 
+          "signature": "token_T* lexer_peek_token(lexer_T* lexer, size_t offset)",
+          "description": "Look ahead at tokens without consuming them"
+        },
+        {
+          "name": "lexer_get_location",
+          "signature": "SourceLocation lexer_get_location(const lexer_T* lexer)",
+          "description": "Get current source location for error reporting"
+        },
+        {
+          "name": "lexer_enter_error_recovery",
+          "signature": "void lexer_enter_error_recovery(lexer_T* lexer, const char* error_message)",
+          "description": "Enter error recovery mode"
+        },
+        {
+          "name": "lexer_exit_error_recovery", 
+          "signature": "void lexer_exit_error_recovery(lexer_T* lexer)",
+          "description": "Exit error recovery mode"
+        },
+        {
+          "name": "lexer_in_error_recovery",
+          "signature": "bool lexer_in_error_recovery(const lexer_T* lexer)",
+          "description": "Check if lexer is in error recovery mode"
+        },
+        {
+          "name": "lexer_collect_enhanced_number",
+          "signature": "token_T* lexer_collect_enhanced_number(lexer_T* lexer)",
+          "description": "Enhanced number collection with better parsing"
+        },
+        {
+          "name": "lexer_get_error_context",
+          "signature": "char* lexer_get_error_context(const lexer_T* lexer, size_t context_size)",
+          "description": "Get error context for debugging"
+        },
+        {
+          "name": "lexer_enable_buffering",
+          "signature": "bool lexer_enable_buffering(lexer_T* lexer, size_t buffer_size)",
+          "description": "Enable token buffering for performance"
+        },
+        {
+          "name": "lexer_collect_unicode_id",
+          "signature": "token_T* lexer_collect_unicode_id(lexer_T* lexer)",
+          "description": "Collect Unicode identifier tokens"
+        },
+        {
+          "name": "lexer_is_unicode_identifier_char", 
+          "signature": "bool lexer_is_unicode_identifier_char(uint32_t ch)",
+          "description": "Check if character is valid Unicode identifier character"
         }
       ],
       "includes": ["zen/core/lexer.h"],
@@ -264,6 +319,31 @@
           "name": "parser_free",
           "signature": "void parser_free(parser_T* parser)",
           "description": "Free parser instance and cleanup resources"
+        },
+        {
+          "name": "parser_peek_for_object_literal_strict",
+          "signature": "int parser_peek_for_object_literal_strict(parser_T* parser)",
+          "description": "Strict look ahead for object literal detection"
+        },
+        {
+          "name": "parser_parse_ternary_expr",
+          "signature": "AST_T* parser_parse_ternary_expr(parser_T* parser, scope_T* scope)",
+          "description": "Parse ternary conditional expressions"
+        },
+        {
+          "name": "parser_parse_null_coalescing_expr",
+          "signature": "AST_T* parser_parse_null_coalescing_expr(parser_T* parser, scope_T* scope)",
+          "description": "Parse null coalescing expressions"
+        },
+        {
+          "name": "parser_parse_ternary",
+          "signature": "AST_T* parser_parse_ternary(parser_T* parser, scope_T* scope)",
+          "description": "Parse ternary conditional expressions (alternative implementation)"
+        },
+        {
+          "name": "parser_parse_compound_assignment",
+          "signature": "AST_T* parser_parse_compound_assignment(parser_T* parser, scope_T* scope)",
+          "description": "Parse compound assignment operators (+=, -=, etc.)"
         }
       ]
     },
@@ -1522,6 +1602,41 @@
           "signature": "const ZenStdlibFunction* zen_stdlib_get_all()",
           "description": "Get all stdlib functions",
           "returns": "const ZenStdlibFunction*"
+        }
+      ]
+    },
+    "src/stdlib/array.c": {
+      "description": "Array helper functions for stdlib",
+      "functions": [
+        {
+          "name": "zen_array_push_stdlib",
+          "signature": "Value* zen_array_push_stdlib(Value** args, size_t argc)",
+          "description": "Array push function for stdlib"
+        },
+        {
+          "name": "zen_array_pop_stdlib", 
+          "signature": "Value* zen_array_pop_stdlib(Value** args, size_t argc)",
+          "description": "Array pop function for stdlib"
+        }
+      ]
+    },
+    "src/stdlib/datetime.c": {
+      "description": "Date and time functions for stdlib",
+      "functions": [
+        {
+          "name": "zen_datetime_now",
+          "signature": "Value* zen_datetime_now(Value** args, size_t argc)",
+          "description": "Get current timestamp"
+        }
+      ]
+    },
+    "src/stdlib/system.c": {
+      "description": "System interaction functions for stdlib", 
+      "functions": [
+        {
+          "name": "zen_system_exec",
+          "signature": "Value* zen_system_exec(Value** args, size_t argc)",
+          "description": "Execute system commands"
         }
       ]
     },

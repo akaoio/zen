@@ -6,6 +6,7 @@
 #include "zen/core/parser.h"
 #include "zen/core/visitor.h"
 #include "zen/core/scope.h"
+#include "zen/core/memory.h"
 #include "zen/stdlib/io.h"
 
 #define MAX_INPUT_SIZE 1024
@@ -198,11 +199,15 @@ int main(int argc, char* argv[])
                 }
                 
                 // CRITICAL: Free all allocated resources to prevent memory leaks
-                if (result) {
-                    ast_free(result);
-                }
+                // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result 
+                // The visitor result can be:
+                // 1. A reference to a node in the original parse tree (freed by ast_free(root))
+                // 2. A new temporary node created by visitor (should be handled by visitor_free)
+                // 3. A shared node stored in scope (freed by scope_free)
+                // In all cases, freeing the result separately causes double-free crashes
+                
                 visitor_free(visitor);
-                ast_free(root);
+                ast_free(root);  // This will free the entire parse tree
                 parser_free(parser);
                 lexer_free(lexer);
                 free(file_contents);
@@ -238,6 +243,9 @@ int main(int argc, char* argv[])
     
     // CRITICAL: Free global scope before exit
     scope_free(global_scope);
+    
+    // CRITICAL: Cleanup memory debugging system to prevent false leak reports
+    memory_debug_cleanup();
     
     return 0;
 }

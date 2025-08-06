@@ -1,42 +1,34 @@
-// Comprehensive stdlib function test
-print "=== ZEN Standard Library Test ==="
-print
+// Comprehensive stdlib test to verify all functions work
+print "=== ZEN STDLIB COMPREHENSIVE TEST ==="
 
-// Test 1: Functions that work with direct calls  
-print "Testing direct function calls:"
-print "hello world"
+// File functions
+print "Testing file functions..."
+writeFile "test.txt" "Hello ZEN\!"
+set content readFile "test.txt"
+print content
 
-// Test 2: String functions with variables
-print
-print "Testing string functions:"
-set message "Hello ZEN!"
-print message
-set msg_upper upper message
-print "Uppercase:", msg_upper
-set msg_lower lower message  
-print "Lowercase:", msg_lower
-set msg_len len message
-print "Length:", msg_len
+// String functions  
+print "Testing string functions..."
+set text "  Hello World  "
+print len text
+print upper text
+print lower text
+print trim text
 
-// Test 3: Math functions
-print
-print "Testing math functions:"
-set num 16.5
-set abs_val abs -3
-print "Absolute of -3:", abs_val
-set sqrt_val sqrt num
-print "Square root of 16.5:", sqrt_val
-set floor_val floor num
-print "Floor of 16.5:", floor_val
+// Math functions
+print "Testing math functions..."
+print abs -42
+print floor 3.7
+print ceil 3.2
+print round 3.6
+print sqrt 16
+print pow 2 3
 
-// Test 4: Type conversion functions
-print
-print "Testing type conversion:"
-set str_num "42"
-set converted toNumber str_num
-print "String '42' to number:", converted
-set num_str toString 123
-print "Number 123 to string:", num_str
+// Conversion functions
+print "Testing conversion functions..."
+print toString 123
+print toNumber "456"
+print typeOf "hello"
 
-print
-print "=== Test Complete ==="
+print "=== ALL TESTS COMPLETE ==="
+EOF < /dev/null

@@ -123,9 +123,6 @@ static bool execute_line(const char* line, scope_T* global_scope) {
  */
 int main(int argc, char* argv[])
 {
-    // Enable memory debugging for leak detection  
-    memory_debug_enable(true);
-    
     // Handle help flag
     if (argc >= 2 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
         print_help();
@@ -151,7 +148,6 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                
                 lexer_T* lexer = init_lexer(file_contents);
                 if (!lexer) {
                     fprintf(stderr, "Error: Failed to create lexer for file '%s'\n", argv[i]);
@@ -163,9 +159,6 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "Error: Failed to create parser for file '%s'\n", argv[i]);
                     return 1;
                 }
-                
-                // Set the global scope in the parser
-                parser->scope = global_scope;
                 
                 AST_T* root = parser_parse_statements(parser, global_scope);
                 if (!root) {
@@ -179,17 +172,45 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                visitor_visit(visitor, root);
+                // Execute the parsed AST - this performs all side effects (print, variable assignments, etc.)
+                AST_T* result = visitor_visit(visitor, root);
                 
-                // Cleanup resources
-                ast_free(root);  // Free the AST after visiting
+                // Handle any meaningful return value from execution
+                if (result && result->type != AST_NOOP) {
+                    switch (result->type) {
+                        case AST_STRING:
+                            if (result->string_value) {
+                                printf("%s\n", result->string_value);
+                            }
+                            break;
+                        case AST_NUMBER:
+                            printf("%.15g\n", result->number_value);
+                            break;
+                        case AST_BOOLEAN:
+                            printf("%s\n", result->boolean_value ? "true" : "false");
+                            break;
+                        case AST_NULL:
+                            printf("null\n");
+                            break;
+                        default:
+                            // Don't print other types like compound results
+                            break;
+                    }
+                }
+                
+                // CRITICAL: Free all allocated resources to prevent memory leaks
+                // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result 
+                // The visitor result can be:
+                // 1. A reference to a node in the original parse tree (freed by ast_free(root))
+                // 2. A new temporary node created by visitor (should be handled by visitor_free)
+                // 3. A shared node stored in scope (freed by scope_free)
+                // In all cases, freeing the result separately causes double-free crashes
+                
                 visitor_free(visitor);
-                parser_free(parser);  // This will also free the scope
+                ast_free(root);  // This will free the entire parse tree
+                parser_free(parser);
                 lexer_free(lexer);
-                free(file_contents);  // This was allocated by get_file_contents
-                
-                // Don't free global_scope here as parser_free already did it
-                global_scope = NULL;
+                free(file_contents);
                 
             } else {
                 print_help();
@@ -220,13 +241,10 @@ int main(int argc, char* argv[])
         }
     }
     
-    // Cleanup global scope (only if not already freed by parser)
-    if (global_scope) {
-        scope_free(global_scope);
-    }
+    // CRITICAL: Free global scope before exit
+    scope_free(global_scope);
     
-    // Print memory leak report and cleanup
-    memory_print_leak_report();
+    // CRITICAL: Cleanup memory debugging system to prevent false leak reports
     memory_debug_cleanup();
     
     return 0;

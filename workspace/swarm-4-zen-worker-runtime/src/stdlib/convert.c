@@ -23,8 +23,11 @@
  */
 Value* zen_to_string(const Value* value) {
     if (!value) {
+        printf("DEBUG: zen_to_string called with NULL value\n");
         return value_new_string("null");
     }
+    
+    printf("DEBUG: zen_to_string called with Value type=%d\n", value->type);
     
     switch (value->type) {
         case VALUE_NULL:

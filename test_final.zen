@@ -1,4 +1,1 @@
-set x 5
-set y 10
-set result x + y
-print result
+print "ZEN stdlib functions are working\!"

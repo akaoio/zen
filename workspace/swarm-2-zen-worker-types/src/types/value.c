@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <math.h>  // For NAN, INFINITY, isnan, isinf, floor
 #include "zen/types/value.h"
+#include "zen/core/memory.h"
 
 // Internal helper functions
 static void value_free_data(Value* value);
@@ -286,14 +287,18 @@ Value* value_copy(const Value* value) {
 /**
  * @brief Free value memory
  * @param value Value to free (may be NULL)
+ * @note Properly integrated with memory management system
  */
 void value_free(Value* value) {
     if (!value) {
         return;
     }
     
+    // Free type-specific data first
     value_free_data(value);
-    free(value);
+    
+    // Use memory system for proper tracking
+    memory_free(value);
 }
 
 /**
@@ -497,11 +502,15 @@ const char* value_type_name(ValueType type) {
  * @brief Increment reference count of value
  * @param value Value to reference (may be NULL)
  * @return The same value pointer for convenience
+ * @note Uses atomic operations for thread safety
  */
 Value* value_ref(Value* value) {
-    if (value) {
-        value->ref_count++;
+    if (!value) {
+        return NULL;
     }
+    
+    // Use atomic increment for thread safety
+    memory_ref_inc(&value->ref_count);
     return value;
 }
 
@@ -848,22 +857,32 @@ Value* value_new_class(const char* name, const char* parent_name) {
  * @brief Create a new instance of a class
  * @param class_def Class definition value
  * @return Newly allocated instance value or NULL on failure
+ * @note Properly validates class and uses memory system
  */
 Value* value_new_instance(Value* class_def) {
+    // Enhanced validation
     if (!class_def || class_def->type != VALUE_CLASS) {
         return NULL;
     }
     
-    Value* value = calloc(1, sizeof(Value));
+    if (!class_def->as.class_def) {
+        return NULL;
+    }
+    
+    // Use memory system for proper tracking
+    Value* value = memory_alloc(sizeof(Value));
     if (!value) {
         return NULL;
     }
     
+    // Initialize value
     value->type = VALUE_INSTANCE;
     value->ref_count = 1;
+    
+    // Create instance with proper validation
     value->as.instance = instance_create(class_def);
     if (!value->as.instance) {
-        free(value);
+        memory_free(value);
         return NULL;
     }
     

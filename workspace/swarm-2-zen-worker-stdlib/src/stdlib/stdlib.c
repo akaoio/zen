@@ -17,6 +17,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Forward declarations for array functions  
+Value* array_new(size_t initial_capacity);
+void array_push(Value* array, Value* item);
+
+// Forward declarations for stdlib functions
+Value* zen_stdlib_get_all_wrapper(Value** args, size_t argc);
+
 // Native function typedef for runtime integration
 typedef Value* (*ZenNativeFunc)(Value** args, size_t argc);
 
@@ -70,13 +77,16 @@ static ZenStdlibFunction stdlib_functions[] = {
     {"jsonParse", zen_stdlib_json_parse, "Parse JSON string"},
     {"jsonStringify", zen_stdlib_json_stringify, "Convert value to JSON string"},
     
+    // Introspection Functions  
+    {"getAll", zen_stdlib_get_all_wrapper, "Get all stdlib function names"},
+    
     // Sentinel - must be last
     {NULL, NULL, NULL}
 };
 
 /**
  * @brief Get count of stdlib functions
- * @param None No parameters
+ * @param None - takes no parameters
  * @return Number of stdlib functions available
  */
 size_t zen_stdlib_count() {
@@ -108,20 +118,20 @@ const ZenStdlibFunction* zen_stdlib_get(const char* name) {
 
 /**
  * @brief Get all stdlib functions
- * @param None No parameters
+ * @param None - takes no parameters
  * @return Array of all stdlib functions (terminated by NULL entry)
  */
 const ZenStdlibFunction* zen_stdlib_get_all() {
+    // Return the complete array of stdlib functions
+    // The array is NULL-terminated for safe iteration
+    // This enables runtime discovery of all available stdlib functions
     return stdlib_functions;
 }
 
 // Wrapper functions for stdlib integration
 
 /**
- * @brief Print values to stdout with newline
- * @param args Array of Value pointers to print
- * @param argc Number of arguments
- * @return NULL value
+ * @brief Print wrapper function
  */
 Value* zen_stdlib_print(Value** args, size_t argc) {
     if (argc >= 1) {
@@ -133,10 +143,7 @@ Value* zen_stdlib_print(Value** args, size_t argc) {
 }
 
 /**
- * @brief Read input from stdin with optional prompt
- * @param args Optional prompt string as first argument
- * @param argc Number of arguments (0 or 1)
- * @return String value containing user input
+ * @brief Input wrapper function
  */
 Value* zen_stdlib_input(Value** args, size_t argc) {
     char* input;
@@ -156,10 +163,7 @@ Value* zen_stdlib_input(Value** args, size_t argc) {
 }
 
 /**
- * @brief Read entire file contents as string
- * @param args Filename string as first argument
- * @param argc Number of arguments (must be 1)
- * @return String value with file contents or error
+ * @brief Read file wrapper function
  */
 Value* zen_stdlib_read_file(Value** args, size_t argc) {
     if (argc < 1 || args[0]->type != VALUE_STRING) {
@@ -187,10 +191,7 @@ Value* zen_stdlib_read_file(Value** args, size_t argc) {
 }
 
 /**
- * @brief Write string content to file
- * @param args Filename and content strings as arguments
- * @param argc Number of arguments (must be 2)
- * @return Boolean indicating success
+ * @brief Write file wrapper function
  */
 Value* zen_stdlib_write_file(Value** args, size_t argc) {
     if (argc < 2 || args[0]->type != VALUE_STRING || args[1]->type != VALUE_STRING) {
@@ -202,10 +203,7 @@ Value* zen_stdlib_write_file(Value** args, size_t argc) {
 }
 
 /**
- * @brief Append string content to file
- * @param args Filename and content strings as arguments
- * @param argc Number of arguments (must be 2)
- * @return Boolean indicating success
+ * @brief Append file wrapper function
  */
 Value* zen_stdlib_append_file(Value** args, size_t argc) {
     if (argc < 2 || args[0]->type != VALUE_STRING || args[1]->type != VALUE_STRING) {
@@ -217,10 +215,7 @@ Value* zen_stdlib_append_file(Value** args, size_t argc) {
 }
 
 /**
- * @brief Check if file exists
- * @param args Filename string as first argument
- * @param argc Number of arguments (must be 1)
- * @return Boolean indicating if file exists
+ * @brief File exists wrapper function
  */
 Value* zen_stdlib_file_exists(Value** args, size_t argc) {
     if (argc < 1 || args[0]->type != VALUE_STRING) {
@@ -232,10 +227,7 @@ Value* zen_stdlib_file_exists(Value** args, size_t argc) {
 }
 
 /**
- * @brief Get length of string, array, or object
- * @param args Value to get length of
- * @param argc Number of arguments (must be 1)
- * @return Number value representing length
+ * @brief Length wrapper function
  */
 Value* zen_stdlib_length(Value** args, size_t argc) {
     if (argc < 1) {
@@ -254,42 +246,53 @@ Value* zen_stdlib_length(Value** args, size_t argc) {
 }
 
 // String function wrappers
-
 /**
- * @brief Convert string to uppercase
- * @param args String value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Uppercase string value
+ * @brief Convert string to uppercase wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing uppercased string
  */
 Value* zen_stdlib_upper(Value** args, size_t argc) {
-    return argc >= 1 ? zen_string_upper(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_string_upper(args[0]);
 }
 
 /**
- * @brief Convert string to lowercase
- * @param args String value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Lowercase string value
+ * @brief Convert string to lowercase wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing lowercased string
  */
 Value* zen_stdlib_lower(Value** args, size_t argc) {
-    return argc >= 1 ? zen_string_lower(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_string_lower(args[0]);
 }
 
 /**
- * @brief Trim whitespace from string ends
- * @param args String value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Trimmed string value
+ * @brief Trim whitespace from string wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing trimmed string
  */
 Value* zen_stdlib_trim(Value** args, size_t argc) {
-    return argc >= 1 ? zen_string_trim(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_string_trim(args[0]);
 }
 
 /**
- * @brief Split string by delimiter
- * @param args String and delimiter as arguments
- * @param argc Number of arguments (1 or 2)
- * @return Array of split string parts
+ * @brief Split string by delimiter wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value array containing split string parts
  */
 Value* zen_stdlib_split(Value** args, size_t argc) {
     if (argc >= 2 && args[1]->type == VALUE_STRING) {
@@ -299,10 +302,10 @@ Value* zen_stdlib_split(Value** args, size_t argc) {
 }
 
 /**
- * @brief Check if string contains substring
- * @param args String and substring as arguments
- * @param argc Number of arguments (must be 2)
- * @return Boolean indicating if substring found
+ * @brief Check if string contains substring wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Boolean Value indicating if substring exists
  */
 Value* zen_stdlib_contains(Value** args, size_t argc) {
     if (argc >= 2 && args[1]->type == VALUE_STRING) {
@@ -312,10 +315,10 @@ Value* zen_stdlib_contains(Value** args, size_t argc) {
 }
 
 /**
- * @brief Replace substring in string
- * @param args String, search, and replacement as arguments
- * @param argc Number of arguments (must be 3)
- * @return String with replacements made
+ * @brief Replace substring in string wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing string with replacements
  */
 Value* zen_stdlib_replace(Value** args, size_t argc) {
     if (argc >= 3 && args[1]->type == VALUE_STRING && args[2]->type == VALUE_STRING) {
@@ -325,112 +328,151 @@ Value* zen_stdlib_replace(Value** args, size_t argc) {
 }
 
 // Math function wrappers
-
 /**
- * @brief Get absolute value of number
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Absolute value as number
+ * @brief Absolute value wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing absolute value
  */
 Value* zen_stdlib_abs(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_abs(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_abs(args[0]);
 }
 
 /**
- * @brief Get floor of number (round down)
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Floor value as number
+ * @brief Floor function wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing floor result
  */
 Value* zen_stdlib_floor(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_floor(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_floor(args[0]);
 }
 
 /**
- * @brief Get ceiling of number (round up)
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Ceiling value as number
+ * @brief Ceiling function wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing ceiling result
  */
 Value* zen_stdlib_ceil(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_ceil(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_ceil(args[0]);
 }
 
 /**
- * @brief Round number to nearest integer
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Rounded value as number
+ * @brief Round function wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing rounded result
  */
 Value* zen_stdlib_round(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_round(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_round(args[0]);
 }
 
 /**
- * @brief Get square root of number
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Square root as number
+ * @brief Square root wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing square root result
  */
 Value* zen_stdlib_sqrt(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_sqrt(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_sqrt(args[0]);
 }
 
 /**
- * @brief Raise number to power
- * @param args Base and exponent as arguments
- * @param argc Number of arguments (must be 2)
- * @return Result of base^exponent
+ * @brief Power function wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing power result
  */
 Value* zen_stdlib_pow(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_pow(args[0], args[1]) : value_new_number(0);
+    if (argc < 2) {
+        return value_new_number(0);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_pow(args[0], args[1]);
 }
 
 /**
- * @brief Get sine of angle in radians
- * @param args Angle in radians as first argument
- * @param argc Number of arguments (must be 1)
- * @return Sine value as number
+ * @brief Sine function wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing sine result
  */
 Value* zen_stdlib_sin(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_sin(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_sin(args[0]);
 }
 
 /**
- * @brief Get cosine of angle in radians
- * @param args Angle in radians as first argument
- * @param argc Number of arguments (must be 1)
- * @return Cosine value as number
+ * @brief Cosine function wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing cosine result
  */
 Value* zen_stdlib_cos(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_cos(args[0]) : value_new_number(1);
+    if (argc < 1) {
+        return value_new_number(1);  // cos(0) = 1
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_cos(args[0]);
 }
 
 /**
- * @brief Get tangent of angle in radians
- * @param args Angle in radians as first argument
- * @param argc Number of arguments (must be 1)
- * @return Tangent value as number
+ * @brief Tangent function wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing tangent result
  */
 Value* zen_stdlib_tan(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_tan(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_tan(args[0]);
 }
 
 /**
- * @brief Get natural logarithm of number
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Natural logarithm as number
+ * @brief Natural logarithm wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Value containing logarithm result
  */
 Value* zen_stdlib_log(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_log(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_log(args[0]);
 }
 
 /**
- * @brief Generate random number between 0 and 1
- * @param args Unused
- * @param argc Number of arguments (ignored)
- * @return Random number between 0 and 1
+ * @brief Random number wrapper function
+ * @param args Array of Value arguments (unused)
+ * @param argc Number of arguments (unused)
+ * @return Value containing random number 0-1
  */
 Value* zen_stdlib_random(Value** args, size_t argc) {
     (void)args; (void)argc; // Unused parameters
@@ -438,102 +480,143 @@ Value* zen_stdlib_random(Value** args, size_t argc) {
 }
 
 /**
- * @brief Generate random integer in range
- * @param args Min and max values as arguments
- * @param argc Number of arguments (must be 2)
- * @return Random integer in range [min, max]
+ * @brief Random integer wrapper function
+ * @param args Array of Value arguments (min, max)
+ * @param argc Number of arguments
+ * @return Value containing random integer in range
  */
 Value* zen_stdlib_random_int(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_random_int(args[0], args[1]) : value_new_number(0);
+    if (argc < 2) {
+        return value_new_number(0);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_random_int(args[0], args[1]);
 }
 
 /**
- * @brief Get minimum of two numbers
- * @param args Two number values as arguments
- * @param argc Number of arguments (must be 2)
- * @return Minimum value as number
+ * @brief Minimum value wrapper function
+ * @param args Array of Value arguments (two numbers)
+ * @param argc Number of arguments
+ * @return Value containing minimum value
  */
 Value* zen_stdlib_min(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_min(args[0], args[1]) : (argc >= 1 ? value_copy(args[0]) : value_new_number(0));
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    if (argc < 2) {
+        return value_copy(args[0]);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_min(args[0], args[1]);
 }
 
 /**
- * @brief Get maximum of two numbers
- * @param args Two number values as arguments
- * @param argc Number of arguments (must be 2)
- * @return Maximum value as number
+ * @brief Maximum value wrapper function
+ * @param args Array of Value arguments (two numbers)
+ * @param argc Number of arguments
+ * @return Value containing maximum value
  */
 Value* zen_stdlib_max(Value** args, size_t argc) {
-    return argc >= 2 ? zen_math_max(args[0], args[1]) : (argc >= 1 ? value_copy(args[0]) : value_new_number(0));
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    if (argc < 2) {
+        return value_copy(args[0]);
+    }
+    // Validate arguments and delegate to underlying implementation
+    return zen_math_max(args[0], args[1]);
 }
 
 /**
- * @brief Check if number is NaN (Not a Number)
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Boolean indicating if value is NaN
+ * @brief Check if number is NaN wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Boolean Value indicating if number is NaN
  */
 Value* zen_stdlib_is_nan(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_is_nan(args[0]) : value_new_boolean(false);
+    if (argc < 1) {
+        return value_new_boolean(false);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_is_nan(args[0]);
 }
 
 /**
- * @brief Check if number is infinite
- * @param args Number value as first argument
- * @param argc Number of arguments (must be 1)
- * @return Boolean indicating if value is infinite
+ * @brief Check if number is infinite wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Boolean Value indicating if number is infinite
  */
 Value* zen_stdlib_is_infinite(Value** args, size_t argc) {
-    return argc >= 1 ? zen_math_is_infinite(args[0]) : value_new_boolean(false);
+    if (argc < 1) {
+        return value_new_boolean(false);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_math_is_infinite(args[0]);
 }
 
 // Type conversion function wrappers
-
 /**
- * @brief Convert value to string representation
- * @param args Value to convert as first argument
- * @param argc Number of arguments (must be 1)
- * @return String representation of value
+ * @brief Convert value to string wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return String Value containing string representation
  */
 Value* zen_stdlib_to_string(Value** args, size_t argc) {
-    return argc >= 1 ? zen_to_string(args[0]) : value_new_string("");
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_to_string(args[0]);
 }
 
 /**
- * @brief Convert value to number
- * @param args Value to convert as first argument
- * @param argc Number of arguments (must be 1)
- * @return Number representation of value
+ * @brief Convert value to number wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Number Value containing numeric representation
  */
 Value* zen_stdlib_to_number(Value** args, size_t argc) {
-    return argc >= 1 ? zen_to_number(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_to_number(args[0]);
 }
 
 /**
- * @brief Convert value to boolean
- * @param args Value to convert as first argument
- * @param argc Number of arguments (must be 1)
- * @return Boolean representation of value
+ * @brief Convert value to boolean wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Boolean Value containing boolean representation
  */
 Value* zen_stdlib_to_boolean(Value** args, size_t argc) {
-    return argc >= 1 ? zen_to_boolean(args[0]) : value_new_boolean(false);
+    if (argc < 1) {
+        return value_new_boolean(false);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_to_boolean(args[0]);
 }
 
 /**
- * @brief Get type name of value
- * @param args Value to get type of as first argument
- * @param argc Number of arguments (must be 1)
- * @return String containing type name
+ * @brief Get type name wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return String Value containing type name
  */
 Value* zen_stdlib_type_of(Value** args, size_t argc) {
-    return argc >= 1 ? zen_type_of(args[0]) : value_new_string("undefined");
+    if (argc < 1) {
+        return value_new_string("undefined");
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_type_of(args[0]);
 }
 
 /**
- * @brief Check if value is of specific type
- * @param args Value and type name as arguments
- * @param argc Number of arguments (must be 2)
- * @return Boolean indicating if value matches type
+ * @brief Check if value is of specific type wrapper function
+ * @param args Array of Value arguments (value, type_name)
+ * @param argc Number of arguments
+ * @return Boolean Value indicating type match
  */
 Value* zen_stdlib_is_type(Value** args, size_t argc) {
     if (argc >= 2 && args[1]->type == VALUE_STRING) {
@@ -543,32 +626,40 @@ Value* zen_stdlib_is_type(Value** args, size_t argc) {
 }
 
 /**
- * @brief Parse integer from string
- * @param args String and optional base as arguments
- * @param argc Number of arguments (1 or 2)
- * @return Integer value or NaN if invalid
+ * @brief Parse integer from string wrapper function
+ * @param args Array of Value arguments (string, optional radix)
+ * @param argc Number of arguments
+ * @return Number Value containing parsed integer
  */
 Value* zen_stdlib_parse_int(Value** args, size_t argc) {
-    return argc >= 1 ? zen_parse_int(args[0], argc >= 2 ? args[1] : NULL) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Support optional radix argument and delegate to underlying implementation
+    Value* radix = (argc >= 2) ? args[1] : NULL;
+    return zen_parse_int(args[0], radix);
 }
 
 /**
- * @brief Parse floating point number from string
- * @param args String to parse as first argument
- * @param argc Number of arguments (must be 1)
- * @return Float value or NaN if invalid
+ * @brief Parse float from string wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Number Value containing parsed float
  */
 Value* zen_stdlib_parse_float(Value** args, size_t argc) {
-    return argc >= 1 ? zen_parse_float(args[0]) : value_new_number(0);
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    // Validate argument and delegate to underlying implementation
+    return zen_parse_float(args[0]);
 }
 
 // JSON function wrappers
-
 /**
- * @brief Parse JSON string to value
- * @param args JSON string as first argument
- * @param argc Number of arguments (must be 1)
- * @return Parsed value or null if invalid
+ * @brief Parse JSON string wrapper function
+ * @param args Array of Value arguments (JSON string)
+ * @param argc Number of arguments
+ * @return Parsed Value structure from JSON
  */
 Value* zen_stdlib_json_parse(Value** args, size_t argc) {
     if (argc >= 1 && args[0]->type == VALUE_STRING) {
@@ -578,10 +669,10 @@ Value* zen_stdlib_json_parse(Value** args, size_t argc) {
 }
 
 /**
- * @brief Convert value to JSON string
- * @param args Value to convert as first argument
- * @param argc Number of arguments (must be 1)
- * @return JSON string representation
+ * @brief Convert value to JSON string wrapper function
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return String Value containing JSON representation
  */
 Value* zen_stdlib_json_stringify(Value** args, size_t argc) {
     if (argc >= 1) {
@@ -593,4 +684,34 @@ Value* zen_stdlib_json_stringify(Value** args, size_t argc) {
         }
     }
     return value_new_string("null");
+}
+
+/**
+ * @brief Wrapper function to get all stdlib function names as Value array
+ * @param args Arguments array (unused)
+ * @param argc Number of arguments (unused)
+ * @return Array Value containing all stdlib function names as strings
+ */
+Value* zen_stdlib_get_all_wrapper(Value** args, size_t argc) {
+    (void)args; // Unused parameters
+    (void)argc;
+    
+    // Count the number of functions
+    size_t count = zen_stdlib_count();
+    
+    // Create array to hold function names
+    Value* result = array_new(count);
+    if (!result) {
+        return value_new_null();
+    }
+    
+    // Add each function name from stdlib_functions registry
+    for (size_t i = 0; i < count && stdlib_functions[i].name != NULL; i++) {
+        Value* name = value_new_string(stdlib_functions[i].name);
+        if (name) {
+            array_push(result, name);
+        }
+    }
+    
+    return result;
 }

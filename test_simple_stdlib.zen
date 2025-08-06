@@ -1,0 +1,6 @@
+// Simple stdlib test
+print "Testing stdlib..."
+print len "Hello World"
+print abs -5
+print upper "hello"
+print lower "WORLD"

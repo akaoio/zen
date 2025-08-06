@@ -171,7 +171,41 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                visitor_visit(visitor, root);
+                // Execute the parsed AST - this performs all side effects (print, variable assignments, etc.)
+                AST_T* result = visitor_visit(visitor, root);
+                
+                // Handle any meaningful return value from execution
+                if (result && result->type != AST_NOOP) {
+                    switch (result->type) {
+                        case AST_STRING:
+                            if (result->string_value) {
+                                printf("%s\n", result->string_value);
+                            }
+                            break;
+                        case AST_NUMBER:
+                            printf("%.15g\n", result->number_value);
+                            break;
+                        case AST_BOOLEAN:
+                            printf("%s\n", result->boolean_value ? "true" : "false");
+                            break;
+                        case AST_NULL:
+                            printf("null\n");
+                            break;
+                        default:
+                            // Don't print other types like compound results
+                            break;
+                    }
+                }
+                
+                // CRITICAL: Free all allocated resources to prevent memory leaks
+                // CRITICAL FIX: Don't free visitor result - it may reference nodes in the parse tree
+                // The visitor returns either references to nodes in the original tree OR new nodes
+                // But determining which is complex, so let ast_free(root) handle all cleanup
+                visitor_free(visitor);
+                ast_free(root);  // This will free the entire parse tree including any referenced nodes
+                parser_free(parser);
+                lexer_free(lexer);
+                free(file_contents);
                 
             } else {
                 print_help();
@@ -201,6 +235,9 @@ int main(int argc, char* argv[])
             }
         }
     }
+    
+    // CRITICAL: Free global scope before exit
+    scope_free(global_scope);
     
     return 0;
 }

@@ -1,0 +1,4 @@
+set arr 1, 2, 3
+print "Array:", arr
+set x 5
+print "Value:", x

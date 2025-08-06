@@ -11,6 +11,14 @@
 #include <string.h>
 #include <stdbool.h>
 
+// Forward declarations for error handling
+Value* value_new_error(const char* message, int error_code);
+Value* value_ref(Value* value);
+void value_unref(Value* value);
+Value* value_new_null(void);
+bool value_equals(const Value* a, const Value* b);
+Value* value_copy(const Value* value);
+
 // Forward declarations of array functions from types/array.c
 Value* array_new(size_t initial_capacity);
 void array_push(Value* array, Value* item);
@@ -181,4 +189,66 @@ Value* zen_array_concat(const Value* array1_value, const Value* array2_value) {
     }
     
     return result_array;
+}
+
+/**
+ * @brief Array push function for stdlib
+ * @param args Array of arguments: [array, value_to_push]
+ * @param argc Number of arguments (should be 2)
+ * @return Updated array or error value
+ */
+Value* zen_array_push_stdlib(Value** args, size_t argc) {
+    if (argc != 2) {
+        return value_new_error("Array.push requires exactly 2 arguments", -1);
+    }
+    
+    if (!args || !args[0] || !args[1]) {
+        return value_new_error("Array.push: null arguments", -1);
+    }
+    
+    Value* array_value = args[0];
+    Value* value_to_push = args[1];
+    
+    if (array_value->type != VALUE_ARRAY) {
+        return value_new_error("Array.push: first argument must be an array", -1);
+    }
+    
+    // Use the core array_push function to add the item
+    array_push(array_value, value_to_push);
+    
+    // Return a reference to the updated array
+    return value_ref(array_value);
+}
+
+/**
+ * @brief Array pop function for stdlib
+ * @param args Array of arguments: [array]
+ * @param argc Number of arguments (should be 1)
+ * @return Popped value or error value
+ */
+Value* zen_array_pop_stdlib(Value** args, size_t argc) {
+    if (argc != 1) {
+        return value_new_error("Array.pop requires exactly 1 argument", -1);
+    }
+    
+    if (!args || !args[0]) {
+        return value_new_error("Array.pop: null argument", -1);
+    }
+    
+    Value* array_value = args[0];
+    
+    if (array_value->type != VALUE_ARRAY) {
+        return value_new_error("Array.pop: argument must be an array", -1);
+    }
+    
+    // Use the core array_push function to remove the last item
+    Value* popped_value = array_pop(array_value);
+    
+    if (!popped_value) {
+        // Array was empty, return null instead of error
+        return value_new_null();
+    }
+    
+    // Return the popped value (caller now owns the reference)
+    return popped_value;
 }

@@ -85,8 +85,49 @@ class ManifestEnforcer {
             return trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('/*');
         });
         
-        // Empty body or single return statement is likely a stub
-        return meaningfulLines.length <= 1;
+        // Empty body is definitely a stub
+        if (meaningfulLines.length === 0) return true;
+        
+        // Single line functions can be legitimate (getters, simple calculations, etc.)
+        // Only consider it a stub if it matches explicit stub patterns
+        if (meaningfulLines.length === 1) {
+            const singleLine = meaningfulLines[0].trim();
+            
+            // These are legitimate single-line patterns
+            const legitimatePatterns = [
+                /^return\s+.*\s*[&|><!=+\-*/]\s*.*/,  // return with operators (calculations, comparisons)
+                /^return\s+\w+\s*\?\s*.*/,            // ternary expressions
+                /^return\s+\w+\s*\.\s*\w+/,           // property access
+                /^return\s+\w+\s*\[\s*.*\s*\]/,       // array access
+                /^return\s+\w+\s*\(\s*.*\s*\)/,       // function calls
+                /^return\s+(true|false)\s*;?\s*$/,    // simple boolean return
+                /^return\s+\w+\s*;?\s*$/,             // simple variable return
+            ];
+            
+            for (const pattern of legitimatePatterns) {
+                if (pattern.test(singleLine)) {
+                    return false; // Not a stub
+                }
+            }
+            
+            // Check for explicit stub patterns in single line
+            const stubPatternsInLine = [
+                /return\s+(NULL|0|false)\s*;\s*\/\/\s*(TODO|STUB|FIXME)/i,
+                /return\s+(NULL|0|false)\s*;\s*$/,  // Bare return with common stub values
+            ];
+            
+            for (const pattern of stubPatternsInLine) {
+                if (pattern.test(singleLine)) {
+                    return true; // Is a stub
+                }
+            }
+            
+            // If it's a single line but doesn't match patterns, assume it's legitimate
+            return false;
+        }
+        
+        // Multiple lines - only stub if matches explicit patterns above
+        return false;
     }
 
     /**

@@ -1,2 +1,4 @@
-set x 10
-print x
+set x 5
+set y 10  
+set result x + y
+print result

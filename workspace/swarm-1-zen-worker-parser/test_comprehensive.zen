@@ -1,0 +1,25 @@
+set x 5
+set y 10
+set result x + y * 2
+print result
+
+set arr 1, 2, 3
+print arr
+
+set obj name "Alice", age 30
+print obj.name
+print obj.age
+
+if x < y
+    print "x is less than y"
+else
+    print "x is not less than y"
+
+function add a b
+    return a + b
+
+set sum add 5, 7
+print sum
+
+for item in arr
+    print item

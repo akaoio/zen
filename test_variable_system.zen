@@ -1,7 +1,4 @@
-print "Testing variable system"
-set x 42  
-print "x is:"
+set x 5
+set y 10
 print x
-set y "hello"
-print "y is:"  
 print y
