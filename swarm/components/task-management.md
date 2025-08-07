@@ -112,6 +112,8 @@ Your tasks are visible to ALL 32 AGENTS via `make vision`:
 3. **Update task files FREQUENTLY** - other agents are watching
 4. **NEVER work on files with [other-agent-id]** - respect ownership
 5. **Coordinate through queens** - they see the big picture
+6. **VALIDATE file creation locations** - use file creation policies
+7. **NO temporary files in root** - must use tmp/ folder
 
 ### Multi-Swarm Task Visibility
 

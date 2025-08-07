@@ -587,4 +587,4 @@ if (require.main === module) {
 }
 
 // Export for use as module
-module.exports = TaskManager;
+module.exports = TaskManager;// Integration with validation framework available

@@ -309,7 +309,7 @@ class ProjectVision {
     }
 
     /**
-     * Extract all functions from a C/H file
+     * Extract all functions from a C/H file with line numbers
      */
     extractAllFunctions(filePath) {
         if (!fs.existsSync(filePath)) {
@@ -319,10 +319,11 @@ class ProjectVision {
         const content = fs.readFileSync(filePath, 'utf8');
         const functions = [];
         
-        // Remove comments
-        const cleanContent = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        // Keep original content for line number tracking
+        const originalLines = content.split('\n');
         
-        // Split into lines and process each potential function
+        // Remove comments for cleaner parsing but keep line structure
+        const cleanContent = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
         const lines = cleanContent.split('\n');
         
         for (let i = 0; i < lines.length; i++) {
@@ -391,7 +392,7 @@ class ProjectVision {
             functions.push({
                 name,
                 signature: `${returnType.trim()} ${name}(${params.trim()})`,
-                lineNumber: i + 1
+                lineNumber: i + 1  // Line number in the file (1-based)
             });
         }
         
@@ -456,52 +457,69 @@ class ProjectVision {
      */
     analyzeFile(filePath, fileSpec) {
         if (!fs.existsSync(filePath)) {
-            // Check if this is a desired future file
-            return { status: 'desired', functions: {} };
+            // For desired future files, show all functions as 'desired'
+            const functionStatuses = {};
+            for (const func of fileSpec.functions || []) {
+                functionStatuses[func.name] = { status: 'desired', lineNumber: null };
+            }
+            return { status: 'desired', functions: functionStatuses };
         }
 
         const content = fs.readFileSync(filePath, 'utf8');
         const functionStatuses = {};
+
+        // Extract all actual functions to get line numbers
+        const allFunctions = this.extractAllFunctions(filePath);
+        const functionLineNumbers = new Map();
+        allFunctions.forEach(func => {
+            functionLineNumbers.set(func.name, func.lineNumber);
+        });
 
         // Check each function
         for (const func of fileSpec.functions || []) {
             // Check if function exists
             const funcRegex = new RegExp(`\\b${func.name}\\s*\\(`, 'g');
             if (!funcRegex.test(content)) {
-                functionStatuses[func.name] = 'desired';
+                functionStatuses[func.name] = { status: 'desired', lineNumber: null };
                 continue;
             }
+
+            // Get line number for this function
+            const lineNumber = functionLineNumbers.get(func.name) || null;
 
             // Check for documentation (more flexible than strict doxygen)
             let hasValidDoc = this.hasDocumentation(content, func.name);
 
             // Check if it's a stub
+            let status;
             if (this.isStubImplementation(content, func.name)) {
-                functionStatuses[func.name] = 'stub';
+                status = 'stub';
             } else if (!hasValidDoc) {
-                functionStatuses[func.name] = 'incomplete';
+                status = 'incomplete';
             } else {
-                functionStatuses[func.name] = 'complete';
+                status = 'complete';
             }
+
+            functionStatuses[func.name] = { status, lineNumber };
         }
 
         // Determine overall file status
-        const funcValues = Object.values(functionStatuses);
+        const funcStatuses = Object.values(functionStatuses).map(f => f.status);
         let fileStatus = 'complete';
         
-        if (funcValues.length === 0 && fileSpec.functions?.length > 0) {
+        if (funcStatuses.length === 0 && fileSpec.functions?.length > 0) {
             fileStatus = 'missing';
-        } else if (funcValues.some(s => s === 'missing')) {
+        } else if (funcStatuses.some(s => s === 'missing')) {
             fileStatus = 'missing';
-        } else if (funcValues.every(s => s === 'desired')) {
+        } else if (funcStatuses.every(s => s === 'desired')) {
             // If ALL functions are desired (not implemented), the file is a stub
             fileStatus = 'stub';
-        } else if (funcValues.every(s => s === 'stub' || s === 'incomplete' || s === 'desired')) {
+        } else if (funcStatuses.every(s => s === 'stub' || s === 'incomplete' || s === 'desired')) {
             // If ALL functions are stubs, incomplete, or desired, the file is a stub
             fileStatus = 'stub';
-        } else if (funcValues.some(s => s === 'stub')) {
+        } else if (funcStatuses.some(s => s === 'stub')) {
             fileStatus = 'stub';
-        } else if (funcValues.some(s => s === 'incomplete')) {
+        } else if (funcStatuses.some(s => s === 'incomplete')) {
             fileStatus = 'incomplete';
         }
 
@@ -510,11 +528,8 @@ class ProjectVision {
             fileStatus = 'stub';
         }
 
-        // Extract all actual functions from the file
-        const allFunctions = this.extractAllFunctions(filePath);
-        const manifestFunctionNames = new Set((fileSpec.functions || []).map(f => f.name));
-        
         // Find unauthorized functions (functions not in manifest)
+        const manifestFunctionNames = new Set((fileSpec.functions || []).map(f => f.name));
         const unauthorizedFunctions = [];
         for (const actualFunc of allFunctions) {
             if (!manifestFunctionNames.has(actualFunc.name)) {
@@ -557,7 +572,7 @@ class ProjectVision {
         if (node._type === 'file') {
             const funcs = Object.values(node._functions || {});
             if (funcs.length === 0) return node._status === 'complete' ? 100 : 0;
-            const complete = funcs.filter(s => s === 'complete').length;
+            const complete = funcs.filter(f => f.status === 'complete').length;
             return Math.round((complete / funcs.length) * 100);
         } else if (node._type === 'header') {
             // Headers progress based on their implementation status
@@ -578,7 +593,7 @@ class ProjectVision {
                 if (n._type === 'file' && n._functions) {
                     const funcs = Object.values(n._functions);
                     totalFunctions += funcs.length;
-                    completeFunctions += funcs.filter(s => s === 'complete').length;
+                    completeFunctions += funcs.filter(f => f.status === 'complete').length;
                 } else if (n._type === 'header') {
                     // Skip headers in directory progress calculation
                 } else if (n._type === 'directory' || !n._type) {
@@ -800,7 +815,9 @@ class ProjectVision {
                             '.vscode',          // VS Code settings
                             '.github',          // GitHub workflows
                             'cmake',            // CMake files
-                            'config'            // Configuration files
+                            'config',           // Configuration files
+                            'metrics',          // Performance and development metrics
+                            'snapshots'         // Project state snapshots
                         ];
                         
                         // Check if this is a whitelisted directory or subdirectory
@@ -904,15 +921,36 @@ class ProjectVision {
                     let funcIndex = 0;
                     
                     // Print manifest functions first
-                    funcs.forEach(([funcName, funcStatus], index) => {
+                    funcs.forEach(([funcName, funcInfo], index) => {
                         const isLastFunc = funcIndex === totalFuncs - 1;
                         const funcConnector = isLastFunc ? tree.lastBranch : tree.branch;
+                        const funcStatus = funcInfo.status;
+                        const funcLineNum = funcInfo.lineNumber;
                         const funcColor = this.getStatusColor(funcStatus);
                         const funcSymbol = this.getStatusSymbol(funcStatus);
-                        const funcDesc = node._spec.functions.find(f => f.name === funcName)?.description || '';
+                        const funcSpec = node._spec.functions.find(f => f.name === funcName);
+                        const funcDesc = funcSpec?.description || '';
+                        const funcSig = funcSpec?.signature || '';
                         
-                        console.log(funcPrefix + funcConnector + funcColor + funcSymbol + ' ' + funcName + '()' + 
-                                  colors.reset + colors.gray + ' # ' + funcDesc + colors.reset);
+                        // For desired functions, show the signature to help understand what needs implementing
+                        let displayName = funcName + '()';
+                        let extraInfo = funcDesc;
+                        
+                        // Add line number if available
+                        const lineInfo = funcLineNum ? colors.dim + `L${funcLineNum}` + colors.reset + ' ' : '';
+                        
+                        if (funcStatus === 'desired' && funcSig) {
+                            // Show signature for desired functions to help with implementation
+                            displayName = funcSig;
+                            extraInfo = funcDesc + (funcDesc ? ' ' : '') + colors.dim + '[DESIRED - needs implementation]' + colors.reset;
+                        } else if (funcStatus === 'stub') {
+                            extraInfo = funcDesc + (funcDesc ? ' ' : '') + colors.yellow + '[STUB - needs completion]' + colors.reset;
+                        } else if (funcStatus === 'incomplete') {
+                            extraInfo = funcDesc + (funcDesc ? ' ' : '') + colors.yellow + '[INCOMPLETE - needs documentation]' + colors.reset;
+                        }
+                        
+                        console.log(funcPrefix + funcConnector + funcColor + funcSymbol + ' ' + displayName + 
+                                  colors.reset + ' ' + lineInfo + colors.gray + '# ' + extraInfo + colors.reset);
                         funcIndex++;
                     });
                     
@@ -923,8 +961,11 @@ class ProjectVision {
                         const funcColor = colors.orange;  // Orange for unauthorized
                         const funcSymbol = this.getStatusSymbol('unauthorized');
                         
+                        // Add line number for unauthorized functions
+                        const lineInfo = func.lineNumber ? colors.dim + `L${func.lineNumber}` + colors.reset + ' ' : '';
+                        
                         console.log(funcPrefix + funcConnector + funcColor + funcSymbol + ' ' + func.name + '()' + 
-                                  colors.reset + colors.gray + ' # UNAUTHORIZED (not in manifest)' + colors.reset);
+                                  colors.reset + ' ' + lineInfo + colors.gray + '# UNAUTHORIZED (not in manifest)' + colors.reset);
                         funcIndex++;
                     });
                 }
@@ -959,7 +1000,8 @@ class ProjectVision {
                 stats.files[node._status]++;
                 
                 if (node._functions) {
-                    for (const [, status] of Object.entries(node._functions)) {
+                    for (const [, funcInfo] of Object.entries(node._functions)) {
+                        const status = funcInfo.status;
                         stats.functions.total++;
                         if (stats.functions[status] !== undefined) {
                             stats.functions[status]++;
@@ -1000,6 +1042,7 @@ class ProjectVision {
         console.log(`  ${colors.yellow}◐ Incomplete:  ${stats.functions.incomplete}/${stats.functions.total}${colors.reset}`);
         console.log(`  ${colors.red}○ Stubs:       ${stats.functions.stub}/${stats.functions.total}${colors.reset}`);
         console.log(`  ${colors.red}✗ Missing:     ${stats.functions.missing}/${stats.functions.total}${colors.reset}`);
+        console.log(`  ${colors.magenta}◇ Desired:     ${stats.functions.desired}/${stats.functions.total}${colors.reset}`);
         
         // Progress bar
         const progress = stats.functions.total > 0 
@@ -1096,18 +1139,21 @@ class ProjectVision {
         console.log();
         
         console.log(colors.bold + 'Legend:' + colors.reset);
-        console.log(colors.dim + 'Reality:' + colors.reset);
+        console.log(colors.dim + 'Files & Functions Status:' + colors.reset);
         console.log(`  ${colors.green}● Complete${colors.reset}     - Fully implemented with documentation`);
-        console.log(`  ${colors.yellow}◐ Incomplete${colors.reset}   - Partially implemented`);
+        console.log(`  ${colors.yellow}◐ Incomplete${colors.reset}   - Implemented but missing documentation`);
         console.log(`  ${colors.red}○ Stub${colors.reset}         - Stub/TODO implementation`);
         console.log(`  ${colors.red}✗ Missing${colors.reset}      - Required but not created`);
-        console.log(colors.dim + 'Desire:' + colors.reset);
-        console.log(`  ${colors.magenta}◇ Desired${colors.reset}      - Planned future file/feature`);
-        console.log(`  ${colors.cyan}⟡ Future${colors.reset}       - Long-term vision`);
+        console.log(colors.dim + 'Planned Development:' + colors.reset);
+        console.log(`  ${colors.magenta}◇ Desired${colors.reset}      - Planned for implementation (shows signatures)`);
+        console.log(`  ${colors.cyan}⟡ Future${colors.reset}       - Long-term vision features`);
         console.log(colors.dim + 'Compliance:' + colors.reset);
         console.log(`  ${colors.orange}⚠ Unauthorized${colors.reset} - File/folder not in MANIFEST.json`);
-        console.log(colors.dim + 'Agents:' + colors.reset);
+        console.log(colors.dim + 'Multi-Swarm Activity:' + colors.reset);
         console.log(`  ${colors.cyan}[agent-id]${colors.reset}     - Agent actively working on file`);
+        console.log(colors.dim + 'Function Display:' + colors.reset);
+        console.log(`  ${colors.dim}L123${colors.reset}           - Line number where function is written`);
+        console.log(`  ${colors.dim}Function signatures shown for desired functions to aid implementation${colors.reset}`);
         console.log();
         
         const treeStructure = this.buildDirectoryTree(manifest);

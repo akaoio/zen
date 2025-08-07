@@ -68,6 +68,10 @@ class DNAAssembler {
             'multi-swarm-awareness',  // Multi-swarm system awareness
             'queen-capabilities',
             'manifest-access-control',  // Queen read-only manifest access
+            'file-creation-policies',  // Strict file creation enforcement
+            'safety-constraints',     // Enhanced safety with file policies
+            'role-boundaries',       // Updated with file creation rules
+            'validation-framework',  // File creation validation hooks
             'persistence-engine',  // Never stop until 100% complete
             'workflow-start',
             'task-management',
@@ -109,6 +113,10 @@ class DNAAssembler {
             'multi-swarm-awareness',  // Multi-swarm system awareness
             'architect-capabilities',
             'manifest-access-control',  // Architect exclusive manifest write access
+            'file-creation-policies',  // Strict file creation enforcement
+            'safety-constraints',     // Enhanced safety with file policies
+            'role-boundaries',       // Updated with file creation rules
+            'validation-framework',  // File creation validation hooks
             'persistence-engine',  // Never stop until 100% complete
             'architect-workflow',  // Mandatory task creation for architects
             'task-management',
@@ -171,6 +179,10 @@ class DNAAssembler {
             'multi-swarm-awareness',  // Multi-swarm system awareness
             'worker-capabilities',
             'manifest-access-control',  // Worker read-only manifest access
+            'file-creation-policies',  // Strict file creation enforcement
+            'safety-constraints',     // Enhanced safety with file policies
+            'role-boundaries',       // Updated with file creation rules
+            'validation-framework',  // File creation validation hooks
             'persistence-engine',  // Never stop until 100% complete
             'workflow-start',
             'workspace-isolation',
@@ -271,6 +283,10 @@ class DNAAssembler {
             'overlord-workflow',
             'overlord-output',
             'manifest-access-control',
+            'file-creation-policies',  // Strict file creation enforcement
+            'safety-constraints',     // Enhanced safety with file policies
+            'role-boundaries',       // Updated with file creation rules
+            'validation-framework',  // File creation validation hooks
             'persistence-engine',
             'task-management',
             'command-shortcuts',
