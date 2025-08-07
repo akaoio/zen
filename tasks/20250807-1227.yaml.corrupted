@@ -13,7 +13,7 @@ activities:
     fail: false
     why_success: In progress
     why_fail: Not completed yet
-EOF < /dev/null
+
   - timestamp: 1754544549
     start: 1754544549
     end: 1754544549
@@ -24,4 +24,3 @@ EOF < /dev/null
     why_fail: N/A
 completed: true
 completion_timestamp: 1754544549
-EOF < /dev/null

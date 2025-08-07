@@ -1,4 +1,4 @@
-  - timestamp: 1754459643
+- timestamp: 1754459643
     start: 1754459643
     end: 0
     method: Analyzed visitor implementation - found init_visitor needs scope initialization

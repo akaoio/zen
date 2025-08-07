@@ -13,4 +13,3 @@ activities:
     fail: false
     why_success: In progress
     why_fail: Not completed yet
-EOF < /dev/null

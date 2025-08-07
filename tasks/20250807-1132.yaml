@@ -13,4 +13,3 @@ activities:
     fail: false
     why_success: Removed src/lexer.c, src/include/zen/performance/runtime_optimizations.h, src/include/zen/types/array.h, src/include/zen/types/object.h, cleaned up .o files and backup files. Only doxygen documentation issues remain.
     why_fail: Completed successfully
-EOF < /dev/null

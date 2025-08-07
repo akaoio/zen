@@ -171,7 +171,7 @@ Value* zen_stdlib_read_file(Value** args, size_t argc) {
         return error;
     }
     
-    char* contents = get_file_contents(args[0]->as.string->data);
+    char* contents = zen_read_file(args[0]->as.string->data);
     if (contents) {
         Value* result = value_new_string(contents);
         free(contents);

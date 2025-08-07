@@ -14,4 +14,3 @@ activities:
     fail: false
     why_success: ALL functions mentioned as stubs are actually fully implemented
     why_fail: N/A
-EOF < /dev/null

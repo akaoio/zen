@@ -23,7 +23,7 @@ activities:
     fail: false
     why_success: Identified the bug
     why_fail: Need to fix the pool free logic
-EOF < /dev/null
+
   - timestamp: 1754457083
     start: 1754457083
     end: 0
@@ -32,7 +32,7 @@ EOF < /dev/null
     fail: false
     why_success: Pool system working correctly now
     why_fail: Need to debug remaining advanced features
-EOF < /dev/null
+
   - timestamp: 1754457114
     start: 1754457114
     end: 1754457114
@@ -43,4 +43,3 @@ EOF < /dev/null
     why_fail: N/A - task completed successfully
 completed: true
 end_time: 1754457114
-EOF < /dev/null

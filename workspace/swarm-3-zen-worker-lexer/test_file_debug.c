@@ -6,7 +6,7 @@
 int main() {
     printf("Testing file reading for 'test_variable.zen'...\n");
     
-    char* contents = get_file_contents("test_variable.zen");
+    char* contents = zen_read_file("test_variable.zen");
     if (!contents) {
         printf("ERROR: Failed to read file\n");
         return 1;

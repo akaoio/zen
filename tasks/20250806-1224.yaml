@@ -1,7 +1,7 @@
 agent: swarm-2-zen-worker-parser
 task: 'Implement advanced parser features: performance optimizations, lambda functions, destructuring, error recovery'
 created: 1754457855
-completed: false
+completed: true
 files:
   - src/core/parser.c
   - src/include/zen/core/parser.h
@@ -23,3 +23,11 @@ activities:
     fail: false
     why_success: In progress
     why_fail: Not completed yet
+  - timestamp: 1754547853
+    start: 1754547853
+    end: 1754547853
+    method: Auto-archived after 1 days
+    success: false
+    fail: true
+    why_success: ''
+    why_fail: Task automatically archived due to age (>1 days old)

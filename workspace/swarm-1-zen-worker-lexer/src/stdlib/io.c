@@ -12,7 +12,7 @@
  * @param filepath Path to the file to read
  * @return Newly allocated string containing file contents, or NULL on error
  */
-char* get_file_contents(const char* filepath)
+char* zen_read_file(const char* filepath)
 {
     if (!filepath) {
         return NULL;
@@ -212,7 +212,7 @@ Value* zen_load_json_file(const char* filepath) {
         return NULL;
     }
     
-    char* content = get_file_contents(filepath);
+    char* content = zen_read_file(filepath);
     if (!content) {
         return NULL;
     }
@@ -235,7 +235,7 @@ Value* zen_load_yaml_file(const char* filepath) {
         return NULL;
     }
     
-    char* content = get_file_contents(filepath);
+    char* content = zen_read_file(filepath);
     if (!content) {
         return NULL;
     }

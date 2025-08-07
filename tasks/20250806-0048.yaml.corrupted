@@ -25,7 +25,7 @@ activities:
     fail: true
     why_success: In progress
     why_fail: Simple variable program 'set x hello; print x' still gets killed
-EOF < /dev/null
+
   - timestamp: 1754416614
     start: 1754416614
     end: 0
@@ -35,7 +35,7 @@ EOF < /dev/null
     why_success: In progress
     why_fail: Complex visitor.c code added by other agents breaks compilation and causes parser failures
   - timestamp: 1754416622
-    start: 1754416622  
+    start: 1754416622
     end: 1754416622
     method: Task completion with root cause analysis and fix recommendations
     success: true
@@ -43,7 +43,6 @@ EOF < /dev/null
     why_success: Successfully identified the critical variable system issue root cause and provided specific fix recommendations
     why_fail: Not applicable
 completed: true
-success: true
-why_success: Root cause identified - Complex visitor.c code with unimplemented array/object functions causes compilation errors and parser failures. Created simple working visitor and provided fix recommendations.
-why_fail: Not applicable
-EOF < /dev/null
+    success: true
+    why_success: Root cause identified - Complex visitor.c code with unimplemented array/object functions causes compilation errors and parser failures. Created simple working visitor and provided fix recommendations.
+    why_fail: Not applicable

@@ -23,7 +23,7 @@ activities:
     fail: false
     why_success: Identified root cause
     why_fail: Still need to complete analysis
-EOF < /dev/null
+
   - timestamp: 1754539920
     start: 1754539920
     end: 1754539920

@@ -1,7 +1,7 @@
 agent: swarm-3-zen-worker-lexer
 task: Fix critical lexer test failures
 created: 1754456679
-completed: false
+completed: true
 files:
   - src/core/lexer.c
 activities:
@@ -45,3 +45,11 @@ activities:
     fail: false
     why_success: In progress
     why_fail: Not completed yet
+  - timestamp: 1754547853
+    start: 1754547853
+    end: 1754547853
+    method: Auto-archived after 1 days
+    success: false
+    fail: true
+    why_success: ''
+    why_fail: Task automatically archived due to age (>1 days old)

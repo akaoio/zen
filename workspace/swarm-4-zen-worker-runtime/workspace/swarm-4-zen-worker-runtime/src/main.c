@@ -141,7 +141,7 @@ int main(int argc, char* argv[])
             if ((len >= 4 && strcmp(&argv[i][len-4], ".zen") == 0) || 
                 (len >= 3 && strcmp(&argv[i][len-3], ".zn") == 0)) {
                 
-                char* file_contents = get_file_contents(argv[i]);
+                char* file_contents = zen_read_file(argv[i]);
                 if (!file_contents) {
                     fprintf(stderr, "Error: Could not read file '%s'\n", argv[i]);
                     return 1;
