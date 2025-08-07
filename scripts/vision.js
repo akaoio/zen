@@ -106,13 +106,19 @@ class ProjectVision {
         const hasFunctionCalls = /\w+\s*\([^)]*\)\s*;/.test(bodyContent);
         const hasAssignments = /\w+\s*[=+\-*\/]\s*/.test(bodyContent);
         const hasMemoryOps = /\b(malloc|calloc|realloc|free|memory_alloc|memory_free)\b/.test(bodyContent);
+        const hasReturn = /\breturn\s+[^;]+;/.test(bodyContent);
+        const hasFieldAccess = /\b(\.|->)\b/.test(bodyContent);
+        const hasLogicalOps = /\b(&&|\|\||!)\b|[<>!=]=|[<>]/.test(bodyContent);
         const hasComplexLogic = hasControlFlow || hasFunctionCalls || hasAssignments || hasMemoryOps;
+
+        // Check if this is a legitimate getter/setter or simple function
+        const isLegitimateSimpleFunction = hasReturn && (hasFieldAccess || hasLogicalOps);
 
         // A function is a stub if:
         // 1. It has no meaningful lines, OR
-        // 2. It has very few lines (≤ 2) AND no complex logic
+        // 2. It has very few lines (≤ 2) AND no complex logic AND not a legitimate getter/setter
         return meaningfulLines.length === 0 || 
-               (meaningfulLines.length <= 2 && !hasComplexLogic);
+               (meaningfulLines.length <= 2 && !hasComplexLogic && !isLegitimateSimpleFunction);
     }
     
     /**
@@ -322,8 +328,12 @@ class ProjectVision {
         // Keep original content for line number tracking
         const originalLines = content.split('\n');
         
-        // Remove comments for cleaner parsing but keep line structure
-        const cleanContent = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        // Remove multi-line comments but preserve line count by replacing with empty lines
+        const cleanContent = content.replace(/\/\*[\s\S]*?\*\//g, (match) => {
+            // Replace comment with same number of newlines to preserve line numbers
+            const newlineCount = (match.match(/\n/g) || []).length;
+            return '\n'.repeat(newlineCount);
+        }).replace(/\/\/.*$/gm, ''); // Remove single-line comments
         const lines = cleanContent.split('\n');
         
         for (let i = 0; i < lines.length; i++) {
@@ -388,6 +398,9 @@ class ProjectVision {
             
             // Skip static functions
             if (line.trim().startsWith('static ')) continue;
+            
+            // Skip extern declarations (they're not implementations)
+            if (line.trim().startsWith('extern ')) continue;
             
             functions.push({
                 name,
@@ -660,8 +673,9 @@ class ProjectVision {
             };
         }
         
-        // Add headers
-        for (const headerPath of Object.keys(manifest.headers || {})) {
+        // Add actual header files found in filesystem
+        const headerFiles = this.findHeaderFiles();
+        for (const headerPath of headerFiles) {
             const parts = headerPath.split('/');
             let current = tree;
             
@@ -687,8 +701,48 @@ class ProjectVision {
                     const headerHasDocs = this.checkHeaderDoxygen(content);
                     
                     // Check if corresponding .c file has implementations
-                    const implPath = headerPath.replace('/include/zen/', '/').replace('.h', '.c');
-                    const implFile = manifest.files[implPath];
+                    // Try multiple possible implementation paths
+                    let implFile = null;
+                    let implPath = null;
+                    
+                    // Strategy 1: Direct mapping (remove /include/zen/)
+                    const directPath = headerPath.replace('/include/zen/', '/').replace('.h', '.c');
+                    if (manifest.files[directPath]) {
+                        implPath = directPath;
+                        implFile = manifest.files[directPath];
+                    }
+                    
+                    // Strategy 2: Check if header is in a subdirectory and map to src/subdirectory/
+                    if (!implFile) {
+                        // Extract the relative path from include/zen/
+                        const relativePath = headerPath.replace('src/include/zen/', '').replace('.h', '.c');
+                        const possiblePath = 'src/' + relativePath;
+                        if (manifest.files[possiblePath]) {
+                            implPath = possiblePath;
+                            implFile = manifest.files[possiblePath];
+                        }
+                    }
+                    
+                    // Strategy 3: For config.h specifically, check src/core/config.c
+                    if (!implFile && fileName === 'config.h') {
+                        const configPath = 'src/core/config.c';
+                        if (manifest.files[configPath]) {
+                            implPath = configPath;
+                            implFile = manifest.files[configPath];
+                        }
+                    }
+                    
+                    // Strategy 4: Search manifest for any .c file with matching base name
+                    if (!implFile) {
+                        const baseName = fileName.replace('.h', '');
+                        for (const [filePath, fileSpec] of Object.entries(manifest.files)) {
+                            if (filePath.endsWith('/' + baseName + '.c')) {
+                                implPath = filePath;
+                                implFile = fileSpec;
+                                break;
+                            }
+                        }
+                    }
                     
                     if (implFile) {
                         const implFullPath = path.join(this.projectRoot, implPath);
@@ -712,8 +766,10 @@ class ProjectVision {
             current[fileName] = {
                 _type: 'header',
                 _path: headerPath,
-                _spec: manifest.headers[headerPath],
-                _status: headerStatus
+                _spec: { description: 'Header file with function declarations' },
+                _status: headerStatus,
+                _functions: [],
+                _unauthorized: []
             };
         }
         
@@ -1135,8 +1191,22 @@ class ProjectVision {
         
         console.log(colors.bold + '🔮 ZEN Project Vision' + colors.reset);
         console.log('=' .repeat(50));
-        console.log(colors.dim + 'Visualizing desired architecture from MANIFEST.json' + colors.reset);
+        console.log(colors.dim + 'Visualizing project structure with violations and compliance' + colors.reset);
         console.log();
+        
+        // Check for violations first
+        const violations = this.checkAllViolations();
+        if (violations.length > 0) {
+            console.log(colors.red + '❌ VIOLATIONS DETECTED:' + colors.reset);
+            violations.slice(0, 10).forEach(violation => {
+                console.log('  ' + colors.orange + '⚠️  ' + colors.reset + violation);
+            });
+            if (violations.length > 10) {
+                console.log(`  ${colors.gray}... ${violations.length - 10} more violations${colors.reset}`);
+            }
+            console.log();
+        }
+        
         
         console.log(colors.bold + 'Legend:' + colors.reset);
         console.log(colors.dim + 'Files & Functions Status:' + colors.reset);
@@ -1172,6 +1242,177 @@ class ProjectVision {
         this.showLatestTasks(tasks);
     }
     
+    /**
+     * Check for all types of violations
+     */
+    checkAllViolations() {
+        const violations = [];
+        
+        // Check header files for naming violations
+        const headerFiles = this.findHeaderFiles();
+        
+        headerFiles.forEach(headerPath => {
+            const fullPath = path.join(this.projectRoot, headerPath);
+            if (!fs.existsSync(fullPath)) return;
+            
+            const content = fs.readFileSync(fullPath, 'utf8');
+            
+            // Check for naming violations in headers
+            const badPatterns = [
+                { 
+                    pattern: /Value\*\s+log_(debug|info|warn|error|debugf|infof|warnf|errorf|debug_if|set_level|with_context|get_level)/g, 
+                    message: 'Found log_* function in header (should be logging_*)' 
+                },
+                { 
+                    pattern: /extern\s+Value\*\s+log_(debug|info|warn|error)/g, 
+                    message: 'Found extern log_* declaration (should be logging_*)' 
+                },
+                { 
+                    pattern: /zen_[a-zA-Z_]+\s*\(/g, 
+                    message: 'Found zen_* function (should use file-based prefix)' 
+                }
+            ];
+
+            badPatterns.forEach(({pattern, message}) => {
+                let match;
+                while ((match = pattern.exec(content)) !== null) {
+                    const lines = content.substring(0, match.index).split('\n');
+                    const lineNum = lines.length;
+                    violations.push(`${message} in ${headerPath}:${lineNum}`);
+                }
+            });
+        });
+        
+        // Check source files for unauthorized functions
+        const manifest = this.loadManifest();
+        for (const [filePath, fileInfo] of Object.entries(manifest.files || {})) {
+            const fullPath = path.join(this.projectRoot, filePath);
+            if (!fs.existsSync(fullPath)) continue;
+            
+            try {
+                const content = fs.readFileSync(fullPath, 'utf8');
+                const actualFunctions = this.parseActualFunctions(content);
+                const expectedFunctions = fileInfo.functions || [];
+                
+                // Check for unauthorized functions
+                for (const actualFunc of actualFunctions) {
+                    if (!expectedFunctions.find(f => f.name === actualFunc.name)) {
+                        violations.push(`Unauthorized function: ${actualFunc.name} in ${filePath}:${actualFunc.lineNumber}`);
+                    }
+                }
+            } catch (e) {
+                // Skip files that can't be read
+            }
+        }
+        
+        return violations;
+    }
+
+    /**
+     * Parse actual functions from source code
+     */
+    parseActualFunctions(content) {
+        const functions = [];
+        const lines = content.split('\n');
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Skip comments, preprocessor, empty lines
+            if (!line || line.startsWith('//') || line.startsWith('/*') || line.startsWith('#')) {
+                continue;
+            }
+            
+            // Look for function definitions
+            const funcPattern = /^([a-zA-Z_][a-zA-Z0-9_*\s]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/;
+            const match = line.match(funcPattern);
+            
+            if (match) {
+                const [, returnType, functionName] = match;
+                
+                // Skip control structures and static functions
+                if (['if', 'for', 'while', 'switch', 'return', 'else', 'do'].includes(returnType.trim())) {
+                    continue;
+                }
+                if (line.includes('static ')) continue;
+                
+                // Look for opening brace within next few lines
+                let hasOpenBrace = false;
+                for (let j = i; j < Math.min(i + 5, lines.length); j++) {
+                    if (lines[j].includes('{')) {
+                        hasOpenBrace = true;
+                        break;
+                    }
+                    if (lines[j].includes(';')) break; // Declaration, not definition
+                }
+                
+                if (hasOpenBrace) {
+                    functions.push({
+                        name: functionName,
+                        lineNumber: i + 1,
+                        returnType: returnType.trim()
+                    });
+                }
+            }
+        }
+        
+        return functions;
+    }
+
+    /**
+     * Find all header files in the project
+     */
+    findHeaderFiles() {
+        const headers = [];
+        const headerRoot = path.join(this.projectRoot, 'src/include');
+        
+        if (!fs.existsSync(headerRoot)) {
+            return headers;
+        }
+        
+        const traverse = (dir, currentPath = '') => {
+            const items = fs.readdirSync(dir);
+            
+            for (const item of items) {
+                const itemPath = path.join(dir, item);
+                const relativePath = currentPath ? `${currentPath}/${item}` : item;
+                const stat = fs.statSync(itemPath);
+                
+                if (stat.isDirectory()) {
+                    traverse(itemPath, relativePath);
+                } else if (item.endsWith('.h')) {
+                    headers.push(`src/include/${relativePath}`);
+                }
+            }
+        };
+        
+        traverse(headerRoot);
+        return headers;
+    }
+
+    /**
+     * Check if header has proper Doxygen documentation
+     */
+    checkHeaderDoxygen(content) {
+        // Look for proper /** style docs before functions
+        const functionDecls = content.match(/^[a-zA-Z_][^;]*\([^;]*\);/gm) || [];
+        let documentedCount = 0;
+        
+        for (const decl of functionDecls) {
+            const functionName = decl.match(/([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+            if (functionName) {
+                const funcName = functionName[1];
+                // Look for /** comment before this function
+                const beforeFunc = content.substring(0, content.indexOf(decl));
+                if (beforeFunc.includes(`/**`) && beforeFunc.includes(`@brief`)) {
+                    documentedCount++;
+                }
+            }
+        }
+        
+        return functionDecls.length > 0 ? (documentedCount / functionDecls.length) > 0.7 : true;
+    }
+
     /**
      * Calculate agent fitness scores based on task history
      */
@@ -1358,6 +1599,15 @@ class ProjectVision {
         }
         return filename.replace('.yaml', '').replace('.yml', '');
     }
+    
+    
+    
+    
+    
+    
+    
+    
+    
 }
 
 // Run the vision
