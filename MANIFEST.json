@@ -1192,8 +1192,8 @@
       "rename_from": "src/io.c",
       "functions": [
         {
-          "name": "get_file_contents",
-          "signature": "char* get_file_contents(const char* filepath)",
+          "name": "zen_read_file",
+          "signature": "char* zen_read_file(const char* filepath)",
           "description": "Read entire file to string",
           "returns": "char*"
         },
@@ -1694,6 +1694,138 @@
           "description": "Replace substring in string"
         }
       ]
+    },
+    "src/stdlib/http.c": {
+      "description": "HTTP client library with natural language interface - Phase 2A",
+      "functions": [
+        {
+          "name": "zen_http_get",
+          "signature": "Value* zen_http_get(const Value* url_value, const Value* headers_value)",
+          "description": "Perform HTTP GET request with optional headers",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_http_post", 
+          "signature": "Value* zen_http_post(const Value* url_value, const Value* data_value, const Value* headers_value)",
+          "description": "Perform HTTP POST request with data and headers",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_http_put",
+          "signature": "Value* zen_http_put(const Value* url_value, const Value* data_value, const Value* headers_value)",
+          "description": "Perform HTTP PUT request with data and headers",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_http_delete",
+          "signature": "Value* zen_http_delete(const Value* url_value, const Value* headers_value)",
+          "description": "Perform HTTP DELETE request with optional headers",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_http_configure_timeout",
+          "signature": "void zen_http_configure_timeout(long timeout_seconds)",
+          "description": "Configure global HTTP request timeout"
+        }
+      ]
+    },
+    "src/stdlib/module.c": {
+      "description": "Module system with semantic import resolution - Phase 2A",
+      "functions": [
+        {
+          "name": "module_resolver_init",
+          "signature": "ModuleResolver* module_resolver_init(void)",
+          "description": "Initialize semantic module resolution system",
+          "returns": "ModuleResolver*"
+        },
+        {
+          "name": "module_resolve_semantic",
+          "signature": "char* module_resolve_semantic(ModuleResolver* resolver, const char* semantic_description)",
+          "description": "Resolve semantic description to actual module path",
+          "returns": "char*"
+        },
+        {
+          "name": "module_register_provider",
+          "signature": "void module_register_provider(ModuleResolver* resolver, const char* capability, const char* module_path)",
+          "description": "Register module as provider of specific capability"
+        },
+        {
+          "name": "module_load_file",
+          "signature": "Value* module_load_file(const char* module_path)",
+          "description": "Load and execute ZEN module file",
+          "returns": "Value*"
+        }
+      ]
+    },
+    "src/stdlib/regex.c": {
+      "description": "PCRE-based regular expression support with natural language patterns - Phase 2B",
+      "functions": [
+        {
+          "name": "zen_regex_match",
+          "signature": "Value* zen_regex_match(const Value* text_value, const Value* pattern_value)",
+          "description": "Match text against regular expression pattern",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_regex_replace",
+          "signature": "Value* zen_regex_replace(const Value* text_value, const Value* pattern_value, const Value* replacement_value)",
+          "description": "Replace pattern matches in text with replacement",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_regex_split",
+          "signature": "Value* zen_regex_split(const Value* text_value, const Value* pattern_value)",
+          "description": "Split text by regular expression pattern",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_regex_compile",
+          "signature": "Value* zen_regex_compile(const Value* pattern_value)",
+          "description": "Compile regular expression pattern for reuse",
+          "returns": "Value*"
+        }
+      ]
+    },
+    "src/stdlib/datastructures.c": {
+      "description": "Advanced data structures - sets, priority queues, ordered collections - Phase 2A",
+      "functions": [
+        {
+          "name": "zen_set_new",
+          "signature": "Value* zen_set_new(void)",
+          "description": "Create new set data structure",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_set_add",
+          "signature": "Value* zen_set_add(Value* set_value, const Value* item_value)",
+          "description": "Add item to set",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_set_contains",
+          "signature": "Value* zen_set_contains(Value* set_value, const Value* item_value)",
+          "description": "Check if set contains item",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_priority_queue_new",
+          "signature": "Value* zen_priority_queue_new(void)",
+          "description": "Create new priority queue",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_priority_queue_push",
+          "signature": "Value* zen_priority_queue_push(Value* queue_value, const Value* item_value, const Value* priority_value)",
+          "description": "Add item with priority to queue",
+          "returns": "Value*"
+        },
+        {
+          "name": "zen_priority_queue_pop",
+          "signature": "Value* zen_priority_queue_pop(Value* queue_value)",
+          "description": "Remove and return highest priority item",
+          "returns": "Value*"
+        }
+      ]
     }
   },
   "headers": {
@@ -1821,7 +1953,11 @@
             "AST_THROW",
             "AST_LAMBDA",
             "AST_AWAIT",
-            "AST_ASYNC_FUNCTION"
+            "AST_ASYNC_FUNCTION",
+            "AST_THEOREM",
+            "AST_PROOF",
+            "AST_AXIOM",
+            "AST_MATHEMATICAL_SYMBOL"
           ]
         }
       ]
@@ -1961,6 +2097,55 @@
     "src/include/zen/stdlib/string.h": {
       "description": "String manipulation function declarations",
       "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/http.h": {
+      "description": "HTTP client library function declarations - Phase 2A",
+      "structs": [
+        {
+          "name": "HttpHeaders",
+          "fields": [
+            "char** keys",
+            "char** values",
+            "size_t count"
+          ]
+        }
+      ],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/module.h": {
+      "description": "Module system function declarations - Phase 2A",
+      "structs": [
+        {
+          "name": "ModuleResolver",
+          "fields": [
+            "void* capability_providers",
+            "void* loaded_modules",
+            "void* config"
+          ]
+        }
+      ],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/regex.h": {
+      "description": "Regular expression function declarations - Phase 2B",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/datastructures.h": {
+      "description": "Advanced data structures function declarations - Phase 2A",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/logic.h": {
+      "description": "Formal logic and theorem proving function declarations - Phase 3",
+      "structs": [
+      ],
       "typedefs": [],
       "enums": []
     },
@@ -2327,14 +2512,51 @@
       ]
     }
   },
+  "phase_roadmap": {
+    "phase_1": {
+      "name": "Foundation Stabilization",
+      "duration": "2 weeks",
+      "objective": "Achieve 100% production readiness through quality remediation",
+      "functions_affected": "All existing functions - no new functions added"
+    },
+    "phase_2a": {
+      "name": "Core Infrastructure", 
+      "duration": "Month 1",
+      "objective": "HTTP client/server, module system, advanced data structures",
+      "new_files": ["src/stdlib/http.c", "src/stdlib/module.c", "src/stdlib/datastructures.c"]
+    },
+    "phase_2b": {
+      "name": "Developer Experience",
+      "duration": "Month 2", 
+      "objective": "Regular expressions, enhanced string processing, IDE integration prep",
+      "new_files": ["src/stdlib/regex.c"]
+    }
+  },
   "build": {
     "source_directories": ["src/core", "src/types", "src/runtime", "src/stdlib"],
     "include_directories": ["src/include"],
     "output": "zen",
-    "libraries": ["cjson", "yaml", "pcre2", "curl"],
+    "libraries": ["cjson", "yaml", "pcre2", "curl", "gmp", "sqlite3"],
     "flags": {
       "debug": "-g -Wall -Wextra -Werror -O0",
       "release": "-O3 -DNDEBUG"
+    },
+    "performance_contracts": {
+      "lexer_scan_token": {
+        "max_time_ns": 50000,
+        "max_memory_bytes": 1024,
+        "description": "Single token scanning must complete under 50µs"
+      },
+      "parser_parse_expression": {
+        "max_time_ns": 500000,
+        "max_memory_bytes": 8192,
+        "description": "Expression parsing must complete under 500µs"
+      },
+      "zen_http_get": {
+        "max_time_ns": 100000000,
+        "max_memory_bytes": 1048576,
+        "description": "HTTP GET requests must complete under 100ms"
+      }
     }
   }
 }
