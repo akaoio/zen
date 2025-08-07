@@ -79,7 +79,7 @@ create_agent_from_dna() {
 
 # Function to show usage
 usage() {
-    echo "Usage: $0 [init|add-worker|status|clean|create-swarm]"
+    echo "Usage: $0 [init|add-worker|status|clean|create-swarm|create-overlord]"
     echo ""
     echo "Commands:"
     echo "  init              - Create initial swarm (1 queen, 1 architect, 2 workers)"
@@ -87,6 +87,7 @@ usage() {
     echo "  status            - Show current swarm agents"
     echo "  clean             - Remove all generated agents"
     echo "  create-swarm      - Create a new swarm with specific ID"
+    echo "  create-overlord   - Create the Overlord meta-agent (system evolution)"
     echo ""
     echo "Examples:"
     echo "  $0 init"
@@ -94,6 +95,7 @@ usage() {
     echo "  $0 add-worker parser"
     echo "  $0 create-swarm swarm-1"
     echo "  $0 create-swarm swarm-2 --workers lexer,parser,types"
+    echo "  $0 create-overlord"
 }
 
 # Initialize swarm with basic agents
@@ -197,6 +199,12 @@ show_status() {
     
     if [ $default_count -eq 0 ]; then
         echo -e "  ${YELLOW}No agents${NC}"
+    fi
+    
+    # Check for Overlord agent
+    if [ -f "$CLAUDE_DIR/zen-overlord.md" ]; then
+        echo -e "\n${BLUE}Meta-System:${NC}"
+        echo -e "  ${GREEN}🧠 Meta-Agent: zen-overlord${NC}"
     fi
     
     # Now show named swarms
@@ -313,6 +321,53 @@ create_swarm() {
     echo ""
 }
 
+# Create the Overlord meta-agent
+create_overlord() {
+    echo -e "${BLUE}🧠 Creating Overlord Meta-Agent...${NC}"
+    echo "========================================"
+    
+    # Check if assemble-dna.js exists and js-yaml is installed
+    if [ ! -f "$SWARM_DIR/assemble-dna.js" ]; then
+        echo -e "${RED}❌ assemble-dna.js not found${NC}"
+        return 1
+    fi
+    
+    if ! npm list js-yaml >/dev/null 2>&1; then
+        echo -e "${YELLOW}Installing js-yaml...${NC}"
+        npm install js-yaml
+    fi
+    
+    # Generate Overlord DNA
+    echo -e "${YELLOW}🧬 Assembling Overlord DNA...${NC}"
+    node "$SWARM_DIR/assemble-dna.js" --role overlord
+    
+    # Create the Overlord agent
+    local overlord_dna="$DNA_DIR/overlord.md"
+    if [ ! -f "$overlord_dna" ]; then
+        echo -e "${RED}❌ Overlord DNA not generated successfully${NC}"
+        return 1
+    fi
+    
+    create_agent_from_dna "$overlord_dna" "zen-overlord"
+    
+    echo ""
+    echo -e "${GREEN}🧠✨ Overlord Meta-Agent created successfully!${NC}"
+    echo ""
+    echo "The Overlord is the Meta-Architect of your multi-swarm system."
+    echo ""
+    echo "To activate the Overlord:"
+    echo "  \"overlord analyze ecosystem\"     - Comprehensive multi-swarm analysis"
+    echo "  \"overlord evolve [component]\"    - Mutate swarm components"
+    echo "  \"overlord create [new-role]\"     - Design entirely new agent types"
+    echo "  \"overlord optimize [swarm-id]\"   - Improve specific swarm performance"
+    echo "  \"overlord coordinate-all\"        - Synchronize all 32+ agents"
+    echo "  \"overlord work\"                  - Begin autonomous ecosystem evolution"
+    echo ""
+    echo -e "${YELLOW}⚠️  The Overlord can modify swarm components and create new agent types.${NC}"
+    echo -e "${YELLOW}    Use responsibly for system evolution and meta-architecture tasks.${NC}"
+    echo ""
+}
+
 # Main command handling
 case "$1" in
     init)
@@ -329,6 +384,9 @@ case "$1" in
         ;;
     create-swarm)
         create_swarm "$2" "${@:3}"
+        ;;
+    create-overlord)
+        create_overlord
         ;;
     *)
         usage

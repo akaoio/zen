@@ -259,6 +259,45 @@ class DNAAssembler {
         console.log(`✓ Assembled DNA: ${filePath}`);
     }
 
+    assembleOverlordDNA() {
+        const components = [
+            'base-header',
+            'prime-directive',
+            'sub-agent-context',
+            'project-context',
+            'multi-swarm-awareness',
+            'strategic-awareness',
+            'overlord-capabilities',
+            'overlord-workflow',
+            'overlord-output',
+            'manifest-access-control',
+            'persistence-engine',
+            'task-management',
+            'command-shortcuts',
+            'coding-standards'
+        ];
+
+        const baseDescription = `Use this agent when you need meta-level coordination and evolution of the entire multi-swarm system. The agent should be activated when: analyzing cross-swarm performance, evolving swarm components, creating new agent types, implementing system-wide improvements, resolving architectural conflicts, or when the user says "overlord analyze", "overlord evolve", "overlord optimize", or "overlord coordinate". This agent evolves the swarm system itself but coordinates rather than directly implements code.`;
+        
+        const overlordExamples = `<example>Context: User needs multi-swarm ecosystem analysis. user: "overlord analyze all swarms" assistant: "I'll use the overlord agent to perform comprehensive multi-swarm analysis and recommend optimizations" <commentary>The Overlord provides meta-level analysis of the entire swarm ecosystem and can evolve the system itself.</commentary></example> <example>Context: Swarm coordination problems detected. user: "overlord evolve coordination protocols" assistant: "Let me activate the overlord to analyze coordination issues and evolve the swarm components for better cooperation" <commentary>The Overlord can mutate swarm components and create entirely new agent types to solve systemic issues.</commentary></example>`;
+
+        const variables = {
+            AGENT_TYPE: 'Overlord',
+            AGENT_ID: 'zen-overlord',
+            AGENT_DESCRIPTION: `${baseDescription} ${overlordExamples}`.trim(),
+            MODEL: 'sonnet',
+            TIMESTAMP: new Date().toISOString(),
+            SPECIALIZATION: 'Multi-Swarm Evolution & Meta-Architecture',
+            PRIME_DIRECTIVE: 'Evolve and optimize the entire multi-swarm ecosystem by analyzing performance, mutating components, creating new agent types, and implementing autonomous improvements. You are the Meta-Architect of swarm intelligence itself.',
+            TOOL_ACCESS: 'Read, Write, Edit, MultiEdit, Bash, Task',
+            SWARM_ID: 'meta-system',
+            ROLE_COMMANDS: '- `overlord analyze ecosystem` - Comprehensive swarm analysis\\n- `overlord evolve [component]` - Mutate specific components\\n- `overlord create [new-role]` - Design new agent types\\n- `overlord optimize [swarm-id]` - Improve specific swarm\\n- `overlord coordinate-all` - Synchronize all agents',
+            SWARM_COMMANDS: '- `overlord work` - Begin ecosystem analysis and evolution\\n- `overlord emergency` - Activate emergency stabilization protocols\\n- `overlord self-evolve` - Improve Overlord capabilities'
+        };
+
+        return this.assembleDNA(components, variables);
+    }
+
     assembleAll() {
         console.log('🧬 Assembling DNA from components...\n');
 
@@ -269,6 +308,12 @@ class DNAAssembler {
         // Architect
         const architectDNA = this.assembleArchitectDNA();
         this.saveDNA('architect', architectDNA);
+
+        // Overlord (only if specifically requested)
+        if (process.argv.includes('--include-overlord') || process.argv.includes('--role') && process.argv.includes('overlord')) {
+            const overlordDNA = this.assembleOverlordDNA();
+            this.saveDNA('overlord', overlordDNA);
+        }
 
         // Worker - general
         const workerDNA = this.assembleWorkerDNA('general');
@@ -294,10 +339,15 @@ class DNAAssembler {
 // Main execution
 function main() {
     if (process.argv.includes('--help')) {
-        console.log('Usage: node assemble-dna.js [--swarm-id <id>]');
+        console.log('Usage: node assemble-dna.js [--swarm-id <id>] [--role <role>] [--include-overlord]');
         console.log('Assembles DNA files from components in swarm/components/');
         console.log('\nOptions:');
-        console.log('  --swarm-id <id>  Generate DNA for a specific swarm (e.g., swarm-1)');
+        console.log('  --swarm-id <id>     Generate DNA for a specific swarm (e.g., swarm-1)');
+        console.log('  --role <role>       Generate DNA for a specific role (queen, architect, worker, overlord)');
+        console.log('  --include-overlord  Include Overlord DNA in standard assembly');
+        console.log('\nExamples:');
+        console.log('  node assemble-dna.js --role overlord     # Generate only Overlord DNA');
+        console.log('  node assemble-dna.js --include-overlord  # Generate all DNA including Overlord');
         return;
     }
 
@@ -310,8 +360,47 @@ function main() {
         swarmId = process.argv[swarmIdIndex + 1];
     }
 
+    // Parse role from arguments
+    let specificRole = null;
+    const roleIndex = process.argv.indexOf('--role');
+    if (roleIndex !== -1 && process.argv[roleIndex + 1]) {
+        specificRole = process.argv[roleIndex + 1];
+    }
+
     const assembler = new DNAAssembler(swarmDir, swarmId);
-    assembler.assembleAll();
+    
+    // Handle specific role generation
+    if (specificRole) {
+        console.log(`🧬 Assembling DNA for specific role: ${specificRole}\n`);
+        
+        switch (specificRole) {
+            case 'queen':
+                const queenDNA = assembler.assembleQueenDNA();
+                assembler.saveDNA('queen', queenDNA);
+                break;
+            case 'architect':
+                const architectDNA = assembler.assembleArchitectDNA();
+                assembler.saveDNA('architect', architectDNA);
+                break;
+            case 'overlord':
+                const overlordDNA = assembler.assembleOverlordDNA();
+                assembler.saveDNA('overlord', overlordDNA);
+                break;
+            case 'worker':
+                const workerDNA = assembler.assembleWorkerDNA('general');
+                assembler.saveDNA('worker', workerDNA, 'general');
+                break;
+            default:
+                console.error(`Unknown role: ${specificRole}`);
+                console.error('Available roles: queen, architect, worker, overlord');
+                process.exit(1);
+        }
+        
+        console.log(`\n✨ DNA assembly complete for ${specificRole}!`);
+        console.log(`Generated files in: ${assembler.dnaDir}`);
+    } else {
+        assembler.assembleAll();
+    }
 }
 
 // Check if js-yaml is installed

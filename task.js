@@ -101,12 +101,58 @@ class TaskManager {
     }
 
     saveTask(filepath, taskData) {
-        const yamlContent = yaml.dump(taskData, { 
+        // Clean the task data to prevent YAML corruption
+        const cleanData = this.cleanTaskData(taskData);
+        
+        const yamlContent = yaml.dump(cleanData, { 
             lineWidth: -1,
             noRefs: true,
-            sortKeys: false 
+            sortKeys: false,
+            flowLevel: -1,
+            indent: 2
         });
-        fs.writeFileSync(filepath, yamlContent);
+        
+        // Ensure clean YAML without shell artifacts
+        const cleanYaml = yamlContent
+            .replace(/EOF.*$/gm, '')  // Remove EOF markers
+            .replace(/^\s*<.*$/gm, '')  // Remove shell redirects
+            .replace(/\n\s*\n\s*\n/g, '\n\n')  // Remove excessive newlines
+            .trim();
+            
+        fs.writeFileSync(filepath, cleanYaml + '\n');
+    }
+
+    cleanTaskData(data) {
+        // Deep clean the data structure
+        const cleanData = JSON.parse(JSON.stringify(data));
+        
+        // Clean strings that might contain shell artifacts
+        const cleanString = (str) => {
+            if (typeof str !== 'string') return str;
+            return str
+                .replace(/EOF.*$/g, '')
+                .replace(/<.*$/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        };
+        
+        // Recursively clean all strings in the object
+        const deepClean = (obj) => {
+            if (typeof obj === 'string') {
+                return cleanString(obj);
+            } else if (Array.isArray(obj)) {
+                return obj.map(deepClean);
+            } else if (obj && typeof obj === 'object') {
+                const result = {};
+                for (const [key, value] of Object.entries(obj)) {
+                    result[key] = deepClean(value);
+                }
+                return result;
+            }
+            return obj;
+        };
+        
+        return deepClean(cleanData);
     }
 
     addActivity(taskFile, method, options = {}) {
@@ -212,6 +258,8 @@ class TaskManager {
             .sort();
 
         const tasks = [];
+        const errors = [];
+        
         for (const file of files) {
             try {
                 const { data } = this.loadTask(file);
@@ -232,11 +280,120 @@ class TaskManager {
                     });
                 }
             } catch (e) {
-                console.error(`Error loading ${file}: ${e.message}`);
+                errors.push({ file, error: e.message });
             }
         }
 
+        if (filter === 'all' && errors.length > 0) {
+            console.warn(`⚠️  ${errors.length} corrupted task files found. Use 'node task.js cleanup' to fix.`);
+        }
+
         return tasks;
+    }
+
+    cleanupCorruptedTasks() {
+        const files = fs.readdirSync(this.tasksDir)
+            .filter(f => f.endsWith('.yaml'));
+
+        const corrupted = [];
+        const fixed = [];
+
+        for (const file of files) {
+            const filepath = path.join(this.tasksDir, file);
+            try {
+                // Try to load the file
+                this.loadTask(file);
+            } catch (e) {
+                corrupted.push(file);
+                
+                try {
+                    // Try to fix common YAML issues
+                    let content = fs.readFileSync(filepath, 'utf8');
+                    
+                    // Remove shell artifacts
+                    content = content
+                        .replace(/EOF.*$/gm, '')
+                        .replace(/^\s*<.*$/gm, '')
+                        .replace(/\n\s*\n\s*\n/g, '\n\n')
+                        .trim();
+                    
+                    // Fix indentation issues
+                    const lines = content.split('\n');
+                    const fixedLines = [];
+                    let inActivities = false;
+                    
+                    for (const line of lines) {
+                        if (line.trim() === 'activities:') {
+                            inActivities = true;
+                            fixedLines.push(line);
+                        } else if (inActivities && line.match(/^\s*- timestamp:/)) {
+                            fixedLines.push('  ' + line.trim());
+                        } else if (inActivities && line.match(/^\s*(start|end|method|success|fail|why_success|why_fail):/)) {
+                            fixedLines.push('    ' + line.trim());
+                        } else {
+                            fixedLines.push(line);
+                        }
+                    }
+                    
+                    const fixedContent = fixedLines.join('\n');
+                    fs.writeFileSync(filepath, fixedContent);
+                    
+                    // Verify the fix worked
+                    yaml.load(fixedContent);
+                    fixed.push(file);
+                } catch (fixError) {
+                    // If we can't fix it, rename it so it doesn't break the system
+                    const backupPath = filepath + '.corrupted';
+                    fs.renameSync(filepath, backupPath);
+                    console.warn(`⚠️  Moved corrupted file ${file} to ${file}.corrupted`);
+                }
+            }
+        }
+
+        return { corrupted: corrupted.length, fixed: fixed.length };
+    }
+
+    archiveOldTasks(daysCutoff) {
+        const cutoffTime = Date.now() - (daysCutoff * 24 * 60 * 60 * 1000);
+        const files = fs.readdirSync(this.tasksDir)
+            .filter(f => f.endsWith('.yaml'));
+
+        let archived = 0;
+        let remaining = 0;
+
+        for (const file of files) {
+            try {
+                const { data, filepath } = this.loadTask(file);
+                const taskAge = data.created * 1000; // Convert to milliseconds
+                
+                if (taskAge < cutoffTime && !data.completed) {
+                    // Mark old incomplete tasks as completed with archived status
+                    data.completed = true;
+                    
+                    // Add completion activity
+                    if (!data.activities) data.activities = [];
+                    data.activities.push({
+                        timestamp: Math.floor(Date.now() / 1000),
+                        start: Math.floor(Date.now() / 1000),
+                        end: Math.floor(Date.now() / 1000),
+                        method: `Auto-archived after ${daysCutoff} days`,
+                        success: false,
+                        fail: true,
+                        why_success: '',
+                        why_fail: `Task automatically archived due to age (>${daysCutoff} days old)`
+                    });
+                    
+                    this.saveTask(filepath, data);
+                    archived++;
+                } else if (!data.completed) {
+                    remaining++;
+                }
+            } catch (e) {
+                // Skip corrupted files
+            }
+        }
+
+        return { archived, remaining };
     }
 
     isTaskSuccessful(taskData) {
@@ -341,6 +498,25 @@ function main() {
                     console.log(`${status} ${task.file} - ${task.agent} - ${date}`);
                     console.log(`  ${task.task}\n`);
                 }
+                break;
+            }
+
+            case 'cleanup': {
+                console.log('🔧 Cleaning up corrupted task files...');
+                const result = manager.cleanupCorruptedTasks();
+                console.log(`✅ Cleanup complete:`);
+                console.log(`   - Corrupted files found: ${result.corrupted}`);
+                console.log(`   - Files fixed: ${result.fixed}`);
+                break;
+            }
+
+            case 'archive-old': {
+                const daysCutoff = parseInt(args[1]) || 2;
+                console.log(`📦 Archiving tasks older than ${daysCutoff} days...`);
+                const result = manager.archiveOldTasks(daysCutoff);
+                console.log(`✅ Archive complete:`);
+                console.log(`   - Tasks archived: ${result.archived}`);
+                console.log(`   - Active tasks remaining: ${result.remaining}`);
                 break;
             }
 
