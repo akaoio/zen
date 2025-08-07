@@ -1,4 +1,0 @@
-set x 5
-set y 0
-print "Testing division:"
-print x / y

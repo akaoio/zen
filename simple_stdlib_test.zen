@@ -1,3 +1,0 @@
-print "Testing basic print"
-set msg "Hello"
-print upper msg

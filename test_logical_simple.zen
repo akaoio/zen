@@ -1,4 +1,0 @@
-set a true
-set b false
-set result a and b
-print result

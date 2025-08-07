@@ -1,5 +1,0 @@
-print "Testing basic print"
-set msg "Hello ZEN\!"  
-print msg
-set num 42
-print "Number:", num

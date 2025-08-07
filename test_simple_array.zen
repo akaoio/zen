@@ -1,3 +1,0 @@
-# Simple array test
-set nums 1, 2, 3
-print nums

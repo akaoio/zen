@@ -1,3 +1,0 @@
-print "Hello ZEN!"
-set x 42
-print "x = " + x

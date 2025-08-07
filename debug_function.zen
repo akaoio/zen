@@ -1,4 +1,0 @@
-function test
-    print "in function"
-
-test

@@ -1,9 +1,0 @@
-// Test stdlib functions
-set x "hello world"
-print "Original:" x
-print "Upper:" upper x
-print "Lower:" lower x  
-print "Math:"
-print "abs(-5):" abs -5
-print "floor(5.7):" floor 5.7
-print "Test complete\!"

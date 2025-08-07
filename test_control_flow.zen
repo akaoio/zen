@@ -1,7 +1,0 @@
-set x 42
-set y "hello"
-if x = 42
-    print "x is 42"
-    print y
-else
-    print "x is not 42"

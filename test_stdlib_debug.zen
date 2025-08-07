@@ -1,3 +1,0 @@
-print "Starting stdlib tests"
-len "hello"
-abs 5

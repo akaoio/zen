@@ -1,6 +1,0 @@
-print "starting"
-
-function hello
-    print "inside function"
-
-print "function defined"

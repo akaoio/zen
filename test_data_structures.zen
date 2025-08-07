@@ -1,8 +1,0 @@
-set arr 1, 2, 3
-print arr
-
-set obj name "John", age 25
-print obj
-
-print obj.name
-print obj.age

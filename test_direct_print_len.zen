@@ -1,2 +1,0 @@
-set str "hello"
-print len str

@@ -1,3 +1,0 @@
-set str "hello"
-set length len str
-print "Length is:", length

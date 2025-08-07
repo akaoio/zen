@@ -1,3 +1,0 @@
-# Simple test to verify execution
-set x 5
-print x

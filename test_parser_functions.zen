@@ -1,8 +1,0 @@
-set x 5
-set y 10
-set result x + y * 2
-print result
-
-set person name "Alice", age 25
-print person.name
-print person.age

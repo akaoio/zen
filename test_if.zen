@@ -1,4 +1,0 @@
-if 5 > 3
-    print "Greater"
-else
-    print "Lesser"

@@ -1,8 +1,0 @@
-function test x y
-    set result x + y * 2
-    return result
-
-set a 5
-set b 3
-set final test a b
-print final

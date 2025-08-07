@@ -1,5 +1,0 @@
-set counter 0
-while counter < 3
-    print counter
-    set counter counter + 1
-print "done"

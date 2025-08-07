@@ -1,9 +1,0 @@
-set counter 0
-while counter < 3
-    print "counter at start of loop:"
-    print counter
-    set counter counter + 1
-    print "counter after increment:"
-    print counter
-print "final counter:"
-print counter

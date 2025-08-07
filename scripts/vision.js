@@ -777,6 +777,37 @@ class ProjectVision {
                         const subDirPath = relPath;
                         let isAuthorized = false;
                         
+                        // Whitelist of authorized project directories
+                        const authorizedDirectories = [
+                            '.claude',          // Claude Code configuration
+                            '.git',             // Git repository data  
+                            '.githooks',        // Git hooks
+                            'node_modules',     // Node.js dependencies
+                            'scripts',          // Project automation scripts
+                            'swarm',            // Multi-swarm system architecture
+                            'tasks',            // Task management files
+                            'tests',            // Test suite
+                            'tools',            // Development tools
+                            'workspace',        // Multi-swarm workspaces
+                            'docs',             // Documentation
+                            'examples',         // Example files
+                            'build',            // Build artifacts
+                            'bin',              // Binary output
+                            'lib',              // Libraries
+                            'include',          // Header files
+                            'target',           // Rust build directory
+                            'dist',             // Distribution files
+                            '.vscode',          // VS Code settings
+                            '.github',          // GitHub workflows
+                            'cmake',            // CMake files
+                            'config'            // Configuration files
+                        ];
+                        
+                        // Check if this is a whitelisted directory or subdirectory
+                        const isWhitelisted = authorizedDirectories.some(authDir => {
+                            return subDirPath === authDir || subDirPath.startsWith(authDir + '/');
+                        });
+                        
                         // Check if any manifest file is in this directory or subdirectories
                         for (const manifestPath of manifestFiles) {
                             if (manifestPath.startsWith(subDirPath + '/')) {
@@ -785,7 +816,10 @@ class ProjectVision {
                             }
                         }
                         
-                        if (!isAuthorized && !trackedDirs.has(subDirPath)) {
+                        // Directory is authorized if it's whitelisted, has manifest files, or is a tracked directory
+                        isAuthorized = isAuthorized || isWhitelisted || trackedDirs.has(subDirPath);
+                        
+                        if (!isAuthorized) {
                             // This is an unauthorized directory
                             const parts = relPath.split('/');
                             let current = tree;

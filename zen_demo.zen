@@ -1,6 +1,0 @@
-set x 42
-set y 8
-set sum x + y
-set message "Hello ZEN!"
-set scores 85, 92, 78
-set person name "Alice", age 25, active true
