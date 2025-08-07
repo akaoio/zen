@@ -19,6 +19,7 @@ const colors = {
     gray: '\x1b[90m',     // Metadata
     magenta: '\x1b[35m',  // Desired (not yet created)
     cyan: '\x1b[36m',     // Future feature
+    orange: '\x1b[38;5;208m', // Unauthorized (bright orange)
     reset: '\x1b[0m',
     bold: '\x1b[1m',
     dim: '\x1b[2m',
@@ -219,13 +220,20 @@ class ProjectVision {
                 functionLineIndex = i;
                 break;
             }
+            
+            // Better approach: look for function definition by checking for return type prefix
+            const line = lines[i].trim();
+            if (line.match(new RegExp(`^(int|void|char\\*|AST_T\\*|parser_T\\*|Value\\*|bool|size_t|double|float)\\s+${escapedName}\\s*\\(`))) {
+                functionLineIndex = i;
+                break;
+            }
+            
             // Fallback: check if line contains function name with opening brace on same or next line
             if (lines[i].includes(functionName + '(')) {
                 // Check if this looks like a definition (has opening brace nearby)
                 if (lines[i].includes('{') || 
                     (i + 1 < lines.length && lines[i + 1].includes('{'))) {
-                    // Additional check: make sure this isn't a function call
-                    // Function calls typically have 'return', '=', or are part of expressions
+                    // Enhanced check: make sure this isn't a function call
                     const lineContent = lines[i].trim();
                     const isCall = lineContent.startsWith('return ') ||
                                   lineContent.includes(' = ') ||
@@ -233,7 +241,16 @@ class ProjectVision {
                                   lineContent.includes('while (') ||
                                   lineContent.includes('for (') ||
                                   lineContent.includes('printf(') ||
-                                  lineContent.includes('fprintf(');
+                                  lineContent.includes('fprintf(') ||
+                                  lineContent.startsWith('!') ||
+                                  lineContent.includes('&&') ||
+                                  lineContent.includes('||') ||
+                                  lineContent.includes('->') ||
+                                  lineContent.includes('::') ||
+                                  lineContent.includes('++') ||
+                                  lineContent.includes('--') ||
+                                  lineContent.includes(');') ||
+                                  /^\s*(if|while|for|switch|case|default|else)\s*/.test(lineContent);
                     
                     if (!isCall) {
                         functionLineIndex = i;
@@ -289,6 +306,96 @@ class ProjectVision {
         }
         
         return false;
+    }
+
+    /**
+     * Extract all functions from a C/H file
+     */
+    extractAllFunctions(filePath) {
+        if (!fs.existsSync(filePath)) {
+            return [];
+        }
+
+        const content = fs.readFileSync(filePath, 'utf8');
+        const functions = [];
+        
+        // Remove comments
+        const cleanContent = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        
+        // Split into lines and process each potential function
+        const lines = cleanContent.split('\n');
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Skip empty lines and preprocessor directives
+            if (!line.trim() || line.trim().startsWith('#')) continue;
+            
+            // Look for function-like patterns: return_type name(params...)
+            const funcMatch = line.match(/^(\w[\w\s*]*)\s+(\w+)\s*\((.*)$/);
+            if (!funcMatch) continue;
+            
+            let [, returnType, name, paramsStart] = funcMatch;
+            
+            // Skip control structures
+            if (['if', 'for', 'while', 'switch', 'return'].includes(returnType.trim())) continue;
+            if (['if', 'for', 'while', 'switch'].includes(name)) continue;
+            
+            // Collect full parameter list (might span multiple lines)
+            let fullParams = paramsStart;
+            let parenCount = 1; // We already have opening paren
+            let lineIdx = i;
+            
+            // Count parens in first line
+            for (const ch of paramsStart) {
+                if (ch === '(') parenCount++;
+                if (ch === ')') parenCount--;
+            }
+            
+            // If not closed, continue to next lines
+            while (parenCount > 0 && lineIdx < lines.length - 1) {
+                lineIdx++;
+                const nextLine = lines[lineIdx];
+                fullParams += ' ' + nextLine.trim();
+                for (const ch of nextLine) {
+                    if (ch === '(') parenCount++;
+                    if (ch === ')') parenCount--;
+                }
+            }
+            
+            // Extract just the parameters (remove trailing )
+            const paramsMatch = fullParams.match(/^([^)]*)\)/);
+            if (!paramsMatch) continue;
+            const params = paramsMatch[1];
+            
+            // Check if this is followed by a { (might be on next line) or ; (for headers)
+            let hasOpenBrace = false;
+            let hasSemicolon = false;
+            for (let j = i; j < Math.min(lineIdx + 3, lines.length); j++) {
+                if (lines[j].includes('{')) {
+                    hasOpenBrace = true;
+                    break;
+                }
+                if (lines[j].includes(';')) {
+                    hasSemicolon = true;
+                    break;
+                }
+            }
+            
+            // Must have either { (implementation) or ; (declaration)
+            if (!hasOpenBrace && !hasSemicolon) continue;
+            
+            // Skip static functions
+            if (line.trim().startsWith('static ')) continue;
+            
+            functions.push({
+                name,
+                signature: `${returnType.trim()} ${name}(${params.trim()})`,
+                lineNumber: i + 1
+            });
+        }
+        
+        return functions;
     }
 
     /**
@@ -403,7 +510,19 @@ class ProjectVision {
             fileStatus = 'stub';
         }
 
-        return { status: fileStatus, functions: functionStatuses };
+        // Extract all actual functions from the file
+        const allFunctions = this.extractAllFunctions(filePath);
+        const manifestFunctionNames = new Set((fileSpec.functions || []).map(f => f.name));
+        
+        // Find unauthorized functions (functions not in manifest)
+        const unauthorizedFunctions = [];
+        for (const actualFunc of allFunctions) {
+            if (!manifestFunctionNames.has(actualFunc.name)) {
+                unauthorizedFunctions.push(actualFunc);
+            }
+        }
+
+        return { status: fileStatus, functions: functionStatuses, unauthorized: unauthorizedFunctions };
     }
 
     /**
@@ -417,6 +536,7 @@ class ProjectVision {
             case 'complete': return colors.green;
             case 'desired': return colors.magenta;
             case 'future': return colors.cyan;
+            case 'unauthorized': return colors.orange;
             default: return colors.reset;
         }
     }
@@ -488,6 +608,7 @@ class ProjectVision {
             case 'complete': return '●';
             case 'desired': return '◇';  // Empty diamond for desired files
             case 'future': return '⟡';   // Special symbol for future features
+            case 'unauthorized': return '⚠';  // Warning symbol for unauthorized functions
             default: return '?';
         }
     }
@@ -519,7 +640,8 @@ class ProjectVision {
                 _path: filePath,
                 _spec: manifest.files[filePath],
                 _status: analysis.status,
-                _functions: analysis.functions
+                _functions: analysis.functions,
+                _unauthorized: analysis.unauthorized || []
             };
         }
         
@@ -580,6 +702,118 @@ class ProjectVision {
             };
         }
         
+        // Scan for unauthorized files in tracked directories
+        const trackedDirs = new Set();
+        
+        // Always scan the root directory
+        trackedDirs.add('.');
+        
+        // Collect all directories that have manifest files
+        for (const filePath of Object.keys(manifest.files)) {
+            const parts = filePath.split('/');
+            let dirPath = '';
+            for (let i = 0; i < parts.length - 1; i++) {
+                dirPath = dirPath ? dirPath + '/' + parts[i] : parts[i];
+                trackedDirs.add(dirPath);
+            }
+        }
+        
+        // Also check header directories
+        for (const headerPath of Object.keys(manifest.headers || {})) {
+            const parts = headerPath.split('/');
+            let dirPath = '';
+            for (let i = 0; i < parts.length - 1; i++) {
+                dirPath = dirPath ? dirPath + '/' + parts[i] : parts[i];
+                trackedDirs.add(dirPath);
+            }
+        }
+        
+        // Scan each tracked directory for unauthorized files
+        const manifestFiles = new Set([
+            ...Object.keys(manifest.files),
+            ...Object.keys(manifest.headers || {})
+        ]);
+        
+        for (const dir of trackedDirs) {
+            const fullDirPath = path.join(this.projectRoot, dir);
+            if (!fs.existsSync(fullDirPath)) continue;
+            
+            try {
+                const files = fs.readdirSync(fullDirPath);
+                for (const file of files) {
+                    const relPath = dir === '.' ? file : path.join(dir, file);
+                    const fullPath = path.join(fullDirPath, file);
+                    
+                    // Skip if already in manifest
+                    if (manifestFiles.has(relPath)) continue;
+                    
+                    const stat = fs.statSync(fullPath);
+                    
+                    if (stat.isFile() && (file.endsWith('.c') || file.endsWith('.h'))) {
+                        // This is an unauthorized C/H file
+                        const parts = relPath.split('/');
+                        let current = tree;
+                        
+                        // Navigate to the directory
+                        for (let i = 0; i < parts.length - 1; i++) {
+                            if (!current[parts[i]]) {
+                                current[parts[i]] = { _type: 'directory', _children: {} };
+                            }
+                            current = current[parts[i]]._children;
+                        }
+                        
+                        // Add unauthorized file
+                        const fileName = parts[parts.length - 1];
+                        current[fileName] = {
+                            _type: 'file',
+                            _path: relPath,
+                            _spec: null,
+                            _status: 'unauthorized',
+                            _functions: {},
+                            _unauthorized: []
+                        };
+                    } else if (stat.isDirectory()) {
+                        // Check if this directory is completely unauthorized (not in any manifest path)
+                        const subDirPath = relPath;
+                        let isAuthorized = false;
+                        
+                        // Check if any manifest file is in this directory or subdirectories
+                        for (const manifestPath of manifestFiles) {
+                            if (manifestPath.startsWith(subDirPath + '/')) {
+                                isAuthorized = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!isAuthorized && !trackedDirs.has(subDirPath)) {
+                            // This is an unauthorized directory
+                            const parts = relPath.split('/');
+                            let current = tree;
+                            
+                            // Navigate to parent directory
+                            for (let i = 0; i < parts.length - 1; i++) {
+                                if (!current[parts[i]]) {
+                                    current[parts[i]] = { _type: 'directory', _children: {} };
+                                }
+                                current = current[parts[i]]._children;
+                            }
+                            
+                            // Add unauthorized directory
+                            current[file] = {
+                                _type: 'directory',
+                                _path: subDirPath,
+                                _spec: null,
+                                _status: 'unauthorized',
+                                _children: {}
+                            };
+                        }
+                    }
+                }
+            } catch (err) {
+                // Ignore errors reading directories
+            }
+        }
+        
         return tree;
     }
 
@@ -592,16 +826,25 @@ class ProjectVision {
             const connector = isLast ? tree.lastBranch : tree.branch;
             
             if (node._type === 'directory') {
-                const progress = this.calculateProgress(node);
-                const progressColor = this.getProgressColor(progress);
-                console.log(prefix + connector + colors.blue + colors.bold + name + '/' + colors.reset + 
-                          ' ' + progressColor + `[${progress}%]` + colors.reset);
+                if (node._status === 'unauthorized') {
+                    // Unauthorized directory
+                    console.log(prefix + connector + colors.orange + colors.bold + '⚠ ' + name + '/' + colors.reset + 
+                              ' ' + colors.orange + '[UNAUTHORIZED]' + colors.reset);
+                } else {
+                    // Normal directory
+                    const progress = this.calculateProgress(node);
+                    const progressColor = this.getProgressColor(progress);
+                    console.log(prefix + connector + colors.blue + colors.bold + name + '/' + colors.reset + 
+                              ' ' + progressColor + `[${progress}%]` + colors.reset);
+                }
             } else {
                 const color = this.getStatusColor(node._status);
                 const symbol = this.getStatusSymbol(node._status);
                 const progress = this.calculateProgress(node);
                 const progressColor = this.getProgressColor(progress);
-                const desc = node._spec?.description ? colors.gray + ' # ' + node._spec.description + colors.reset : '';
+                const desc = node._status === 'unauthorized' 
+                    ? colors.gray + ' # UNAUTHORIZED FILE (not in manifest)' + colors.reset
+                    : (node._spec?.description ? colors.gray + ' # ' + node._spec.description + colors.reset : '');
                 
                 // Check if an agent is working on this file
                 const activeTask = this.activeTasks.get(node._path);
@@ -609,17 +852,26 @@ class ProjectVision {
                     ? ` ${colors.cyan}[${activeTask.agent}]${colors.reset}` 
                     : '';
                 
+                const progressDisplay = node._status === 'unauthorized' 
+                    ? '' 
+                    : ' ' + progressColor + `[${progress}%]` + colors.reset;
+                
                 console.log(prefix + connector + color + symbol + ' ' + name + colors.reset + 
-                          ' ' + progressColor + `[${progress}%]` + colors.reset + 
+                          progressDisplay + 
                           agentIndicator + desc);
                 
                 // Print functions if it's a file with functions
-                if (node._type === 'file' && node._functions && Object.keys(node._functions).length > 0) {
+                if (node._type === 'file' && (node._functions && Object.keys(node._functions).length > 0 || 
+                    node._unauthorized && node._unauthorized.length > 0)) {
                     const funcPrefix = prefix + (isLast ? tree.empty : tree.vertical) + tree.empty;
-                    const funcs = Object.entries(node._functions);
+                    const funcs = Object.entries(node._functions || {});
+                    const unauthorizedFuncs = node._unauthorized || [];
+                    const totalFuncs = funcs.length + unauthorizedFuncs.length;
+                    let funcIndex = 0;
                     
+                    // Print manifest functions first
                     funcs.forEach(([funcName, funcStatus], index) => {
-                        const isLastFunc = index === funcs.length - 1;
+                        const isLastFunc = funcIndex === totalFuncs - 1;
                         const funcConnector = isLastFunc ? tree.lastBranch : tree.branch;
                         const funcColor = this.getStatusColor(funcStatus);
                         const funcSymbol = this.getStatusSymbol(funcStatus);
@@ -627,6 +879,19 @@ class ProjectVision {
                         
                         console.log(funcPrefix + funcConnector + funcColor + funcSymbol + ' ' + funcName + '()' + 
                                   colors.reset + colors.gray + ' # ' + funcDesc + colors.reset);
+                        funcIndex++;
+                    });
+                    
+                    // Print unauthorized functions
+                    unauthorizedFuncs.forEach((func, index) => {
+                        const isLastFunc = funcIndex === totalFuncs - 1;
+                        const funcConnector = isLastFunc ? tree.lastBranch : tree.branch;
+                        const funcColor = colors.orange;  // Orange for unauthorized
+                        const funcSymbol = this.getStatusSymbol('unauthorized');
+                        
+                        console.log(funcPrefix + funcConnector + funcColor + funcSymbol + ' ' + func.name + '()' + 
+                                  colors.reset + colors.gray + ' # UNAUTHORIZED (not in manifest)' + colors.reset);
+                        funcIndex++;
                     });
                 }
             }
@@ -805,6 +1070,8 @@ class ProjectVision {
         console.log(colors.dim + 'Desire:' + colors.reset);
         console.log(`  ${colors.magenta}◇ Desired${colors.reset}      - Planned future file/feature`);
         console.log(`  ${colors.cyan}⟡ Future${colors.reset}       - Long-term vision`);
+        console.log(colors.dim + 'Compliance:' + colors.reset);
+        console.log(`  ${colors.orange}⚠ Unauthorized${colors.reset} - File/folder not in MANIFEST.json`);
         console.log(colors.dim + 'Agents:' + colors.reset);
         console.log(`  ${colors.cyan}[agent-id]${colors.reset}     - Agent actively working on file`);
         console.log();

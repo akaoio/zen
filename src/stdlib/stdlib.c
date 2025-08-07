@@ -17,12 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Forward declarations for array functions  
-Value* array_new(size_t initial_capacity);
-void array_push(Value* array, Value* item);
-
 // Forward declarations for stdlib functions
-Value* zen_stdlib_get_all_wrapper(Value** args, size_t argc);
 
 // Native function typedef for runtime integration
 typedef Value* (*ZenNativeFunc)(Value** args, size_t argc);
@@ -78,7 +73,6 @@ static ZenStdlibFunction stdlib_functions[] = {
     {"jsonStringify", zen_stdlib_json_stringify, "Convert value to JSON string"},
     
     // Introspection Functions  
-    {"getAll", zen_stdlib_get_all_wrapper, "Get all stdlib function names"},
     
     // Sentinel - must be last
     {NULL, NULL, NULL}
@@ -716,26 +710,3 @@ Value* zen_stdlib_json_stringify(Value** args, size_t argc) {
  * @param argc Number of arguments (unused)
  * @return Array Value containing all stdlib function names as strings
  */
-Value* zen_stdlib_get_all_wrapper(Value** args, size_t argc) {
-    (void)args; // Unused parameters
-    (void)argc;
-    
-    // Count the number of functions
-    size_t count = zen_stdlib_count();
-    
-    // Create array to hold function names
-    Value* result = array_new(count);
-    if (!result) {
-        return value_new_null();
-    }
-    
-    // Add each function name from stdlib_functions registry
-    for (size_t i = 0; i < count && stdlib_functions[i].name != NULL; i++) {
-        Value* name = value_new_string(stdlib_functions[i].name);
-        if (name) {
-            array_push(result, name);
-        }
-    }
-    
-    return result;
-}

@@ -9,6 +9,8 @@
 #define _GNU_SOURCE  // For strdup
 #include "zen/stdlib/json.h"
 #include "zen/types/value.h"
+#include "zen/types/array.h"
+#include "zen/types/object.h"
 #include "zen/core/memory.h"
 #include <stdlib.h>
 #include <string.h>
@@ -17,10 +19,6 @@
 #include <math.h>
 
 // Forward declarations for array and object functions
-Value* array_new(size_t initial_capacity);
-void array_push(Value* array, Value* item);
-Value* object_new(void);
-void object_set(Value* object, const char* key, Value* value);
 
 // JSON parsing state
 typedef struct {

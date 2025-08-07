@@ -10,11 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "zen/types/value.h"
+#include "zen/types/array.h"
 #include "zen/core/memory.h"
 
-// Forward declarations for array functions (no header file exists yet)
-Value* array_new(size_t initial_capacity);
-void array_push(Value* array, Value* item);
 
 // Forward declarations for internal functions
 static int object_find_key_index(const ZenObject* object, const char* key);

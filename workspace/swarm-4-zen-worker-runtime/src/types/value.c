@@ -88,7 +88,7 @@ Value* value_new(ValueType type) {
                 free(value);
                 return NULL;
             }
-            value->as.error->message = strdup("Unknown error");
+            value->as.error->message = memory_strdup("Unknown error");
             value->as.error->code = -1;
             break;
         case VALUE_CLASS:
@@ -734,13 +734,13 @@ static ZenClass* class_create(const char* name, const char* parent_name) {
         return NULL;
     }
     
-    class_def->name = name ? strdup(name) : NULL;
-    class_def->parent_class_name = parent_name ? strdup(parent_name) : NULL;
+    class_def->name = name ? memory_strdup(name) : NULL;
+    class_def->parent_class_name = parent_name ? memory_strdup(parent_name) : NULL;
     class_def->parent_class = NULL;
     class_def->methods = value_new(VALUE_OBJECT);
     if (!class_def->methods) {
-        if (class_def->name) free(class_def->name);
-        if (class_def->parent_class_name) free(class_def->parent_class_name);
+        if (class_def->name) memory_free(class_def->name);
+        if (class_def->parent_class_name) memory_free(class_def->parent_class_name);
         free(class_def);
         return NULL;
     }
@@ -759,10 +759,10 @@ static void class_free(ZenClass* class_def) {
     }
     
     if (class_def->name) {
-        free(class_def->name);
+        memory_free(class_def->name);
     }
     if (class_def->parent_class_name) {
-        free(class_def->parent_class_name);
+        memory_free(class_def->parent_class_name);
     }
     if (class_def->parent_class) {
         value_unref(class_def->parent_class);
@@ -987,7 +987,7 @@ Value* value_new_error(const char* message, int error_code) {
         return NULL;
     }
     
-    value->as.error->message = message ? strdup(message) : strdup("Unknown error");
+    value->as.error->message = message ? memory_strdup(message) : memory_strdup("Unknown error");
     value->as.error->code = error_code;
     
     if (!value->as.error->message) {

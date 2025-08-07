@@ -604,6 +604,21 @@
           "name": "visitor_free",
           "signature": "void visitor_free(visitor_T* visitor)",
           "description": "Free visitor instance and cleanup resources"
+        },
+        {
+          "name": "visitor_has_exception",
+          "signature": "bool visitor_has_exception(visitor_T* visitor)",
+          "description": "Check if visitor has an exception"
+        },
+        {
+          "name": "visitor_throw_exception",
+          "signature": "void visitor_throw_exception(visitor_T* visitor, AST_T* node, const char* message, const char* context)",
+          "description": "Throw an exception in visitor"
+        },
+        {
+          "name": "visitor_optimize_hot_function",
+          "signature": "bool visitor_optimize_hot_function(visitor_T* visitor, const char* function_name)",
+          "description": "Optimize a hot function"
         }
       ]
     },
@@ -2194,6 +2209,88 @@
           "name": "value_get_length",
           "signature": "size_t value_get_length(const Value* value)",
           "description": "Get the length of a value for stdlib length() function",
+          "doxygen_required": true
+        }
+      ]
+    },
+    "src/include/zen/types/array.h": {
+      "description": "Array type function declarations",
+      "function_declarations": [
+        {
+          "name": "array_new",
+          "signature": "Value* array_new(size_t initial_capacity)",
+          "description": "Create new array",
+          "doxygen_required": true
+        },
+        {
+          "name": "array_push",
+          "signature": "void array_push(Value* array, Value* item)",
+          "description": "Add item to end of array",
+          "doxygen_required": true
+        },
+        {
+          "name": "array_pop",
+          "signature": "Value* array_pop(Value* array)",
+          "description": "Remove and return last item",
+          "doxygen_required": true
+        },
+        {
+          "name": "array_get",
+          "signature": "Value* array_get(Value* array, size_t index)",
+          "description": "Get item at index",
+          "doxygen_required": true
+        },
+        {
+          "name": "array_set",
+          "signature": "void array_set(Value* array, size_t index, Value* item)",
+          "description": "Set item at index",
+          "doxygen_required": true
+        },
+        {
+          "name": "array_length",
+          "signature": "size_t array_length(const Value* array)",
+          "description": "Get array length",
+          "doxygen_required": true
+        }
+      ]
+    },
+    "src/include/zen/types/object.h": {
+      "description": "Object type function declarations",
+      "function_declarations": [
+        {
+          "name": "object_new",
+          "signature": "Value* object_new(void)",
+          "description": "Create new object",
+          "doxygen_required": true
+        },
+        {
+          "name": "object_set",
+          "signature": "void object_set(Value* object, const char* key, Value* value)",
+          "description": "Set key-value pair",
+          "doxygen_required": true
+        },
+        {
+          "name": "object_get",
+          "signature": "Value* object_get(Value* object, const char* key)",
+          "description": "Get value by key",
+          "doxygen_required": true
+        },
+        {
+          "name": "object_has",
+          "signature": "bool object_has(Value* object, const char* key)",
+          "description": "Check if key exists",
+          "doxygen_required": true
+        },
+        {
+          "name": "object_delete",
+          "signature": "void object_delete(Value* object, const char* key)",
+          "description": "Remove key-value pair",
+          "doxygen_required": true
+        },
+        {
+          "name": "object_keys",
+          "signature": "Value* object_keys(Value* object)",
+          "description": "Get array of keys",
           "doxygen_required": true
         }
       ]

@@ -1,0 +1,10 @@
+set message "ZEN Language Strategic Summit"
+print message
+
+set version "1.0.0"
+set features 5, 10, 15
+
+function greet name
+    return "Hello " + name
+
+print greet "Multi-Swarm Development Team"
