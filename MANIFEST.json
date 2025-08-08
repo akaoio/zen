@@ -1,11 +1,12 @@
 {
   "version": "1.0.0",
-  "description": "ZEN Language Implementation Manifest - Clean version with existing functions only",
+  "description": "ZEN Language Implementation Manifest - Comprehensive version matching actual codebase",
   "enforcement": {
+    "enabled": false,
     "strict": false,
     "allow_new_files": true,
     "allow_new_functions": true,
-    "allow_signature_changes": true
+    "allow_signature_changes": false
   },
   "files": {
     "src/core/ast.c": {
@@ -14,192 +15,243 @@
         {
           "name": "ast_free",
           "signature": "void ast_free(AST_T *ast)",
-          "description": "Auto-generated: ast_free function"
+          "description": "Auto-generated: ast_free function",
+          "line": 311,
+          "isStatic": false
         }
       ]
     },
-    "src/core/lexer.c": {
-      "description": "Implementation for lexer.c",
+    "src/core/ast_memory_pool.c": {
+      "description": "Implementation for ast_memory_pool.c",
       "functions": [
         {
-          "name": "lexer_free",
-          "signature": "void lexer_free(lexer_T *lexer)",
-          "description": "Auto-generated: lexer_free function"
+          "name": "ast_pool_manager_init",
+          "signature": "void ast_pool_manager_init(ASTPoolManager *manager)",
+          "description": "Auto-generated: ast_pool_manager_init function",
+          "line": 29,
+          "isStatic": false
         },
         {
-          "name": "lexer_advance",
-          "signature": "void lexer_advance(lexer_T *lexer)",
-          "description": "Auto-generated: lexer_advance function"
+          "name": "ast_pool_manager_cleanup",
+          "signature": "void ast_pool_manager_cleanup(ASTPoolManager *manager)",
+          "description": "Auto-generated: ast_pool_manager_cleanup function",
+          "line": 91,
+          "isStatic": false
         },
         {
-          "name": "lexer_skip_whitespace",
-          "signature": "void lexer_skip_whitespace(lexer_T *lexer)",
-          "description": "Auto-generated: lexer_skip_whitespace function"
+          "name": "ast_pool_select_type",
+          "signature": "ASTPoolType ast_pool_select_type(int ast_type)",
+          "description": "Auto-generated: ast_pool_select_type function",
+          "line": 146,
+          "isStatic": false
         },
         {
-          "name": "lexer_keyword_type",
-          "signature": "int lexer_keyword_type(const char *value)",
-          "description": "Auto-generated: lexer_keyword_type function"
+          "name": "ast_pool_select_pool_for_type",
+          "signature": "ASTPoolType ast_pool_select_pool_for_type(int ast_type)",
+          "description": "Auto-generated: ast_pool_select_pool_for_type function",
+          "line": 157,
+          "isStatic": false
         },
         {
-          "name": "lexer_is_type_name",
-          "signature": "static bool lexer_is_type_name(const char *value)",
-          "description": "Auto-generated: lexer_is_type_name function"
+          "name": "ast_pool_expand",
+          "signature": "bool ast_pool_expand(ASTMemoryPool *pool)",
+          "description": "Auto-generated: ast_pool_expand function",
+          "line": 218,
+          "isStatic": false
         },
         {
-          "name": "lexer_get_location",
-          "signature": "SourceLocation lexer_get_location(const lexer_T *lexer)",
-          "description": "Auto-generated: lexer_get_location function"
+          "name": "ast_pool_return_to_pool",
+          "signature": "static void ast_pool_return_to_pool(ASTMemoryPool *pool, AST_T *node)",
+          "description": "Auto-generated: ast_pool_return_to_pool function",
+          "line": 327,
+          "isStatic": true
         },
         {
-          "name": "lexer_enter_error_recovery",
-          "signature": "void lexer_enter_error_recovery(lexer_T *lexer, const char *error_message)",
-          "description": "Auto-generated: lexer_enter_error_recovery function"
+          "name": "ast_pool_cleanup",
+          "signature": "void ast_pool_cleanup(ASTMemoryPool *pool)",
+          "description": "Auto-generated: ast_pool_cleanup function",
+          "line": 351,
+          "isStatic": false
         },
         {
-          "name": "lexer_exit_error_recovery",
-          "signature": "void lexer_exit_error_recovery(lexer_T *lexer)",
-          "description": "Auto-generated: lexer_exit_error_recovery function"
+          "name": "ast_pool_free",
+          "signature": "void ast_pool_free(ASTMemoryPool *pool, void *ptr)",
+          "description": "Auto-generated: ast_pool_free function",
+          "line": 398,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_get_stats",
+          "signature": "void ast_pool_get_stats(ASTPoolStats *stats)",
+          "description": "Auto-generated: ast_pool_get_stats function",
+          "line": 412,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_init",
+          "signature": "bool ast_pool_init(ASTMemoryPool *pool, size_t node_size, size_t initial_capacity)",
+          "description": "Auto-generated: ast_pool_init function",
+          "line": 460,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_init_global",
+          "signature": "bool ast_pool_init_global(size_t initial_capacity)",
+          "description": "Auto-generated: ast_pool_init_global function",
+          "line": 502,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_free_global",
+          "signature": "void ast_pool_free_global(AST_T *node)",
+          "description": "Auto-generated: ast_pool_free_global function",
+          "line": 602,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_cleanup_global",
+          "signature": "void ast_pool_cleanup_global(void)",
+          "description": "Auto-generated: ast_pool_cleanup_global function",
+          "line": 625,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_get_stats_global",
+          "signature": "MemoryStats ast_pool_get_stats_global(void)",
+          "description": "Auto-generated: ast_pool_get_stats_global function",
+          "line": 670,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_set_enabled",
+          "signature": "void ast_pool_set_enabled(bool enabled)",
+          "description": "Auto-generated: ast_pool_set_enabled function",
+          "line": 697,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_is_enabled",
+          "signature": "bool ast_pool_is_enabled(void)",
+          "description": "Auto-generated: ast_pool_is_enabled function",
+          "line": 709,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_get_pool_metrics",
+          "signature": "PoolMetrics ast_pool_get_pool_metrics(ASTPoolType pool_type)",
+          "description": "Auto-generated: ast_pool_get_pool_metrics function",
+          "line": 719,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_debug_status",
+          "signature": "void ast_pool_debug_status(void)",
+          "description": "Auto-generated: ast_pool_debug_status function",
+          "line": 754,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_is_pooled_node",
+          "signature": "bool ast_pool_is_pooled_node(AST_T *node)",
+          "description": "Auto-generated: ast_pool_is_pooled_node function",
+          "line": 805,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_global_init",
+          "signature": "void ast_pool_global_init(void)",
+          "description": "Auto-generated: ast_pool_global_init function",
+          "line": 814,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_global_cleanup",
+          "signature": "void ast_pool_global_cleanup(void)",
+          "description": "Auto-generated: ast_pool_global_cleanup function",
+          "line": 819,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_free_node",
+          "signature": "void ast_pool_free_node(AST_T *node)",
+          "description": "Auto-generated: ast_pool_free_node function",
+          "line": 868,
+          "isStatic": false
+        },
+        {
+          "name": "ast_pool_defragment",
+          "signature": "void ast_pool_defragment(ASTMemoryPool *pool)",
+          "description": "Auto-generated: ast_pool_defragment function",
+          "line": 892,
+          "isStatic": false
         }
       ]
     },
-    "src/core/parser.c": {
-      "description": "Implementation for parser.c",
+    "src/core/config.c": {
+      "description": "Implementation for config.c",
       "functions": [
         {
-          "name": "parser_free",
-          "signature": "void parser_free(parser_T *parser)",
-          "description": "Auto-generated: parser_free function"
+          "name": "config_parse_bool",
+          "signature": "static bool config_parse_bool(const char *str)",
+          "description": "Auto-generated: config_parse_bool function",
+          "line": 53,
+          "isStatic": true
         },
         {
-          "name": "parser_eat",
-          "signature": "void parser_eat(parser_T *parser, int token_type)",
-          "description": "Auto-generated: parser_eat function"
+          "name": "config_parse_uint",
+          "signature": "static bool config_parse_uint(const char *str, uint32_t *result)",
+          "description": "Auto-generated: config_parse_uint function",
+          "line": 72,
+          "isStatic": true
         },
         {
-          "name": "parser_get_precedence",
-          "signature": "int parser_get_precedence(int token_type)",
-          "description": "Auto-generated: parser_get_precedence function"
+          "name": "config_parse_size",
+          "signature": "static bool config_parse_size(const char *str, size_t *result)",
+          "description": "Auto-generated: config_parse_size function",
+          "line": 94,
+          "isStatic": true
         },
         {
-          "name": "parser_is_binary_operator",
-          "signature": "int parser_is_binary_operator(int token_type)",
-          "description": "Auto-generated: parser_is_binary_operator function"
+          "name": "config_safe_strcpy",
+          "signature": "static bool config_safe_strcpy(char *dest, const char *src, size_t max_len)",
+          "description": "Auto-generated: config_safe_strcpy function",
+          "line": 117,
+          "isStatic": true
         },
         {
-          "name": "parser_peek_for_object_literal",
-          "signature": "int parser_peek_for_object_literal(parser_T *parser)",
-          "description": "Auto-generated: parser_peek_for_object_literal function"
+          "name": "config_init",
+          "signature": "bool config_init(void)",
+          "description": "Auto-generated: config_init function",
+          "line": 150,
+          "isStatic": false
         },
         {
-          "name": "parser_peek_for_object_literal_strict",
-          "signature": "int parser_peek_for_object_literal_strict(parser_T *parser)",
-          "description": "Auto-generated: parser_peek_for_object_literal_strict function"
+          "name": "config_load_from_env",
+          "signature": "bool config_load_from_env(void)",
+          "description": "Auto-generated: config_load_from_env function",
+          "line": 170,
+          "isStatic": false
         },
         {
-          "name": "parser_has_errors",
-          "signature": "bool parser_has_errors(parser_T *parser)",
-          "description": "Auto-generated: parser_has_errors function"
+          "name": "config_load_from_file",
+          "signature": "bool config_load_from_file(const char *filename)",
+          "description": "Auto-generated: config_load_from_file function",
+          "line": 220,
+          "isStatic": false
         },
         {
-          "name": "parser_in_panic_mode",
-          "signature": "bool parser_in_panic_mode(parser_T *parser)",
-          "description": "Auto-generated: parser_in_panic_mode function"
+          "name": "config_set",
+          "signature": "bool config_set(const char *key, const char *value)",
+          "description": "Auto-generated: config_set function",
+          "line": 255,
+          "isStatic": false
         },
         {
-          "name": "parser_get_error_count",
-          "signature": "size_t parser_get_error_count(parser_T *parser)",
-          "description": "Auto-generated: parser_get_error_count function"
-        }
-      ]
-    },
-    "src/core/visitor.c": {
-      "description": "Implementation for visitor.c",
-      "functions": [
-        {
-          "name": "is_truthy",
-          "signature": "static bool is_truthy(AST_T *ast)",
-          "description": "Auto-generated: is_truthy function"
-        },
-        {
-          "name": "visitor_update_ast_scope",
-          "signature": "static void visitor_update_ast_scope(AST_T *node, scope_T *new_scope)",
-          "description": "Auto-generated: visitor_update_ast_scope function"
-        },
-        {
-          "name": "visitor_execute_user_function",
-          "signature": "static AST_T * visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int args_size)",
-          "description": "Auto-generated: visitor_execute_user_function function"
-        },
-        {
-          "name": "visitor_get_time_diff",
-          "signature": "static double visitor_get_time_diff(clock_t start, clock_t end)",
-          "description": "Auto-generated: visitor_get_time_diff function"
-        },
-        {
-          "name": "visitor_push_call_frame",
-          "signature": "static void visitor_push_call_frame(visitor_T *visitor, AST_T *function_def, AST_T **args, size_t arg_count, const char *function_name)",
-          "description": "Auto-generated: visitor_push_call_frame function"
-        },
-        {
-          "name": "visitor_pop_call_frame",
-          "signature": "static void visitor_pop_call_frame(visitor_T *visitor)",
-          "description": "Auto-generated: visitor_pop_call_frame function"
-        },
-        {
-          "name": "visitor_update_function_profile",
-          "signature": "static void visitor_update_function_profile(visitor_T *visitor, const char *function_name, double execution_time)",
-          "description": "Auto-generated: visitor_update_function_profile function"
-        },
-        {
-          "name": "visitor_is_constant_expression",
-          "signature": "static bool visitor_is_constant_expression(AST_T *node)",
-          "description": "Auto-generated: visitor_is_constant_expression function"
-        }
-      ]
-    },
-    "src/core/memory.c": {
-      "description": "Implementation for memory.c",
-      "functions": [
-        {
-          "name": "memory_ref_inc",
-          "signature": "size_t memory_ref_inc(size_t *ref_count)",
-          "description": "Auto-generated: memory_ref_inc function"
-        },
-        {
-          "name": "memory_ref_dec",
-          "signature": "size_t memory_ref_dec(size_t *ref_count)",
-          "description": "Auto-generated: memory_ref_dec function"
-        },
-        {
-          "name": "memory_ref_get",
-          "signature": "size_t memory_ref_get(const size_t *ref_count)",
-          "description": "Auto-generated: memory_ref_get function"
-        },
-        {
-          "name": "memory_check_leaks",
-          "signature": "size_t memory_check_leaks(void)",
-          "description": "Auto-generated: memory_check_leaks function"
-        },
-        {
-          "name": "update_stats_alloc",
-          "signature": "static void update_stats_alloc(size_t size)",
-          "description": "Auto-generated: update_stats_alloc function"
-        },
-        {
-          "name": "update_stats_free",
-          "signature": "static void update_stats_free(size_t size)",
-          "description": "Auto-generated: update_stats_free function"
-        },
-        {
-          "name": "add_debug_block",
-          "signature": "static void add_debug_block(void *ptr, size_t size, const char *file, int line)",
-          "description": "Auto-generated: add_debug_block function"
-        },
-        {
-          "name": "remove_debug_block",
-          "signature": "static void remove_debug_block(void *ptr)",
-          "description": "Auto-generated: remove_debug_block function"
+          "name": "config_cleanup",
+          "signature": "void config_cleanup(void)",
+          "description": "Auto-generated: config_cleanup function",
+          "line": 386,
+          "isStatic": false
         }
       ]
     },
@@ -209,37 +261,400 @@
         {
           "name": "error_is_error",
           "signature": "bool error_is_error(const Value *value)",
-          "description": "Auto-generated: error_is_error function"
+          "description": "Auto-generated: error_is_error function",
+          "line": 112,
+          "isStatic": false
         },
         {
           "name": "error_get_code",
           "signature": "int error_get_code(const Value *error)",
-          "description": "Auto-generated: error_get_code function"
+          "description": "Auto-generated: error_get_code function",
+          "line": 132,
+          "isStatic": false
         },
         {
           "name": "error_print",
           "signature": "void error_print(const Value *error, const char *prefix)",
-          "description": "Auto-generated: error_print function"
+          "description": "Auto-generated: error_print function",
+          "line": 145,
+          "isStatic": false
         },
         {
           "name": "error_print_simple",
           "signature": "void error_print_simple(const Value *error)",
-          "description": "Auto-generated: error_print_simple function"
+          "description": "Auto-generated: error_print_simple function",
+          "line": 175,
+          "isStatic": false
         },
         {
           "name": "error_has_code",
           "signature": "bool error_has_code(const Value *error, int code)",
-          "description": "Auto-generated: error_has_code function"
+          "description": "Auto-generated: error_has_code function",
+          "line": 183,
+          "isStatic": false
         },
         {
           "name": "error_has_message",
           "signature": "bool error_has_message(const Value *error, const char *message_substring)",
-          "description": "Auto-generated: error_has_message function"
+          "description": "Auto-generated: error_has_message function",
+          "line": 219,
+          "isStatic": false
         },
         {
           "name": "error_occurred",
           "signature": "bool error_occurred(Value **values, size_t count)",
-          "description": "Auto-generated: error_occurred function"
+          "description": "Auto-generated: error_occurred function",
+          "line": 362,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/core/lexer.c": {
+      "description": "Implementation for lexer.c",
+      "functions": [
+        {
+          "name": "lexer_free",
+          "signature": "void lexer_free(lexer_T *lexer)",
+          "description": "Auto-generated: lexer_free function",
+          "line": 57,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_advance",
+          "signature": "void lexer_advance(lexer_T *lexer)",
+          "description": "Auto-generated: lexer_advance function",
+          "line": 105,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_skip_whitespace",
+          "signature": "void lexer_skip_whitespace(lexer_T *lexer)",
+          "description": "Auto-generated: lexer_skip_whitespace function",
+          "line": 121,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_keyword_type",
+          "signature": "int lexer_keyword_type(const char *value)",
+          "description": "Auto-generated: lexer_keyword_type function",
+          "line": 580,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_is_type_name",
+          "signature": "static bool lexer_is_type_name(const char *value)",
+          "description": "Auto-generated: lexer_is_type_name function",
+          "line": 670,
+          "isStatic": true
+        },
+        {
+          "name": "lexer_get_location",
+          "signature": "SourceLocation lexer_get_location(const lexer_T *lexer)",
+          "description": "Auto-generated: lexer_get_location function",
+          "line": 916,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_enter_error_recovery",
+          "signature": "void lexer_enter_error_recovery(lexer_T *lexer, const char *error_message)",
+          "description": "Auto-generated: lexer_enter_error_recovery function",
+          "line": 934,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_exit_error_recovery",
+          "signature": "void lexer_exit_error_recovery(lexer_T *lexer)",
+          "description": "Auto-generated: lexer_exit_error_recovery function",
+          "line": 968,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_in_error_recovery",
+          "signature": "bool lexer_in_error_recovery(const lexer_T *lexer)",
+          "description": "Auto-generated: lexer_in_error_recovery function",
+          "line": 991,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_enable_buffering",
+          "signature": "bool lexer_enable_buffering(lexer_T *lexer, size_t buffer_size)",
+          "description": "Auto-generated: lexer_enable_buffering function",
+          "line": 1181,
+          "isStatic": false
+        },
+        {
+          "name": "lexer_is_unicode_identifier_char",
+          "signature": "bool lexer_is_unicode_identifier_char(uint32_t ch)",
+          "description": "Auto-generated: lexer_is_unicode_identifier_char function",
+          "line": 1295,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/core/logger.c": {
+      "description": "Implementation for logger.c",
+      "functions": [
+        {
+          "name": "logger_init",
+          "signature": "void logger_init(void)",
+          "description": "Auto-generated: logger_init function",
+          "line": 35,
+          "isStatic": false
+        },
+        {
+          "name": "logger_set_level",
+          "signature": "void logger_set_level(LogLevel level)",
+          "description": "Auto-generated: logger_set_level function",
+          "line": 90,
+          "isStatic": false
+        },
+        {
+          "name": "logger_get_level",
+          "signature": "LogLevel logger_get_level(void)",
+          "description": "Auto-generated: logger_get_level function",
+          "line": 103,
+          "isStatic": false
+        },
+        {
+          "name": "logger_set_categories",
+          "signature": "void logger_set_categories(int categories)",
+          "description": "Auto-generated: logger_set_categories function",
+          "line": 115,
+          "isStatic": false
+        },
+        {
+          "name": "logger_get_categories",
+          "signature": "int logger_get_categories(void)",
+          "description": "Auto-generated: logger_get_categories function",
+          "line": 128,
+          "isStatic": false
+        },
+        {
+          "name": "logger_set_file",
+          "signature": "bool logger_set_file(const char *filename)",
+          "description": "Auto-generated: logger_set_file function",
+          "line": 141,
+          "isStatic": false
+        },
+        {
+          "name": "logger_should_log",
+          "signature": "bool logger_should_log(LogLevel level, LogCategory category)",
+          "description": "Auto-generated: logger_should_log function",
+          "line": 167,
+          "isStatic": false
+        },
+        {
+          "name": "logger_log",
+          "signature": "void logger_log(LogLevel level, LogCategory category, const char *format, ...)",
+          "description": "Auto-generated: logger_log function",
+          "line": 183,
+          "isStatic": false
+        },
+        {
+          "name": "logger_cleanup",
+          "signature": "void logger_cleanup(void)",
+          "description": "Auto-generated: logger_cleanup function",
+          "line": 232,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/core/memory.c": {
+      "description": "Implementation for memory.c",
+      "functions": [
+        {
+          "name": "memory_free",
+          "signature": "void memory_free(void *ptr)",
+          "description": "Auto-generated: memory_free function",
+          "line": 132,
+          "isStatic": false
+        },
+        {
+          "name": "memory_ref_inc",
+          "signature": "size_t memory_ref_inc(size_t *ref_count)",
+          "description": "Auto-generated: memory_ref_inc function",
+          "line": 209,
+          "isStatic": false
+        },
+        {
+          "name": "memory_ref_dec",
+          "signature": "size_t memory_ref_dec(size_t *ref_count)",
+          "description": "Auto-generated: memory_ref_dec function",
+          "line": 225,
+          "isStatic": false
+        },
+        {
+          "name": "memory_ref_get",
+          "signature": "size_t memory_ref_get(const size_t *ref_count)",
+          "description": "Auto-generated: memory_ref_get function",
+          "line": 241,
+          "isStatic": false
+        },
+        {
+          "name": "memory_debug_enable",
+          "signature": "void memory_debug_enable(bool enable)",
+          "description": "Auto-generated: memory_debug_enable function",
+          "line": 257,
+          "isStatic": false
+        },
+        {
+          "name": "memory_debug_is_enabled",
+          "signature": "bool memory_debug_is_enabled(void)",
+          "description": "Auto-generated: memory_debug_is_enabled function",
+          "line": 268,
+          "isStatic": false
+        },
+        {
+          "name": "memory_get_stats",
+          "signature": "void memory_get_stats(MemoryStats *stats)",
+          "description": "Auto-generated: memory_get_stats function",
+          "line": 281,
+          "isStatic": false
+        },
+        {
+          "name": "memory_reset_stats",
+          "signature": "void memory_reset_stats(void)",
+          "description": "Auto-generated: memory_reset_stats function",
+          "line": 296,
+          "isStatic": false
+        },
+        {
+          "name": "memory_print_leak_report",
+          "signature": "void memory_print_leak_report(void)",
+          "description": "Auto-generated: memory_print_leak_report function",
+          "line": 308,
+          "isStatic": false
+        },
+        {
+          "name": "memory_check_leaks",
+          "signature": "size_t memory_check_leaks(void)",
+          "description": "Auto-generated: memory_check_leaks function",
+          "line": 354,
+          "isStatic": false
+        },
+        {
+          "name": "memory_debug_cleanup",
+          "signature": "void memory_debug_cleanup(void)",
+          "description": "Auto-generated: memory_debug_cleanup function",
+          "line": 379,
+          "isStatic": false
+        },
+        {
+          "name": "memory_validate_ptr",
+          "signature": "bool memory_validate_ptr(const void *ptr, size_t expected_size)",
+          "description": "Auto-generated: memory_validate_ptr function",
+          "line": 406,
+          "isStatic": false
+        },
+        {
+          "name": "memory_is_tracked",
+          "signature": "bool memory_is_tracked(const void *ptr)",
+          "description": "Auto-generated: memory_is_tracked function",
+          "line": 435,
+          "isStatic": false
+        },
+        {
+          "name": "memory_debug_free",
+          "signature": "void memory_debug_free(void *ptr, const char *file, int line)",
+          "description": "Auto-generated: memory_debug_free function",
+          "line": 553,
+          "isStatic": false
+        },
+        {
+          "name": "update_stats_alloc",
+          "signature": "static void update_stats_alloc(size_t size)",
+          "description": "Auto-generated: update_stats_alloc function",
+          "line": 616,
+          "isStatic": true
+        },
+        {
+          "name": "update_stats_free",
+          "signature": "static void update_stats_free(size_t size)",
+          "description": "Auto-generated: update_stats_free function",
+          "line": 631,
+          "isStatic": true
+        },
+        {
+          "name": "add_debug_block",
+          "signature": "static void add_debug_block(void *ptr, size_t size, const char *file, int line)",
+          "description": "Auto-generated: add_debug_block function",
+          "line": 644,
+          "isStatic": true
+        },
+        {
+          "name": "remove_debug_block",
+          "signature": "static void remove_debug_block(void *ptr)",
+          "description": "Auto-generated: remove_debug_block function",
+          "line": 674,
+          "isStatic": true
+        }
+      ]
+    },
+    "src/core/parser.c": {
+      "description": "Implementation for parser.c",
+      "functions": [
+        {
+          "name": "parser_free",
+          "signature": "void parser_free(parser_T *parser)",
+          "description": "Auto-generated: parser_free function",
+          "line": 45,
+          "isStatic": false
+        },
+        {
+          "name": "parser_eat",
+          "signature": "void parser_eat(parser_T *parser, int token_type)",
+          "description": "Auto-generated: parser_eat function",
+          "line": 74,
+          "isStatic": false
+        },
+        {
+          "name": "parser_get_precedence",
+          "signature": "int parser_get_precedence(int token_type)",
+          "description": "Auto-generated: parser_get_precedence function",
+          "line": 1136,
+          "isStatic": false
+        },
+        {
+          "name": "parser_is_binary_operator",
+          "signature": "int parser_is_binary_operator(int token_type)",
+          "description": "Auto-generated: parser_is_binary_operator function",
+          "line": 1173,
+          "isStatic": false
+        },
+        {
+          "name": "parser_peek_for_object_literal",
+          "signature": "int parser_peek_for_object_literal(parser_T *parser)",
+          "description": "Auto-generated: parser_peek_for_object_literal function",
+          "line": 1200,
+          "isStatic": false
+        },
+        {
+          "name": "parser_peek_for_object_literal_strict",
+          "signature": "int parser_peek_for_object_literal_strict(parser_T *parser)",
+          "description": "Auto-generated: parser_peek_for_object_literal_strict function",
+          "line": 1270,
+          "isStatic": false
+        },
+        {
+          "name": "parser_has_errors",
+          "signature": "bool parser_has_errors(parser_T *parser)",
+          "description": "Auto-generated: parser_has_errors function",
+          "line": 1628,
+          "isStatic": false
+        },
+        {
+          "name": "parser_in_panic_mode",
+          "signature": "bool parser_in_panic_mode(parser_T *parser)",
+          "description": "Auto-generated: parser_in_panic_mode function",
+          "line": 1638,
+          "isStatic": false
+        },
+        {
+          "name": "parser_get_error_count",
+          "signature": "size_t parser_get_error_count(parser_T *parser)",
+          "description": "Auto-generated: parser_get_error_count function",
+          "line": 1648,
+          "isStatic": false
         }
       ]
     },
@@ -249,7 +664,9 @@
         {
           "name": "scope_free",
           "signature": "void scope_free(scope_T *scope)",
-          "description": "Auto-generated: scope_free function"
+          "description": "Auto-generated: scope_free function",
+          "line": 34,
+          "isStatic": false
         }
       ]
     },
@@ -259,67 +676,487 @@
         {
           "name": "token_free",
           "signature": "void token_free(token_T *token)",
-          "description": "Auto-generated: token_free function"
+          "description": "Auto-generated: token_free function",
+          "line": 31,
+          "isStatic": false
         }
       ]
     },
-    "src/types/value.c": {
-      "description": "Implementation for value.c",
+    "src/core/visitor.c": {
+      "description": "Implementation for visitor.c",
       "functions": [
         {
-          "name": "value_equals",
-          "signature": "bool value_equals(const Value *a, const Value *b)",
-          "description": "Auto-generated: value_equals function"
+          "name": "visitor_free",
+          "signature": "void visitor_free(visitor_T *visitor)",
+          "description": "Auto-generated: visitor_free function",
+          "line": 143,
+          "isStatic": false
         },
         {
-          "name": "value_free_data",
-          "signature": "static void value_free_data(Value *value)",
-          "description": "Auto-generated: value_free_data function"
+          "name": "is_truthy",
+          "signature": "static bool is_truthy(AST_T *ast)",
+          "description": "Auto-generated: is_truthy function",
+          "line": 1346,
+          "isStatic": true
         },
         {
-          "name": "array_free",
-          "signature": "static void array_free(ZenArray *array)",
-          "description": "Auto-generated: array_free function"
+          "name": "visitor_update_ast_scope",
+          "signature": "static void visitor_update_ast_scope(AST_T *node, scope_T *new_scope)",
+          "description": "Auto-generated: visitor_update_ast_scope function",
+          "line": 1674,
+          "isStatic": true
         },
         {
-          "name": "object_free",
-          "signature": "static void object_free(ZenObject *object)",
-          "description": "Auto-generated: object_free function"
+          "name": "visitor_get_time_diff",
+          "signature": "static double visitor_get_time_diff(clock_t start, clock_t end)",
+          "description": "Auto-generated: visitor_get_time_diff function",
+          "line": 1923,
+          "isStatic": true
         },
         {
-          "name": "string_free",
-          "signature": "static void string_free(ZenString *zen_str)",
-          "description": "Auto-generated: string_free function"
+          "name": "visitor_push_call_frame",
+          "signature": "static void visitor_push_call_frame(visitor_T *visitor, AST_T *function_def, AST_T **args, size_t arg_count, const char *function_name)",
+          "description": "Auto-generated: visitor_push_call_frame function",
+          "line": 1936,
+          "isStatic": true
         },
         {
-          "name": "class_free",
-          "signature": "static void class_free(ZenClass *class_def)",
-          "description": "Auto-generated: class_free function"
+          "name": "visitor_pop_call_frame",
+          "signature": "static void visitor_pop_call_frame(visitor_T *visitor)",
+          "description": "Auto-generated: visitor_pop_call_frame function",
+          "line": 1972,
+          "isStatic": true
         },
         {
-          "name": "instance_free",
-          "signature": "static void instance_free(ZenInstance *instance)",
-          "description": "Auto-generated: instance_free function"
+          "name": "visitor_update_function_profile",
+          "signature": "static void visitor_update_function_profile(visitor_T *visitor, const char *function_name, double execution_time)",
+          "description": "Auto-generated: visitor_update_function_profile function",
+          "line": 2061,
+          "isStatic": true
         },
         {
-          "name": "value_is_truthy_public",
-          "signature": "bool value_is_truthy_public(const Value *value)",
-          "description": "Auto-generated: value_is_truthy_public function"
+          "name": "visitor_is_constant_expression",
+          "signature": "static bool visitor_is_constant_expression(AST_T *node)",
+          "description": "Auto-generated: visitor_is_constant_expression function",
+          "line": 2093,
+          "isStatic": true
         },
         {
-          "name": "value_to_number_or_nan",
-          "signature": "double value_to_number_or_nan(const Value *value)",
-          "description": "Auto-generated: value_to_number_or_nan function"
+          "name": "visitor_has_exception",
+          "signature": "bool visitor_has_exception(visitor_T *visitor)",
+          "description": "Auto-generated: visitor_has_exception function",
+          "line": 2639,
+          "isStatic": false
         },
         {
-          "name": "value_is_comparable",
-          "signature": "bool value_is_comparable(const Value *a, const Value *b)",
-          "description": "Auto-generated: value_is_comparable function"
+          "name": "visitor_throw_exception",
+          "signature": "void visitor_throw_exception(visitor_T *visitor, AST_T *node, const char *message, const char *context)",
+          "description": "Auto-generated: visitor_throw_exception function",
+          "line": 2652,
+          "isStatic": false
         },
         {
-          "name": "value_get_length",
-          "signature": "size_t value_get_length(const Value *value)",
-          "description": "Auto-generated: value_get_length function"
+          "name": "visitor_optimize_hot_function",
+          "signature": "bool visitor_optimize_hot_function(visitor_T *visitor, const char *function_name)",
+          "description": "Auto-generated: visitor_optimize_hot_function function",
+          "line": 2670,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/main.c": {
+      "description": "Implementation for main.c",
+      "functions": [
+        {
+          "name": "print_help",
+          "signature": "void print_help()",
+          "description": "Auto-generated: print_help function",
+          "line": 22,
+          "isStatic": false
+        },
+        {
+          "name": "execute_line",
+          "signature": "static bool execute_line(const char *line, scope_T *global_scope)",
+          "description": "Auto-generated: execute_line function",
+          "line": 45,
+          "isStatic": true
+        },
+        {
+          "name": "main",
+          "signature": "int main(int argc, char *argv[])",
+          "description": "Auto-generated: main function",
+          "line": 157,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/runtime/operators.c": {
+      "description": "Implementation for operators.c",
+      "functions": [
+        {
+          "name": "to_number",
+          "signature": "static bool to_number(const Value *value, double *result)",
+          "description": "Auto-generated: to_number function",
+          "line": 378,
+          "isStatic": true
+        },
+        {
+          "name": "is_truthy",
+          "signature": "static bool is_truthy(const Value *value)",
+          "description": "Auto-generated: is_truthy function",
+          "line": 446,
+          "isStatic": true
+        },
+        {
+          "name": "compare_values",
+          "signature": "static int compare_values(const Value *a, const Value *b)",
+          "description": "Auto-generated: compare_values function",
+          "line": 488,
+          "isStatic": true
+        },
+        {
+          "name": "value_to_three_valued",
+          "signature": "static int value_to_three_valued(const Value *value)",
+          "description": "Auto-generated: value_to_three_valued function",
+          "line": 848,
+          "isStatic": true
+        }
+      ]
+    },
+    "src/stdlib/http.c": {
+      "description": "Implementation for http.c",
+      "functions": [
+        {
+          "name": "http_write_callback",
+          "signature": "static size_t http_write_callback(void *contents, size_t size, size_t nmemb, void *userp)",
+          "description": "Auto-generated: http_write_callback function",
+          "line": 63,
+          "isStatic": true
+        },
+        {
+          "name": "http_header_callback",
+          "signature": "static size_t http_header_callback(char *buffer, size_t size, size_t nitems, void *userp)",
+          "description": "Auto-generated: http_header_callback function",
+          "line": 99,
+          "isStatic": true
+        },
+        {
+          "name": "http_init_curl",
+          "signature": "static bool http_init_curl(void)",
+          "description": "Auto-generated: http_init_curl function",
+          "line": 159,
+          "isStatic": true
+        },
+        {
+          "name": "http_cleanup_curl",
+          "signature": "static void http_cleanup_curl(void)",
+          "description": "Auto-generated: http_cleanup_curl function",
+          "line": 177,
+          "isStatic": true
+        },
+        {
+          "name": "http_headers_add",
+          "signature": "bool http_headers_add(HttpHeaders *headers, const char *key, const char *value)",
+          "description": "Auto-generated: http_headers_add function",
+          "line": 212,
+          "isStatic": false
+        },
+        {
+          "name": "http_headers_free",
+          "signature": "void http_headers_free(HttpHeaders *headers)",
+          "description": "Auto-generated: http_headers_free function",
+          "line": 315,
+          "isStatic": false
+        },
+        {
+          "name": "http_configure_timeout",
+          "signature": "void http_configure_timeout(long timeout_seconds)",
+          "description": "Auto-generated: http_configure_timeout function",
+          "line": 632,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/stdlib/io.c": {
+      "description": "Implementation for io.c",
+      "functions": [
+        {
+          "name": "io_print_internal",
+          "signature": "void io_print_internal(const Value *value)",
+          "description": "Auto-generated: io_print_internal function",
+          "line": 76,
+          "isStatic": false
+        },
+        {
+          "name": "io_print_no_newline_internal",
+          "signature": "void io_print_no_newline_internal(const Value *value)",
+          "description": "Auto-generated: io_print_no_newline_internal function",
+          "line": 96,
+          "isStatic": false
+        },
+        {
+          "name": "io_write_file_internal",
+          "signature": "bool io_write_file_internal(const char *filepath, const char *content)",
+          "description": "Auto-generated: io_write_file_internal function",
+          "line": 157,
+          "isStatic": false
+        },
+        {
+          "name": "io_append_file_internal",
+          "signature": "bool io_append_file_internal(const char *filepath, const char *content)",
+          "description": "Auto-generated: io_append_file_internal function",
+          "line": 181,
+          "isStatic": false
+        },
+        {
+          "name": "io_file_exists_internal",
+          "signature": "bool io_file_exists_internal(const char *filepath)",
+          "description": "Auto-generated: io_file_exists_internal function",
+          "line": 204,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/stdlib/json.c": {
+      "description": "Implementation for json.c",
+      "functions": [
+        {
+          "name": "skip_whitespace",
+          "signature": "static void skip_whitespace(JsonParser *parser)",
+          "description": "Auto-generated: skip_whitespace function",
+          "line": 645,
+          "isStatic": true
+        },
+        {
+          "name": "peek_char",
+          "signature": "static char peek_char(JsonParser *parser)",
+          "description": "Auto-generated: peek_char function",
+          "line": 652,
+          "isStatic": true
+        },
+        {
+          "name": "next_char",
+          "signature": "static char next_char(JsonParser *parser)",
+          "description": "Auto-generated: next_char function",
+          "line": 660,
+          "isStatic": true
+        },
+        {
+          "name": "expect_char",
+          "signature": "static bool expect_char(JsonParser *parser, char expected)",
+          "description": "Auto-generated: expect_char function",
+          "line": 668,
+          "isStatic": true
+        }
+      ]
+    },
+    "src/stdlib/logging.c": {
+      "description": "Implementation for logging.c",
+      "functions": [
+        {
+          "name": "logging_parse_level",
+          "signature": "int logging_parse_level(const char *level_str)",
+          "description": "Auto-generated: logging_parse_level function",
+          "line": 77,
+          "isStatic": false
+        },
+        {
+          "name": "logging_should_log",
+          "signature": "bool logging_should_log(ZenLogLevel level)",
+          "description": "Auto-generated: logging_should_log function",
+          "line": 100,
+          "isStatic": false
+        },
+        {
+          "name": "log_output",
+          "signature": "static void log_output(ZenLogLevel level, const char *context, const char *message)",
+          "description": "Auto-generated: log_output function",
+          "line": 108,
+          "isStatic": true
+        }
+      ]
+    },
+    "src/stdlib/logic.c": {
+      "description": "Implementation for logic.c",
+      "functions": [
+        {
+          "name": "logic_theorem_free",
+          "signature": "void logic_theorem_free(ZenTheorem *theorem)",
+          "description": "Auto-generated: logic_theorem_free function",
+          "line": 102,
+          "isStatic": false
+        },
+        {
+          "name": "logic_proof_free",
+          "signature": "void logic_proof_free(ZenProof *proof)",
+          "description": "Auto-generated: logic_proof_free function",
+          "line": 173,
+          "isStatic": false
+        },
+        {
+          "name": "logic_axiom_free",
+          "signature": "void logic_axiom_free(ZenAxiom *axiom)",
+          "description": "Auto-generated: logic_axiom_free function",
+          "line": 239,
+          "isStatic": false
+        },
+        {
+          "name": "logic_system_init",
+          "signature": "bool logic_system_init(void)",
+          "description": "Auto-generated: logic_system_init function",
+          "line": 261,
+          "isStatic": false
+        },
+        {
+          "name": "logic_system_cleanup",
+          "signature": "void logic_system_cleanup(void)",
+          "description": "Auto-generated: logic_system_cleanup function",
+          "line": 329,
+          "isStatic": false
+        },
+        {
+          "name": "logic_system_ensure_initialized",
+          "signature": "static bool logic_system_ensure_initialized(void)",
+          "description": "Auto-generated: logic_system_ensure_initialized function",
+          "line": 364,
+          "isStatic": true
+        },
+        {
+          "name": "logic_validate_ast",
+          "signature": "bool logic_validate_ast(const AST_T *ast)",
+          "description": "Auto-generated: logic_validate_ast function",
+          "line": 542,
+          "isStatic": false
+        },
+        {
+          "name": "logic_verify_proof_ast",
+          "signature": "bool logic_verify_proof_ast(AST_T **proof_steps, size_t step_count)",
+          "description": "Auto-generated: logic_verify_proof_ast function",
+          "line": 588,
+          "isStatic": false
+        },
+        {
+          "name": "measure_verification_time",
+          "signature": "static double measure_verification_time(clock_t start)",
+          "description": "Auto-generated: measure_verification_time function",
+          "line": 640,
+          "isStatic": true
+        },
+        {
+          "name": "logic_ast_equivalent",
+          "signature": "bool logic_ast_equivalent(const AST_T *ast1, const AST_T *ast2)",
+          "description": "Auto-generated: logic_ast_equivalent function",
+          "line": 760,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/stdlib/math.c": {
+      "description": "Implementation for math.c",
+      "functions": [
+        {
+          "name": "init_random",
+          "signature": "static void init_random()",
+          "description": "Auto-generated: init_random function",
+          "line": 27,
+          "isStatic": true
+        }
+      ]
+    },
+    "src/stdlib/module.c": {
+      "description": "Implementation for module.c",
+      "functions": [
+        {
+          "name": "module_register_provider",
+          "signature": "void module_register_provider(ModuleResolver *resolver, const char *capability, const char *module_path)",
+          "description": "Auto-generated: module_register_provider function",
+          "line": 204,
+          "isStatic": false
+        },
+        {
+          "name": "module_add_search_path_internal",
+          "signature": "static void module_add_search_path_internal(ModuleResolver *resolver, const char *search_path)",
+          "description": "Auto-generated: module_add_search_path_internal function",
+          "line": 535,
+          "isStatic": true
+        },
+        {
+          "name": "hash_module_path",
+          "signature": "static size_t hash_module_path(const char *path)",
+          "description": "Auto-generated: hash_module_path function",
+          "line": 567,
+          "isStatic": true
+        },
+        {
+          "name": "cache_store",
+          "signature": "static void cache_store(ModuleCache *cache, const char *path, Value *module)",
+          "description": "Auto-generated: cache_store function",
+          "line": 615,
+          "isStatic": true
+        }
+      ]
+    },
+    "src/stdlib/regex.c": {
+      "description": "Implementation for regex.c",
+      "functions": [
+        {
+          "name": "regex_cleanup",
+          "signature": "void regex_cleanup(void)",
+          "description": "Auto-generated: regex_cleanup function",
+          "line": 611,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/stdlib/stdlib.c": {
+      "description": "Implementation for stdlib.c",
+      "functions": [
+        {
+          "name": "stdlib_count",
+          "signature": "size_t stdlib_count()",
+          "description": "Auto-generated: stdlib_count function",
+          "line": 223,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/stdlib/yaml.c": {
+      "description": "Implementation for yaml.c",
+      "functions": [
+        {
+          "name": "yaml_ref_tracker_free",
+          "signature": "static void yaml_ref_tracker_free(YamlRefTracker *tracker)",
+          "description": "Auto-generated: yaml_ref_tracker_free function",
+          "line": 786,
+          "isStatic": true
+        },
+        {
+          "name": "yaml_ref_tracker_add",
+          "signature": "static bool yaml_ref_tracker_add(YamlRefTracker *tracker, const Value *value)",
+          "description": "Auto-generated: yaml_ref_tracker_add function",
+          "line": 805,
+          "isStatic": true
+        },
+        {
+          "name": "yaml_ref_tracker_contains",
+          "signature": "static bool yaml_ref_tracker_contains(const YamlRefTracker *tracker, const Value *value)",
+          "description": "Auto-generated: yaml_ref_tracker_contains function",
+          "line": 834,
+          "isStatic": true
+        },
+        {
+          "name": "yaml_anchor_map_free",
+          "signature": "static void yaml_anchor_map_free(YamlAnchorMap *map)",
+          "description": "Auto-generated: yaml_anchor_map_free function",
+          "line": 879,
+          "isStatic": true
+        },
+        {
+          "name": "yaml_anchor_map_add",
+          "signature": "static bool yaml_anchor_map_add(YamlAnchorMap *map, const char *name, Value *value)",
+          "description": "Auto-generated: yaml_anchor_map_add function",
+          "line": 905,
+          "isStatic": true
         }
       ]
     },
@@ -329,22 +1166,30 @@
         {
           "name": "array_push",
           "signature": "void array_push(Value *array, Value *item)",
-          "description": "Auto-generated: array_push function"
+          "description": "Auto-generated: array_push function",
+          "line": 70,
+          "isStatic": false
         },
         {
           "name": "array_set",
           "signature": "void array_set(Value *array, size_t index, Value *item)",
-          "description": "Auto-generated: array_set function"
+          "description": "Auto-generated: array_set function",
+          "line": 148,
+          "isStatic": false
         },
         {
           "name": "array_length",
           "signature": "size_t array_length(const Value *array)",
-          "description": "Auto-generated: array_length function"
+          "description": "Auto-generated: array_length function",
+          "line": 173,
+          "isStatic": false
         },
         {
           "name": "array_contains",
           "signature": "bool array_contains(const Value *array, const Value *item)",
-          "description": "Auto-generated: array_contains function"
+          "description": "Auto-generated: array_contains function",
+          "line": 323,
+          "isStatic": false
         }
       ]
     },
@@ -352,26 +1197,420 @@
       "description": "Implementation for object.c",
       "functions": [
         {
+          "name": "object_set",
+          "signature": "void object_set(Value *object, const char *key, Value *value)",
+          "description": "Auto-generated: object_set function",
+          "line": 67,
+          "isStatic": false
+        },
+        {
+          "name": "object_has",
+          "signature": "bool object_has(Value *object, const char *key)",
+          "description": "Auto-generated: object_has function",
+          "line": 139,
+          "isStatic": false
+        },
+        {
+          "name": "object_delete",
+          "signature": "void object_delete(Value *object, const char *key)",
+          "description": "Auto-generated: object_delete function",
+          "line": 158,
+          "isStatic": false
+        },
+        {
           "name": "object_find_key_index",
           "signature": "static int object_find_key_index(const ZenObject *object, const char *key)",
-          "description": "Auto-generated: object_find_key_index function"
+          "description": "Auto-generated: object_find_key_index function",
+          "line": 230,
+          "isStatic": true
         },
         {
           "name": "object_expand_if_needed",
           "signature": "static bool object_expand_if_needed(ZenObject *object)",
-          "description": "Auto-generated: object_expand_if_needed function"
+          "description": "Auto-generated: object_expand_if_needed function",
+          "line": 250,
+          "isStatic": true
         },
         {
           "name": "free_path_parts",
           "signature": "static void free_path_parts(char **parts, size_t count)",
-          "description": "Auto-generated: free_path_parts function"
+          "description": "Auto-generated: free_path_parts function",
+          "line": 430,
+          "isStatic": true
+        },
+        {
+          "name": "object_set_path",
+          "signature": "bool object_set_path(Value *object, const char *path, Value *value)",
+          "description": "Auto-generated: object_set_path function",
+          "line": 497,
+          "isStatic": false
         },
         {
           "name": "object_size",
           "signature": "size_t object_size(const Value *object)",
-          "description": "Auto-generated: object_size function"
+          "description": "Auto-generated: object_size function",
+          "line": 647,
+          "isStatic": false
         }
       ]
+    },
+    "src/types/priority_queue.c": {
+      "description": "Implementation for priority_queue.c",
+      "functions": [
+        {
+          "name": "datastructures_priority_queue_free",
+          "signature": "void datastructures_priority_queue_free(ZenPriorityQueue *queue)",
+          "description": "Auto-generated: datastructures_priority_queue_free function",
+          "line": 76,
+          "isStatic": false
+        },
+        {
+          "name": "datastructures_priority_queue_ensure_capacity",
+          "signature": "bool datastructures_priority_queue_ensure_capacity(ZenPriorityQueue *queue, size_t min_capacity)",
+          "description": "Auto-generated: datastructures_priority_queue_ensure_capacity function",
+          "line": 101,
+          "isStatic": false
+        },
+        {
+          "name": "datastructures_priority_queue_parent",
+          "signature": "size_t datastructures_priority_queue_parent(size_t index)",
+          "description": "Auto-generated: datastructures_priority_queue_parent function",
+          "line": 132,
+          "isStatic": false
+        },
+        {
+          "name": "datastructures_priority_queue_left_child",
+          "signature": "size_t datastructures_priority_queue_left_child(size_t index)",
+          "description": "Auto-generated: datastructures_priority_queue_left_child function",
+          "line": 139,
+          "isStatic": false
+        },
+        {
+          "name": "datastructures_priority_queue_right_child",
+          "signature": "size_t datastructures_priority_queue_right_child(size_t index)",
+          "description": "Auto-generated: datastructures_priority_queue_right_child function",
+          "line": 146,
+          "isStatic": false
+        },
+        {
+          "name": "datastructures_priority_queue_heap_up",
+          "signature": "void datastructures_priority_queue_heap_up(ZenPriorityQueue *queue, size_t index)",
+          "description": "Auto-generated: datastructures_priority_queue_heap_up function",
+          "line": 153,
+          "isStatic": false
+        },
+        {
+          "name": "datastructures_priority_queue_heap_down",
+          "signature": "void datastructures_priority_queue_heap_down(ZenPriorityQueue *queue, size_t index)",
+          "description": "Auto-generated: datastructures_priority_queue_heap_down function",
+          "line": 177,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/types/set.c": {
+      "description": "Implementation for set.c",
+      "functions": [
+        {
+          "name": "datastructures_set_free",
+          "signature": "void datastructures_set_free(ZenSet *set)",
+          "description": "Auto-generated: datastructures_set_free function",
+          "line": 77,
+          "isStatic": false
+        }
+      ]
+    },
+    "src/types/value.c": {
+      "description": "Implementation for value.c",
+      "functions": [
+        {
+          "name": "value_free",
+          "signature": "void value_free(Value *value)",
+          "description": "Auto-generated: value_free function",
+          "line": 420,
+          "isStatic": false
+        },
+        {
+          "name": "value_equals",
+          "signature": "bool value_equals(const Value *a, const Value *b)",
+          "description": "Auto-generated: value_equals function",
+          "line": 673,
+          "isStatic": false
+        },
+        {
+          "name": "value_unref",
+          "signature": "void value_unref(Value *value)",
+          "description": "Auto-generated: value_unref function",
+          "line": 848,
+          "isStatic": false
+        },
+        {
+          "name": "value_free_data",
+          "signature": "static void value_free_data(Value *value)",
+          "description": "Auto-generated: value_free_data function",
+          "line": 872,
+          "isStatic": true
+        },
+        {
+          "name": "array_free",
+          "signature": "static void array_free(ZenArray *array)",
+          "description": "Auto-generated: array_free function",
+          "line": 978,
+          "isStatic": true
+        },
+        {
+          "name": "object_free",
+          "signature": "static void object_free(ZenObject *object)",
+          "description": "Auto-generated: object_free function",
+          "line": 1020,
+          "isStatic": true
+        },
+        {
+          "name": "string_free",
+          "signature": "static void string_free(ZenString *zen_str)",
+          "description": "Auto-generated: string_free function",
+          "line": 1077,
+          "isStatic": true
+        },
+        {
+          "name": "class_free",
+          "signature": "static void class_free(ZenClass *class_def)",
+          "description": "Auto-generated: class_free function",
+          "line": 1123,
+          "isStatic": true
+        },
+        {
+          "name": "instance_free",
+          "signature": "static void instance_free(ZenInstance *instance)",
+          "description": "Auto-generated: instance_free function",
+          "line": 1179,
+          "isStatic": true
+        },
+        {
+          "name": "value_class_add_method",
+          "signature": "void value_class_add_method(Value *class_val, const char *method_name, Value *method_func)",
+          "description": "Auto-generated: value_class_add_method function",
+          "line": 1252,
+          "isStatic": false
+        },
+        {
+          "name": "value_instance_set_property",
+          "signature": "void value_instance_set_property(Value *instance, const char *property_name, Value *value)",
+          "description": "Auto-generated: value_instance_set_property function",
+          "line": 1316,
+          "isStatic": false
+        },
+        {
+          "name": "value_is_truthy_public",
+          "signature": "bool value_is_truthy_public(const Value *value)",
+          "description": "Auto-generated: value_is_truthy_public function",
+          "line": 1390,
+          "isStatic": false
+        },
+        {
+          "name": "value_to_number_or_nan",
+          "signature": "double value_to_number_or_nan(const Value *value)",
+          "description": "Auto-generated: value_to_number_or_nan function",
+          "line": 1441,
+          "isStatic": false
+        },
+        {
+          "name": "value_is_comparable",
+          "signature": "bool value_is_comparable(const Value *a, const Value *b)",
+          "description": "Auto-generated: value_is_comparable function",
+          "line": 1542,
+          "isStatic": false
+        },
+        {
+          "name": "value_get_length",
+          "signature": "size_t value_get_length(const Value *value)",
+          "description": "Auto-generated: value_get_length function",
+          "line": 1583,
+          "isStatic": false
+        }
+      ]
+    }
+  },
+  "headers": {
+    "src/include/zen/config.h": {
+      "description": "Header file for config.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/ast.h": {
+      "description": "Header file for ast.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/ast_memory_pool.h": {
+      "description": "Header file for ast_memory_pool.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/error.h": {
+      "description": "Header file for error.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/lexer.h": {
+      "description": "Header file for lexer.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/logger.h": {
+      "description": "Header file for logger.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/memory.h": {
+      "description": "Header file for memory.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/parser.h": {
+      "description": "Header file for parser.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/scope.h": {
+      "description": "Header file for scope.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/token.h": {
+      "description": "Header file for token.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/core/visitor.h": {
+      "description": "Header file for visitor.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/runtime/operators.h": {
+      "description": "Header file for operators.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/convert.h": {
+      "description": "Header file for convert.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/datastructures.h": {
+      "description": "Header file for datastructures.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/http.h": {
+      "description": "Header file for http.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/io.h": {
+      "description": "Header file for io.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/json.h": {
+      "description": "Header file for json.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/logging.h": {
+      "description": "Header file for logging.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/logic.h": {
+      "description": "Header file for logic.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/math.h": {
+      "description": "Header file for math.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/module.h": {
+      "description": "Header file for module.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/regex.h": {
+      "description": "Header file for regex.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/stdlib.h": {
+      "description": "Header file for stdlib.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/string.h": {
+      "description": "Header file for string.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/stdlib/yaml.h": {
+      "description": "Header file for yaml.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/types/array.h": {
+      "description": "Header file for array.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/types/object.h": {
+      "description": "Header file for object.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/types/priority_queue.h": {
+      "description": "Header file for priority_queue.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/types/set.h": {
+      "description": "Header file for set.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
+    },
+    "src/include/zen/types/value.h": {
+      "description": "Header file for value.h",
+      "structs": [],
+      "typedefs": [],
+      "enums": []
     }
   }
 }
