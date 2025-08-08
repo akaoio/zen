@@ -428,4 +428,21 @@ AST_T* parser_parse_import_statement(parser_T* parser, scope_T* scope);
  */
 AST_T* parser_parse_export_statement(parser_T* parser, scope_T* scope);
 
+/**
+ * @brief Parse a class definition
+ * @param parser Parser instance
+ * @param scope Current scope
+ * @return AST_T* Class definition AST node
+ */
+AST_T* parser_parse_class_definition(parser_T* parser, scope_T* scope);
+
+/**
+ * @brief Parse a class method definition
+ * @param parser Parser instance
+ * @param scope Current scope
+ * @return AST_T* Function definition AST node for the method
+ */
+AST_T* parser_parse_class_method(parser_T* parser, scope_T* scope);
+
+
 #endif

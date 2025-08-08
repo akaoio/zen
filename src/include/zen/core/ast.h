@@ -38,6 +38,7 @@ typedef struct AST_STRUCT
 
         // Object-oriented
         AST_CLASS_DEFINITION,
+        AST_NEW_EXPRESSION,
         AST_METHOD_CALL,
         AST_PROPERTY_ACCESS,
 
@@ -154,6 +155,11 @@ typedef struct AST_STRUCT
     char* parent_class;
     struct AST_STRUCT** class_methods;
     size_t class_methods_size;
+
+    /* AST_NEW_EXPRESSION */
+    char* new_class_name;
+    struct AST_STRUCT** new_arguments;
+    size_t new_arguments_size;
 
     /* AST_PROPERTY_ACCESS */
     struct AST_STRUCT* object;
@@ -399,6 +405,7 @@ AST_T* ast_new_object(char** keys, AST_T** values, size_t size);
  * @param ast The AST node to free
  */
 void ast_free(AST_T* ast);
+
 
 /* ============================================================================
  * CONVENIENCE FUNCTIONS FOR COMMON AST PATTERNS
@@ -703,5 +710,15 @@ AST_T* ast_new_optional_chaining(AST_T* object, const char* property);
  * @return Pointer to newly allocated null coalescing AST node
  */
 AST_T* ast_new_null_coalescing(AST_T* left, AST_T* right);
+
+/**
+ * @brief Create a new class definition AST node
+ * @param class_name Name of the class
+ * @param parent_class Name of parent class (can be NULL)
+ * @param methods Array of method definition AST nodes
+ * @param methods_count Number of methods
+ * @return Pointer to newly allocated class definition AST node
+ */
+AST_T* ast_new_class_definition(const char* class_name, const char* parent_class, AST_T** methods, size_t methods_count);
 
 #endif // ZEN_CORE_AST_H

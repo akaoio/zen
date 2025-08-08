@@ -327,6 +327,7 @@ void ast_free(AST_T* ast)
     if (ast->iterator_variable) memory_free(ast->iterator_variable);
     if (ast->class_name) memory_free(ast->class_name);
     if (ast->parent_class) memory_free(ast->parent_class);
+    if (ast->new_class_name) memory_free(ast->new_class_name);
     if (ast->property_name) memory_free(ast->property_name);
     if (ast->import_path) memory_free(ast->import_path);
     if (ast->exception_variable) memory_free(ast->exception_variable);
@@ -382,6 +383,13 @@ void ast_free(AST_T* ast)
             if (ast->function_call_arguments[i]) ast_free(ast->function_call_arguments[i]);
         }
         memory_free(ast->function_call_arguments);
+    }
+
+    if (ast->new_arguments) {
+        for (size_t i = 0; i < ast->new_arguments_size; i++) {
+            if (ast->new_arguments[i]) ast_free(ast->new_arguments[i]);
+        }
+        memory_free(ast->new_arguments);
     }
 
     if (ast->array_elements) {
@@ -824,3 +832,38 @@ AST_T* ast_new_file_reference(const char* target_file, const char* property_path
     ast->file_ref_property_path = property_path ? memory_strdup(property_path) : NULL;
     return ast;
 }
+
+/**
+ * @brief Create a new class definition AST node
+ * @param class_name Name of the class
+ * @param parent_class Name of parent class (can be NULL)
+ * @param methods Array of method definition AST nodes
+ * @param methods_count Number of methods
+ * @return Pointer to newly allocated class definition AST node
+ */
+AST_T* ast_new_class_definition(const char* class_name, const char* parent_class, AST_T** methods, size_t methods_count)
+{
+    AST_T* ast = ast_new(AST_CLASS_DEFINITION);
+    
+    // Set class name
+    if (class_name) {
+        ast->class_name = memory_strdup(class_name);
+    }
+    
+    // Set parent class if provided
+    if (parent_class) {
+        ast->parent_class = memory_strdup(parent_class);
+    }
+    
+    // Set methods
+    ast->class_methods_size = methods_count;
+    if (methods_count > 0 && methods) {
+        ast->class_methods = memory_alloc(methods_count * sizeof(AST_T*));
+        for (size_t i = 0; i < methods_count; i++) {
+            ast->class_methods[i] = methods[i];
+        }
+    }
+    
+    return ast;
+}
+

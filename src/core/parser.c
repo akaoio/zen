@@ -166,6 +166,7 @@ AST_T* parser_parse_statement(parser_T* parser, scope_T* scope)
         case TOKEN_PUT: return parser_parse_file_put(parser, scope);
         case TOKEN_IMPORT: return parser_parse_import_statement(parser, scope);
         case TOKEN_EXPORT: return parser_parse_export_statement(parser, scope);
+        case TOKEN_CLASS: return parser_parse_class_definition(parser, scope);
         default: 
             return parser_parse_expr(parser, scope);
     }
@@ -234,41 +235,95 @@ AST_T* parser_parse_expr(parser_T* parser, scope_T* scope)
     
     // Check for comma-separated expressions
     if (parser->current_token->type == TOKEN_COMMA) {
-        // This is a comma-separated expression, treat as object literal
-        // For "name, age" -> create object with keys name and age
-        AST_T* object = ast_new(AST_OBJECT);
-        object->object_keys = memory_alloc(sizeof(char*));
-        object->object_values = memory_alloc(sizeof(AST_T*));
-        object->object_size = 1;
+        // Determine if this is an object literal (identifiers) or array literal (values)
+        bool is_object_literal = false;
         
-        // First key from left expression
+        // Check if first element is a variable (identifier)
         if (left->type == AST_VARIABLE) {
+            // Look ahead to see if all comma-separated elements are identifiers
+            // This determines object literal vs array literal context
+            is_object_literal = true;
+            
+            // Temporarily save parser state to look ahead
+            token_T* saved_token = parser->current_token;
+            unsigned int saved_i = parser->lexer->i;
+            
+            // Check next elements after comma
+            while (parser->current_token->type == TOKEN_COMMA) {
+                parser_eat(parser, TOKEN_COMMA);
+                if (parser->current_token->type != TOKEN_ID) {
+                    is_object_literal = false;
+                    break;
+                }
+                parser_eat(parser, TOKEN_ID);
+            }
+            
+            // Restore parser state
+            parser->current_token = saved_token;
+            parser->lexer->i = saved_i;
+        }
+        
+        if (is_object_literal) {
+            // Create object literal for identifier patterns like "name, age"
+            AST_T* object = ast_new(AST_OBJECT);
+            object->object_keys = memory_alloc(sizeof(char*));
+            object->object_values = memory_alloc(sizeof(AST_T*));
+            object->object_size = 1;
+            
+            // First key from left expression
             object->object_keys[0] = memory_strdup(left->variable_name);
             object->object_values[0] = ast_new_variable(left->variable_name);
-        }
-        
-        size_t obj_size = 1;
-        
-        while (parser->current_token->type == TOKEN_COMMA) {
-            parser_eat(parser, TOKEN_COMMA);
             
-            if (parser->current_token->type == TOKEN_ID) {
-                obj_size++;
-                object->object_keys = memory_realloc(object->object_keys, obj_size * sizeof(char*));
-                object->object_values = memory_realloc(object->object_values, obj_size * sizeof(AST_T*));
+            size_t obj_size = 1;
+            
+            while (parser->current_token->type == TOKEN_COMMA) {
+                parser_eat(parser, TOKEN_COMMA);
                 
-                char* key = memory_strdup(parser->current_token->value);
-                object->object_keys[obj_size - 1] = key;
-                object->object_values[obj_size - 1] = ast_new_variable(key);
-                
-                parser_eat(parser, TOKEN_ID);
-                object->object_size = obj_size;
-            } else {
-                break; // Invalid comma expression
+                if (parser->current_token->type == TOKEN_ID) {
+                    obj_size++;
+                    object->object_keys = memory_realloc(object->object_keys, obj_size * sizeof(char*));
+                    object->object_values = memory_realloc(object->object_values, obj_size * sizeof(AST_T*));
+                    
+                    char* key = memory_strdup(parser->current_token->value);
+                    object->object_keys[obj_size - 1] = key;
+                    object->object_values[obj_size - 1] = ast_new_variable(key);
+                    
+                    parser_eat(parser, TOKEN_ID);
+                    object->object_size = obj_size;
+                } else {
+                    break; // Invalid comma expression
+                }
             }
+            
+            return object;
+        } else {
+            // Create array literal for value patterns like "1, 2, 3"
+            AST_T* array = ast_new(AST_ARRAY);
+            array->array_elements = memory_alloc(sizeof(AST_T*));
+            array->array_size = 1;
+            
+            // First element from left expression
+            array->array_elements[0] = left;
+            
+            size_t arr_size = 1;
+            
+            while (parser->current_token->type == TOKEN_COMMA) {
+                parser_eat(parser, TOKEN_COMMA);
+                
+                // Parse next expression in array
+                AST_T* element = parser_parse_ternary_expr(parser, scope);
+                if (element) {
+                    arr_size++;
+                    array->array_elements = memory_realloc(array->array_elements, arr_size * sizeof(AST_T*));
+                    array->array_elements[arr_size - 1] = element;
+                    array->array_size = arr_size;
+                } else {
+                    break; // Invalid expression
+                }
+            }
+            
+            return array;
         }
-        
-        return object;
     }
     
     return left;
@@ -420,7 +475,8 @@ AST_T* parser_parse_function_definition(parser_T* parser, scope_T* scope)
     }
     func_def->scope = scope;
     
-    scope_add_function_definition(scope, func_def);
+    // Function will be added to scope during visitor execution
+    // Don't add it here to avoid double-addition
     
     return func_def;
 }
@@ -439,6 +495,7 @@ AST_T* parser_parse_variable(parser_T* parser, scope_T* scope)
     AST_T* var = ast_new_variable(var_name);
     var->scope = scope;
     
+    memory_free(var_name); // Free the duplicated string since ast_new_variable makes its own copy
     return var;
 }
 
@@ -625,7 +682,14 @@ AST_T* parser_parse_id_or_object(parser_T* parser, scope_T* scope)
         // Check if this identifier is a stdlib function (for zero-arg calls)
         bool is_stdlib_function = (stdlib_get(original_name) != NULL);
         
-        if (has_args || is_stdlib_function)
+        // For ZEN language: treat standalone identifiers as function calls by default
+        // This allows zero-argument user-defined functions to work: "hello" -> hello()
+        // The visitor will determine if it's actually a function or variable
+        bool is_standalone = (parser->current_token->type == TOKEN_NEWLINE || 
+                             parser->current_token->type == TOKEN_EOF ||
+                             parser->current_token->type == TOKEN_DEDENT);
+        
+        if (has_args || is_stdlib_function || is_standalone)
         {
             AST_T* function_call = ast_new(AST_FUNCTION_CALL);
             function_call->function_call_name = original_name; // Transfer ownership
@@ -1469,6 +1533,12 @@ AST_T* parser_parse_file_reference(parser_T* parser, const char* ref_string)
     return ref_node;
 }
 
+/**
+ * @brief Parse a 'put' statement for file manipulation
+ * @param parser Parser instance  
+ * @param scope Current parsing scope
+ * @return AST node representing the file put operation
+ */
 AST_T* parser_parse_file_put(parser_T* parser, scope_T* scope)
 {
     parser_eat(parser, TOKEN_PUT);
@@ -1747,3 +1817,198 @@ AST_T* parser_parse_export_statement(parser_T* parser, scope_T* scope) {
     
     return export_node;
 }
+
+/**
+ * @brief Parse a class definition
+ * @param parser Parser instance
+ * @param scope Current scope
+ * @return AST_T* Class definition AST node
+ */
+AST_T* parser_parse_class_definition(parser_T* parser, scope_T* scope)
+{
+    if (!parser || !parser->current_token) {
+        return NULL;
+    }
+    
+    // Consume 'class' token
+    if (parser->current_token->type != TOKEN_CLASS) {
+        return NULL;
+    }
+    
+    // Get next token (should be class name)
+    parser->current_token = lexer_get_next_token(parser->lexer);
+    if (!parser->current_token || parser->current_token->type != TOKEN_ID) {
+        // Error: expected class name
+        return NULL;
+    }
+    
+    char* class_name = memory_strdup(parser->current_token->value);
+    
+    // Get next token
+    parser->current_token = lexer_get_next_token(parser->lexer);
+    
+    // Check for optional inheritance (extends keyword in some languages, but ZEN might be different)
+    char* parent_class = NULL;
+    // For now, we'll skip inheritance parsing and just handle basic classes
+    
+    // Parse methods - expect newline and indented method definitions
+    AST_T** methods = NULL;
+    size_t methods_count = 0;
+    size_t methods_capacity = 4; // Start with capacity for 4 methods
+    
+    methods = memory_alloc(methods_capacity * sizeof(AST_T*));
+    if (!methods) {
+        memory_free(class_name);
+        return NULL;
+    }
+    
+    // Skip newlines and whitespace
+    while (parser->current_token && 
+           (parser->current_token->type == TOKEN_NEWLINE || parser->current_token->type == TOKEN_INDENT)) {
+        parser->current_token = lexer_get_next_token(parser->lexer);
+    }
+    
+    // Parse method definitions - handle both 'method' keyword (as ID) and 'function' keyword
+    while (parser->current_token && 
+           ((parser->current_token->type == TOKEN_ID && strcmp(parser->current_token->value, "method") == 0) ||
+            parser->current_token->type == TOKEN_FUNCTION)) {
+        
+        AST_T* method = parser_parse_class_method(parser, scope);
+        if (method) {
+            // Expand array if needed
+            if (methods_count >= methods_capacity) {
+                methods_capacity *= 2;
+                AST_T** new_methods = memory_realloc(methods, methods_capacity * sizeof(AST_T*));
+                if (!new_methods) {
+                    // Cleanup on error
+                    for (size_t i = 0; i < methods_count; i++) {
+                        ast_free(methods[i]);
+                    }
+                    memory_free(methods);
+                    memory_free(class_name);
+                    return NULL;
+                }
+                methods = new_methods;
+            }
+            
+            methods[methods_count++] = method;
+        }
+        
+        // Skip newlines between methods
+        while (parser->current_token && 
+               (parser->current_token->type == TOKEN_NEWLINE || parser->current_token->type == TOKEN_DEDENT)) {
+            parser->current_token = lexer_get_next_token(parser->lexer);
+        }
+    }
+    
+    // Create class definition AST node
+    AST_T* class_def = ast_new_class_definition(class_name, parent_class, methods, methods_count);
+    
+    // Cleanup
+    memory_free(class_name);
+    if (parent_class) {
+        memory_free(parent_class);
+    }
+    memory_free(methods); // ast_new_class_definition makes its own copy
+    
+    return class_def;
+}
+
+/**
+ * @brief Parse a class method definition
+ * @param parser Parser instance
+ * @param scope Current scope
+ * @return AST_T* Function definition AST node for the method
+ */
+AST_T* parser_parse_class_method(parser_T* parser, scope_T* scope)
+{
+    if (!parser || !parser->current_token) {
+        return NULL;
+    }
+    
+    // Handle both 'method methodName' and 'function methodName' syntax
+    if (parser->current_token->type == TOKEN_ID && 
+        strcmp(parser->current_token->value, "method") == 0) {
+        // Consume 'method' token
+        parser->current_token = lexer_get_next_token(parser->lexer);
+    } else if (parser->current_token->type == TOKEN_FUNCTION) {
+        // Consume 'function' token
+        parser->current_token = lexer_get_next_token(parser->lexer);
+    } else {
+        // Error: expected 'method' or 'function'
+        return NULL;
+    }
+    
+    // Get method name
+    if (!parser->current_token || parser->current_token->type != TOKEN_ID) {
+        // Error: expected method name
+        return NULL;
+    }
+    
+    char* method_name = memory_strdup(parser->current_token->value);
+    
+    // Get next token for parameters or body
+    parser->current_token = lexer_get_next_token(parser->lexer);
+    
+    // Parse parameters - methods can have parameters like functions
+    AST_T** args = NULL;
+    size_t arg_count = 0;
+    size_t arg_capacity = 2;
+    
+    args = memory_alloc(arg_capacity * sizeof(AST_T*));
+    if (!args) {
+        memory_free(method_name);
+        return NULL;
+    }
+    
+    // Parse parameters until newline
+    while (parser->current_token && 
+           parser->current_token->type != TOKEN_NEWLINE && 
+           parser->current_token->type != TOKEN_EOF) {
+        
+        if (parser->current_token->type == TOKEN_ID) {
+            // Parameter name
+            AST_T* param = ast_new_variable(parser->current_token->value);
+            
+            // Expand args array if needed
+            if (arg_count >= arg_capacity) {
+                arg_capacity *= 2;
+                AST_T** new_args = memory_realloc(args, arg_capacity * sizeof(AST_T*));
+                if (!new_args) {
+                    // Cleanup on error
+                    for (size_t i = 0; i < arg_count; i++) {
+                        ast_free(args[i]);
+                    }
+                    memory_free(args);
+                    memory_free(method_name);
+                    return NULL;
+                }
+                args = new_args;
+            }
+            
+            args[arg_count++] = param;
+            parser->current_token = lexer_get_next_token(parser->lexer);
+        } else {
+            // Skip other tokens (commas, etc.)
+            parser->current_token = lexer_get_next_token(parser->lexer);
+        }
+    }
+    
+    // Skip newline
+    if (parser->current_token && parser->current_token->type == TOKEN_NEWLINE) {
+        parser->current_token = lexer_get_next_token(parser->lexer);
+    }
+    
+    // Parse method body (indented block)
+    AST_T* body = parser_parse_statements(parser, scope);
+    
+    // Create function definition AST node for the method
+    AST_T* method_def = ast_new_function_definition(method_name, args, arg_count, body);
+    
+    // Cleanup
+    memory_free(method_name);
+    memory_free(args); // ast_new_function_definition makes its own copy
+    
+    return method_def;
+}
+

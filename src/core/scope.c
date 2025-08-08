@@ -1,6 +1,8 @@
 #include "zen/core/scope.h"
+#include "zen/core/ast.h"
 #include "zen/core/memory.h"
 #include <string.h>
+#include <stdio.h>
 
 
 /**
@@ -15,10 +17,10 @@ scope_T* scope_new()
         return NULL;
     }
 
-    scope->function_definitions = (void*) 0;
+    scope->function_definitions = NULL;
     scope->function_definitions_size = 0;
 
-    scope->variable_definitions = (void*) 0;
+    scope->variable_definitions = NULL;
     scope->variable_definitions_size = 0;
 
     return scope;
@@ -34,12 +36,17 @@ void scope_free(scope_T* scope)
         return;
     }
     
-    if (scope->function_definitions) {
+    if (scope->function_definitions != NULL && scope->function_definitions != (void*)0) {
         memory_free(scope->function_definitions);
+        scope->function_definitions = NULL;
     }
     
-    if (scope->variable_definitions) {
+    if (scope->variable_definitions != NULL && scope->variable_definitions != (void*)0) {
+        // CRITICAL FIX: Don't free the AST nodes here - they may be referenced elsewhere
+        // The AST nodes will be freed when the main AST is freed
+        // Just free the array of pointers, not the nodes themselves
         memory_free(scope->variable_definitions);
+        scope->variable_definitions = NULL;
     }
     
     memory_free(scope);
@@ -55,7 +62,7 @@ AST_T* scope_add_function_definition(scope_T* scope, AST_T* fdef)
 {
     scope->function_definitions_size += 1;
 
-    if (scope->function_definitions == (void*)0)
+    if (scope->function_definitions == NULL)
     {
         scope->function_definitions = memory_alloc(sizeof(struct AST_STRUCT*));
     }
@@ -92,7 +99,7 @@ AST_T* scope_get_function_definition(scope_T* scope, const char* fname)
         }
     }
 
-    return (void*)0;
+    return NULL;
 }
 
 /**
@@ -103,20 +110,31 @@ AST_T* scope_get_function_definition(scope_T* scope, const char* fname)
  */
 AST_T* scope_add_variable_definition(scope_T* scope, AST_T* vdef)
 {
+    // Validate parameters
+    if (!scope || !vdef || !vdef->variable_definition_variable_name) {
+        return NULL;
+    }
+    
+    
+    // CRITICAL FIX: Don't create copies of AST nodes - just store references
+    // The original AST tree owns the memory, scope just references it
+    // This prevents double-free issues entirely
+
     // First check if variable already exists and update it
     for (size_t i = 0; i < scope->variable_definitions_size; i++)
     {
         AST_T* existing = scope->variable_definitions[i];
-        if (strcmp(existing->variable_definition_variable_name, vdef->variable_definition_variable_name) == 0)
+        if (existing && existing->variable_definition_variable_name && 
+            strcmp(existing->variable_definition_variable_name, vdef->variable_definition_variable_name) == 0)
         {
-            // Update existing variable
+            // Just replace the reference - don't free anything
             scope->variable_definitions[i] = vdef;
             return vdef;
         }
     }
     
-    // Variable doesn't exist, add new one
-    if (scope->variable_definitions == (void*) 0)
+    // Variable doesn't exist, add new reference
+    if (scope->variable_definitions == NULL)
     {
         scope->variable_definitions = memory_alloc(sizeof(struct AST_STRUCT*));
         scope->variable_definitions[0] = vdef;
@@ -143,15 +161,32 @@ AST_T* scope_add_variable_definition(scope_T* scope, AST_T* vdef)
  */
 AST_T* scope_get_variable_definition(scope_T* scope, const char* name)
 {
+    // Validate parameters
+    if (!scope || !name) {
+        return NULL;
+    }
+
+    // Check if variable_definitions array is NULL
+    if (!scope->variable_definitions) {
+        return NULL;
+    }
+
     for (size_t i = 0; i < scope->variable_definitions_size; i++)
     {
+        // Check if the array element is NULL before dereferencing
+        if (scope->variable_definitions[i] == NULL) {
+            continue; // Skip NULL entries
+        }
+        
         AST_T* vdef = scope->variable_definitions[i];
 
-        if (strcmp(vdef->variable_definition_variable_name, name) == 0)
+        // Double check the pointer is valid and has a name
+        if (vdef->variable_definition_variable_name != NULL && 
+            strcmp(vdef->variable_definition_variable_name, name) == 0)
         {
             return vdef;
         }
     }
 
-    return (void*)0;
+    return NULL;
 }

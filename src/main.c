@@ -85,7 +85,11 @@ static bool execute_line(const char* line, scope_T* global_scope) {
     
     AST_T* root = parser_parse_statements(parser, global_scope);
     if (!root) {
-        printf("Error: Failed to parse input\n");
+        if (parser_has_errors(parser)) {
+            printf("Parse Error: Input contains %zu syntax errors\n", parser_get_error_count(parser));
+        } else {
+            printf("Parse Error: Invalid syntax or empty input\n");
+        }
         parser_free(parser);
         lexer_free(lexer);
         return true;
@@ -131,6 +135,10 @@ static bool execute_line(const char* line, scope_T* global_scope) {
     // The visitor result may be stored in the AST tree or scope and will be freed by ast_free
     visitor_free(visitor);
     ast_free(root);
+    
+    // CRITICAL: Prevent double-free of global_scope by clearing parser's scope reference
+    // The global_scope will be freed by main() at program exit
+    parser->scope = NULL;
     parser_free(parser);
     lexer_free(lexer);
     
@@ -208,7 +216,14 @@ int main(int argc, char* argv[])
                 
                 AST_T* root = parser_parse_statements(parser, global_scope);
                 if (!root) {
-                    fprintf(stderr, "Error: Failed to parse file '%s'\n", argv[i]);
+                    if (parser_has_errors(parser)) {
+                        fprintf(stderr, "Parse Error in '%s': %zu syntax errors found\n", argv[i], parser_get_error_count(parser));
+                    } else {
+                        fprintf(stderr, "Parse Error in '%s': Invalid syntax or empty file\n", argv[i]);
+                    }
+                    parser_free(parser);
+                    lexer_free(lexer);
+                    memory_free(file_contents);
                     return 1;
                 }
                 
