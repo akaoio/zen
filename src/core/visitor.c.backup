@@ -211,7 +211,8 @@ AST_T *visitor_visit(visitor_T *visitor, AST_T *node)
         }
     }
 
-    printf("DEBUG: visitor_visit about to switch on node type=%d\n", node->type);
+    if (node->type == 25) {
+    }
     AST_T *result = NULL;
 
     switch (node->type) {
@@ -220,7 +221,6 @@ AST_T *visitor_visit(visitor_T *visitor, AST_T *node)
     case AST_FUNCTION_DEFINITION:
         return visitor_visit_function_definition(visitor, node);
     case AST_VARIABLE:
-        printf("DEBUG: visitor_visit dispatching to visitor_visit_variable\n");
         return visitor_visit_variable(visitor, node);
     case AST_FUNCTION_CALL:
         return visitor_visit_function_call(visitor, node);
@@ -266,12 +266,10 @@ AST_T *visitor_visit(visitor_T *visitor, AST_T *node)
         // Handle return statements - evaluate the return value
         if (node->return_value) {
             AST_T *return_val = visitor_visit(visitor, node->return_value);
-            // Create a new return node with the evaluated value
-            AST_T *return_node = ast_new(AST_RETURN);
-            if (return_node) {
-                return_node->return_value = return_val;
-            }
-            return return_node;
+            // CRITICAL FIX: Don't create new nodes unnecessarily
+            // Just update the existing return node's value
+            node->return_value = return_val;
+            return node;
         }
         return node;
 
@@ -358,16 +356,16 @@ AST_T *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
     // Defining variable in scope
 
     // CRITICAL FIX: Properly evaluate the variable's value
-    // We need to evaluate ALL non-literal expressions, including binary operations
+    // We need to evaluate ALL non-literal expressions, including arrays and objects
     AST_T *value = node->variable_definition_value;
     if (value) {
-        // Only skip evaluation for simple literals
+        // Only skip evaluation for primitive literals - arrays and objects need evaluation
         if (value->type == AST_STRING || value->type == AST_NUMBER || value->type == AST_BOOLEAN ||
             value->type == AST_NULL) {
-            // Literal value, use as-is
-            LOG_VISITOR_DEBUG("Using literal value for variable assignment, type=%d", value->type);
+            // Primitive literal value, use as-is
+            LOG_VISITOR_DEBUG("Using primitive literal value for variable assignment, type=%d", value->type);
         } else {
-            // Complex expression (binary op, variable reference, etc.) - must evaluate
+            // Complex expression (arrays, objects, binary op, variable reference, etc.) - must evaluate
             LOG_VISITOR_DEBUG("Evaluating complex expression for variable assignment, type=%d",
                               value->type);
             value = visitor_visit(visitor, value);
@@ -384,12 +382,16 @@ AST_T *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
 
     // Variable assigned successfully
 
-    // CRITICAL FIX: Update the original node's value instead of creating a new one
-    // This avoids memory leaks while preserving the original parse tree structure
-    // The scope system assumes all nodes are part of the original AST tree
+    // CRITICAL FIX: Clean up the old value and set the new evaluated value
+    // This is essential for variables in loops where expressions like "counter + 1" 
+    // need to be evaluated to their numeric result (1, 2, 3...) not left as expressions
+    if (node->variable_definition_value && node->variable_definition_value != value) {
+        // Don't free the old value if it's the same as the new value to avoid double-free
+        ast_free(node->variable_definition_value);
+    }
     node->variable_definition_value = value;
 
-    // Add/update variable to scope using the modified original node
+    // Add variable to scope with the evaluated value
     AST_T *result = scope_add_variable_definition(node->scope, node);
     if (!result) {
         LOG_ERROR(LOG_CAT_VISITOR,
@@ -444,21 +446,16 @@ AST_T *visitor_visit_variable(visitor_T *visitor, AST_T *node)
     // Looking up variable in scope
     LOG_VISITOR_DEBUG(
         "Looking up variable '%s' in scope %p", node->variable_name, (void *)node->scope);
-    printf("DEBUG: Looking up variable '%s' in scope %p with %zu variables\n",
            node->variable_name,
            (void *)node->scope,
            node->scope ? node->scope->variable_definitions_size : 0);
 
     AST_T *vdef = scope_get_variable_definition(node->scope, node->variable_name);
 
-    printf("DEBUG: Variable lookup result: vdef=%p\n", (void *)vdef);
     if (vdef) {
-        printf("DEBUG: vdef->variable_definition_value=%p\n",
                (void *)vdef->variable_definition_value);
         if (vdef->variable_definition_value) {
-            printf("DEBUG: value type=%d\n", vdef->variable_definition_value->type);
             if (vdef->variable_definition_value->type == AST_NUMBER) {
-                printf("DEBUG: value number=%f\n", vdef->variable_definition_value->number_value);
             }
         }
     }
@@ -477,7 +474,6 @@ AST_T *visitor_visit_variable(visitor_T *visitor, AST_T *node)
 
         // CRITICAL FIX: Return the stored value directly - the visitor should use the evaluated
         // result The variable definition already contains the evaluated value
-        printf("DEBUG: visitor_visit_variable returning value with type=%d\n",
                vdef->variable_definition_value->type);
         return vdef->variable_definition_value;
     }
@@ -520,8 +516,9 @@ AST_T *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
                 if (!value_args[i]) {
                     value_args[i] = value_new_null();
                 }
-                // Note: Do not free arg_ast here - it may be part of the AST tree
-                // and will be cleaned up properly during main AST cleanup
+                // DO NOT free arg_ast here - visitor_visit may return the same node
+                // or a node that is owned by the main AST tree. The main AST cleanup
+                // will handle all node disposal.
             }
         }
 
@@ -669,7 +666,6 @@ AST_T *visitor_visit_compound(visitor_T *visitor, AST_T *node)
     // Executing compound with multiple statements
 
     AST_T *last_result = ast_new(AST_NOOP);
-    bool initial_noop_used = true;  // Track if we still have the initial NOOP
 
     for (size_t i = 0; i < node->compound_size; i++) {
         LOG_VISITOR_DEBUG("Visiting statement %zu: %p", i, (void *)node->compound_statements[i]);
@@ -681,26 +677,27 @@ AST_T *visitor_visit_compound(visitor_T *visitor, AST_T *node)
         AST_T *prev_result = last_result;
         last_result = visitor_visit(visitor, node->compound_statements[i]);
 
-        // If we overwrote the initial NOOP, free it to prevent memory leak
-        if (initial_noop_used && prev_result && prev_result->type == AST_NOOP) {
-            ast_free(prev_result);
-            initial_noop_used = false;
-        }
-
         // CRITICAL: Check for return statements to enable early return from functions
         if (last_result && last_result->type == AST_RETURN) {
             // Return statement found - stop executing statements and return immediately
             LOG_VISITOR_DEBUG("Return statement found, stopping compound execution");
+            // CRITICAL MEMORY LEAK FIX: Free the initial NOOP node before returning
+            if (prev_result && prev_result->type == AST_NOOP && i == 0) {
+                // Free the initial ast_new(AST_NOOP) node created at line 678
+                ast_free(prev_result);
+            }
             return last_result;
         }
 
         // Statement executed successfully
 
-        // CRITICAL DOUBLE-FREE FIX: Do NOT free previous results
-        // The visitor should never free AST nodes from the parse tree
-        // All cleanup is handled by ast_free(root) in main.c
-        // Freeing here causes double-free crashes when same nodes are freed again
-        (void)prev_result;  // Suppress unused variable warning
+        // CRITICAL MEMORY LEAK FIX: Free temporary AST nodes
+        // Only free the initial ast_new(AST_NOOP) node and other temporary nodes
+        // Never free nodes from the original parse tree
+        if (prev_result && prev_result->type == AST_NOOP && i == 0) {
+            // Free the initial ast_new(AST_NOOP) node created at line 678
+            ast_free(prev_result);
+        }
     }
 
     // Compound execution complete
@@ -716,18 +713,15 @@ AST_T *visitor_visit_compound(visitor_T *visitor, AST_T *node)
  */
 static AST_T *builtin_function_print(visitor_T *visitor, AST_T **args, int args_size)
 {
-    printf("DEBUG: builtin_function_print called with %d args\n", args_size);
     // Convert arguments to Values and use print from stdlib/io.c
     for (int i = 0; i < args_size; i++) {
         printf(
             "DEBUG: print() visiting argument %d, type=%d\n", i, args[i] ? (int)args[i]->type : -1);
         if (args[i] && args[i]->type == AST_VARIABLE) {
-            printf("DEBUG: print() argument is variable '%s' with scope %p\n",
                    args[i]->variable_name,
                    (void *)args[i]->scope);
         }
         AST_T *visited_ast = visitor_visit(visitor, args[i]);
-        printf("DEBUG: print() visitor_visit returned %p, type=%d\n",
                (void *)visited_ast,
                visited_ast ? (int)visited_ast->type : -1);
         if (!visited_ast)
@@ -740,8 +734,10 @@ static AST_T *builtin_function_print(visitor_T *visitor, AST_T **args, int args_
             value_unref(value);
         }
 
-        // Note: Do not free visited_ast here - it may be part of the AST tree
-        // and will be cleaned up properly during main AST cleanup
+        // Free the temporary AST if it was created by visitor_visit
+        if (visited_ast && visited_ast != args[i]) {
+            ast_free(visited_ast);
+        }
 
         if (i < args_size - 1) {
             printf(" ");
@@ -824,6 +820,30 @@ static Value *ast_to_value(AST_T *node)
         LOG_VISITOR_DEBUG("Converted AST_OBJECT to Value with %zu pairs", node->object_size);
         return object_val;
     }
+    case AST_FUNCTION_CALL:
+        // Special case: Handle object property-like function calls
+        // For ZEN object literals like "name 'Alice', age 30"
+        // These get parsed as function calls but should be treated as object properties
+        if (node->function_call_name && node->function_call_arguments_size > 0) {
+            // This looks like a property assignment - create a single-property object
+            Value *object_val = object_new();
+            if (object_val && node->function_call_arguments_size >= 1) {
+                // Use function name as key and first argument as value
+                Value *value_val = ast_to_value(node->function_call_arguments[0]);
+                if (value_val) {
+                    object_set(object_val, node->function_call_name, value_val);
+                    value_unref(value_val);
+                    return object_val;
+                }
+            }
+            if (object_val) {
+                value_unref(object_val);
+            }
+        }
+        
+        // Fall back to null for unhandled function calls
+        return value_new_null();
+        
     case AST_VARIABLE:
         // For AST_VARIABLE nodes, we need to look up the actual value from scope
         // This should not happen in normal flow as variables should be resolved first
@@ -1173,21 +1193,60 @@ static AST_T *visitor_visit_array(visitor_T *visitor, AST_T *node)
         return ast_new(AST_NULL);
     }
 
-    // Evaluate and add each element
+    // Process each element - for literals, convert directly; for expressions, evaluate first
     for (size_t i = 0; i < node->array_size; i++) {
-        AST_T *element_ast = visitor_visit(visitor, node->array_elements[i]);
-        if (element_ast) {
-            Value *element_val = ast_to_value(element_ast);
-            if (element_val) {
-                array_push(array_val, element_val);
-                value_unref(element_val);  // array_push adds its own reference
+        AST_T *element = node->array_elements[i];
+        if (!element) {
+            continue;
+        }
+
+        Value *element_val = NULL;
+        
+        // For literal values, convert directly to avoid double wrapping
+        switch (element->type) {
+        case AST_NUMBER:
+            element_val = value_new_number(element->number_value);
+            break;
+        case AST_STRING:
+            element_val = value_new_string(element->string_value ? element->string_value : "");
+            break;
+        case AST_BOOLEAN:
+            element_val = value_new_boolean(element->boolean_value);
+            break;
+        case AST_NULL:
+            element_val = value_new_null();
+            break;
+        case AST_VARIABLE:
+        case AST_BINARY_OP:
+        case AST_UNARY_OP:
+        case AST_FUNCTION_CALL:
+            // For complex expressions, evaluate first then convert
+            {
+                AST_T *evaluated = visitor_visit(visitor, element);
+                if (evaluated) {
+                    element_val = ast_to_value(evaluated);
+                    // Don't free evaluated AST - it might be reused
+                }
             }
-            // Note: Do not free element_ast here - it may be part of the AST tree
-            // and will be cleaned up properly during main AST cleanup
+            break;
+        case AST_ARRAY:
+        case AST_OBJECT:
+            // For nested collections, use recursive ast_to_value
+            element_val = ast_to_value(element);
+            break;
+        default:
+            // For any other types, create null value
+            element_val = value_new_null();
+            break;
+        }
+
+        if (element_val) {
+            array_push(array_val, element_val);
+            value_unref(element_val);  // array_push adds its own reference
         }
     }
 
-    // Convert back to AST for return
+    // Convert array Value back to AST
     AST_T *result_ast = value_to_ast(array_val);
     value_unref(array_val);
 
@@ -1222,8 +1281,10 @@ static AST_T *visitor_visit_object(visitor_T *visitor, AST_T *node)
                     object_set(object_val, node->object_keys[i], value_val);
                     value_unref(value_val);  // object_set adds its own reference
                 }
-                // Note: Do not free value_ast here - it may be part of the AST tree
-                // and will be cleaned up properly during main AST cleanup
+                // Free the temporary AST if it was created by visitor_visit
+                if (value_ast != node->object_values[i]) {
+                    ast_free(value_ast);
+                }
             }
         }
     }
@@ -1244,27 +1305,38 @@ static AST_T *visitor_visit_object(visitor_T *visitor, AST_T *node)
 static AST_T *visitor_visit_property_access(visitor_T *visitor, AST_T *node)
 {
     if (!visitor || !node || !node->object || !node->property_name) {
+        LOG_VISITOR_DEBUG("property_access: Invalid parameters");
         return ast_new(AST_NULL);
     }
+
+    LOG_VISITOR_DEBUG("property_access: Accessing property '%s'", node->property_name);
 
     // Evaluate the object expression
     AST_T *object_ast = visitor_visit(visitor, node->object);
     if (!object_ast) {
+        LOG_VISITOR_DEBUG("property_access: Object evaluation returned NULL");
         return ast_new(AST_NULL);
     }
+
+    LOG_VISITOR_DEBUG("property_access: Object AST type = %d", object_ast->type);
 
     // Convert to Value for property access
     Value *object_val = ast_to_value(object_ast);
     if (!object_val) {
+        LOG_VISITOR_DEBUG("property_access: ast_to_value failed");
         return ast_new(AST_NULL);
     }
+
+    LOG_VISITOR_DEBUG("property_access: Object Value type = %d", object_val->type);
 
     Value *result_val = NULL;
 
     // Check if it's an object type, array type, or class instance
     if (object_val->type == VALUE_OBJECT) {
+        LOG_VISITOR_DEBUG("property_access: Handling VALUE_OBJECT");
         result_val = object_get(object_val, node->property_name);
     } else if (object_val->type == VALUE_INSTANCE) {
+        LOG_VISITOR_DEBUG("property_access: Handling VALUE_INSTANCE");
         // Handle method access on class instances
         Value *class_def = object_val->as.instance->class_def;
         if (class_def) {
@@ -1287,23 +1359,33 @@ static AST_T *visitor_visit_property_access(visitor_T *visitor, AST_T *node)
             }
         }
     } else if (object_val->type == VALUE_ARRAY) {
+        LOG_VISITOR_DEBUG("property_access: Handling VALUE_ARRAY");
         // Handle special array property: length
         if (strcmp(node->property_name, "length") == 0) {
+            LOG_VISITOR_DEBUG("property_access: Getting array length");
             size_t length = array_length(object_val);
+            LOG_VISITOR_DEBUG("property_access: Array length = %zu", length);
             result_val = value_new_number((double)length);
+            LOG_VISITOR_DEBUG("property_access: Created length value: %p", result_val);
         } else {
+            LOG_VISITOR_DEBUG("property_access: Handling array indexing with property '%s'", node->property_name);
             // Handle array indexing: arr[0] becomes arr.0 in property access
             char *endptr;
             long index = strtol(node->property_name, &endptr, 10);
 
             if (*endptr == '\0' && index >= 0) {
+                LOG_VISITOR_DEBUG("property_access: Valid numeric index = %ld", index);
                 // Valid numeric index
                 result_val = array_get(object_val, (size_t)index);
                 if (result_val) {
+                    LOG_VISITOR_DEBUG("property_access: array_get returned value, copying");
                     // array_get returns a reference, need to copy for our return
                     Value *copied_val = value_copy(result_val);
                     value_unref(result_val);
                     result_val = copied_val;
+                    LOG_VISITOR_DEBUG("property_access: Copied array element");
+                } else {
+                    LOG_VISITOR_DEBUG("property_access: array_get returned NULL");
                 }
             } else {
                 LOG_ERROR(
@@ -1313,8 +1395,8 @@ static AST_T *visitor_visit_property_access(visitor_T *visitor, AST_T *node)
         }
     } else {
         LOG_ERROR(LOG_CAT_VISITOR,
-                  "Cannot access property '%s' on non-object/array/instance type",
-                  node->property_name);
+                  "Cannot access property '%s' on non-object/array/instance type %d",
+                  node->property_name, object_val->type);
         result_val = value_new_null();
     }
 
@@ -1322,12 +1404,17 @@ static AST_T *visitor_visit_property_access(visitor_T *visitor, AST_T *node)
     value_unref(object_val);
 
     if (!result_val) {
+        LOG_VISITOR_DEBUG("property_access: No result value, creating null");
         result_val = value_new_null();
     }
+
+    LOG_VISITOR_DEBUG("property_access: Converting result value type %d back to AST", result_val->type);
 
     // Convert result back to AST
     AST_T *result_ast = value_to_ast(result_val);
     value_unref(result_val);
+
+    LOG_VISITOR_DEBUG("property_access: Result AST: %p (type %d)", result_ast, result_ast ? (int)result_ast->type : -1);
 
     return result_ast ? result_ast : ast_new(AST_NULL);
 }
@@ -1465,6 +1552,12 @@ static AST_T *visitor_visit_while_loop(visitor_T *visitor, AST_T *node)
                           iteration_count,
                           condition_is_true ? "true" : "false");
 
+        // CRITICAL FIX: Free condition result to prevent massive memory leaks
+        // The condition result is a temporary AST node that must be cleaned up
+        if (condition_result != node->loop_condition) {
+            ast_free(condition_result);
+        }
+
         if (!condition_is_true) {
             break;
         }
@@ -1502,12 +1595,25 @@ static AST_T *visitor_visit_while_loop(visitor_T *visitor, AST_T *node)
         if (body_result) {
             // Check for break/continue statements
             if (body_result->type == AST_BREAK) {
+                // Free body result before break to prevent leak
+                if (body_result != node->loop_body) {
+                    ast_free(body_result);
+                }
                 break;
             } else if (body_result->type == AST_CONTINUE) {
+                // Free body result before continue to prevent leak
+                if (body_result != node->loop_body) {
+                    ast_free(body_result);
+                }
                 iteration_count++;
                 continue;
             } else if (body_result->type == AST_RETURN) {
                 return body_result;
+            }
+            
+            // CRITICAL FIX: Free previous result before assigning new one
+            if (last_result && last_result != ast_new(AST_NOOP)) {
+                ast_free(last_result);
             }
             last_result = body_result;
         }
@@ -1544,35 +1650,62 @@ static AST_T *visitor_visit_for_loop(visitor_T *visitor, AST_T *node)
 
     AST_T *last_result = ast_new(AST_NOOP);
 
-    // CRITICAL FIX: Create iterator variable definition ONCE before the loop
-    // This prevents repeated creation/destruction and potential memory issues
+    // Create a single reusable iterator variable definition
     AST_T *iterator_def = ast_new(AST_VARIABLE_DEFINITION);
-    if (!iterator_def || !node->scope) {
-        // MEMORY LEAK FIX: Clean up iterator_def if allocation failed
-        if (iterator_def) {
-            ast_free(iterator_def);
-        }
+    if (!iterator_def) {
         return ast_new(AST_NOOP);
     }
 
     iterator_def->variable_definition_variable_name = memory_strdup(node->iterator_variable);
     iterator_def->scope = node->scope;
 
+    // Convert the iterable to a Value to properly iterate over its contents
+    Value *iterable_value = ast_to_value(iterable_result);
+    if (!iterable_value) {
+        ast_free(iterator_def);
+        return ast_new(AST_NOOP);
+    }
+
     // Handle different types of iterables
-    if (iterable_result->type == AST_ARRAY) {
-        for (size_t i = 0; i < iterable_result->array_size; i++) {
-            AST_T *element = iterable_result->array_elements[i];
-            if (!element)
+    if (iterable_value->type == VALUE_ARRAY) {
+        // Get the array length
+        size_t length = array_length(iterable_value);
+        
+        for (size_t i = 0; i < length; i++) {
+            // Get each individual array element as a Value
+            Value *element_value = array_get(iterable_value, i);
+            if (!element_value)
                 continue;
 
-            // FIXED: Update the iterator variable's value instead of creating new one
-            iterator_def->variable_definition_value = element;
+            // Debug the element value
+            if (element_value->type == VALUE_NUMBER) {
+            }
 
-            // Add/update iterator in scope (scope_add handles updates automatically)
-            scope_add_variable_definition(node->scope, iterator_def);
+            // Convert the individual element back to AST for the iterator variable
+            AST_T *element_ast = value_to_ast(element_value);
+            
+            // Free any previous iterator value to avoid memory leaks
+            if (iterator_def->variable_definition_value) {
+                ast_free(iterator_def->variable_definition_value);
+            }
+            
+            // Update iterator variable's value for this iteration
+            iterator_def->variable_definition_value = element_ast;
+
+            // Debug output
+                   i, iterator_def->variable_definition_variable_name, element_ast ? (int)element_ast->type : -1);
+            if (element_ast && element_ast->type == AST_NUMBER) {
+            }
+
+            // Add/update iterator in scope - scope stores reference only
+            AST_T *scope_result = scope_add_variable_definition(node->scope, iterator_def);
 
             // Execute loop body
             AST_T *body_result = visitor_visit(visitor, node->for_body);
+            
+            // Clean up the element value after use
+            value_unref(element_value);
+            
             if (body_result) {
                 // Check for break/continue/return statements
                 if (body_result->type == AST_BREAK) {
@@ -1580,69 +1713,72 @@ static AST_T *visitor_visit_for_loop(visitor_T *visitor, AST_T *node)
                 } else if (body_result->type == AST_CONTINUE) {
                     continue;
                 } else if (body_result->type == AST_RETURN) {
+                    // Clean up iterator before returning
+                    value_unref(iterable_value);
+                    ast_free(iterator_def);
                     return body_result;
                 }
                 last_result = body_result;
             }
         }
-    } else if (iterable_result->type == AST_OBJECT) {
-        for (size_t i = 0; i < iterable_result->object_size; i++) {
-            char *key = iterable_result->object_keys[i];
-            if (!key)
-                continue;
-
-            // Create a string AST node for the key
-            AST_T *key_ast = ast_new(AST_STRING);
-            if (!key_ast)
-                continue;
-
-            key_ast->string_value = memory_strdup(key);
-
-            // FIXED: Update the iterator variable's value instead of creating new one
-            iterator_def->variable_definition_value = key_ast;
-
-            // Add/update iterator in scope (scope_add handles updates automatically)
-            scope_add_variable_definition(node->scope, iterator_def);
-
-            // Execute loop body
-            AST_T *body_result = visitor_visit(visitor, node->for_body);
-            if (body_result) {
-                // Check for break/continue/return statements
-                if (body_result->type == AST_BREAK) {
-                    break;
-                } else if (body_result->type == AST_CONTINUE) {
+    } else if (iterable_value->type == VALUE_OBJECT) {
+        ZenObject *obj = iterable_value->as.object;
+        if (obj) {
+            for (size_t i = 0; i < obj->length; i++) {
+                char *key = obj->pairs[i].key;
+                if (!key)
                     continue;
-                } else if (body_result->type == AST_RETURN) {
-                    return body_result;
+
+                // Create a string AST node for the key
+                AST_T *key_ast = ast_new(AST_STRING);
+                if (!key_ast)
+                    continue;
+
+                key_ast->string_value = memory_strdup(key);
+
+                // Free any previous iterator value to avoid memory leaks
+                if (iterator_def->variable_definition_value) {
+                    ast_free(iterator_def->variable_definition_value);
                 }
-                last_result = body_result;
+
+                // Update iterator variable's value for this iteration
+                iterator_def->variable_definition_value = key_ast;
+
+                // Add/update iterator in scope - scope stores reference only
+                scope_add_variable_definition(node->scope, iterator_def);
+
+                // Execute loop body
+                AST_T *body_result = visitor_visit(visitor, node->for_body);
+                
+                if (body_result) {
+                    // Check for break/continue/return statements
+                    if (body_result->type == AST_BREAK) {
+                        break;
+                    } else if (body_result->type == AST_CONTINUE) {
+                        continue;
+                    } else if (body_result->type == AST_RETURN) {
+                        // Clean up iterator before returning
+                        value_unref(iterable_value);
+                        ast_free(iterator_def);
+                        return body_result;
+                    }
+                    last_result = body_result;
+                }
             }
         }
     } else {
         LOG_ERROR(LOG_CAT_VISITOR,
                   "For loop iterable is not an array or object (type: %d)",
-                  iterable_result->type);
-        // MEMORY LEAK FIX: Clean up iterator variable definition completely
-        if (iterator_def) {
-            if (iterator_def->variable_definition_variable_name) {
-                memory_free(iterator_def->variable_definition_variable_name);
-                iterator_def->variable_definition_variable_name = NULL;
-            }
-            ast_free(iterator_def);
-        }
+                  iterable_value->type);
+        // Clean up iterator and value
+        value_unref(iterable_value);
+        ast_free(iterator_def);
         return ast_new(AST_NULL);
     }
 
-    // MEMORY LEAK FIX: Clean up iterator variable definition completely
-    if (iterator_def) {
-        if (iterator_def->variable_definition_variable_name) {
-            memory_free(iterator_def->variable_definition_variable_name);
-            iterator_def->variable_definition_variable_name = NULL;
-        }
-        // Free the iterator_def node itself (it's not owned by the main AST tree)
-        ast_free(iterator_def);
-        iterator_def = NULL;
-    }
+    // Clean up iterator definition and iterable value after loop completes
+    value_unref(iterable_value);
+    ast_free(iterator_def);
 
     return last_result ? last_result : ast_new(AST_NOOP);
 }
@@ -1861,7 +1997,6 @@ visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int
         function_scope->variable_definitions_size++;
 
         // Debug: Verify parameter binding
-        printf("DEBUG: Added parameter '%s' to function scope at index %zu\n",
                param_ast->variable_name,
                function_scope->variable_definitions_size - 1);
     }
@@ -2177,9 +2312,7 @@ static AST_T *visitor_apply_tail_call_optimization(visitor_T *visitor, AST_T *no
  */
 static AST_T *visitor_visit_file_get(visitor_T *visitor, AST_T *node)
 {
-    printf("DEBUG: visitor_visit_file_get called\n");
     if (!visitor || !node || !node->file_get_path) {
-        printf("DEBUG: Early return - visitor=%p, node=%p, path=%p\n",
                (void *)visitor,
                (void *)node,
                node ? (void *)node->file_get_path : NULL);
@@ -2187,72 +2320,54 @@ static AST_T *visitor_visit_file_get(visitor_T *visitor, AST_T *node)
     }
 
     // Evaluate file path
-    printf("DEBUG: Evaluating file path...\n");
     AST_T *path_result = visitor_visit(visitor, node->file_get_path);
-    printf("DEBUG: path_result=%p\n", (void *)path_result);
     if (path_result) {
-        printf("DEBUG: path_result type=%d, string_value=%s\n",
                path_result->type,
                path_result->type == AST_STRING && path_result->string_value
                    ? path_result->string_value
                    : "NULL");
     }
     if (!path_result || path_result->type != AST_STRING || !path_result->string_value) {
-        printf("DEBUG: Invalid path result, returning NULL\n");
         return ast_new(AST_NULL);
     }
 
     char *file_path = path_result->string_value;
-    printf("DEBUG: Using file path: %s\n", file_path);
 
     // Load file contents based on extension
     char *extension = strrchr(file_path, '.');
     if (!extension) {
-        printf("DEBUG: No extension found in path %s\n", file_path);
         LOG_ERROR(LOG_CAT_VISITOR, "File get: No extension found in path %s", file_path);
         return ast_new(AST_NULL);
     }
 
-    printf("DEBUG: File extension: %s\n", extension);
     LOG_VISITOR_DEBUG("File get operation on %s (extension: %s)", file_path, extension);
 
     // Check if file exists
-    printf("DEBUG: Checking if file exists: %s\n", file_path);
     if (!io_file_exists_internal(file_path)) {
-        printf("DEBUG: File not found: %s\n", file_path);
         LOG_ERROR(LOG_CAT_VISITOR, "File not found: %s", file_path);
         return ast_new(AST_NULL);
     }
-    printf("DEBUG: File exists!\n");
 
     AST_T *result = NULL;
 
     // Handle JSON files
     if (strcmp(extension, ".json") == 0) {
-        printf("DEBUG: Handling JSON file\n");
         LOG_VISITOR_DEBUG("Loading JSON file: %s", file_path);
         Value *file_content = io_load_json_file_internal(file_path);
-        printf("DEBUG: io_load_json_file_internal returned: %p\n", (void *)file_content);
         if (!file_content) {
-            printf("DEBUG: Failed to load JSON file\n");
             LOG_ERROR(LOG_CAT_VISITOR, "Failed to load JSON file: %s", file_path);
             return ast_new(AST_NULL);
         }
 
-        printf("DEBUG: Loaded JSON file, value type: %d\n", file_content->type);
         LOG_VISITOR_DEBUG("Loaded JSON file, value type: %d", file_content->type);
 
         // Convert Value to AST
-        printf("DEBUG: Converting Value to AST...\n");
         result = value_to_ast(file_content);
-        printf("DEBUG: value_to_ast returned: %p\n", (void *)result);
         if (result) {
-            printf("DEBUG: AST type: %d\n", result->type);
         }
         value_unref(file_content);
 
         if (!result) {
-            printf("DEBUG: value_to_ast returned NULL\n");
             LOG_ERROR(
                 LOG_CAT_VISITOR, "Failed to convert JSON content to AST for file: %s", file_path);
             return ast_new(AST_NULL);
@@ -2262,7 +2377,6 @@ static AST_T *visitor_visit_file_get(visitor_T *visitor, AST_T *node)
 
         // If no property path, return entire file content
         if (!node->file_get_property) {
-            printf("DEBUG: No property path, returning entire file content (result=%p, type=%d)\n",
                    (void *)result,
                    result ? (int)result->type : -1);
             LOG_VISITOR_DEBUG("No property path, returning entire file content");
@@ -2498,7 +2612,6 @@ static AST_T *visitor_visit_file_reference(visitor_T *visitor, AST_T *node)
         return ast_new(AST_NULL);
     }
 
-    printf("DEBUG: Resolving file reference: %s -> %s\n",
            node->file_ref_target_file,
            node->file_ref_property_path ? node->file_ref_property_path : "root");
 
@@ -2856,27 +2969,48 @@ static AST_T *visitor_visit_class_definition(visitor_T *visitor, AST_T *node)
 static AST_T *visitor_visit_new_expression(visitor_T *visitor, AST_T *node)
 {
     if (!visitor || !node || node->type != AST_NEW_EXPRESSION || !node->new_class_name) {
+               visitor, node, node ? (int)node->type : -1, node && node->new_class_name ? node->new_class_name : "NULL");
         return ast_new(AST_NULL);
     }
+    
 
     // Look up the class definition in the current scope
-    AST_T *class_def = scope_get_variable_definition(node->scope, node->new_class_name);
+    AST_T *class_var = scope_get_variable_definition(node->scope, node->new_class_name);
+    if (!class_var || class_var->type != AST_VARIABLE_DEFINITION) {
+        // Class not found
+               node->new_class_name, class_var, class_var ? (int)class_var->type : -1);
+        return ast_new(AST_NULL);
+    }
+    
+    
+    // Get the actual class definition from the variable definition
+    AST_T *class_def = class_var->variable_definition_value;
     if (!class_def || class_def->type != AST_CLASS_DEFINITION) {
-        // Class not found or not a class
+        // Not a class definition
         return ast_new(AST_NULL);
     }
 
-    // Create a new object instance
+    // Create a new object instance to represent the class instance
     AST_T *instance = ast_new(AST_OBJECT);
     if (!instance) {
         return ast_new(AST_NULL);
     }
 
-    // Initialize with empty object
+    // Initialize with empty object that can hold instance data
     instance->object_keys = NULL;
     instance->object_values = NULL;
     instance->object_size = 0;
     instance->scope = node->scope;
+    
+    // Store class reference in a special property for method resolution
+    // This allows the instance to know which class it belongs to
+    instance->object_size = 1;
+    instance->object_keys = memory_alloc(sizeof(char*));
+    instance->object_values = memory_alloc(sizeof(AST_T*));
+    if (instance->object_keys && instance->object_values) {
+        instance->object_keys[0] = memory_strdup("__class__");
+        instance->object_values[0] = class_def;  // Store reference to class definition
+    }
 
     // Look for constructor method
     AST_T *constructor = NULL;

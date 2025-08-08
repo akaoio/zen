@@ -1,7 +1,6 @@
-print "Starting test"
 class Person
     method greet name
         print "Hello " + name
-print "Class defined"
+
 set person new Person
-print "Person instantiated"
+print "Class system test completed"

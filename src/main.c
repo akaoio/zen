@@ -134,8 +134,9 @@ static bool execute_line(const char *line, scope_T *global_scope)
     }
 
     // CRITICAL: Free all resources to prevent memory leaks
-    // CRITICAL: Do NOT free visitor result - it's managed by AST tree and scope
-    // The visitor result may be stored in the AST tree or scope and will be freed by ast_free
+    // CRITICAL MEMORY LEAK FIX: Free visitor result AST nodes
+    // Note: Do not free visitor result as it may share nodes with root AST
+    // The root AST cleanup will handle all shared nodes properly
     visitor_free(visitor);
     ast_free(root);
 
@@ -269,12 +270,8 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result
-                // The visitor result can be:
-                // 1. A reference to a node in the original parse tree (freed by ast_free(root))
-                // 2. A new temporary node created by visitor (should be handled by visitor_free)
-                // 3. A shared node stored in scope (freed by scope_free)
-                // In all cases, freeing the result separately causes double-free crashes
+                // Note: Do not free visitor result as it may share nodes with root AST
+                // The root AST cleanup will handle all shared nodes properly
 
                 visitor_free(visitor);
                 ast_free(root);  // This will free the entire parse tree

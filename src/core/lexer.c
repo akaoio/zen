@@ -611,8 +611,9 @@ int lexer_keyword_type(const char *value)
         return TOKEN_BREAK;
     if (strcmp(value, "continue") == 0)
         return TOKEN_CONTINUE;
-    if (strcmp(value, "class") == 0)
+    if (strcmp(value, "class") == 0) {
         return TOKEN_CLASS;
+    }
     if (strcmp(value, "new") == 0)
         return TOKEN_NEW;
     if (strcmp(value, "extends") == 0)

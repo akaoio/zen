@@ -3,6 +3,7 @@
 #include "zen/core/ast_memory_pool.h"
 #include "zen/core/memory.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /**

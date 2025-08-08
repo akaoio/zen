@@ -442,4 +442,12 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope);
  */
 AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope);
 
+/**
+ * @brief Parse new expression (class instantiation)
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* New expression AST node or NULL on error
+ */
+AST_T *parser_parse_new_expression(parser_T *parser, scope_T *scope);
+
 #endif

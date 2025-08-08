@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Forward declarations
+
 /**
  * @brief Create parser instance
  * @param lexer Lexical analyzer instance
@@ -35,8 +37,8 @@ parser_T *parser_new(lexer_T *lexer)
         return NULL;
     }
 
-    // Initialize AST memory pools for better parsing performance
-    ast_pool_global_init();  // Global pool initialization
+    // AST memory pools are not currently in use - AST uses direct memory allocation
+    // ast_pool_global_init();  // Disabled to prevent memory management conflicts
 
     return parser;
 }
@@ -63,8 +65,8 @@ void parser_free(parser_T *parser)
         scope_free(parser->scope);
     }
 
-    // Cleanup AST memory pools
-    ast_pool_global_cleanup();
+    // AST memory pools are not currently in use - cleanup not needed
+    // ast_pool_global_cleanup();  // Disabled to prevent memory management conflicts
 
     memory_free(parser);
 }
@@ -144,6 +146,28 @@ AST_T *parser_parse(parser_T *parser, scope_T *scope)
 }
 
 /**
+ * @brief Peek at token type at given offset
+ * @param parser Parser instance
+ * @param offset Token offset (0 = current, 1 = next, etc.)
+ * @return int Token type or TOKEN_EOF if not available
+ */
+int parser_peek_token_type(parser_T *parser, int offset)
+{
+    if (!parser || !parser->lexer || offset < 0) {
+        return TOKEN_EOF;
+    }
+
+    token_T *token = lexer_peek_token(parser->lexer, offset);
+    if (!token) {
+        return TOKEN_EOF;
+    }
+
+    int type = token->type;
+    token_free(token);
+    return type;
+}
+
+/**
  * @brief Parse a single statement
  * @param parser Parser instance
  * @param scope Scope context for parsing
@@ -151,12 +175,19 @@ AST_T *parser_parse(parser_T *parser, scope_T *scope)
  */
 AST_T *parser_parse_statement(parser_T *parser, scope_T *scope)
 {
+    // Parse statement based on current token
+
     switch (parser->current_token->type) {
     case TOKEN_SET:
         return parser_parse_variable_definition(parser, scope);
     case TOKEN_FUNCTION:
         return parser_parse_function_definition(parser, scope);
     case TOKEN_ID:
+        // Check if this ID is followed by property access - if so, parse as expression
+        if (parser_peek_token_type(parser, 1) == TOKEN_DOT ||
+            parser_peek_token_type(parser, 1) == TOKEN_LBRACKET) {
+            return parser_parse_expr(parser, scope);
+        }
         return parser_parse_id(parser, scope);
     case TOKEN_IF:
         return parser_parse_if_statement(parser, scope);
@@ -181,6 +212,7 @@ AST_T *parser_parse_statement(parser_T *parser, scope_T *scope)
     case TOKEN_CLASS:
         return parser_parse_class_definition(parser, scope);
     default:
+        // Handle as expression (variable assignment, function call, etc.)
         return parser_parse_expr(parser, scope);
     }
 }
@@ -193,6 +225,13 @@ AST_T *parser_parse_statement(parser_T *parser, scope_T *scope)
  */
 AST_T *parser_parse_statements(parser_T *parser, scope_T *scope)
 {
+    if (!parser) {
+        return NULL;
+    }
+    if (!parser->current_token) {
+        return NULL;
+    }
+
     AST_T *compound = ast_new(AST_COMPOUND);
     compound->scope = scope;
     compound->compound_statements = NULL;
@@ -208,8 +247,10 @@ AST_T *parser_parse_statements(parser_T *parser, scope_T *scope)
                 break;
         }
 
-        if (parser->current_token->type == TOKEN_EOF || parser->current_token->type == TOKEN_DEDENT)
+        if (parser->current_token->type == TOKEN_EOF ||
+            parser->current_token->type == TOKEN_DEDENT) {
             break;
+        }
 
         AST_T *ast_statement = parser_parse_statement(parser, scope);
 
@@ -626,6 +667,9 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
     case TOKEN_ID:
         expr = parser_parse_id_or_object(parser, scope);
         break;
+    case TOKEN_NEW:
+        expr = parser_parse_new_expression(parser, scope);
+        break;
     default:
         expr = ast_new(AST_NOOP);
         break;
@@ -683,6 +727,10 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
     if (parser->current_token->type == TOKEN_ID) {
         parser_eat(parser, TOKEN_ID);
 
+        // Check if this is property access (should not be handled as function call)
+        bool is_property_access = (parser->current_token->type == TOKEN_DOT ||
+                                   parser->current_token->type == TOKEN_LBRACKET);
+
         // Check if this identifier has arguments (function call with args)
         bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
                          parser->current_token->type != TOKEN_EOF &&
@@ -690,6 +738,8 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                          parser->current_token->type != TOKEN_RPAREN &&
                          parser->current_token->type != TOKEN_RBRACKET &&
                          parser->current_token->type != TOKEN_COMMA &&
+                         parser->current_token->type != TOKEN_DOT &&
+                         parser->current_token->type != TOKEN_LBRACKET &&
                          !parser_is_binary_operator(parser->current_token->type));
 
         // Check if this identifier is a stdlib function (for zero-arg calls)
@@ -702,7 +752,8 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                               parser->current_token->type == TOKEN_EOF ||
                               parser->current_token->type == TOKEN_DEDENT);
 
-        if (has_args || is_stdlib_function || is_standalone) {
+        // Don't treat as function call if it's property access - let primary expr handle it
+        if (!is_property_access && (has_args || is_stdlib_function || is_standalone)) {
             AST_T *function_call = ast_new(AST_FUNCTION_CALL);
             function_call->function_call_name = original_name;  // Transfer ownership
             function_call->function_call_arguments = NULL;
@@ -1921,6 +1972,11 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
         }
     }
 
+    // Consume the final DEDENT token that marks the end of the class body
+    if (parser->current_token && parser->current_token->type == TOKEN_DEDENT) {
+        parser_eat(parser, TOKEN_DEDENT);
+    }
+
     // Create class definition AST node
     AST_T *class_def = ast_new_class_definition(class_name, parent_class, methods, methods_count);
 
@@ -2036,4 +2092,92 @@ AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope)
     memory_free(args);  // ast_new_function_definition makes its own copy
 
     return method_def;
+}
+
+/**
+ * @brief Parse new expression (class instantiation)
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* New expression AST node or NULL on error
+ */
+AST_T *parser_parse_new_expression(parser_T *parser, scope_T *scope)
+{
+    if (!parser || !scope || parser->current_token->type != TOKEN_NEW) {
+        return NULL;
+    }
+
+    // Consume "new" token
+    parser_eat(parser, TOKEN_NEW);
+
+    // Expect class name
+    if (parser->current_token->type != TOKEN_ID) {
+        return ast_new(AST_NULL);  // Invalid syntax
+    }
+
+    char *class_name = memory_strdup(parser->current_token->value);
+    parser_eat(parser, TOKEN_ID);
+
+    // Create new expression AST node
+    AST_T *new_expr = ast_new(AST_NEW_EXPRESSION);
+    if (!new_expr) {
+        memory_free(class_name);
+        return NULL;
+    }
+
+    new_expr->new_class_name = class_name;
+    new_expr->scope = scope;
+    new_expr->new_arguments = NULL;
+    new_expr->new_arguments_size = 0;
+
+    // Check if there are constructor arguments
+    // In ZEN syntax, arguments follow without parentheses: "new Animal arg1 arg2"
+    if (parser->current_token->type != TOKEN_NEWLINE && parser->current_token->type != TOKEN_EOF &&
+        parser->current_token->type != TOKEN_DEDENT && parser->current_token->type != TOKEN_COMMA &&
+        !parser_is_binary_operator(parser->current_token->type)) {
+        // Parse arguments like function calls
+        size_t arg_capacity = 4;
+        AST_T **args = memory_alloc(arg_capacity * sizeof(AST_T *));
+        if (!args) {
+            ast_free(new_expr);
+            return NULL;
+        }
+
+        size_t arg_count = 0;
+        while (parser->current_token->type != TOKEN_NEWLINE &&
+               parser->current_token->type != TOKEN_EOF &&
+               parser->current_token->type != TOKEN_DEDENT &&
+               parser->current_token->type != TOKEN_COMMA &&
+               !parser_is_binary_operator(parser->current_token->type)) {
+            AST_T *arg = parser_parse_expr(parser, scope);
+            if (!arg)
+                break;
+
+            if (arg_count >= arg_capacity) {
+                arg_capacity *= 2;
+                AST_T **new_args = memory_realloc(args, arg_capacity * sizeof(AST_T *));
+                if (!new_args) {
+                    // Cleanup on error
+                    for (size_t i = 0; i < arg_count; i++) {
+                        ast_free(args[i]);
+                    }
+                    memory_free(args);
+                    ast_free(new_expr);
+                    return NULL;
+                }
+                args = new_args;
+            }
+
+            args[arg_count++] = arg;
+
+            // Optional comma between arguments
+            if (parser->current_token->type == TOKEN_COMMA) {
+                parser_eat(parser, TOKEN_COMMA);
+            }
+        }
+
+        new_expr->new_arguments = args;
+        new_expr->new_arguments_size = arg_count;
+    }
+
+    return new_expr;
 }

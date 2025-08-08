@@ -1,0 +1,10 @@
+set arr [1, 2, 3]
+print "Array created:"
+print arr
+
+print "Starting for loop:"
+for item in arr
+    print "Item:"
+    print item
+
+print "For loop complete"

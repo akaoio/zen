@@ -15,8 +15,10 @@
 #include "zen/types/set.h"
 
 #include <assert.h>
-#include <math.h>  // For NAN, INFINITY, isnan, isinf, floor
+#include <math.h>       // For NAN, INFINITY, isnan, isinf, floor
+#include <stdatomic.h>  // For atomic operations and SIZE_MAX
 #include <stdbool.h>
+#include <stdint.h>  // For SIZE_MAX
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -424,6 +426,16 @@ Value *value_copy(const Value *value)
 void value_free(Value *value)
 {
     if (!value) {
+        return;
+    }
+
+    // CRITICAL FIX: Prevent re-entrant freeing during value_free_data cascade
+    // Check if ref_count is already marked as being freed (SIZE_MAX)
+    size_t current_ref = atomic_load((_Atomic size_t *)&value->ref_count);
+    if (current_ref != 0 && current_ref != SIZE_MAX) {
+        // This value is being freed but ref_count wasn't properly set
+        // This shouldn't happen, but let's be defensive
+        fprintf(stderr, "WARNING: value_free called on value with ref_count=%zu\n", current_ref);
         return;
     }
 
@@ -855,17 +867,25 @@ void value_unref(Value *value)
         return;
     }
 
-    // Additional safety check - prevent underflow
-    if (value->ref_count == 0) {
-        // Log the error but don't crash - this indicates a bug
-        fprintf(stderr,
+    // CRITICAL FIX: Use atomic operations for consistent state checking
+    size_t old_count = atomic_load((_Atomic size_t *)&value->ref_count);
+
+    // Additional safety check - prevent underflow and detect being freed
+    if (old_count == 0 || old_count == SIZE_MAX) {
+        // Already freed or being freed - prevent double-free cascade
+        if (old_count == 0) {
+            fprintf(
+                stderr,
                 "WARNING: Attempting to unref Value with ref_count=0 (double-free protection)\n");
+        }
         return;
     }
 
     size_t new_count = memory_ref_dec(&value->ref_count);
 
     if (new_count == 0) {
+        // Mark as being freed immediately to prevent re-entry
+        atomic_store((_Atomic size_t *)&value->ref_count, SIZE_MAX);
         value_free(value);
     }
 }

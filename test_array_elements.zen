@@ -1,0 +1,4 @@
+set arr [1, 2]
+print arr
+set first arr[0]
+print first

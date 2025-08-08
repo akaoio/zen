@@ -1,0 +1,7 @@
+class Animal
+    method speak
+        return "woof"
+
+print "Before new"
+new Animal
+print "After new"

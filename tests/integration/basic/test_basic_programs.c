@@ -8,6 +8,8 @@
 #include "zen/core/parser.h"
 #include "zen/core/visitor.h"
 #include "zen/core/scope.h"
+#include "zen/core/ast_memory_pool.h"
+#include "zen/core/memory.h"
 
 // Forward declare all tests
 DECLARE_TEST(test_variable_assignment_and_use);
@@ -79,6 +81,10 @@ static bool execute_code(const char* code) {
     scope_free(scope);
     parser_free(parser);
     lexer_free(lexer);
+    
+    // CRITICAL FIX: Clean up global state to prevent memory accumulation between tests
+    // This prevents the massive memory leaks seen in integration test suites
+    ast_pool_cleanup_global();
     
     return success;
 }

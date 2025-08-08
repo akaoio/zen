@@ -1,0 +1,5 @@
+function greet name
+    print "Hello " + name
+
+greet "World"
+print "Function test completed"

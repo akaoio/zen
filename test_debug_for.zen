@@ -1,0 +1,8 @@
+set arr [1, 2]
+print "Array:"
+print arr
+print "Starting loop:"
+for item in arr
+    print "Item value:"
+    print item
+print "Done"
