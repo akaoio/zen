@@ -23,7 +23,6 @@ Thumbs.db
 
 # Debug files
 *.dSYM/
-core
 vgcore.*
 
 # Coverage files
