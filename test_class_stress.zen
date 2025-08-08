@@ -1,0 +1,62 @@
+# Stress Test 1: Many classes
+class C1
+class C2
+class C3
+class C4
+class C5
+class C6
+class C7
+class C8
+class C9
+class C10
+
+print "10 classes defined"
+
+# Stress Test 2: Many instances
+set i1 new C1
+set i2 new C2
+set i3 new C3
+set i4 new C4
+set i5 new C5
+
+print "5 instances created"
+
+# Stress Test 3: Class with many methods
+class BigClass
+    method m1
+        return 1
+    method m2
+        return 2
+    method m3
+        return 3
+    method m4
+        return 4
+    method m5
+        return 5
+    method m6
+        return 6
+    method m7
+        return 7
+    method m8
+        return 8
+    method m9
+        return 9
+    method m10
+        return 10
+
+print "Big class defined"
+
+# Stress Test 4: Deep inheritance chain
+class A1
+    method test
+        return "A1"
+
+class A2
+    method test
+        return "A2"
+
+class A3
+    method test  
+        return "A3"
+
+print "Inheritance chain defined"

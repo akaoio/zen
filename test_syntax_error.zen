@@ -1,0 +1,3 @@
+print "hello"
+invalid syntax here +++
+print "world"

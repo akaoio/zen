@@ -1,14 +1,15 @@
 /*
  * datetime.c
- * Date and Time Functions for ZEN stdlib  
- * 
+ * Date and Time Functions for ZEN stdlib
+ *
  * Contains only authorized functions as per MANIFEST.json
  */
 
-#include "zen/types/value.h"
 #include "zen/core/error.h"
-#include <time.h>
+#include "zen/types/value.h"
+
 #include <string.h>
+#include <time.h>
 
 /**
  * @brief Get current Unix timestamp
@@ -16,31 +17,32 @@
  * @param argc Number of arguments (unused)
  * @return Current timestamp as number value
  */
-Value* datetime_now(Value** args, size_t argc) {
+Value *datetime_now(Value **args, size_t argc)
+{
     // Support optional format parameter
     if (argc > 1) {
         return error_invalid_argument("datetime_now", "accepts at most 1 argument (format)");
     }
-    
+
     time_t now = time(NULL);
-    
+
     // If no format specified, return Unix timestamp
     if (argc == 0) {
         return value_new_number((double)now);
     }
-    
+
     // Parse format argument
     if (args[0]->type != VALUE_STRING) {
         return error_type_mismatch("string", value_type_name(args[0]->type));
     }
-    
-    const char* format = args[0]->as.string->data;
-    struct tm* tm_info = localtime(&now);
-    
+
+    const char *format = args[0]->as.string->data;
+    struct tm *tm_info = localtime(&now);
+
     if (!tm_info) {
         return error_new("Failed to get local time");
     }
-    
+
     // Handle different format options
     if (strcmp(format, "unix") == 0) {
         return value_new_number((double)now);
@@ -68,11 +70,11 @@ Value* datetime_now(Value** args, size_t argc) {
         // Custom format - pass directly to strftime
         char custom_buffer[256];
         size_t result = strftime(custom_buffer, sizeof(custom_buffer), format, tm_info);
-        
+
         if (result == 0) {
             return error_new("Invalid format string or resulting string too long");
         }
-        
+
         return value_new_string(custom_buffer);
     }
 }

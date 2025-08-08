@@ -1,0 +1,40 @@
+agent: swarm-3-zen-worker-memory
+task: 'CRITICAL: Fix double-free in function parameter binding'
+created: 1754649067
+completed: false
+files:
+  - src/core/memory.c
+  - src/core/visitor.c
+activities:
+  - timestamp: 1754649067
+    start: 1754649067
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754649097
+    start: 1754649097
+    end: 0
+    method: Functions with variable assignments crash with double-free in parameter binding logic
+    success: false
+    fail: true
+    why_success: In progress
+    why_fail: Memory corruption affecting all complex functions
+  - timestamp: 1754649640
+    start: 1754649640
+    end: 0
+    method: 'ANALYSIS COMPLETE: Double-free caused by ast_copy() calls in visitor_execute_user_function (lines 1668, 1719) - ast_copy() is not in MANIFEST.json! Parameter binding creates duplicate AST nodes causing double-free when both scope and original AST try to free same memory. SOLUTION: Remove ast_copy() calls and use direct reference with proper ownership.'
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754649727
+    start: 1754649727
+    end: 0
+    method: 'PARTIAL FIX: Removed illegal ast_copy() calls from visitor_execute_user_function. Build successful but function calls still crash. Need to investigate parameter cleanup in scope_add_variable_definition and AST ownership in function parameter binding.'
+    success: false
+    fail: true
+    why_success: In progress
+    why_fail: Still crashes on function calls after ast_copy removal

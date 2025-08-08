@@ -1,0 +1,11 @@
+# Simple class test
+class Animal
+    constructor name
+        set this.name name
+    
+    method speak
+        return this.name + " makes a sound"
+
+# Create an instance
+set cat new Animal "Fluffy"
+print cat.speak

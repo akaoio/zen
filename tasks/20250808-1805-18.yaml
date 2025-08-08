@@ -1,0 +1,23 @@
+agent: swarm-2-zen-worker-runtime
+task: Fix double-free crash in visitor_execute_user_function parameter binding
+created: 1754651118
+completed: false
+files:
+  - src/core/visitor.c
+activities:
+  - timestamp: 1754651118
+    start: 1754651118
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754651125
+    start: 1754651125
+    end: 0
+    method: 'CRITICAL BUG: Double-free crash in function calls. Located in visitor_execute_user_function lines 1700-1800. Parameter binding creates copies that cause double-free on cleanup. Need proper memory ownership pattern while maintaining functional correctness. Test case: function add a b; return a + b; set result add 5 3; print result'
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

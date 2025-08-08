@@ -1,0 +1,5 @@
+# Panic Test 1: new without arguments
+new
+
+# Should not reach here
+print "FAIL: new without class name should error"

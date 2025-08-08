@@ -1,0 +1,46 @@
+# Test 10: Advanced Features
+print "=== Testing Advanced Features ==="
+
+# Async/await (if supported)
+async function fetchData url
+    set response await http.get url
+    return response
+
+# Modules and imports
+import math from "math"
+import readFile, writeFile from "fs"
+
+# Classes (if supported)
+class Person
+    constructor name age
+        this.name = name
+        this.age = age
+    
+    greet
+        return "Hi, I'm " + this.name
+
+set person new Person "Alice" 30
+print person.greet()
+
+# Destructuring
+set a, b, c = 1, 2, 3
+print "Destructured: a=" + a + " b=" + b + " c=" + c
+
+# Spread operator
+set arr1 1, 2, 3
+set arr2 ...arr1, 4, 5
+print "Spread array: " + arr2
+
+# Template literals (if supported)
+set name "World"
+set greeting `Hello, ${name}!`
+print greeting
+
+# Arrow functions
+set multiply = x, y => x * y
+print "Arrow function: " + multiply 3 4
+
+# Null coalescing
+set value null
+set result value ?? "default"
+print "Null coalescing: " + result

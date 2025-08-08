@@ -102,7 +102,7 @@ TEST(test_parser_identifier) {
     parser_T* parser = parser_new(lexer);
     scope_T* scope = scope_new();
     
-    AST_T* ast = parser_parse_id(parser, scope);
+    AST_T* ast = parser_parse_variable(parser, scope);
     
     ASSERT_NOT_NULL(ast);
     ASSERT_EQ(ast->type, AST_VARIABLE);

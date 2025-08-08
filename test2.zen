@@ -1,0 +1,15 @@
+# Deep nesting test
+set x ((((((((((1 + 2) * 3) - 4) / 5) + 6) * 7) - 8) / 9) + 10) * 11)
+print x
+
+# Self reference
+set y y
+print y
+
+# Empty string
+set z ""
+print z
+
+# Very long variable name
+set abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 999
+print abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789

@@ -1,0 +1,23 @@
+agent: swarm-2-zen-worker-parser
+task: 'URGENT: Remove unauthorized ast_copy function causing all double-free crashes'
+created: 1754651240
+completed: false
+files:
+  - src/core/ast.c
+activities:
+  - timestamp: 1754651240
+    start: 1754651240
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754651249
+    start: 1754651249
+    end: 0
+    method: 'CRITICAL MANDATE: ast_copy() function at line 841 in ast.c MUST BE REMOVED immediately. It''s unauthorized per MANIFEST.json and is THE ROOT CAUSE of all double-free crashes. Every use of ast_copy creates shared node references that get freed multiple times. This function is used in 20+ places and must be replaced with proper memory management patterns. PRIORITY: Remove function and fix all call sites with proper ownership transfer or reference counting.'
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

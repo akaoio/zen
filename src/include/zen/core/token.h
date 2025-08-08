@@ -1,9 +1,7 @@
 #ifndef ZEN_CORE_TOKEN_H
 #define ZEN_CORE_TOKEN_H
-typedef struct TOKEN_STRUCT
-{
-    enum
-    {
+typedef struct TOKEN_STRUCT {
+    enum {
         // Basic tokens
         TOKEN_EOF,
         TOKEN_NEWLINE,
@@ -12,13 +10,13 @@ typedef struct TOKEN_STRUCT
         TOKEN_ID,
         TOKEN_NUMBER,
         TOKEN_STRING,
-        
+
         // Literals
         TOKEN_TRUE,
         TOKEN_FALSE,
         TOKEN_NULL,
         TOKEN_UNDECIDABLE,
-        
+
         // Keywords
         TOKEN_SET,
         TOKEN_FUNCTION,
@@ -33,6 +31,7 @@ typedef struct TOKEN_STRUCT
         TOKEN_BREAK,
         TOKEN_CONTINUE,
         TOKEN_CLASS,
+        TOKEN_NEW,
         TOKEN_EXTENDS,
         TOKEN_IMPORT,
         TOKEN_EXPORT,
@@ -43,16 +42,16 @@ typedef struct TOKEN_STRUCT
         TOKEN_THROW,
         TOKEN_GET,
         TOKEN_PUT,
-        
+
         // Phase 2: Natural Language Keywords
-        TOKEN_WHEN,      // Alternative to `if` for more natural expression
-        TOKEN_UNLESS,    // Negative conditional (if not)
-        TOKEN_WHENEVER,  // Event-driven conditional
-        TOKEN_UNTIL,     // Loop continuation condition
-        TOKEN_DURING,    // Time/context-based condition
-        TOKEN_THROUGHOUT,// Continuous condition
-        TOKEN_OTHERWISE, // Alternative to `else`
-        
+        TOKEN_WHEN,        // Alternative to `if` for more natural expression
+        TOKEN_UNLESS,      // Negative conditional (if not)
+        TOKEN_WHENEVER,    // Event-driven conditional
+        TOKEN_UNTIL,       // Loop continuation condition
+        TOKEN_DURING,      // Time/context-based condition
+        TOKEN_THROUGHOUT,  // Continuous condition
+        TOKEN_OTHERWISE,   // Alternative to `else`
+
         // Operators
         TOKEN_EQUALS,
         TOKEN_NOT_EQUALS,
@@ -68,20 +67,20 @@ typedef struct TOKEN_STRUCT
         TOKEN_AND,
         TOKEN_OR,
         TOKEN_NOT,
-        
+
         // Compound assignment operators
         TOKEN_PLUS_EQUALS,
         TOKEN_MINUS_EQUALS,
         TOKEN_MULTIPLY_EQUALS,
         TOKEN_DIVIDE_EQUALS,
         TOKEN_MODULO_EQUALS,
-        
+
         // Advanced operators
-        TOKEN_RANGE,           // ..
-        TOKEN_SPREAD,          // ...
-        TOKEN_NULL_COALESCING, // ??
-        TOKEN_OPTIONAL_CHAIN,  // ?.
-        
+        TOKEN_RANGE,            // ..
+        TOKEN_SPREAD,           // ...
+        TOKEN_NULL_COALESCING,  // ??
+        TOKEN_OPTIONAL_CHAIN,   // ?.
+
         // Punctuation
         TOKEN_COMMA,
         TOKEN_DOT,
@@ -94,11 +93,11 @@ typedef struct TOKEN_STRUCT
         TOKEN_LBRACE,
         TOKEN_RBRACE,
         TOKEN_SEMICOLON,
-        TOKEN_ARROW,           // =>
-        TOKEN_DOUBLE_ARROW     // =>
+        TOKEN_ARROW,        // =>
+        TOKEN_DOUBLE_ARROW  // =>
     } type;
 
-    char* value;
+    char *value;
 } token_T;
 
 /**
@@ -107,11 +106,11 @@ typedef struct TOKEN_STRUCT
  * @param value The token value string
  * @return Pointer to newly allocated token
  */
-token_T* token_new(int type, char* value);
+token_T *token_new(int type, char *value);
 
 /**
  * @brief Free a token and its value
  * @param token Token to free
  */
-void token_free(token_T* token);
-#endif // ZEN_CORE_TOKEN_H
+void token_free(token_T *token);
+#endif  // ZEN_CORE_TOKEN_H

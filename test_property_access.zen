@@ -1,0 +1,3 @@
+set obj value 42
+set prop obj.value
+print prop

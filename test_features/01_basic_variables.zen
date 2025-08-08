@@ -1,0 +1,28 @@
+# Test 1: Basic Variables and Types
+print "=== Testing Basic Variables ==="
+
+# String variables
+set name "Alice"
+print "String: " + name
+
+# Number variables
+set age 30
+set pi 3.14159
+print "Integer: " + age
+print "Float: " + pi
+
+# Boolean variables
+set active true
+set inactive false
+print "Boolean true: " + active
+print "Boolean false: " + inactive
+
+# Null variable
+set nothing null
+print "Null: " + nothing
+
+# Multiple variable declaration (as shown in idea.md)
+set made "in Vietnam", by "Nguyen Ky Son", year 2025
+print "Made: " + made
+print "By: " + by
+print "Year: " + year

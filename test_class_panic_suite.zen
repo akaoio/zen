@@ -1,0 +1,14 @@
+# Panic Test Suite - Each test that could crash
+
+print "=== Class Panic Test Suite ==="
+
+# Panic 1: Class after class
+print "Test 1: Multiple classes"
+class A
+class B
+print "✓ Passed"
+
+# Panic 2: new in expression
+print "\nTest 2: new in expression"
+set x 1 + new A
+print "✗ Should have failed"

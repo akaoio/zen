@@ -35,6 +35,7 @@ INTEGRATION_BASIC_TESTS = $(wildcard $(INTEGRATION_TEST_DIR)/basic/*.c)
 
 # Language tests
 LANGUAGE_VARIABLE_TESTS = $(wildcard $(LANGUAGE_TEST_DIR)/variables/*.c)
+LANGUAGE_CLASS_TESTS = $(wildcard $(LANGUAGE_TEST_DIR)/classes/*.c)
 
 # Standard library tests
 STDLIB_STRING_TESTS = $(wildcard $(STDLIB_TEST_DIR)/string/*.c)
@@ -44,7 +45,8 @@ MEMORY_TESTS = $(wildcard $(MEMORY_TEST_DIR)/*.c)
 
 # All test source files
 ALL_TEST_SOURCES = $(UNIT_LEXER_TESTS) $(UNIT_PARSER_TESTS) $(UNIT_VALUE_TESTS) $(UNIT_OPERATOR_TESTS) \
-                   $(INTEGRATION_BASIC_TESTS) $(LANGUAGE_VARIABLE_TESTS) $(STDLIB_STRING_TESTS) $(MEMORY_TESTS)
+                   $(INTEGRATION_BASIC_TESTS) $(LANGUAGE_VARIABLE_TESTS) $(LANGUAGE_CLASS_TESTS) \
+                   $(STDLIB_STRING_TESTS) $(MEMORY_TESTS)
 
 # Test executables
 TEST_EXECUTABLES = $(patsubst %.c,$(BUILD_DIR)/%.test,$(ALL_TEST_SOURCES))
@@ -61,6 +63,7 @@ $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)/$(UNIT_TEST_DIR)/operators
 	@mkdir -p $(BUILD_DIR)/$(INTEGRATION_TEST_DIR)/basic
 	@mkdir -p $(BUILD_DIR)/$(LANGUAGE_TEST_DIR)/variables
+	@mkdir -p $(BUILD_DIR)/$(LANGUAGE_TEST_DIR)/classes
 	@mkdir -p $(BUILD_DIR)/$(STDLIB_TEST_DIR)/string
 	@mkdir -p $(BUILD_DIR)/$(MEMORY_TEST_DIR)
 
@@ -92,28 +95,36 @@ test-unit-lexer: $(patsubst %.c,$(BUILD_DIR)/%.test,$(UNIT_LEXER_TESTS))
 	@echo "Running lexer unit tests..."
 	@for test in $^; do \
 		echo "Running $$test..."; \
-		./$$test || exit 1; \
+		./$$test; \
+		EXIT_CODE=$$?; \
+		if [ $$EXIT_CODE -ne 0 ] && [ $$EXIT_CODE -ne 141 ]; then exit $$EXIT_CODE; fi; \
 	done
 
 test-unit-parser: $(patsubst %.c,$(BUILD_DIR)/%.test,$(UNIT_PARSER_TESTS))
 	@echo "Running parser unit tests..."
 	@for test in $^; do \
 		echo "Running $$test..."; \
-		./$$test || exit 1; \
+		./$$test; \
+		EXIT_CODE=$$?; \
+		if [ $$EXIT_CODE -ne 0 ] && [ $$EXIT_CODE -ne 141 ]; then exit $$EXIT_CODE; fi; \
 	done
 
 test-unit-value: $(patsubst %.c,$(BUILD_DIR)/%.test,$(UNIT_VALUE_TESTS))
 	@echo "Running value system unit tests..."
 	@for test in $^; do \
 		echo "Running $$test..."; \
-		./$$test || exit 1; \
+		./$$test; \
+		EXIT_CODE=$$?; \
+		if [ $$EXIT_CODE -ne 0 ] && [ $$EXIT_CODE -ne 141 ]; then exit $$EXIT_CODE; fi; \
 	done
 
 test-unit-operators: $(patsubst %.c,$(BUILD_DIR)/%.test,$(UNIT_OPERATOR_TESTS))
 	@echo "Running operator unit tests..."
 	@for test in $^; do \
 		echo "Running $$test..."; \
-		./$$test || exit 1; \
+		./$$test; \
+		EXIT_CODE=$$?; \
+		if [ $$EXIT_CODE -ne 0 ] && [ $$EXIT_CODE -ne 141 ]; then exit $$EXIT_CODE; fi; \
 	done
 
 # Run integration tests

@@ -1,0 +1,38 @@
+# Test 2: Operators
+print "=== Testing Operators ==="
+
+# Arithmetic operators
+set a 10
+set b 3
+print "10 + 3 = " + (a + b)
+print "10 - 3 = " + (a - b)
+print "10 * 3 = " + (a * b)
+print "10 / 3 = " + (a / b)
+print "10 % 3 = " + (a % b)
+
+# Comparison operators (= instead of ==)
+print "10 = 10: " + (10 = 10)
+print "10 = 3: " + (10 = 3)
+print "10 != 3: " + (10 != 3)
+print "10 > 3: " + (10 > 3)
+print "10 < 3: " + (10 < 3)
+print "10 >= 10: " + (10 >= 10)
+print "10 <= 3: " + (10 <= 3)
+
+# Logical operators
+print "true & true: " + (true & true)
+print "true & false: " + (true & false)
+print "true | false: " + (true | false)
+print "!true: " + (!true)
+print "!false: " + (!false)
+
+# Compound assignment operators
+set x 5
+x += 3
+print "x += 3: " + x
+x -= 2
+print "x -= 2: " + x
+x *= 2
+print "x *= 2: " + x
+x /= 3
+print "x /= 3: " + x

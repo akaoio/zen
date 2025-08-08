@@ -1,0 +1,50 @@
+# Ultimate Torture Test for ZEN Classes
+
+print "=== ZEN Class Torture Test ==="
+
+# Torture 1: Rapid class creation/destruction
+print "\n[TORTURE 1] Rapid Creation"
+for i in 1..10
+    class TempClass
+    set t new TempClass
+    print "Loop " + i
+
+# Torture 2: Nested property simulation
+print "\n[TORTURE 2] Deep Properties"
+class Deep
+    method set1 v
+        set this.a v
+    method set2 v
+        set this.b v
+    method set3 v
+        set this.c v
+
+set d new Deep
+
+# Torture 3: Circular reference attempt
+print "\n[TORTURE 3] Circular Reference"
+class A
+    method setB b
+        set this.b b
+
+class B  
+    method setA a
+        set this.a a
+
+set a new A
+set b new B
+
+# Torture 4: Unicode class names
+print "\n[TORTURE 4] Unicode Names"
+class 测试类
+class Тест
+class δοκιμή
+
+# Torture 5: Maximum stress
+print "\n[TORTURE 5] Maximum Stress"
+for j in 1..5
+    for k in 1..5
+        class StressTest
+        set s new StressTest
+        
+print "\n=== Torture Test Complete ===

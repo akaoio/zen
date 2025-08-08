@@ -1,0 +1,11 @@
+print "Starting class test"
+
+class Animal
+    constructor name
+        print "Constructor called for " + name
+        set this.name name
+
+print "Class defined"
+
+set cat new Animal "Fluffy"
+print "Instance created"

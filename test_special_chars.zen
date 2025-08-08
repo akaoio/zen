@@ -1,0 +1,9 @@
+# Test special character variables
+set x@ 10
+print x@
+
+set $money 100
+print $money
+
+set var-name 42
+print var-name

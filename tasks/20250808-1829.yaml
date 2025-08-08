@@ -1,0 +1,31 @@
+agent: swarm-3-worker-memory
+task: Fix double-free bug in scope.c - modify memory ownership of AST nodes
+created: 1754652557
+completed: false
+files:
+  - src/core/scope.c
+activities:
+  - timestamp: 1754652557
+    start: 1754652557
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754652627
+    start: 1754652627
+    end: 0
+    method: 'CRITICAL: Double-free bug found in scope.c:48 where ast_free() is called on AST nodes that may already be freed. Need to fix memory ownership model between scope and AST nodes.'
+    success: false
+    fail: true
+    why_success: In progress
+    why_fail: Memory ownership issue
+  - timestamp: 1754652652
+    start: 1754652652
+    end: 0
+    method: 'SPECIFIC FIX NEEDED: In scope_free() line 48, the ast_free() call is causing double-free because AST nodes are owned elsewhere. Solution: Either 1) Don''t free AST nodes in scope (just set to NULL), 2) Use reference counting, or 3) Change to shallow copy model without freeing AST content. The current code creates copies but still calls ast_free() which causes the bug.'
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

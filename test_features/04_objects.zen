@@ -1,0 +1,40 @@
+# Test 4: Objects
+print "=== Testing Objects ==="
+
+# Inline object
+set user name "Alice", age 30, active true
+print "Inline object: " + user
+
+# Object property access
+print "User name: " + user.name
+print "User age: " + user.age
+print "User active: " + user.active
+
+# Multiline object
+set config
+    debug true,
+    retries 3,
+    timeout 1000
+print "Config object: " + config
+
+# Nested structures
+set scores 8, 9, 10
+set profile name "Linh", scores scores, active true
+print "Profile: " + profile
+print "Profile scores: " + profile.scores
+
+# Object modification
+user.age = 31
+print "Updated age: " + user.age
+
+# Adding new properties
+user.email = "alice@example.com"
+print "Added email: " + user.email
+
+# Complex nested object
+set company
+    name "TechCorp",
+    employees
+        name "Bob", role "Developer",
+        name "Carol", role "Designer"
+print "Company: " + company

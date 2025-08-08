@@ -1,0 +1,9 @@
+# Test division by zero
+set x 1 / 0
+print x
+
+set y 0 / 0
+print y
+
+set z 10 / 0
+print z

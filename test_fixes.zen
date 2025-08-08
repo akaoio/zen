@@ -1,0 +1,12 @@
+# Test Bug #1: Function calls (should not hang)
+function quick_return
+    return 42
+print quick_return
+
+# Test Bug #2: Array length (should print 3, not null)
+set arr 1, 2, 3
+print arr.length
+
+# Test Bug #3: For loops (should not hang)
+for i in 1, 2, 3
+    print i

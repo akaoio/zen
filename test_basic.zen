@@ -1,0 +1,12 @@
+# Test basic functionality
+print "Testing basic features"
+
+# Test array length
+set arr 1, 2, 3
+print "Array created"
+print arr.length
+
+# Test simple for loop (might still have issues)
+print "Testing simple operations"
+set x 5
+print x

@@ -1,0 +1,6 @@
+function test x, y
+    set result x + y
+    return result
+
+set answer test 5, 10
+print answer

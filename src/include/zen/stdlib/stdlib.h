@@ -2,20 +2,21 @@
 #define ZEN_STDLIB_H
 
 #include "zen/types/value.h"
+
 #include <stddef.h>
 
 /**
  * @brief Function pointer type for stdlib functions
  */
-typedef Value* (*ZenStdlibFunc)(Value** args, size_t argc);
+typedef Value *(*ZenStdlibFunc)(Value **args, size_t argc);
 
 /**
  * @brief Structure representing a stdlib function
  */
 typedef struct {
-    const char* name;        // Function name
-    ZenStdlibFunc func;      // Function pointer
-    const char* description; // Function description
+    const char *name;         // Function name
+    ZenStdlibFunc func;       // Function pointer
+    const char *description;  // Function description
 } ZenStdlibFunction;
 
 /**
@@ -29,13 +30,13 @@ size_t stdlib_count(void);
  * @param name Function name to look up
  * @return Pointer to function info, or NULL if not found
  */
-const ZenStdlibFunction* stdlib_get(const char* name);
+const ZenStdlibFunction *stdlib_get(const char *name);
 
 /**
  * @brief Get all stdlib functions
  * @return Array of all stdlib functions (terminated by NULL entry)
  */
-const ZenStdlibFunction* stdlib_get_all(void);
+const ZenStdlibFunction *stdlib_get_all(void);
 
 // Stdlib function declarations (wrappers for integration)
 
@@ -46,7 +47,7 @@ const ZenStdlibFunction* stdlib_get_all(void);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* io_print(Value** args, size_t argc);
+Value *io_print(Value **args, size_t argc);
 
 /**
  * @brief Read line from stdin with optional prompt
@@ -54,7 +55,7 @@ Value* io_print(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value containing input line
  */
-Value* io_input(Value** args, size_t argc);
+Value *io_input(Value **args, size_t argc);
 
 /**
  * @brief Read entire file contents as string
@@ -62,7 +63,7 @@ Value* io_input(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with file contents or error
  */
-Value* io_read_file(Value** args, size_t argc);
+Value *io_read_file(Value **args, size_t argc);
 
 /**
  * @brief Write string content to file
@@ -70,7 +71,7 @@ Value* io_read_file(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value indicating success
  */
-Value* io_write_file(Value** args, size_t argc);
+Value *io_write_file(Value **args, size_t argc);
 
 /**
  * @brief Append string content to file
@@ -78,7 +79,7 @@ Value* io_write_file(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value indicating success
  */
-Value* io_append_file(Value** args, size_t argc);
+Value *io_append_file(Value **args, size_t argc);
 
 /**
  * @brief Check if file exists
@@ -86,7 +87,7 @@ Value* io_append_file(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value indicating if file exists
  */
-Value* io_file_exists(Value** args, size_t argc);
+Value *io_file_exists(Value **args, size_t argc);
 
 // String Functions
 /**
@@ -95,7 +96,7 @@ Value* io_file_exists(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value containing length
  */
-Value* string_length(Value** args, size_t argc);
+Value *string_length(Value **args, size_t argc);
 
 /**
  * @brief Convert string to uppercase
@@ -103,7 +104,7 @@ Value* string_length(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with uppercase content
  */
-Value* string_upper(Value** args, size_t argc);
+Value *string_upper(Value **args, size_t argc);
 
 /**
  * @brief Convert string to lowercase
@@ -111,7 +112,7 @@ Value* string_upper(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with lowercase content
  */
-Value* string_lower(Value** args, size_t argc);
+Value *string_lower(Value **args, size_t argc);
 
 /**
  * @brief Trim whitespace from both ends of string
@@ -119,7 +120,7 @@ Value* string_lower(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with whitespace trimmed
  */
-Value* string_trim(Value** args, size_t argc);
+Value *string_trim(Value **args, size_t argc);
 
 /**
  * @brief Split string by delimiter
@@ -127,7 +128,7 @@ Value* string_trim(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Array value containing split parts
  */
-Value* string_split(Value** args, size_t argc);
+Value *string_split(Value **args, size_t argc);
 
 /**
  * @brief Check if string contains substring
@@ -135,7 +136,7 @@ Value* string_split(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value indicating if substring found
  */
-Value* string_contains(Value** args, size_t argc);
+Value *string_contains(Value **args, size_t argc);
 
 /**
  * @brief Replace substring in string
@@ -143,7 +144,7 @@ Value* string_contains(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with replacements made
  */
-Value* string_replace(Value** args, size_t argc);
+Value *string_replace(Value **args, size_t argc);
 
 // Math Functions
 /**
@@ -152,7 +153,7 @@ Value* string_replace(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with absolute value
  */
-Value* math_abs(Value** args, size_t argc);
+Value *math_abs(Value **args, size_t argc);
 
 /**
  * @brief Calculate floor (round down to nearest integer)
@@ -160,7 +161,7 @@ Value* math_abs(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value rounded down
  */
-Value* math_floor(Value** args, size_t argc);
+Value *math_floor(Value **args, size_t argc);
 
 /**
  * @brief Calculate ceiling (round up to nearest integer)
@@ -168,7 +169,7 @@ Value* math_floor(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value rounded up
  */
-Value* math_ceil(Value** args, size_t argc);
+Value *math_ceil(Value **args, size_t argc);
 
 /**
  * @brief Round to nearest integer
@@ -176,7 +177,7 @@ Value* math_ceil(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value rounded to nearest integer
  */
-Value* math_round(Value** args, size_t argc);
+Value *math_round(Value **args, size_t argc);
 
 /**
  * @brief Calculate square root
@@ -184,7 +185,7 @@ Value* math_round(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with square root
  */
-Value* math_sqrt(Value** args, size_t argc);
+Value *math_sqrt(Value **args, size_t argc);
 
 /**
  * @brief Calculate power (base^exponent)
@@ -192,7 +193,7 @@ Value* math_sqrt(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with result of power operation
  */
-Value* math_pow(Value** args, size_t argc);
+Value *math_pow(Value **args, size_t argc);
 
 /**
  * @brief Calculate sine of angle in radians
@@ -200,7 +201,7 @@ Value* math_pow(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with sine result
  */
-Value* math_sin(Value** args, size_t argc);
+Value *math_sin(Value **args, size_t argc);
 
 /**
  * @brief Calculate cosine of angle in radians
@@ -208,7 +209,7 @@ Value* math_sin(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with cosine result
  */
-Value* math_cos(Value** args, size_t argc);
+Value *math_cos(Value **args, size_t argc);
 
 /**
  * @brief Calculate tangent of angle in radians
@@ -216,7 +217,7 @@ Value* math_cos(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with tangent result
  */
-Value* math_tan(Value** args, size_t argc);
+Value *math_tan(Value **args, size_t argc);
 
 /**
  * @brief Calculate natural logarithm
@@ -224,7 +225,7 @@ Value* math_tan(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with natural log result
  */
-Value* math_log(Value** args, size_t argc);
+Value *math_log(Value **args, size_t argc);
 
 /**
  * @brief Generate random number between 0 and 1
@@ -232,7 +233,7 @@ Value* math_log(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with random number 0-1
  */
-Value* math_random(Value** args, size_t argc);
+Value *math_random(Value **args, size_t argc);
 
 /**
  * @brief Generate random integer in range
@@ -240,7 +241,7 @@ Value* math_random(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with random integer in range
  */
-Value* math_random_int(Value** args, size_t argc);
+Value *math_random_int(Value **args, size_t argc);
 
 /**
  * @brief Get minimum of two numbers
@@ -248,7 +249,7 @@ Value* math_random_int(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with minimum value
  */
-Value* math_min(Value** args, size_t argc);
+Value *math_min(Value **args, size_t argc);
 
 /**
  * @brief Get maximum of two numbers
@@ -256,7 +257,7 @@ Value* math_min(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with maximum value
  */
-Value* math_max(Value** args, size_t argc);
+Value *math_max(Value **args, size_t argc);
 
 /**
  * @brief Check if number is NaN (Not a Number)
@@ -264,7 +265,7 @@ Value* math_max(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value indicating if NaN
  */
-Value* math_is_nan(Value** args, size_t argc);
+Value *math_is_nan(Value **args, size_t argc);
 
 /**
  * @brief Check if number is infinite
@@ -272,7 +273,7 @@ Value* math_is_nan(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value indicating if infinite
  */
-Value* math_is_infinite(Value** args, size_t argc);
+Value *math_is_infinite(Value **args, size_t argc);
 
 // Type Conversion Functions
 /**
@@ -281,7 +282,7 @@ Value* math_is_infinite(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with string representation
  */
-Value* convert_to_string(Value** args, size_t argc);
+Value *convert_to_string(Value **args, size_t argc);
 
 /**
  * @brief Convert value to number
@@ -289,7 +290,7 @@ Value* convert_to_string(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with numeric representation
  */
-Value* convert_to_number(Value** args, size_t argc);
+Value *convert_to_number(Value **args, size_t argc);
 
 /**
  * @brief Convert value to boolean
@@ -297,7 +298,7 @@ Value* convert_to_number(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value with boolean representation
  */
-Value* convert_to_boolean(Value** args, size_t argc);
+Value *convert_to_boolean(Value **args, size_t argc);
 
 /**
  * @brief Get type name of value
@@ -305,7 +306,7 @@ Value* convert_to_boolean(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with type name
  */
-Value* convert_type_of(Value** args, size_t argc);
+Value *convert_type_of(Value **args, size_t argc);
 
 /**
  * @brief Check if value is of specific type
@@ -313,7 +314,7 @@ Value* convert_type_of(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Boolean value indicating type match
  */
-Value* convert_is_type(Value** args, size_t argc);
+Value *convert_is_type(Value **args, size_t argc);
 
 /**
  * @brief Parse integer from string with optional radix
@@ -321,7 +322,7 @@ Value* convert_is_type(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with parsed integer
  */
-Value* convert_parse_int(Value** args, size_t argc);
+Value *convert_parse_int(Value **args, size_t argc);
 
 /**
  * @brief Parse floating point number from string
@@ -329,7 +330,7 @@ Value* convert_parse_int(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Number value with parsed float
  */
-Value* convert_parse_float(Value** args, size_t argc);
+Value *convert_parse_float(Value **args, size_t argc);
 
 // JSON Functions
 /**
@@ -338,7 +339,7 @@ Value* convert_parse_float(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Parsed value or null on error
  */
-Value* json_parse_stdlib(Value** args, size_t argc);
+Value *json_parse_stdlib(Value **args, size_t argc);
 
 /**
  * @brief Convert value to JSON string
@@ -346,7 +347,7 @@ Value* json_parse_stdlib(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with JSON representation
  */
-Value* json_stringify_stdlib(Value** args, size_t argc);
+Value *json_stringify_stdlib(Value **args, size_t argc);
 
 // Additional Stdlib Functions
 /**
@@ -355,7 +356,7 @@ Value* json_stringify_stdlib(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return String value with formatted JSON representation
  */
-Value* json_stringify_pretty_stdlib(Value** args, size_t argc);
+Value *json_stringify_pretty_stdlib(Value **args, size_t argc);
 
 /**
  * @brief Parse JSON file with error handling
@@ -363,7 +364,7 @@ Value* json_stringify_pretty_stdlib(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Parsed Value or error Value
  */
-Value* json_parse_file_stdlib(Value** args, size_t argc);
+Value *json_parse_file_stdlib(Value **args, size_t argc);
 
 /**
  * @brief Load and parse JSON file
@@ -371,7 +372,7 @@ Value* json_parse_file_stdlib(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Parsed Value or error Value
  */
-Value* json_load_file(Value** args, size_t argc);
+Value *json_load_file(Value **args, size_t argc);
 
 /**
  * @brief Load and parse YAML file
@@ -379,7 +380,7 @@ Value* json_load_file(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Parsed Value or error Value
  */
-Value* yaml_load_file_wrapper(Value** args, size_t argc);
+Value *yaml_load_file_wrapper(Value **args, size_t argc);
 
 // Array Functions
 /**
@@ -388,7 +389,7 @@ Value* yaml_load_file_wrapper(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Modified array or error
  */
-Value* array_push_stdlib(Value** args, size_t argc);
+Value *array_push_stdlib(Value **args, size_t argc);
 
 /**
  * @brief Remove and return last element
@@ -396,7 +397,7 @@ Value* array_push_stdlib(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Removed element or error
  */
-Value* array_pop_stdlib(Value** args, size_t argc);
+Value *array_pop_stdlib(Value **args, size_t argc);
 
 // System Functions
 /**
@@ -405,7 +406,7 @@ Value* array_pop_stdlib(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Command output or error
  */
-Value* system_exec(Value** args, size_t argc);
+Value *system_exec(Value **args, size_t argc);
 
 // DateTime Functions
 /**
@@ -414,7 +415,7 @@ Value* system_exec(Value** args, size_t argc);
  * @param argc Number of arguments (unused)
  * @return Current date/time value
  */
-Value* datetime_now(Value** args, size_t argc);
+Value *datetime_now(Value **args, size_t argc);
 
 // Logging Functions
 /**
@@ -423,7 +424,7 @@ Value* datetime_now(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_debug(Value** args, size_t argc);
+Value *logging_debug(Value **args, size_t argc);
 
 /**
  * @brief Log info message
@@ -431,7 +432,7 @@ Value* logging_debug(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_info(Value** args, size_t argc);
+Value *logging_info(Value **args, size_t argc);
 
 /**
  * @brief Log warning message
@@ -439,7 +440,7 @@ Value* logging_info(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_warn(Value** args, size_t argc);
+Value *logging_warn(Value **args, size_t argc);
 
 /**
  * @brief Log error message
@@ -447,7 +448,7 @@ Value* logging_warn(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_error(Value** args, size_t argc);
+Value *logging_error(Value **args, size_t argc);
 
 /**
  * @brief Log formatted debug message
@@ -455,7 +456,7 @@ Value* logging_error(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_debugf(Value** args, size_t argc);
+Value *logging_debugf(Value **args, size_t argc);
 
 /**
  * @brief Log formatted info message
@@ -463,7 +464,7 @@ Value* logging_debugf(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_infof(Value** args, size_t argc);
+Value *logging_infof(Value **args, size_t argc);
 
 /**
  * @brief Log formatted warning message
@@ -471,7 +472,7 @@ Value* logging_infof(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_warnf(Value** args, size_t argc);
+Value *logging_warnf(Value **args, size_t argc);
 
 /**
  * @brief Log formatted error message
@@ -479,7 +480,7 @@ Value* logging_warnf(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_errorf(Value** args, size_t argc);
+Value *logging_errorf(Value **args, size_t argc);
 
 /**
  * @brief Log debug message conditionally
@@ -487,7 +488,7 @@ Value* logging_errorf(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_debug_if(Value** args, size_t argc);
+Value *logging_debug_if(Value **args, size_t argc);
 
 /**
  * @brief Set minimum log level
@@ -495,7 +496,7 @@ Value* logging_debug_if(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Previous level or error
  */
-Value* logging_set_level(Value** args, size_t argc);
+Value *logging_set_level(Value **args, size_t argc);
 
 /**
  * @brief Log with context information
@@ -503,7 +504,7 @@ Value* logging_set_level(Value** args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value* logging_with_context(Value** args, size_t argc);
+Value *logging_with_context(Value **args, size_t argc);
 
 /**
  * @brief Get current log level
@@ -511,11 +512,11 @@ Value* logging_with_context(Value** args, size_t argc);
  * @param argc Number of arguments (unused)
  * @return Current log level
  */
-Value* logging_get_level(Value** args, size_t argc);
+Value *logging_get_level(Value **args, size_t argc);
 
 // HTTP Functions - declared in http.h with wrapper functions
 // The actual stdlib wrapper functions are:
-// stdlib_http_get, stdlib_http_post, stdlib_http_put, 
+// stdlib_http_get, stdlib_http_post, stdlib_http_put,
 // stdlib_http_delete, stdlib_http_timeout
 
 // Regex Functions - declared in regex.h with wrapper functions

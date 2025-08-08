@@ -1,0 +1,173 @@
+# Basic class definition
+class Animal
+    constructor name species
+        set this.name name
+        set this.species species
+    
+    method speak
+        return this.name + " the " + this.species + " makes a sound"
+    
+    method info
+        return "Name: " + this.name + ", Species: " + this.species
+
+# Create some animals
+set cat new Animal "Fluffy" "Cat"
+set dog new Animal "Rex" "Dog"
+
+print "=== Basic Animals ==="
+print cat.speak
+print dog.info
+
+# Class with inheritance
+class Dog extends Animal
+    constructor name breed
+        super name "Dog"
+        set this.breed breed
+    
+    method speak
+        return this.name + " barks! Woof woof!"
+    
+    method wagTail
+        return this.name + " wags tail happily"
+
+# Create specific dog
+set golden new Dog "Buddy" "Golden Retriever"
+print "\n=== Dog with Breed ==="
+print golden.speak
+print golden.wagTail
+print "Breed: " + golden.breed
+
+# Private methods example
+class BankAccount
+    constructor owner initial_balance
+        set this.owner owner
+        set this.balance initial_balance
+        set this.transactions []
+    
+    private method _log_transaction type amount
+        set transaction type + ": $" + amount + " at " + "timestamp"
+        this.transactions.push transaction
+    
+    private method _validate_amount amount
+        if amount <= 0
+            return false
+        return true
+    
+    method deposit amount
+        if this._validate_amount amount
+            set this.balance this.balance + amount
+            this._log_transaction "Deposit" amount
+            return true
+        return false
+    
+    method withdraw amount
+        if this._validate_amount amount
+            if amount <= this.balance
+                set this.balance this.balance - amount
+                this._log_transaction "Withdrawal" amount
+                return true
+        return false
+    
+    method get_balance
+        return this.balance
+    
+    method get_statement
+        set statement "Account Owner: " + this.owner + "\n"
+        set statement statement + "Current Balance: $" + this.balance + "\n"
+        set statement statement + "Transaction History:\n"
+        for trans in this.transactions
+            set statement statement + "  - " + trans + "\n"
+        return statement
+
+print "\n=== Bank Account ==="
+set account new BankAccount "John Doe" 1000
+print "Initial balance: $" + account.get_balance
+
+if account.deposit 500
+    print "Deposited $500"
+
+if account.withdraw 200
+    print "Withdrew $200"
+
+print "Final balance: $" + account.get_balance
+
+# Complex inheritance chain
+class Shape
+    constructor name
+        set this.name name
+    
+    method area
+        return 0
+    
+    method perimeter
+        return 0
+    
+    method describe
+        return "Shape: " + this.name
+
+class Rectangle extends Shape
+    constructor width height
+        super "Rectangle"
+        set this.width width
+        set this.height height
+    
+    method area
+        return this.width * this.height
+    
+    method perimeter
+        return 2 * (this.width + this.height)
+
+class Square extends Rectangle
+    constructor side
+        super side side
+    
+    method describe
+        return "Square with side " + this.width
+
+print "\n=== Shapes ==="
+set rect new Rectangle 10 5
+print rect.describe
+print "Rectangle area: " + rect.area
+print "Rectangle perimeter: " + rect.perimeter
+
+set square new Square 7
+print square.describe
+print "Square area: " + square.area
+print "Square perimeter: " + square.perimeter
+
+# Method chaining example
+class StringBuilder
+    constructor
+        set this.buffer ""
+    
+    method append text
+        set this.buffer this.buffer + text
+        return this
+    
+    method appendLine text
+        set this.buffer this.buffer + text + "\n"
+        return this
+    
+    method toString
+        return this.buffer
+
+print "\n=== String Builder ==="
+set builder new StringBuilder
+set result builder.append("Hello").append(" ").append("World").appendLine("!")
+print result.toString
+
+# Static-like behavior using class methods
+class MathUtils
+    constructor
+        # Empty constructor
+    
+    method pi
+        return 3.14159
+    
+    method circleArea radius
+        return this.pi * radius * radius
+
+set math new MathUtils
+print "\n=== Math Utils ==="
+print "Pi: " + math.pi
+print "Circle area (r=5): " + math.circleArea 5

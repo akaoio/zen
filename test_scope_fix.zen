@@ -1,0 +1,6 @@
+set a 1
+set b 2
+set c a + b
+print c
+set d c * 2
+print d

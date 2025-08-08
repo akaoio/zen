@@ -1,0 +1,52 @@
+# Test 5: Functions
+print "=== Testing Functions ==="
+
+# Simple function
+function greet name
+    return "Hello, " + name
+
+print greet "World"
+
+# Function with multiple parameters
+function add a b
+    return a + b
+
+print "add 5 3 = " + add 5 3
+
+# Function with local variables
+function calculate x y
+    set sum x + y
+    set product x * y
+    return sum, product
+
+print "calculate 4 5 = " + calculate 4 5
+
+# Recursive function
+function factorial n
+    if n <= 1
+        return 1
+    return n * factorial(n - 1)
+
+print "factorial 5 = " + factorial 5
+
+# Function scope test
+set price 1000
+function plan price
+    print "Local price is " + price
+    
+plan 900
+
+# Anonymous functions (if supported)
+set double function x
+    return x * 2
+
+print "double 7 = " + double 7
+
+# Higher-order functions
+function apply func value
+    return func value
+
+function square x
+    return x * x
+
+print "apply square 6 = " + apply square 6

@@ -1,0 +1,16 @@
+agent: swarm-3-zen-architect
+task: 'EMERGENCY: Remove 3 unauthorized class functions from MANIFEST violations'
+created: 1754654734
+completed: false
+files:
+  - src/core/ast.c
+  - src/core/parser.c
+activities:
+  - timestamp: 1754654734
+    start: 1754654734
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

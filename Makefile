@@ -7,8 +7,8 @@ BUILD_DIR ?= .
 
 # Main executable
 exec = $(BUILD_DIR)/zen
-sources = $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c src/stdlib/*.c)
-objects = $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
+sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c src/stdlib/*.c)
+objects := $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
 
 # Directories
 SRCDIR = src
@@ -39,8 +39,10 @@ clean:
 	-rm -f *.out
 	-rm -f *.o
 	-rm -f src/*.o
+	-rm -f src/*/*.o
 	-rm -f $(exec)
-	-rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/src/*.o
+	-rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/src/*.o $(BUILD_DIR)/src/*/*.o
+	-rm -rf $(BUILD_DIR)/zen_*
 
 # Code formatting
 format:

@@ -1,0 +1,3 @@
+print "test"
+print 42
+print "end"

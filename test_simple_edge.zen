@@ -1,0 +1,19 @@
+# Test empty variable name
+set  10
+print "Test 1 passed"
+
+# Test special character  
+set @ 30
+print "Test 2 passed"
+
+# Test number as variable name
+set 123 50
+print "Test 3 passed"
+
+# Test reserved keyword
+set if 100
+print "Test 4 passed"
+
+# Test undefined variable
+print undefined_var
+print "Test 5 passed"

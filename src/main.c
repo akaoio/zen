@@ -1,14 +1,15 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdbool.h>
 #include "zen/core/lexer.h"
-#include "zen/core/parser.h"
-#include "zen/core/visitor.h"
-#include "zen/core/scope.h"
-#include "zen/core/memory.h"
 #include "zen/core/logger.h"
+#include "zen/core/memory.h"
+#include "zen/core/parser.h"
+#include "zen/core/scope.h"
+#include "zen/core/visitor.h"
 #include "zen/stdlib/io.h"
+
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define MAX_INPUT_SIZE 1024
 
@@ -41,17 +42,18 @@ void print_help()
  * @param global_scope Global scope for variables
  * @return true if execution should continue, false to exit
  */
-static bool execute_line(const char* line, scope_T* global_scope) {
+static bool execute_line(const char *line, scope_T *global_scope)
+{
     if (!line || strlen(line) == 0) {
-        return true; // Empty line, continue
+        return true;  // Empty line, continue
     }
-    
+
     // Handle REPL commands
     if (strcmp(line, "exit\n") == 0 || strcmp(line, "quit\n") == 0) {
         printf("Goodbye!\n");
         return false;
     }
-    
+
     if (strcmp(line, "help\n") == 0) {
         printf("ZEN REPL Commands:\n");
         printf("  help     - Show this help\n");
@@ -60,33 +62,34 @@ static bool execute_line(const char* line, scope_T* global_scope) {
         printf("  clear    - Clear screen\n");
         return true;
     }
-    
+
     if (strcmp(line, "clear\n") == 0) {
         system("clear");
         return true;
     }
-    
+
     // Parse and execute ZEN code
-    lexer_T* lexer = lexer_new((char*)line);
+    lexer_T *lexer = lexer_new((char *)line);
     if (!lexer) {
         printf("Error: Failed to create lexer\n");
         return true;
     }
-    
-    parser_T* parser = parser_new(lexer);
+
+    parser_T *parser = parser_new(lexer);
     if (!parser) {
         printf("Error: Failed to create parser\n");
         lexer_free(lexer);
         return true;
     }
-    
+
     // Use the global scope
     parser->scope = global_scope;
-    
-    AST_T* root = parser_parse_statements(parser, global_scope);
+
+    AST_T *root = parser_parse_statements(parser, global_scope);
     if (!root) {
         if (parser_has_errors(parser)) {
-            printf("Parse Error: Input contains %zu syntax errors\n", parser_get_error_count(parser));
+            printf("Parse Error: Input contains %zu syntax errors\n",
+                   parser_get_error_count(parser));
         } else {
             printf("Parse Error: Invalid syntax or empty input\n");
         }
@@ -94,8 +97,8 @@ static bool execute_line(const char* line, scope_T* global_scope) {
         lexer_free(lexer);
         return true;
     }
-    
-    visitor_T* visitor = visitor_new();
+
+    visitor_T *visitor = visitor_new();
     if (!visitor) {
         printf("Error: Failed to create visitor\n");
         ast_free(root);
@@ -103,45 +106,45 @@ static bool execute_line(const char* line, scope_T* global_scope) {
         lexer_free(lexer);
         return true;
     }
-    
+
     // Execute the parsed code
-    AST_T* result = visitor_visit(visitor, root);
-    
+    AST_T *result = visitor_visit(visitor, root);
+
     // Print result if it's not NOOP
     if (result && result->type != AST_NOOP) {
         switch (result->type) {
-            case AST_STRING:
-                if (result->string_value) {
-                    printf("%s\n", result->string_value);
-                }
-                break;
-            case AST_NUMBER:
-                printf("%.15g\n", result->number_value);
-                break;
-            case AST_BOOLEAN:
-                printf("%s\n", result->boolean_value ? "true" : "false");
-                break;
-            case AST_NULL:
-                printf("null\n");
-                break;
-            default:
-                // Don't print other types
-                break;
+        case AST_STRING:
+            if (result->string_value) {
+                printf("%s\n", result->string_value);
+            }
+            break;
+        case AST_NUMBER:
+            printf("%.15g\n", result->number_value);
+            break;
+        case AST_BOOLEAN:
+            printf("%s\n", result->boolean_value ? "true" : "false");
+            break;
+        case AST_NULL:
+            printf("null\n");
+            break;
+        default:
+            // Don't print other types
+            break;
         }
     }
-    
+
     // CRITICAL: Free all resources to prevent memory leaks
     // CRITICAL: Do NOT free visitor result - it's managed by AST tree and scope
     // The visitor result may be stored in the AST tree or scope and will be freed by ast_free
     visitor_free(visitor);
     ast_free(root);
-    
+
     // CRITICAL: Prevent double-free of global_scope by clearing parser's scope reference
     // The global_scope will be freed by main() at program exit
     parser->scope = NULL;
     parser_free(parser);
     lexer_free(lexer);
-    
+
     return true;
 }
 
@@ -151,15 +154,15 @@ static bool execute_line(const char* line, scope_T* global_scope) {
  * @param argv Argument values
  * @return Exit code
  */
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     // Initialize logging system first
     logger_init();
-    
+
     // Process command line arguments
     int file_arg_start = 1;
-    const char* log_file = NULL;
-    
+    const char *log_file = NULL;
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_help();
@@ -176,103 +179,107 @@ int main(int argc, char* argv[])
             log_file = argv[i + 1];
             logger_set_file(log_file);
             file_arg_start = i + 2;
-            i++; // Skip the filename argument
+            i++;  // Skip the filename argument
         } else {
-            break; // Found a non-flag argument (likely a file)
+            break;  // Found a non-flag argument (likely a file)
         }
     }
-    
+
     // Create global scope for persistent variables
-    scope_T* global_scope = scope_new();
+    scope_T *global_scope = scope_new();
     if (!global_scope) {
         fprintf(stderr, "Error: Failed to create global scope\n");
         return 1;
     }
-    
+
     if (file_arg_start < argc) {
         // File execution mode
         for (int i = file_arg_start; i < argc; i++) {
             int len = strlen(argv[i]);
-            if ((len >= 4 && strcmp(&argv[i][len-4], ".zen") == 0) || 
-                (len >= 3 && strcmp(&argv[i][len-3], ".zn") == 0)) {
-                
-                char* file_contents = io_read_file_internal(argv[i]);
+            if ((len >= 4 && strcmp(&argv[i][len - 4], ".zen") == 0) ||
+                (len >= 3 && strcmp(&argv[i][len - 3], ".zn") == 0)) {
+                char *file_contents = io_read_file_internal(argv[i]);
                 if (!file_contents) {
                     fprintf(stderr, "Error: Could not read file '%s'\n", argv[i]);
                     return 1;
                 }
-                
-                lexer_T* lexer = lexer_new(file_contents);
+
+                lexer_T *lexer = lexer_new(file_contents);
                 if (!lexer) {
                     fprintf(stderr, "Error: Failed to create lexer for file '%s'\n", argv[i]);
                     return 1;
                 }
-                
-                parser_T* parser = parser_new(lexer);
+
+                parser_T *parser = parser_new(lexer);
                 if (!parser) {
                     fprintf(stderr, "Error: Failed to create parser for file '%s'\n", argv[i]);
                     return 1;
                 }
-                
-                AST_T* root = parser_parse_statements(parser, global_scope);
+
+                AST_T *root = parser_parse_statements(parser, global_scope);
                 if (!root) {
                     if (parser_has_errors(parser)) {
-                        fprintf(stderr, "Parse Error in '%s': %zu syntax errors found\n", argv[i], parser_get_error_count(parser));
+                        fprintf(stderr,
+                                "Parse Error in '%s': %zu syntax errors found\n",
+                                argv[i],
+                                parser_get_error_count(parser));
                     } else {
-                        fprintf(stderr, "Parse Error in '%s': Invalid syntax or empty file\n", argv[i]);
+                        fprintf(
+                            stderr, "Parse Error in '%s': Invalid syntax or empty file\n", argv[i]);
                     }
                     parser_free(parser);
                     lexer_free(lexer);
                     memory_free(file_contents);
                     return 1;
                 }
-                
-                visitor_T* visitor = visitor_new();
+
+                visitor_T *visitor = visitor_new();
                 if (!visitor) {
                     fprintf(stderr, "Error: Failed to create visitor for file '%s'\n", argv[i]);
                     return 1;
                 }
-                
-                // Execute the parsed AST - this performs all side effects (print, variable assignments, etc.)
-                AST_T* result = visitor_visit(visitor, root);
-                
+
+                // Execute the parsed AST - this performs all side effects (print, variable
+                // assignments, etc.)
+                AST_T *result = visitor_visit(visitor, root);
+
                 // Handle any meaningful return value from execution
                 if (result && result->type != AST_NOOP) {
                     switch (result->type) {
-                        case AST_STRING:
-                            if (result->string_value) {
-                                printf("%s\n", result->string_value);
-                            }
-                            break;
-                        case AST_NUMBER:
-                            printf("%.15g\n", result->number_value);
-                            break;
-                        case AST_BOOLEAN:
-                            printf("%s\n", result->boolean_value ? "true" : "false");
-                            break;
-                        case AST_NULL:
-                            printf("null\n");
-                            break;
-                        default:
-                            // Don't print other types like compound results
-                            break;
+                    case AST_STRING:
+                        if (result->string_value) {
+                            printf("%s\n", result->string_value);
+                        }
+                        break;
+                    case AST_NUMBER:
+                        printf("%.15g\n", result->number_value);
+                        break;
+                    case AST_BOOLEAN:
+                        printf("%s\n", result->boolean_value ? "true" : "false");
+                        break;
+                    case AST_NULL:
+                        printf("null\n");
+                        break;
+                    default:
+                        // Don't print other types like compound results
+                        break;
                     }
                 }
-                
+
                 // CRITICAL: Free all allocated resources to prevent memory leaks
-                // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result 
+                // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result
                 // The visitor result can be:
                 // 1. A reference to a node in the original parse tree (freed by ast_free(root))
                 // 2. A new temporary node created by visitor (should be handled by visitor_free)
                 // 3. A shared node stored in scope (freed by scope_free)
                 // In all cases, freeing the result separately causes double-free crashes
-                
+
                 visitor_free(visitor);
                 ast_free(root);  // This will free the entire parse tree
                 parser_free(parser);
                 lexer_free(lexer);
                 memory_free(file_contents);
-                
+
             } else {
                 print_help();
             }
@@ -281,35 +288,35 @@ int main(int argc, char* argv[])
         // REPL mode
         printf("ZEN Language Interpreter v0.0.1\n");
         printf("Type 'help' for commands, 'exit' to quit.\n\n");
-        
+
         char input[MAX_INPUT_SIZE];
         repl_running = true;
-        
+
         while (repl_running) {
             printf("zen> ");
             fflush(stdout);
-            
+
             if (!fgets(input, MAX_INPUT_SIZE, stdin)) {
                 // EOF or error - exit gracefully
                 printf("\nGoodbye!\n");
                 break;
             }
-            
+
             // Execute the line
             if (!execute_line(input, global_scope)) {
                 break;
             }
         }
     }
-    
+
     // CRITICAL: Free global scope before exit
     scope_free(global_scope);
-    
+
     // CRITICAL: Cleanup logging system
     logger_cleanup();
-    
+
     // CRITICAL: Cleanup memory debugging system to prevent false leak reports
     memory_debug_cleanup();
-    
+
     return 0;
 }

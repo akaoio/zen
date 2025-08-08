@@ -1,0 +1,25 @@
+agent: swarm-3-zen-architect
+task: 'URGENT: Fix MANIFEST.json violations - remove unauthorized class functions or add to manifest'
+created: 1754654418
+completed: false
+files:
+  - MANIFEST.json
+  - src/core/ast.c
+  - src/core/parser.c
+activities:
+  - timestamp: 1754654418
+    start: 1754654418
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754654424
+    start: 1754654424
+    end: 0
+    method: 'CRITICAL BLOCKER: 3 unauthorized functions preventing git commits and enforcement compliance. Must resolve immediately before any other work.'
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

@@ -1,0 +1,40 @@
+# String concatenation stress test
+set s "A"
+set s s + s
+set s s + s  
+set s s + s
+set s s + s
+set s s + s
+set s s + s
+set s s + s
+set s s + s
+set s s + s
+set s s + s
+set s s + s
+set s s + s
+print "String length should be 4096 As"
+
+# Many variables
+set v1 1
+set v2 2
+set v3 3
+set v4 4
+set v5 5
+set v6 6
+set v7 7
+set v8 8
+set v9 9
+set v10 10
+set v11 11
+set v12 12
+set v13 13
+set v14 14
+set v15 15
+set v16 16
+set v17 17
+set v18 18
+set v19 19
+set v20 20
+
+# Print them all
+print v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 + v13 + v14 + v15 + v16 + v17 + v18 + v19 + v20

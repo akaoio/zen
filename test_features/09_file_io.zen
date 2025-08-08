@@ -1,0 +1,40 @@
+# Test 9: File I/O
+print "=== Testing File I/O ==="
+
+# Writing to file
+set content "Hello from ZEN"
+file.write "test_output.txt" content
+print "File written"
+
+# Reading from file
+set read_content file.read "test_output.txt"
+print "Read content: " + read_content
+
+# Appending to file
+file.append "test_output.txt" "\nAppended line"
+print "Content appended"
+
+# Check if file exists
+print "File exists: " + file.exists "test_output.txt"
+
+# Delete file
+file.delete "test_output.txt"
+print "File deleted"
+
+# JSON file operations
+set data
+    name "Test",
+    values 1, 2, 3
+file.writeJSON "test_data.json" data
+print "JSON written"
+
+set loaded file.readJSON "test_data.json"
+print "Loaded JSON: " + loaded
+
+# CSV operations (if supported)
+set csv_data
+    "Name", "Age", "City",
+    "Alice", 30, "NYC",
+    "Bob", 25, "LA"
+file.writeCSV "test_data.csv" csv_data
+print "CSV written"
