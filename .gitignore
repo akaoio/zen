@@ -1,5 +1,4 @@
 # Compiled output
-zen
 *.o
 *.a
 *.so
@@ -63,3 +62,5 @@ node_modules/
 __pycache__/
 *.pyc
 *.pyo
+
+workspace/

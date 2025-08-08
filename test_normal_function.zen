@@ -1,5 +1,0 @@
-function test x
-    set y x
-    print y
-
-test "hello"

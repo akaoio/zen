@@ -1,9 +1,0 @@
-function sum ...numbers
-    set total 0
-    print "Got numbers:"
-    print numbers
-    return total
-
-set result sum 1 2 3 4 5
-print "Result is:"
-print result

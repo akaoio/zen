@@ -1,3 +1,0 @@
-print "Testing multi-key PUT operations..."
-put "test.json" name "Alice", age 30
-print "Multi-key PUT completed!"

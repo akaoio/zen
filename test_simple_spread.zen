@@ -1,4 +1,0 @@
-function test ...args
-    return 42
-
-print test 1 2 3

@@ -1,3 +1,0 @@
-print "Testing two-key object"
-set obj name "Alice", age 30
-print "Two-key object created"

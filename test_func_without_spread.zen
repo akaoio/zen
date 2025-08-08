@@ -1,6 +1,0 @@
-function add x y
-    set result x + y
-    return result
-
-set answer add 5 3
-print answer
