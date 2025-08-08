@@ -1,0 +1,16 @@
+// Test enhanced number parsing edge cases
+set normal_large 1000000
+set underscore_large 1_000_000  
+set mixed_decimal 123.456_789
+set sci_notation 2.5e10
+set sci_underscore 1.23_45e-6
+set leading_dot 0.5
+set trailing_dot 5.0
+
+print "Normal large:" normal_large
+print "Underscore large:" underscore_large
+print "Mixed decimal:" mixed_decimal
+print "Scientific:" sci_notation
+print "Sci underscore:" sci_underscore
+print "Leading dot:" leading_dot
+print "Trailing dot:" trailing_dot

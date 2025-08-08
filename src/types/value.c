@@ -238,14 +238,14 @@ Value *value_new_null(void)
 }
 
 /**
- * @brief Deep copy value
+ * @brief Deep copy value with proper reference counting
  * @param value Value to copy
  * @return Deep copy of the value or NULL on failure
  */
 Value *value_copy(const Value *value)
 {
     if (!value) {
-        return NULL;
+        return value_new_null();
     }
 
     switch (value->type) {
@@ -327,8 +327,12 @@ Value *value_copy(const Value *value)
     }
     case VALUE_FUNCTION:
         // Functions are typically shared/referenced, not copied
-        // Return a reference to the original function
-        return value_ref((Value *)value);
+        // Return a new reference to the original function
+        if (value->as.function) {
+            return value_ref((Value *)value);
+        } else {
+            return value_new(VALUE_FUNCTION);
+        }
     case VALUE_ERROR:
         // Deep copy error with message and code
         if (value->as.error) {
@@ -851,8 +855,10 @@ void value_unref(Value *value)
         return;
     }
 
+    // Additional safety check - prevent underflow
     if (value->ref_count == 0) {
-        // Double unref protection - should not happen but handle gracefully
+        // Log the error but don't crash - this indicates a bug
+        fprintf(stderr, "WARNING: Attempting to unref Value with ref_count=0 (double-free protection)\n");
         return;
     }
 

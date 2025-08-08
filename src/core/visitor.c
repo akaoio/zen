@@ -519,18 +519,14 @@ AST_T *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
 
             // Evaluate and convert each argument
             for (size_t i = 0; i < argc; i++) {
-                printf("DEBUG: stdlib path: evaluating argument %zu\n", i);
                 AST_T *arg_ast = visitor_visit(visitor, node->function_call_arguments[i]);
-                printf("DEBUG: stdlib path: visitor_visit returned %p, type=%d\n",
-                       (void *)arg_ast,
-                       arg_ast ? (int)arg_ast->type : -1);
                 value_args[i] = ast_to_value(arg_ast);
-                printf("DEBUG: stdlib path: ast_to_value returned %p\n", (void *)value_args[i]);
-                if (value_args[i]) {
-                    printf("DEBUG: stdlib path: value type=%d\n", value_args[i]->type);
-                }
                 if (!value_args[i]) {
                     value_args[i] = value_new_null();
+                }
+                // Free the temporary AST if it was created by visitor_visit
+                if (arg_ast && arg_ast != node->function_call_arguments[i]) {
+                    ast_free(arg_ast);
                 }
             }
         }
@@ -737,17 +733,15 @@ static AST_T *builtin_function_print(visitor_T *visitor, AST_T **args, int args_
             continue;
 
         // Convert AST to Value and use proper print
-        printf("DEBUG: print() about to call ast_to_value with visited_ast=%p, type=%d\n",
-               (void *)visited_ast,
-               visited_ast ? (int)visited_ast->type : -1);
         Value *value = ast_to_value(visited_ast);
-        printf("DEBUG: print() ast_to_value returned value=%p\n", (void *)value);
         if (value) {
-            printf("DEBUG: print() value type=%d\n", value->type);
             io_print_no_newline_internal(value);
             value_unref(value);
-        } else {
-            printf("DEBUG: print() ast_to_value returned NULL!\n");
+        }
+        
+        // Free the temporary AST if it was created by visitor_visit
+        if (visited_ast && visited_ast != args[i]) {
+            ast_free(visited_ast);
         }
 
         if (i < args_size - 1) {
@@ -787,11 +781,8 @@ static Value *ast_to_value(AST_T *node)
                           node->boolean_value ? "true" : "false");
         return value_new_boolean(node->boolean_value);
     case AST_NUMBER:
-        printf("DEBUG: ast_to_value converting AST_NUMBER (%f) to Value\n", node->number_value);
         LOG_VISITOR_DEBUG("Converting AST_NUMBER (%f) to Value", node->number_value);
-        Value *num_value = value_new_number(node->number_value);
-        printf("DEBUG: ast_to_value value_new_number returned %p\n", (void *)num_value);
-        return num_value;
+        return value_new_number(node->number_value);
     case AST_STRING:
         LOG_VISITOR_DEBUG("Converting AST_STRING ('%s') to Value",
                           node->string_value ? node->string_value : "");
@@ -1192,6 +1183,10 @@ static AST_T *visitor_visit_array(visitor_T *visitor, AST_T *node)
                 array_push(array_val, element_val);
                 value_unref(element_val);  // array_push adds its own reference
             }
+            // Free the temporary AST if it was created by visitor_visit
+            if (element_ast != node->array_elements[i]) {
+                ast_free(element_ast);
+            }
         }
     }
 
@@ -1229,6 +1224,10 @@ static AST_T *visitor_visit_object(visitor_T *visitor, AST_T *node)
                 if (value_val) {
                     object_set(object_val, node->object_keys[i], value_val);
                     value_unref(value_val);  // object_set adds its own reference
+                }
+                // Free the temporary AST if it was created by visitor_visit
+                if (value_ast != node->object_values[i]) {
+                    ast_free(value_ast);
                 }
             }
         }

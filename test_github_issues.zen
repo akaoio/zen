@@ -1,0 +1,35 @@
+# Test basic functionality to verify issue status
+
+# Test basic printing
+print "Testing basic print"
+
+# Test variable assignment  
+set x 5
+print x
+
+# Test arrays
+set arr 1, 2, 3
+print arr
+
+# Test array length
+print arr.length
+
+# Test for loops
+for item in arr
+    print item
+
+# Test objects
+set obj name "John", age 25
+print obj.name
+print obj.age
+
+# Test function definition and call
+function add a b
+    return a + b
+
+set result add 3 4
+print result
+
+# Test string concatenation
+set greeting "Hello " + "World"
+print greeting

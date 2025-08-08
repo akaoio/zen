@@ -1,0 +1,15 @@
+agent: swarm-3-zen-worker-parser
+task: Fix parser cleanup - ensure AST root node is freed in parser_free()
+created: 1754655670
+completed: false
+files:
+  - src/core/parser.c
+activities:
+  - timestamp: 1754655670
+    start: 1754655670
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

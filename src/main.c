@@ -185,6 +185,9 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Enable memory debugging for leak detection
+    memory_debug_enable(true);
+
     // Create global scope for persistent variables
     scope_T *global_scope = scope_new();
     if (!global_scope) {
@@ -266,7 +269,6 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                // CRITICAL: Free all allocated resources to prevent memory leaks
                 // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result
                 // The visitor result can be:
                 // 1. A reference to a node in the original parse tree (freed by ast_free(root))

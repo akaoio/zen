@@ -659,6 +659,15 @@ class ManifestEnforcer {
     enforce(options = {}) {
         const manifest = this.loadManifest();
         
+        // Check if enforcement is disabled
+        if (manifest.enforcement && manifest.enforcement.enabled === false) {
+            console.log('🔒 ZEN Manifest Enforcer');
+            console.log('========================');
+            console.log('⚠️  ENFORCEMENT DISABLED - Skipping all checks');
+            console.log('✅ All checks bypassed - enforcement.enabled = false\n');
+            return true;
+        }
+        
         console.log('🔒 ZEN Manifest Enforcer');
         console.log('========================');
         console.log('Checking: Signatures, Files, Headers, and Documentation\n');

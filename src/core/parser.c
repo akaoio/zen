@@ -25,9 +25,12 @@ parser_T *parser_new(lexer_T *lexer)
 
     parser->lexer = lexer;
     parser->current_token = lexer_get_next_token(lexer);
-    parser->prev_token = parser->current_token;
+    parser->prev_token = NULL;  // Initialize to NULL, not same as current_token
     parser->scope = scope_new();
     if (!parser->scope) {
+        if (parser->current_token) {
+            token_free(parser->current_token);
+        }
         memory_free(parser);
         return NULL;
     }
@@ -387,14 +390,17 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
 {
     parser_eat(parser, TOKEN_SET);
 
+    // CRITICAL FIX: Must duplicate token value BEFORE consuming it
     char *var_name = memory_strdup(parser->current_token->value);
     parser_eat(parser, TOKEN_ID);
 
     AST_T *value = parser_parse_expr(parser, scope);
 
     AST_T *var_def = ast_new_variable_definition(var_name, value);
-    memory_free(var_name);
     var_def->scope = scope;
+
+    // Free the duplicated string since ast_new_variable_definition makes its own copy
+    memory_free(var_name);
 
     scope_add_variable_definition(scope, var_def);
 
@@ -1837,21 +1843,14 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
     }
 
     // Consume 'class' token
-    if (parser->current_token->type != TOKEN_CLASS) {
-        return NULL;
-    }
-
-    // Get next token (should be class name)
-    parser->current_token = lexer_get_next_token(parser->lexer);
+    parser_eat(parser, TOKEN_CLASS);
     if (!parser->current_token || parser->current_token->type != TOKEN_ID) {
         // Error: expected class name
         return NULL;
     }
 
     char *class_name = memory_strdup(parser->current_token->value);
-
-    // Get next token
-    parser->current_token = lexer_get_next_token(parser->lexer);
+    parser_eat(parser, TOKEN_ID);
 
     // Check for optional inheritance (extends keyword in some languages, but ZEN might be
     // different)
@@ -1869,16 +1868,21 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
         return NULL;
     }
 
-    // Skip newlines and whitespace
-    while (parser->current_token && (parser->current_token->type == TOKEN_NEWLINE ||
-                                     parser->current_token->type == TOKEN_INDENT)) {
-        parser->current_token = lexer_get_next_token(parser->lexer);
+    // Skip newlines and handle indentation
+    if (parser->current_token->type == TOKEN_NEWLINE) {
+        parser_eat(parser, TOKEN_NEWLINE);
+    }
+    if (parser->current_token->type == TOKEN_INDENT) {
+        parser_eat(parser, TOKEN_INDENT);
     }
 
     // Parse method definitions - handle both 'method' keyword (as ID) and 'function' keyword
-    while (parser->current_token && ((parser->current_token->type == TOKEN_ID &&
-                                      strcmp(parser->current_token->value, "method") == 0) ||
-                                     parser->current_token->type == TOKEN_FUNCTION)) {
+    while (parser->current_token && 
+           parser->current_token->type != TOKEN_EOF &&
+           parser->current_token->type != TOKEN_DEDENT &&
+           ((parser->current_token->type == TOKEN_ID &&
+             strcmp(parser->current_token->value, "method") == 0) ||
+            parser->current_token->type == TOKEN_FUNCTION)) {
         AST_T *method = parser_parse_class_method(parser, scope);
         if (method) {
             // Expand array if needed
@@ -1903,7 +1907,19 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
         // Skip newlines between methods
         while (parser->current_token && (parser->current_token->type == TOKEN_NEWLINE ||
                                          parser->current_token->type == TOKEN_DEDENT)) {
-            parser->current_token = lexer_get_next_token(parser->lexer);
+            if (parser->current_token->type == TOKEN_NEWLINE) {
+                parser_eat(parser, TOKEN_NEWLINE);
+            } else {
+                parser_eat(parser, TOKEN_DEDENT);
+                break;  // Exit after dedent - end of class body
+            }
+        }
+        
+        // Break if we reach EOF or end of class
+        if (!parser->current_token || 
+            parser->current_token->type == TOKEN_EOF ||
+            parser->current_token->type == TOKEN_DEDENT) {
+            break;
         }
     }
 
@@ -1936,10 +1952,10 @@ AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope)
     if (parser->current_token->type == TOKEN_ID &&
         strcmp(parser->current_token->value, "method") == 0) {
         // Consume 'method' token
-        parser->current_token = lexer_get_next_token(parser->lexer);
+        parser_eat(parser, TOKEN_ID);
     } else if (parser->current_token->type == TOKEN_FUNCTION) {
         // Consume 'function' token
-        parser->current_token = lexer_get_next_token(parser->lexer);
+        parser_eat(parser, TOKEN_FUNCTION);
     } else {
         // Error: expected 'method' or 'function'
         return NULL;
@@ -1952,9 +1968,7 @@ AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope)
     }
 
     char *method_name = memory_strdup(parser->current_token->value);
-
-    // Get next token for parameters or body
-    parser->current_token = lexer_get_next_token(parser->lexer);
+    parser_eat(parser, TOKEN_ID);
 
     // Parse parameters - methods can have parameters like functions
     AST_T **args = NULL;
@@ -1991,20 +2005,30 @@ AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope)
             }
 
             args[arg_count++] = param;
-            parser->current_token = lexer_get_next_token(parser->lexer);
+            parser_eat(parser, TOKEN_ID);
         } else {
-            // Skip other tokens (commas, etc.)
-            parser->current_token = lexer_get_next_token(parser->lexer);
+            // Skip other tokens (commas, etc.) - advance safely
+            parser_eat(parser, parser->current_token->type);
         }
     }
 
     // Skip newline
     if (parser->current_token && parser->current_token->type == TOKEN_NEWLINE) {
-        parser->current_token = lexer_get_next_token(parser->lexer);
+        parser_eat(parser, TOKEN_NEWLINE);
+    }
+
+    // Handle method body indentation
+    if (parser->current_token && parser->current_token->type == TOKEN_INDENT) {
+        parser_eat(parser, TOKEN_INDENT);
     }
 
     // Parse method body (indented block)
     AST_T *body = parser_parse_statements(parser, scope);
+
+    // Handle end of method body
+    if (parser->current_token && parser->current_token->type == TOKEN_DEDENT) {
+        parser_eat(parser, TOKEN_DEDENT);
+    }
 
     // Create function definition AST node for the method
     AST_T *method_def = ast_new_function_definition(method_name, args, arg_count, body);

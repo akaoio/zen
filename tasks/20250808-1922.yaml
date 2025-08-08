@@ -1,0 +1,23 @@
+agent: swarm-3-zen-worker-runtime
+task: Investigate visitor_visit() result management - ensure visitor results don't leak memory
+created: 1754655734
+completed: false
+files:
+  - src/core/visitor.c
+activities:
+  - timestamp: 1754655734
+    start: 1754655734
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754655889
+    start: 1754655889
+    end: 0
+    method: 'FOCUS: visitor_visit() creates temporary Values via ast_to_value() but never calls value_unref() - this is causing massive memory leaks in integration tests'
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
