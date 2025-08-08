@@ -738,7 +738,7 @@ static AST_T *builtin_function_print(visitor_T *visitor, AST_T **args, int args_
             io_print_no_newline_internal(value);
             value_unref(value);
         }
-        
+
         // Free the temporary AST if it was created by visitor_visit
         if (visited_ast && visited_ast != args[i]) {
             ast_free(visited_ast);

@@ -858,7 +858,8 @@ void value_unref(Value *value)
     // Additional safety check - prevent underflow
     if (value->ref_count == 0) {
         // Log the error but don't crash - this indicates a bug
-        fprintf(stderr, "WARNING: Attempting to unref Value with ref_count=0 (double-free protection)\n");
+        fprintf(stderr,
+                "WARNING: Attempting to unref Value with ref_count=0 (double-free protection)\n");
         return;
     }
 

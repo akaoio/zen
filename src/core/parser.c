@@ -1877,8 +1877,7 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
     }
 
     // Parse method definitions - handle both 'method' keyword (as ID) and 'function' keyword
-    while (parser->current_token && 
-           parser->current_token->type != TOKEN_EOF &&
+    while (parser->current_token && parser->current_token->type != TOKEN_EOF &&
            parser->current_token->type != TOKEN_DEDENT &&
            ((parser->current_token->type == TOKEN_ID &&
              strcmp(parser->current_token->value, "method") == 0) ||
@@ -1914,10 +1913,9 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
                 break;  // Exit after dedent - end of class body
             }
         }
-        
+
         // Break if we reach EOF or end of class
-        if (!parser->current_token || 
-            parser->current_token->type == TOKEN_EOF ||
+        if (!parser->current_token || parser->current_token->type == TOKEN_EOF ||
             parser->current_token->type == TOKEN_DEDENT) {
             break;
         }

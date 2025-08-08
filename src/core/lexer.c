@@ -1147,7 +1147,8 @@ token_T *lexer_collect_enhanced_number(lexer_T *lexer)
     }
 
     // Use clean value for numerical parsing, but keep original for display
-    // FIXED: Use clean_value (without underscores) for the token value so parser can parse it correctly
+    // FIXED: Use clean_value (without underscores) for the token value so parser can parse it
+    // correctly
     char *tracked_value = memory_strdup(clean_value);
     memory_free(value);
     memory_free(clean_value);
