@@ -57,6 +57,7 @@ temp/
 
 # Node modules (for any JS tooling)
 node_modules/
+package-lock.json
 
 # Python cache (for validation scripts)
 __pycache__/
