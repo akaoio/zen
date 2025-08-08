@@ -1,1 +1,0 @@
-set x 42\nset name "hello"\nif x > 0\n    print name

@@ -1,0 +1,150 @@
+# Undecidable Values for Distributed Systems
+# Handling uncertain states in distributed computing
+
+print "🌐 Distributed Systems with UNDECIDABLE states"
+print "==============================================="
+
+# Network partition scenario - CAP theorem in action
+function check_network_partition node_a node_b
+    # In a network partition, we cannot definitively determine 
+    # if nodes are actually down or just unreachable
+    set ping_result network_ping node_a node_b
+    if ping_result = timeout
+        # Network partition detected - state is undecidable
+        return undecidable
+    else
+        return ping_result
+
+# Consensus algorithm with Byzantine faults
+function byzantine_consensus nodes proposal
+    set votes []
+    set undecidable_count 0
+    
+    for node in nodes
+        set vote get_node_vote node proposal
+        if vote = undecidable
+            set undecidable_count undecidable_count + 1
+        votes.push vote
+    
+    # If too many nodes have undecidable states, consensus is impossible
+    if undecidable_count > nodes.length / 3
+        print "⚠️  Byzantine fault tolerance exceeded - consensus undecidable"
+        return undecidable
+    
+    return calculate_consensus votes
+
+# Distributed transaction coordinator
+function two_phase_commit participants transaction
+    print "🔄 Starting 2PC for transaction:" transaction.id
+    
+    # Phase 1: Prepare
+    set prepare_results []
+    for participant in participants
+        set result participant_prepare participant transaction
+        prepare_results.push result
+        
+        if result = undecidable
+            print "⚠️  Participant" participant.id "in undecidable state"
+    
+    # Check if any participant is in undecidable state
+    set has_undecidable false
+    for result in prepare_results
+        if result = undecidable
+            set has_undecidable true
+    
+    if has_undecidable
+        print "❌ Transaction aborted - participant states undecidable"
+        return undecidable
+    
+    # Phase 2: Commit if all prepared
+    set all_prepared true
+    for result in prepare_results
+        if result ≠ true
+            set all_prepared false
+    
+    if all_prepared
+        print "✅ All participants prepared - committing"
+        return commit_transaction participants transaction
+    else
+        print "❌ Some participants not prepared - aborting"
+        return abort_transaction participants transaction
+
+# Load balancer with health checks
+function route_request request servers
+    set available_servers []
+    
+    for server in servers
+        set health_status check_server_health server
+        
+        if health_status = undecidable
+            print "⚠️  Server" server.id "health undecidable - excluding from routing"
+        else if health_status = true
+            available_servers.push server
+    
+    if available_servers.length = 0
+        print "❌ No available servers - routing undecidable"
+        return undecidable
+    
+    # Route to least loaded available server
+    return route_to_least_loaded available_servers request
+
+# Eventual consistency checker
+function check_data_consistency replicas key
+    set values []
+    set undecidable_replicas 0
+    
+    for replica in replicas
+        set value get_replica_value replica key
+        if value = undecidable
+            set undecidable_replicas undecidable_replicas + 1
+        else
+            values.push value
+    
+    # If most replicas are in undecidable state
+    if undecidable_replicas > replicas.length / 2
+        print "⚠️  Consistency check undecidable - too many unreachable replicas"
+        return undecidable
+    
+    # Check if all reachable replicas have same value
+    if values.length > 1
+        set first_value values[0]
+        for value in values
+            if value ≠ first_value
+                return false
+    
+    return true
+
+# Test distributed systems scenarios
+print "\n📡 Testing distributed systems with undecidable states:\n"
+
+# Simulate nodes
+set nodes [
+    { id: "node1", status: "active" },
+    { id: "node2", status: "partitioned" },
+    { id: "node3", status: "active" }
+]
+
+# Test network partition
+print "🔍 Testing network partition detection..."
+set partition_result check_network_partition nodes[0] nodes[1]
+print "Network partition result:" partition_result
+
+# Test Byzantine consensus
+print "\n🔍 Testing Byzantine consensus..."
+set consensus_result byzantine_consensus nodes "proposal_A"
+print "Consensus result:" consensus_result
+
+# Test 2PC with undecidable participants
+print "\n🔍 Testing 2PC with undecidable participant..."
+set transaction { id: "tx_001", operations: ["update", "insert"] }
+set participants [
+    { id: "db1", state: "ready" },
+    { id: "db2", state: undecidable },  # Participant in undecidable state
+    { id: "db3", state: "ready" }
+]
+set commit_result two_phase_commit participants transaction
+print "2PC result:" commit_result
+
+print "\n✅ Undecidable values enable robust distributed systems!"
+print "🌐 Handle network partitions, Byzantine faults, and consistency issues"
+print "⚡ Make systems more resilient to uncertainty and partial failures"

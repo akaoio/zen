@@ -1,9 +1,0 @@
-print "=== ARITHMETIC OPERATIONS TEST ==="
-print "Addition: 10 + 5 = " + (10 + 5)
-print "Subtraction: 20 - 8 = " + (20 - 8)  
-print "Multiplication: 6 * 7 = " + (6 * 7)
-print "Division: 15 / 3 = " + (15 / 3)
-print "Modulo: 17 % 5 = " + (17 % 5)
-print "Complex: (10 + 5) * 2 - 8 / 4 = " + ((10 + 5) * 2 - 8 / 4)
-print "Nested: ((20 - 5) + 10) * 2 = " + (((20 - 5) + 10) * 2)
-print "All arithmetic operations work correctly!"

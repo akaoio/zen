@@ -8,6 +8,7 @@
 #define _GNU_SOURCE  // For strdup
 #include "zen/stdlib/convert.h"
 #include "zen/types/value.h"
+#include "zen/core/memory.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -21,13 +22,10 @@
  * @param value Value to convert
  * @return String value representing the input value
  */
-Value* zen_to_string(const Value* value) {
+Value* convert_to_string_internal(const Value* value) {
     if (!value) {
-        printf("DEBUG: zen_to_string called with NULL value\n");
         return value_new_string("null");
     }
-    
-    printf("DEBUG: zen_to_string called with Value type=%d\n", value->type);
     
     switch (value->type) {
         case VALUE_NULL:
@@ -60,14 +58,14 @@ Value* zen_to_string(const Value* value) {
             // Calculate approximate size needed
             size_t total_size = 2; // "[]"
             for (size_t i = 0; i < value->as.array->length; i++) {
-                Value* item_str = zen_to_string(value->as.array->items[i]);
+                Value* item_str = convert_to_string_internal(value->as.array->items[i]);
                 if (item_str && item_str->as.string) {
                     total_size += item_str->as.string->length + 2; // ", "
                 }
                 value_unref(item_str);
             }
             
-            char* result = malloc(total_size + 1);
+            char* result = memory_alloc(total_size + 1);
             if (!result) {
                 return value_new_string("[]");
             }
@@ -77,7 +75,7 @@ Value* zen_to_string(const Value* value) {
                 if (i > 0) {
                     strcat(result, ", ");
                 }
-                Value* item_str = zen_to_string(value->as.array->items[i]);
+                Value* item_str = convert_to_string_internal(value->as.array->items[i]);
                 if (item_str && item_str->as.string) {
                     strcat(result, item_str->as.string->data);
                 }
@@ -86,7 +84,7 @@ Value* zen_to_string(const Value* value) {
             strcat(result, "]");
             
             Value* result_value = value_new_string(result);
-            free(result);
+            memory_free(result);
             return result_value;
         }
         
@@ -102,7 +100,7 @@ Value* zen_to_string(const Value* value) {
                 ZenObjectPair* pair = &value->as.object->pairs[i];
                 if (pair->key) {
                     total_size += strlen(pair->key) + 2; // ": "
-                    Value* val_str = zen_to_string(pair->value);
+                    Value* val_str = convert_to_string_internal(pair->value);
                     if (val_str && val_str->as.string) {
                         total_size += val_str->as.string->length + 2; // ", "
                     }
@@ -110,7 +108,7 @@ Value* zen_to_string(const Value* value) {
                 }
             }
             
-            char* result = malloc(total_size + 1);
+            char* result = memory_alloc(total_size + 1);
             if (!result) {
                 return value_new_string("{}");
             }
@@ -126,7 +124,7 @@ Value* zen_to_string(const Value* value) {
                     strcat(result, pair->key);
                     strcat(result, ": ");
                     
-                    Value* val_str = zen_to_string(pair->value);
+                    Value* val_str = convert_to_string_internal(pair->value);
                     if (val_str && val_str->as.string) {
                         strcat(result, val_str->as.string->data);
                     }
@@ -137,17 +135,17 @@ Value* zen_to_string(const Value* value) {
             strcat(result, "}");
             
             Value* result_value = value_new_string(result);
-            free(result);
+            memory_free(result);
             return result_value;
         }
         
         case VALUE_ERROR:
             if (value->as.error && value->as.error->message) {
-                char* error_str = malloc(strlen("Error: ") + strlen(value->as.error->message) + 1);
+                char* error_str = memory_alloc(strlen("Error: ") + strlen(value->as.error->message) + 1);
                 if (error_str) {
                     sprintf(error_str, "Error: %s", value->as.error->message);
                     Value* result = value_new_string(error_str);
-                    free(error_str);
+                    memory_free(error_str);
                     return result;
                 }
             }
@@ -166,7 +164,7 @@ Value* zen_to_string(const Value* value) {
  * @param value Value to convert
  * @return Number value representing the input value
  */
-Value* zen_to_number(const Value* value) {
+Value* convert_to_number_internal(const Value* value) {
     if (!value) {
         return value_new_number(0.0);
     }
@@ -249,7 +247,7 @@ Value* zen_to_number(const Value* value) {
  * @param value Value to convert
  * @return Boolean value representing the truthiness of input value
  */
-Value* zen_to_boolean(const Value* value) {
+Value* convert_to_boolean_internal(const Value* value) {
     if (!value) {
         return value_new_boolean(false);
     }
@@ -298,7 +296,7 @@ Value* zen_to_boolean(const Value* value) {
  * @param value Value to get type of
  * @return String value containing the type name
  */
-Value* zen_type_of(const Value* value) {
+Value* convert_type_of_internal(const Value* value) {
     if (!value) {
         return value_new_string("null");
     }
@@ -331,12 +329,12 @@ Value* zen_type_of(const Value* value) {
  * @param type_name Type name to check against
  * @return Boolean value indicating if value is of specified type
  */
-Value* zen_is_type(const Value* value, const char* type_name) {
+Value* convert_is_type_internal(const Value* value, const char* type_name) {
     if (!type_name) {
         return value_new_boolean(false);
     }
     
-    Value* type_val = zen_type_of(value);
+    Value* type_val = convert_type_of_internal(value);
     if (!type_val || !type_val->as.string) {
         value_unref(type_val);
         return value_new_boolean(false);
@@ -353,11 +351,11 @@ Value* zen_is_type(const Value* value, const char* type_name) {
  * @param base_value Base value (2-36, default 10)
  * @return Number value containing parsed integer, or error on failure
  */
-Value* zen_parse_int(const Value* str_value, const Value* base_value) {
+Value* convert_parse_int_internal(const Value* str_value, const Value* base_value) {
     if (!str_value || str_value->type != VALUE_STRING) {
         Value* error = value_new(VALUE_ERROR);
         if (error && error->as.error) {
-            error->as.error->message = strdup("parseint requires a string argument");
+            error->as.error->message = memory_strdup("parseint requires a string argument");
             error->as.error->code = -1;
         }
         return error;
@@ -373,7 +371,7 @@ Value* zen_parse_int(const Value* str_value, const Value* base_value) {
         if (base < 2 || base > 36) {
             Value* error = value_new(VALUE_ERROR);
             if (error && error->as.error) {
-                error->as.error->message = strdup("parseint base must be between 2 and 36");
+                error->as.error->message = memory_strdup("parseint base must be between 2 and 36");
                 error->as.error->code = -1;
             }
             return error;
@@ -398,7 +396,7 @@ Value* zen_parse_int(const Value* str_value, const Value* base_value) {
     if (errno == ERANGE) {
         Value* error = value_new(VALUE_ERROR);
         if (error && error->as.error) {
-            error->as.error->message = strdup("parseint result out of range");
+            error->as.error->message = memory_strdup("parseint result out of range");
             error->as.error->code = -1;
         }
         return error;
@@ -412,11 +410,11 @@ Value* zen_parse_int(const Value* str_value, const Value* base_value) {
  * @param str_value String value to parse
  * @return Number value containing parsed float, or error on failure
  */
-Value* zen_parse_float(const Value* str_value) {
+Value* convert_parse_float_internal(const Value* str_value) {
     if (!str_value || str_value->type != VALUE_STRING) {
         Value* error = value_new(VALUE_ERROR);
         if (error && error->as.error) {
-            error->as.error->message = strdup("parsefloat requires a string argument");
+            error->as.error->message = memory_strdup("parsefloat requires a string argument");
             error->as.error->code = -1;
         }
         return error;
@@ -444,11 +442,106 @@ Value* zen_parse_float(const Value* str_value) {
     if (errno == ERANGE) {
         Value* error = value_new(VALUE_ERROR);
         if (error && error->as.error) {
-            error->as.error->message = strdup("parsefloat result out of range");
+            error->as.error->message = memory_strdup("parsefloat result out of range");
             error->as.error->code = -1;
         }
         return error;
     }
     
     return value_new_number(result);
+}
+
+// Public API Functions for stdlib integration
+
+/**
+ * @brief Convert value to string
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return String representation of the value
+ */
+Value* convert_to_string(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_string("");
+    }
+    return convert_to_string_internal(args[0]);
+}
+
+/**
+ * @brief Convert value to number
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Number value or error
+ */
+Value* convert_to_number(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_number(0);
+    }
+    return convert_to_number_internal(args[0]);
+}
+
+/**
+ * @brief Convert value to boolean
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Boolean value
+ */
+Value* convert_to_boolean(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_boolean(false);
+    }
+    return convert_to_boolean_internal(args[0]);
+}
+
+/**
+ * @brief Get type name of value
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return String containing type name
+ */
+Value* convert_type_of(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_string("undefined");
+    }
+    return convert_type_of_internal(args[0]);
+}
+
+/**
+ * @brief Check if value is of specific type
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Boolean indicating if value is of the specified type
+ */
+Value* convert_is_type(Value** args, size_t argc) {
+    if (argc < 2 || !args[1] || args[1]->type != VALUE_STRING) {
+        return value_new_boolean(false);
+    }
+    return convert_is_type_internal(args[0], args[1]->as.string->data);
+}
+
+/**
+ * @brief Parse integer from string
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Parsed number or error
+ */
+Value* convert_parse_int(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_error("parseInt requires at least 1 argument", -1);
+    }
+    
+    Value* base_value = (argc >= 2) ? args[1] : NULL;
+    return convert_parse_int_internal(args[0], base_value);
+}
+
+/**
+ * @brief Parse float from string
+ * @param args Array of Value arguments
+ * @param argc Number of arguments
+ * @return Parsed number or error
+ */
+Value* convert_parse_float(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_error("parseFloat requires 1 argument", -1);
+    }
+    return convert_parse_float_internal(args[0]);
 }

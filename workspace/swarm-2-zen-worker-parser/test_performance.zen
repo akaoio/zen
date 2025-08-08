@@ -1,5 +1,0 @@
-set x 5
-set y x + 1
-set z y * 2
-set result z + x + y
-print result

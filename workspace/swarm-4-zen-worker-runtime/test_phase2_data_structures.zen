@@ -1,9 +1,0 @@
-print "=== Phase 2: Data Structure Tests ==="
-
-set arr 1, 2, 3, 4, 5
-print "arr =", arr
-
-set obj name "Alice", age 25, active true
-print "obj =", obj
-
-print "=== Phase 2 Complete ==="

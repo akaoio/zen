@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "@anthropic-ai/claude-code": "^1.0.68",
-    "js-yaml": "^4.1.0"
-  }
-}

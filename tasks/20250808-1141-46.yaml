@@ -1,0 +1,16 @@
+agent: swarm-1-zen-worker-types
+task: 'Fix documentation violations in set.c and priority_queue.c: add missing @param and @return tags'
+created: 1754628106
+completed: false
+files:
+  - src/types/set.c
+  - src/types/priority_queue.c
+activities:
+  - timestamp: 1754628106
+    start: 1754628106
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

@@ -1,5 +1,0 @@
-set x 10
-print "Before if"
-if x > 5
-    print "x is large"
-print "After if"

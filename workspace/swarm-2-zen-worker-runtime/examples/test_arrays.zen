@@ -1,8 +1,0 @@
-set numbers [1, 2, 3, 4, 5]
-print "Numbers:" numbers
-
-set fruits ["apple", "banana", "orange"]
-print "Fruits:" fruits
-
-set mixed [1, "hello", true, null]
-print "Mixed:" mixed

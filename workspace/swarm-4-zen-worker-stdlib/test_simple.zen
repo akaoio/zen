@@ -1,4 +1,0 @@
-// Very simple test
-print "testing direct print call"
-len "hello"
-abs -5

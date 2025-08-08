@@ -1,0 +1,230 @@
+# Undecidable Values for AI Reasoning
+# Handling paradoxes, contradictions, and uncertain inferences
+
+print "🤖 AI Reasoning with UNDECIDABLE logic"
+print "====================================="
+
+# Liar's Paradox handling
+function analyze_liar_paradox statement
+    print "🔍 Analyzing: '" + statement + "'"
+    
+    # Check for self-referential contradiction
+    if contains_self_reference statement and contains_negation statement
+        print "   ⚠️  Self-referential negation detected!"
+        print "   📝 If true, then false. If false, then true."
+        print "   💭 Classical logic fails - value is undecidable"
+        return undecidable
+    
+    return evaluate_truth_value statement
+
+# Russell's Paradox in set theory
+function russells_paradox_check set_definition
+    print "📊 Checking Russell's Paradox for set: " + set_definition
+    
+    # "Let R be the set of all sets that do not contain themselves"
+    if set_definition = "set_of_sets_not_containing_themselves"
+        print "   🤔 Does R contain itself?"
+        print "   ➡️  If R ∈ R, then R ∉ R (by definition)"
+        print "   ➡️  If R ∉ R, then R ∈ R (by definition)"
+        print "   💥 Contradiction - membership is undecidable!"
+        return undecidable
+    
+    return check_set_membership set_definition
+
+# Barber Paradox resolution
+function barber_paradox village_barber
+    print "✂️  Analyzing Barber Paradox..."
+    
+    # "The barber shaves only those who do not shave themselves"
+    set barber_shaves_self check_self_shaving village_barber
+    
+    if barber_shaves_self = undecidable
+        print "   🧔 Who shaves the barber?"
+        print "   ➡️  If barber shaves self → shouldn't shave self"
+        print "   ➡️  If barber doesn't shave self → should shave self"
+        print "   🤷 Self-shaving status is undecidable!"
+        return undecidable
+    
+    return barber_shaves_self
+
+# Halting Problem for AI reasoning
+function reasoning_halts reasoning_process input
+    print "⏹️  Checking if reasoning process halts..."
+    
+    # Some reasoning processes may never terminate
+    set complexity estimate_complexity reasoning_process input
+    
+    if complexity = "undecidable"
+        print "   🔄 Reasoning complexity undecidable"
+        print "   ❓ Cannot determine if process will halt"
+        return undecidable
+    
+    if complexity > maximum_computation_budget
+        print "   ⏰ Process exceeds computation budget"
+        return undecidable
+    
+    return true
+
+# Frame Problem in AI planning
+function solve_frame_problem world_state actions effects
+    print "🌍 Solving Frame Problem in AI planning..."
+    
+    set unchanged_aspects []
+    set changed_aspects []
+    
+    for aspect in world_state.aspects
+        set is_affected check_action_effect actions aspect
+        
+        if is_affected = undecidable
+            print "   ❓ Effect on" aspect.name "is undecidable"
+            unchanged_aspects.push undecidable
+        else if is_affected = true
+            changed_aspects.push aspect
+        else
+            unchanged_aspects.push aspect
+    
+    # If too many aspects have undecidable effects
+    set undecidable_count count_undecidable unchanged_aspects
+    if undecidable_count > world_state.aspects.length / 2
+        print "   🤷 Too many undecidable effects - planning uncertain"
+        return undecidable
+    
+    return {
+        changed: changed_aspects,
+        unchanged: filter_decided unchanged_aspects,
+        uncertain: filter_undecidable unchanged_aspects
+    }
+
+# Moral reasoning with ethical paradoxes
+function trolley_problem scenario
+    print "🚂 Analyzing Trolley Problem scenario..."
+    
+    set utilitarian_choice maximize_lives_saved scenario
+    set deontological_choice follow_moral_rules scenario
+    
+    # Different ethical frameworks give different answers
+    if utilitarian_choice ≠ deontological_choice
+        print "   ⚖️  Utilitarian choice:" utilitarian_choice
+        print "   📜 Deontological choice:" deontological_choice
+        print "   🤷 Ethical frameworks conflict - moral choice undecidable"
+        return undecidable
+    
+    return utilitarian_choice
+
+# Sorites Paradox in fuzzy concepts
+function sorites_paradox concept boundary_case
+    print "🏔️  Analyzing Sorites Paradox for '" + concept + "'..."
+    
+    # "When does a heap stop being a heap?"
+    if concept = "heap" and boundary_case.grain_count < 10
+        print "   🌾 " + boundary_case.grain_count + " grains - is this a heap?"
+        print "   ➡️  Adding one grain can't make a non-heap into a heap"
+        print "   ➡️  But somehow many grains do make a heap"
+        print "   🤔 Boundary is fundamentally undecidable"
+        return undecidable
+    
+    return evaluate_concept_membership concept boundary_case
+
+# AI consciousness paradox
+function consciousness_test ai_system turing_test_passed
+    print "🧠 Testing AI consciousness..."
+    
+    if turing_test_passed = true
+        print "   ✅ AI passed Turing test"
+        
+        # But does passing the test prove consciousness?
+        set has_qualia check_subjective_experience ai_system
+        set has_self_awareness check_self_awareness ai_system
+        
+        if has_qualia = undecidable or has_self_awareness = undecidable
+            print "   🤔 Subjective experience undecidable"
+            print "   💭 Consciousness cannot be objectively verified"
+            return undecidable
+        
+        return has_qualia and has_self_awareness
+    
+    return false
+
+# Münchhausen Trilemma in reasoning foundations
+function foundation_of_reasoning belief_system
+    print "🏛️  Analyzing reasoning foundations (Münchhausen Trilemma)..."
+    
+    set justification_method belief_system.justification_type
+    
+    if justification_method = "infinite_regress"
+        print "   ♾️  Infinite regress - never reaches solid foundation"
+        return undecidable
+    else if justification_method = "circular_reasoning"
+        print "   🔄 Circular reasoning - assumes what it proves"
+        return undecidable
+    else if justification_method = "arbitrary_axioms"
+        print "   🎲 Arbitrary axioms - unjustified assumptions"
+        return undecidable
+    
+    # All three horns lead to undecidable foundations
+    print "   💀 All paths lead to undecidable foundations"
+    return undecidable
+
+# Machine learning with adversarial examples
+function adversarial_robustness model input adversarial_perturbation
+    print "🎭 Testing adversarial robustness..."
+    
+    set original_prediction model.predict input
+    set adversarial_input add_perturbation input adversarial_perturbation
+    set adversarial_prediction model.predict adversarial_input
+    
+    # Tiny perturbations can cause dramatic changes in AI decisions
+    if original_prediction ≠ adversarial_prediction
+        print "   ⚠️  Model predictions inconsistent under small perturbations"
+        print "   🔍 Original:" original_prediction
+        print "   🎯 Adversarial:" adversarial_prediction
+        print "   🤷 Model reliability is undecidable in adversarial settings"
+        return undecidable
+    
+    return "robust"
+
+# Test AI reasoning scenarios
+print "\n🧪 Testing AI reasoning with undecidable paradoxes:\n"
+
+# Test Liar's Paradox
+print "🔍 Testing Liar's Paradox..."
+set liar_result analyze_liar_paradox "This statement is false"
+print "Liar's Paradox result:" liar_result
+
+# Test Russell's Paradox
+print "\n🔍 Testing Russell's Paradox..."
+set russell_result russells_paradox_check "set_of_sets_not_containing_themselves"
+print "Russell's Paradox result:" russell_result
+
+# Test Barber Paradox
+print "\n🔍 Testing Barber Paradox..."
+set barber { name: "village_barber", shaves_others: true }
+set barber_result barber_paradox barber
+print "Barber Paradox result:" barber_result
+
+# Test Frame Problem
+print "\n🔍 Testing Frame Problem..."
+set world { aspects: [{ name: "door_open" }, { name: "light_on" }, { name: "cat_position" }] }
+set actions ["walk_through_door"]
+set frame_result solve_frame_problem world actions []
+print "Frame Problem result:" frame_result
+
+# Test Trolley Problem
+print "\n🔍 Testing Trolley Problem..."
+set trolley_scenario { 
+    track_a_victims: 5, 
+    track_b_victims: 1, 
+    can_divert: true 
+}
+set moral_result trolley_problem trolley_scenario
+print "Trolley Problem result:" moral_result
+
+# Test Sorites Paradox
+print "\n🔍 Testing Sorites Paradox..."
+set boundary_case { grain_count: 3 }
+set sorites_result sorites_paradox "heap" boundary_case
+print "Sorites Paradox result:" sorites_result
+
+print "\n✅ Undecidable values enable robust AI reasoning!"
+print "🤖 Handle paradoxes, contradictions, and uncertain inferences"
+print "🧠 Make AI systems more honest about their limitations and uncertainties"

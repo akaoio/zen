@@ -1,7 +1,0 @@
-print "=== VARIABLE OPERATIONS TEST ==="
-set name "Alice"
-print "Variable test: " + name
-set age 25
-print "Number variable: " + age
-set result 10 + 15
-print "Calculated variable: " + result

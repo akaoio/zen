@@ -1,7 +1,0 @@
-print "Hello World"
-
-set x 42
-print "x =", x
-
-set name "Alice"
-print "name =", name

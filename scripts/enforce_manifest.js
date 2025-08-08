@@ -28,6 +28,106 @@ class ManifestEnforcer {
     }
 
     /**
+     * Extract complete function signature including multi-line parameters
+     */
+    extractCompleteSignature(lines, startIndex) {
+        let signature = '';
+        let parenCount = 0;
+        let foundStart = false;
+        
+        for (let i = startIndex; i < Math.min(startIndex + 10, lines.length); i++) {
+            const line = lines[i];
+            
+            for (let j = 0; j < line.length; j++) {
+                const char = line[j];
+                signature += char;
+                
+                if (char === '(') {
+                    parenCount++;
+                    foundStart = true;
+                } else if (char === ')') {
+                    parenCount--;
+                    if (foundStart && parenCount === 0) {
+                        return signature.trim();
+                    }
+                }
+            }
+            
+            if (i < startIndex + 9) signature += ' ';
+        }
+        
+        return signature.trim();
+    }
+
+    /**
+     * Check header files for consistency and naming violations
+     */
+    checkHeaderFiles() {
+        const headerRoot = path.join(this.projectRoot, 'src/include');
+        if (!fs.existsSync(headerRoot)) {
+            this.warnings.push('⚠️  Header directory not found: src/include');
+            return;
+        }
+
+        const headerFiles = this.findHeaderFiles(headerRoot);
+        
+        headerFiles.forEach(headerPath => {
+            const content = fs.readFileSync(headerPath, 'utf8');
+            const relativePath = path.relative(this.projectRoot, headerPath);
+            
+            // Check for naming violations in headers
+            const badPatterns = [
+                { 
+                    pattern: /Value\*\s+log_(debug|info|warn|error|debugf|infof|warnf|errorf|debug_if|set_level|with_context|get_level)/g, 
+                    message: 'Found log_* function in header (should be logging_*)' 
+                },
+                { 
+                    pattern: /extern\s+Value\*\s+log_(debug|info|warn|error)/g, 
+                    message: 'Found extern log_* declaration (should be logging_*)' 
+                },
+                { 
+                    pattern: /zen_[a-zA-Z_]+\s*\(/g, 
+                    message: 'Found zen_* function (should use file-based prefix)' 
+                }
+            ];
+
+            badPatterns.forEach(({pattern, message}) => {
+                let match;
+                while ((match = pattern.exec(content)) !== null) {
+                    const lines = content.substring(0, match.index).split('\n');
+                    const lineNum = lines.length;
+                    this.violations.push(`⚠️  ${message} in ${relativePath}:${lineNum}`);
+                }
+            });
+        });
+    }
+
+    /**
+     * Find all .h files recursively
+     */
+    findHeaderFiles(dir) {
+        const headers = [];
+        
+        const traverse = (currentDir) => {
+            const items = fs.readdirSync(currentDir);
+            
+            for (const item of items) {
+                const itemPath = path.join(currentDir, item);
+                const stat = fs.statSync(itemPath);
+                
+                if (stat.isDirectory()) {
+                    traverse(itemPath);
+                } else if (item.endsWith('.h')) {
+                    headers.push(itemPath);
+                }
+            }
+        };
+        
+        traverse(dir);
+        return headers;
+    }
+
+    /**
      * Check if a function implementation looks like a stub/fake
      */
     isStubImplementation(lines, funcLineIndex, functionName) {
@@ -207,46 +307,27 @@ class ManifestEnforcer {
             // Skip empty lines and preprocessor directives
             if (!line.trim() || line.trim().startsWith('#')) continue;
             
-            // Look for function-like patterns: return_type name(params...)
-            const funcMatch = line.match(/^(\w[\w\s*]*)\s+(\w+)\s*\((.*)$/);
+            // Enhanced function pattern matching that handles function pointers
+            const funcMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_*\s]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
             if (!funcMatch) continue;
             
-            let [, returnType, name, paramsStart] = funcMatch;
+            let [, returnType, name] = funcMatch;
             
             // Skip control structures
-            if (['if', 'for', 'while', 'switch', 'return'].includes(returnType.trim())) continue;
+            if (['if', 'for', 'while', 'switch', 'return', 'else', 'do'].includes(returnType.trim())) continue;
             if (['if', 'for', 'while', 'switch'].includes(name)) continue;
             
-            // Collect full parameter list (might span multiple lines)
-            let fullParams = paramsStart;
-            let parenCount = 1; // We already have opening paren
-            let lineIdx = i;
+            // Extract complete function signature with better parsing
+            const fullSignature = this.extractCompleteSignature(lines, i);
+            if (!fullSignature) continue;
             
-            // Count parens in first line
-            for (const ch of paramsStart) {
-                if (ch === '(') parenCount++;
-                if (ch === ')') parenCount--;
-            }
-            
-            // If not closed, continue to next lines
-            while (parenCount > 0 && lineIdx < lines.length - 1) {
-                lineIdx++;
-                const nextLine = lines[lineIdx];
-                fullParams += ' ' + nextLine.trim();
-                for (const ch of nextLine) {
-                    if (ch === '(') parenCount++;
-                    if (ch === ')') parenCount--;
-                }
-            }
-            
-            // Extract just the parameters (remove trailing )
-            const paramsMatch = fullParams.match(/^([^)]*)\)/);
-            if (!paramsMatch) continue;
-            const params = paramsMatch[1];
+            // Parse parameters from full signature
+            const signatureMatch = fullSignature.match(/^[^(]*\(([^)]*)\)/);
+            const params = signatureMatch ? signatureMatch[1].trim() : '';
             
             // Check if this is followed by a { (might be on next line)
             let hasOpenBrace = false;
-            for (let j = i; j < Math.min(lineIdx + 3, lines.length); j++) {
+            for (let j = i; j < Math.min(i + 5, lines.length); j++) {
                 if (lines[j].includes('{')) {
                     hasOpenBrace = true;
                     break;
@@ -580,12 +661,15 @@ class ManifestEnforcer {
         
         console.log('🔒 ZEN Manifest Enforcer');
         console.log('========================');
-        console.log('Checking: Signatures, Files, and Doxygen Documentation\n');
+        console.log('Checking: Signatures, Files, Headers, and Documentation\n');
         
         if (options.generate) {
             this.generateStubs(manifest);
             return true;
         }
+        
+        // Check header files for naming violations
+        this.checkHeaderFiles();
         
         // Validate all files
         this.validateAllFiles(manifest);

@@ -1,0 +1,28 @@
+# ZEN UNDECIDABLE Value Type - Demonstrates Gödel's Incompleteness
+
+print "=== UNDECIDABLE: When we cannot decide truth ==="
+
+# Create undecidable value
+set u undecidable
+print "Undecidable value: " + u
+
+# Three-valued logic operations
+set t true
+set f false
+
+print "\n=== Three-Valued Logic Operations ==="
+print "true AND undecidable = " + (t and u)
+print "false AND undecidable = " + (f and u)
+print "undecidable OR true = " + (u or t)
+print "undecidable OR false = " + (u or f)
+print "NOT undecidable = " + (not u)
+
+# Real-world example
+print "\n=== Real-World Example: Halting Problem ==="
+set will_halt undecidable  # We cannot determine if program halts
+print "Will this program halt? " + will_halt
+
+if will_halt = undecidable
+    print "Cannot determine - demonstrates limits of computation"
+
+print "\n✓ UNDECIDABLE values successfully implemented in ZEN!"

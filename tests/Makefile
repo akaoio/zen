@@ -1,7 +1,7 @@
 # ZEN Language Test Suite Makefile
 CC = gcc
 CFLAGS = -g -Wall -Wextra -Werror -std=c11 -I../src/include -Iframework
-LDFLAGS = -lm
+LDFLAGS = -lm -lcurl -lpcre2-8 -lyaml
 VALGRIND_FLAGS = --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=1
 
 # Directories

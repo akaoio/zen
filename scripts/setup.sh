@@ -37,13 +37,6 @@ fi
 # Install required libraries
 echo "📚 Installing required libraries..."
 
-# cJSON - JSON parsing
-echo "  → Installing cJSON..."
-if [[ "$OS" == "linux" ]]; then
-    $INSTALL_CMD libcjson-dev
-else
-    $INSTALL_CMD cjson
-fi
 
 # libyaml - YAML parsing
 echo "  → Installing libyaml..."
@@ -174,7 +167,6 @@ check_command node
 check_command npm
 
 # Check libraries
-check_library cjson cjson
 check_library yaml-0.1 libyaml
 check_library libpcre2-8 pcre2
 check_library libcurl curl

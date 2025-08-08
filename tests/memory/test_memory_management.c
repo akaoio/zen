@@ -10,8 +10,6 @@
 #include "zen/core/parser.h"
 #include "zen/core/visitor.h"
 
-TEST_SUITE(memory_management_tests)
-
 TEST(test_basic_memory_allocation) {
     void* ptr = memory_alloc(1024);
     ASSERT_NOT_NULL(ptr);
@@ -176,7 +174,7 @@ TEST(test_lexer_memory_management) {
     MemoryStats stats_before = memory_get_stats();
     
     char* input = "set x 42\nset y \"hello\"\nprint x + y";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     // Tokenize entire input
     token_T* token;
@@ -213,9 +211,9 @@ TEST(test_parser_memory_management) {
         "\n"
         "set result factorial 5";
     
-    lexer_T* lexer = init_lexer(input);
-    parser_T* parser = init_parser(lexer);
-    scope_T* scope = init_scope();
+    lexer_T* lexer = lexer_new(input);
+    parser_T* parser = parser_new(lexer);
+    scope_T* scope = scope_new();
     
     AST_T* ast = parser_parse_statements(parser, scope);
     
@@ -244,9 +242,9 @@ TEST(test_visitor_memory_management) {
         "set result x + y\n"
         "print result";
     
-    lexer_T* lexer = init_lexer(code);
-    parser_T* parser = init_parser(lexer);
-    scope_T* scope = init_scope();
+    lexer_T* lexer = lexer_new(code);
+    parser_T* parser = parser_new(lexer);
+    scope_T* scope = scope_new();
     AST_T* ast = parser_parse_statements(parser, scope);
     visitor_T* visitor = init_visitor();
     
@@ -354,4 +352,18 @@ TEST(test_memory_fragmentation) {
     memory_debug_enable(false);
 }
 
-END_TEST_SUITE
+TEST_SUITE_BEGIN(memory_management_tests)
+    RUN_TEST(test_basic_memory_allocation);
+    RUN_TEST(test_memory_reallocation);
+    RUN_TEST(test_memory_string_duplication);
+    RUN_TEST(test_reference_counting);
+    RUN_TEST(test_memory_stats_tracking);
+    RUN_TEST(test_memory_leak_detection);
+    RUN_TEST(test_value_memory_management);
+    RUN_TEST(test_lexer_memory_management);
+    RUN_TEST(test_parser_memory_management);
+    RUN_TEST(test_visitor_memory_management);
+    RUN_TEST(test_large_allocation_stress);
+    RUN_TEST(test_reallocation_stress);
+    RUN_TEST(test_memory_fragmentation);
+TEST_SUITE_END

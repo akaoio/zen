@@ -1,4 +1,0 @@
-set x 5
-set y "hello"
-print x
-print y

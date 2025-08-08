@@ -1,3 +1,0 @@
-set i 0
-set i i + 1
-print i

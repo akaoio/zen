@@ -1,6 +1,0 @@
-set x 42
-set y "Hello, World!"
-set arr 1, 2, 3
-print x
-print y
-print arr

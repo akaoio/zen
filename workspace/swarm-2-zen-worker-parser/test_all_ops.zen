@@ -1,8 +1,0 @@
-set x 10
-set y 5
-set result1 x - y
-set result2 x / y
-set result3 x % y
-print result1
-print result2  
-print result3

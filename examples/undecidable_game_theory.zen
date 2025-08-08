@@ -1,0 +1,227 @@
+# Undecidable Values for Game Theory
+# Handling unknown outcomes and mixed strategies
+
+print "🎮 Game Theory with UNDECIDABLE outcomes"
+print "======================================="
+
+# Nash equilibrium with incomplete information
+function find_nash_equilibrium game players
+    set strategies []
+    
+    for player in players
+        set player_strategy calculate_best_response player game
+        
+        # If player has incomplete information, strategy may be undecidable
+        if player.information_complete = false
+            print "⚠️  Player" player.id "has incomplete information"
+            set player_strategy undecidable
+        
+        strategies.push player_strategy
+    
+    # Check if Nash equilibrium exists
+    set has_undecidable false
+    for strategy in strategies
+        if strategy = undecidable
+            set has_undecidable true
+    
+    if has_undecidable
+        print "🤔 Nash equilibrium undecidable - incomplete information"
+        return undecidable
+    
+    return verify_nash_equilibrium strategies game
+
+# Auction mechanism with uncertain valuations
+function second_price_auction item bidders
+    set bids []
+    set undecidable_bids 0
+    
+    for bidder in bidders
+        set valuation estimate_valuation bidder item
+        
+        # Some bidders may have undecidable valuations
+        if valuation = undecidable
+            print "⚠️  Bidder" bidder.id "has undecidable valuation for" item.name
+            set undecidable_bids undecidable_bids + 1
+            bids.push undecidable
+        else
+            set bid calculate_optimal_bid bidder valuation
+            bids.push bid
+    
+    # If too many bidders have undecidable valuations
+    if undecidable_bids > bidders.length / 2
+        print "❌ Auction outcome undecidable - too many uncertain valuations"
+        return undecidable
+    
+    # Find highest and second highest bids (excluding undecidable)
+    set valid_bids filter_valid_bids bids
+    if valid_bids.length < 2
+        print "❌ Not enough valid bids - auction outcome undecidable"
+        return undecidable
+    
+    set sorted_bids sort_descending valid_bids
+    return {
+        winner: get_bidder_by_bid sorted_bids[0] bidders,
+        price: sorted_bids[1],
+        outcome: "decided"
+    }
+
+# Prisoner's Dilemma with communication uncertainty
+function prisoners_dilemma prisoner_a prisoner_b communication_channel
+    print "🔒 Analyzing Prisoner's Dilemma with uncertain communication"
+    
+    # Check if prisoners can communicate reliably
+    set can_communicate check_communication_channel communication_channel
+    
+    if can_communicate = undecidable
+        print "📡 Communication channel reliability undecidable"
+        
+        # Without reliable communication, strategies become undecidable
+        set strategy_a undecidable
+        set strategy_b undecidable
+        
+        print "🤷 Both prisoners' strategies are undecidable"
+        return {
+            prisoner_a_strategy: strategy_a,
+            prisoner_b_strategy: strategy_b,
+            outcome: undecidable,
+            payoff_a: undecidable,
+            payoff_b: undecidable
+        }
+    
+    # With reliable communication, calculate optimal strategies
+    set strategy_a calculate_strategy prisoner_a prisoner_b can_communicate
+    set strategy_b calculate_strategy prisoner_b prisoner_a can_communicate
+    
+    return determine_payoffs strategy_a strategy_b
+
+# Market mechanism with information asymmetry
+function market_equilibrium buyers sellers information_structure
+    set market_price undecidable
+    set trade_volume undecidable
+    
+    # Check information symmetry
+    if information_structure.type = "asymmetric"
+        print "📊 Market has asymmetric information"
+        
+        # With asymmetric information, some trades become undecidable
+        set informed_traders filter_informed_traders buyers sellers
+        set uninformed_traders filter_uninformed_traders buyers sellers
+        
+        # Uninformed traders face undecidable outcomes
+        for trader in uninformed_traders
+            set trader.expected_payoff undecidable
+        
+        # Market price becomes undecidable due to adverse selection
+        if uninformed_traders.length > informed_traders.length
+            print "⚠️  Adverse selection - market price undecidable"
+            return {
+                price: undecidable,
+                volume: undecidable,
+                efficiency: "undecidable"
+            }
+    
+    return calculate_walrasian_equilibrium buyers sellers
+
+# Coalition formation with uncertain payoffs
+function coalition_formation players cooperative_game
+    set coalitions []
+    set stable_coalitions []
+    
+    print "🤝 Analyzing coalition formation with uncertain payoffs"
+    
+    # Generate all possible coalitions
+    set all_coalitions generate_all_coalitions players
+    
+    for coalition in all_coalitions
+        set coalition_value calculate_coalition_value coalition cooperative_game
+        
+        # Some coalitions may have undecidable values
+        if coalition_value = undecidable
+            print "⚠️  Coalition" coalition.members "has undecidable value"
+            coalition.stable = undecidable
+        else
+            coalition.value = coalition_value
+            coalition.stable = check_coalition_stability coalition players
+        
+        coalitions.push coalition
+    
+    # Filter stable coalitions (excluding undecidable ones)
+    for coalition in coalitions
+        if coalition.stable = true
+            stable_coalitions.push coalition
+    
+    if stable_coalitions.length = 0
+        print "❌ No stable coalition found - outcome undecidable"
+        return undecidable
+    
+    return find_core_coalitions stable_coalitions
+
+# Evolutionary game dynamics with mutation
+function evolutionary_dynamics population strategies mutation_rate
+    set generations 100
+    set current_population population
+    
+    for generation in range 1 generations
+        set new_population []
+        
+        for individual in current_population
+            set fitness calculate_fitness individual strategies current_population
+            
+            # Mutation can introduce undecidable strategies
+            if random() < mutation_rate
+                set mutated_strategy generate_random_strategy()
+                
+                # Some mutations result in undecidable strategies
+                if is_strategy_valid mutated_strategy = false
+                    set individual.strategy undecidable
+                    print "🧬 Mutation created undecidable strategy in generation" generation
+            
+            new_population.push individual
+        
+        set current_population new_population
+        
+        # Check for evolutionary stable strategy
+        set ess check_evolutionary_stable_strategy current_population
+        if ess = undecidable
+            print "🔄 Evolutionary dynamics in undecidable state at generation" generation
+    
+    return current_population
+
+# Test game theory scenarios
+print "\n🎯 Testing game theory with undecidable outcomes:\n"
+
+# Test Nash equilibrium with incomplete information
+set game { type: "coordination", payoff_matrix: [[3,1], [0,2]] }
+set players [
+    { id: "player1", information_complete: true },
+    { id: "player2", information_complete: false }  # Incomplete information
+]
+
+print "🔍 Testing Nash equilibrium with incomplete information..."
+set nash_result find_nash_equilibrium game players
+print "Nash equilibrium:" nash_result
+
+# Test auction with uncertain valuations
+print "\n🔍 Testing auction with undecidable valuations..."
+set item { name: "rare_artifact", description: "Unknown authenticity" }
+set bidders [
+    { id: "collector1", expertise: "high" },
+    { id: "collector2", expertise: "low" },    # May have undecidable valuation
+    { id: "collector3", expertise: "medium" }
+]
+
+set auction_result second_price_auction item bidders
+print "Auction result:" auction_result
+
+# Test Prisoner's Dilemma with uncertain communication
+print "\n🔍 Testing Prisoner's Dilemma with uncertain communication..."
+set prisoner_a { id: "A", risk_preference: "risk_averse" }
+set prisoner_b { id: "B", risk_preference: "risk_neutral" }
+set comm_channel { reliability: undecidable, type: "coded_messages" }
+
+set pd_result prisoners_dilemma prisoner_a prisoner_b comm_channel
+print "Prisoner's Dilemma result:" pd_result
+
+print "\n✅ Undecidable values enhance game theory analysis!"
+print "🎮 Handle incomplete information, uncertain communication, and complex strategies"
+print "🧠 Enable more realistic modeling of strategic interactions with uncertainty"

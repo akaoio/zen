@@ -1,4 +1,0 @@
-set arr 1, 2, 3
-set obj name "John", age 25  
-set result arr[0] + obj.age
-print result

@@ -1,4 +1,0 @@
-set x 3
-set y 4
-set result (x + y) * 2
-print result

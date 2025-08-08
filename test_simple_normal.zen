@@ -1,0 +1,4 @@
+function test x
+    print x
+
+test "hello"

@@ -22,17 +22,19 @@ DECLARE_TEST(test_lexer_complete_program);
 
 TEST(test_lexer_initialization) {
     char* input = "set x 42";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     ASSERT_NOT_NULL(lexer);
     ASSERT_STR_EQ(lexer->contents, input);
     ASSERT_EQ(lexer->i, 0);
     ASSERT_EQ(lexer->c, 's');
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_advance) {
     char* input = "abc";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     ASSERT_EQ(lexer->c, 'a');
     lexer_advance(lexer);
@@ -41,19 +43,23 @@ TEST(test_lexer_advance) {
     ASSERT_EQ(lexer->c, 'c');
     lexer_advance(lexer);
     ASSERT_EQ(lexer->c, '\0');
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_skip_whitespace) {
     char* input = "   \t\n  hello";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     lexer_skip_whitespace(lexer);
     ASSERT_EQ(lexer->c, 'h');
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_keywords) {
     char* input = "set function if else while for return";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     token_T* token;
     
@@ -61,68 +67,84 @@ TEST(test_lexer_keywords) {
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_SET);
     ASSERT_STR_EQ(token->value, "set");
+    token_free(token);
     
     // Test "function"
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_FUNCTION);
     ASSERT_STR_EQ(token->value, "function");
+    token_free(token);
     
     // Test "if"
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_IF);
     ASSERT_STR_EQ(token->value, "if");
+    token_free(token);
     
     // Test "else"
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_ELSE);
     ASSERT_STR_EQ(token->value, "else");
+    token_free(token);
     
     // Test "while"
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_WHILE);
     ASSERT_STR_EQ(token->value, "while");
+    token_free(token);
     
     // Test "for"
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_FOR);
     ASSERT_STR_EQ(token->value, "for");
+    token_free(token);
     
     // Test "return"
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_RETURN);
     ASSERT_STR_EQ(token->value, "return");
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_identifiers) {
     char* input = "variable_name camelCase snake_case var123 _private";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     token_T* token;
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_ID);
     ASSERT_STR_EQ(token->value, "variable_name");
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_ID);
     ASSERT_STR_EQ(token->value, "camelCase");
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_ID);
     ASSERT_STR_EQ(token->value, "snake_case");
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_ID);
     ASSERT_STR_EQ(token->value, "var123");
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_ID);
     ASSERT_STR_EQ(token->value, "_private");
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_numbers) {
     char* input = "42 3.14 0 123.456 .5 5.";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     token_T* token;
     
@@ -130,36 +152,44 @@ TEST(test_lexer_numbers) {
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NUMBER);
     ASSERT_STR_EQ(token->value, "42");
+    token_free(token);
     
     // Float
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NUMBER);
     ASSERT_STR_EQ(token->value, "3.14");
+    token_free(token);
     
     // Zero
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NUMBER);
     ASSERT_STR_EQ(token->value, "0");
+    token_free(token);
     
     // Float with more decimals
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NUMBER);
     ASSERT_STR_EQ(token->value, "123.456");
+    token_free(token);
     
     // Float starting with decimal
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NUMBER);
     ASSERT_STR_EQ(token->value, ".5");
+    token_free(token);
     
     // Float ending with decimal
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NUMBER);
     ASSERT_STR_EQ(token->value, "5.");
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_strings) {
     char* input = "\"hello world\" \"escaped\\\"quote\" \"\" \"multi\nline\"";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     token_T* token;
     
@@ -167,94 +197,122 @@ TEST(test_lexer_strings) {
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_STRING);
     ASSERT_STR_EQ(token->value, "hello world");
+    token_free(token);
     
     // String with escaped quote
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_STRING);
     ASSERT_STR_EQ(token->value, "escaped\"quote");
+    token_free(token);
     
     // Empty string
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_STRING);
     ASSERT_STR_EQ(token->value, "");
+    token_free(token);
     
     // Multi-line string
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_STRING);
     ASSERT_STR_EQ(token->value, "multi\nline");
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_operators) {
     char* input = "+ - * / % = != < > <= >= & | !";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     token_T* token;
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_PLUS);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_MINUS);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_MULTIPLY);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_DIVIDE);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_MODULO);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_EQUALS);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NOT_EQUALS);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_LESS_THAN);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_GREATER_THAN);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_LESS_EQUALS);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_GREATER_EQUALS);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_AND);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_OR);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NOT);
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_punctuation) {
     char* input = "( ) , \n";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     token_T* token;
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_LPAREN);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_RPAREN);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_COMMA);
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NEWLINE);
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_indentation) {
     char* input = "line1\n    indented\n        more_indented\nback";
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     token_T* token;
     
@@ -262,21 +320,29 @@ TEST(test_lexer_indentation) {
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_ID);
     ASSERT_STR_EQ(token->value, "line1");
+    token_free(token);
     
     token = lexer_get_next_token(lexer);
     ASSERT_EQ(token->type, TOKEN_NEWLINE);
+    token_free(token);
     
     // Indented line - should generate INDENT token
     token = lexer_get_next_token(lexer);
     if (token->type == TOKEN_INDENT) {
         // Good, indentation tracked
+        token_free(token);
+        token = lexer_get_next_token(lexer);
     }
     
     // Skip to identifier
     while (token->type != TOKEN_ID && token->type != TOKEN_EOF) {
+        token_free(token);
         token = lexer_get_next_token(lexer);
     }
     ASSERT_STR_EQ(token->value, "indented");
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST(test_lexer_complete_program) {
@@ -288,7 +354,7 @@ TEST(test_lexer_complete_program) {
         "else\n"
         "    print \"Minor\"\n";
     
-    lexer_T* lexer = init_lexer(input);
+    lexer_T* lexer = lexer_new(input);
     
     // Just verify we can tokenize the entire program without errors
     token_T* token;
@@ -298,10 +364,19 @@ TEST(test_lexer_complete_program) {
         token = lexer_get_next_token(lexer);
         ASSERT_NOT_NULL(token);
         token_count++;
-    } while (token->type != TOKEN_EOF && token_count < 100); // Safety limit
+        
+        // Free the token unless it's the last EOF token we need to check
+        if (token->type == TOKEN_EOF || token_count >= 100) {
+            break;
+        }
+        token_free(token);
+    } while (token_count < 100); // Safety limit
     
     ASSERT_TRUE(token_count > 10); // Should have many tokens
     ASSERT_EQ(token->type, TOKEN_EOF);
+    token_free(token);
+    
+    lexer_free(lexer);
 }
 
 TEST_SUITE_BEGIN(lexer_basic_tests)

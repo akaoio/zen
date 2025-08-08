@@ -1,0 +1,24 @@
+print "=== ZEN Spread Syntax Test ==="
+
+print "1. Function with rest parameters:"
+function show ...args
+    print args
+
+show 1 2 3
+
+print "2. Mixed parameters with rest:"
+function mixed a b ...rest
+    print "a=" + to_string a
+    print "b=" + to_string b  
+    print "rest=" + to_string rest
+
+mixed "hello" "world" 1 2 3
+
+print "3. Zero rest arguments:"
+function show_zero x y ...empty
+    print "x=" + to_string x + " y=" + to_string y
+    print "empty=" + to_string empty
+
+show_zero 10 20
+
+print "Test complete!"

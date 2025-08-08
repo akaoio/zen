@@ -5,8 +5,29 @@
 
 #include "../../framework/test.h"
 #include "zen/types/value.h"
+#include "zen/core/memory.h"
 
-TEST_SUITE(value_basic_tests)
+// Forward declare all tests
+DECLARE_TEST(test_value_new_string);
+DECLARE_TEST(test_value_new_number);
+DECLARE_TEST(test_value_new_boolean);
+DECLARE_TEST(test_value_new_null);
+DECLARE_TEST(test_value_copy_string);
+DECLARE_TEST(test_value_copy_number);
+DECLARE_TEST(test_value_to_string_string);
+DECLARE_TEST(test_value_to_string_number);
+DECLARE_TEST(test_value_to_string_boolean);
+DECLARE_TEST(test_value_to_string_null);
+DECLARE_TEST(test_value_equals_string);
+DECLARE_TEST(test_value_equals_number);
+DECLARE_TEST(test_value_equals_boolean);
+DECLARE_TEST(test_value_equals_null);
+DECLARE_TEST(test_value_equals_different_types);
+DECLARE_TEST(test_value_type_name);
+DECLARE_TEST(test_value_reference_counting);
+DECLARE_TEST(test_value_empty_string);
+DECLARE_TEST(test_value_null_string);
+DECLARE_TEST(test_value_special_numbers);
 
 TEST(test_value_new_string) {
     Value* value = value_new_string("Hello World");
@@ -89,7 +110,7 @@ TEST(test_value_to_string_string) {
     ASSERT_NOT_NULL(str);
     ASSERT_STR_EQ(str, "Hello");
     
-    free(str);
+    memory_free(str);
     value_unref(value);
 }
 
@@ -100,7 +121,7 @@ TEST(test_value_to_string_number) {
     ASSERT_NOT_NULL(str);
     ASSERT_STR_EQ(str, "42");
     
-    free(str);
+    memory_free(str);
     value_unref(value);
     
     // Test float
@@ -110,7 +131,7 @@ TEST(test_value_to_string_number) {
     ASSERT_NOT_NULL(str);
     ASSERT_STR_EQ(str, "3.14");
     
-    free(str);
+    memory_free(str);
     value_unref(value);
 }
 
@@ -124,8 +145,8 @@ TEST(test_value_to_string_boolean) {
     ASSERT_STR_EQ(str_true, "true");
     ASSERT_STR_EQ(str_false, "false");
     
-    free(str_true);
-    free(str_false);
+    memory_free(str_true);
+    memory_free(str_false);
     value_unref(value_true);
     value_unref(value_false);
 }
@@ -137,7 +158,7 @@ TEST(test_value_to_string_null) {
     ASSERT_NOT_NULL(str);
     ASSERT_STR_EQ(str, "null");
     
-    free(str);
+    memory_free(str);
     value_unref(value);
 }
 
@@ -219,10 +240,10 @@ TEST(test_value_type_name) {
     Value* bool_val = value_new_boolean(true);
     Value* null_val = value_new_null();
     
-    ASSERT_STR_EQ(value_type_name(string_val), "string");
-    ASSERT_STR_EQ(value_type_name(number_val), "number");
-    ASSERT_STR_EQ(value_type_name(bool_val), "boolean");
-    ASSERT_STR_EQ(value_type_name(null_val), "null");
+    ASSERT_STR_EQ(value_type_name(string_val->type), "string");
+    ASSERT_STR_EQ(value_type_name(number_val->type), "number");
+    ASSERT_STR_EQ(value_type_name(bool_val->type), "boolean");
+    ASSERT_STR_EQ(value_type_name(null_val->type), "null");
     
     value_unref(string_val);
     value_unref(number_val);
@@ -264,10 +285,16 @@ TEST(test_value_empty_string) {
 TEST(test_value_null_string) {
     Value* value = value_new_string(NULL);
     
-    // Should handle NULL input gracefully
+    // Should return NULL for NULL input
+    ASSERT_NULL(value);
+    
+    // Test with empty string instead
+    value = value_new_string("");
     ASSERT_NOT_NULL(value);
     ASSERT_EQ(value->type, VALUE_STRING);
-    // Implementation dependent - might create empty string or handle specially
+    ASSERT_NOT_NULL(value->as.string);
+    ASSERT_STR_EQ(value->as.string->data, "");
+    ASSERT_EQ(value->as.string->length, 0);
     
     value_unref(value);
 }
@@ -293,4 +320,25 @@ TEST(test_value_special_numbers) {
     value_unref(large_val);
 }
 
-END_TEST_SUITE
+TEST_SUITE_BEGIN(value_basic_tests)
+    RUN_TEST(test_value_new_string);
+    RUN_TEST(test_value_new_number);
+    RUN_TEST(test_value_new_boolean);
+    RUN_TEST(test_value_new_null);
+    RUN_TEST(test_value_copy_string);
+    RUN_TEST(test_value_copy_number);
+    RUN_TEST(test_value_to_string_string);
+    RUN_TEST(test_value_to_string_number);
+    RUN_TEST(test_value_to_string_boolean);
+    RUN_TEST(test_value_to_string_null);
+    RUN_TEST(test_value_equals_string);
+    RUN_TEST(test_value_equals_number);
+    RUN_TEST(test_value_equals_boolean);
+    RUN_TEST(test_value_equals_null);
+    RUN_TEST(test_value_equals_different_types);
+    RUN_TEST(test_value_type_name);
+    RUN_TEST(test_value_reference_counting);
+    RUN_TEST(test_value_empty_string);
+    RUN_TEST(test_value_null_string);
+    RUN_TEST(test_value_special_numbers);
+TEST_SUITE_END

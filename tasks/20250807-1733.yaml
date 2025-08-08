@@ -1,0 +1,16 @@
+agent: swarm-1-zen-worker-stdlib
+task: Rename math functions from zen_math_* to math_*_internal for MANIFEST.json compliance
+created: 1754562791
+completed: false
+files:
+  - src/stdlib/math.c
+  - src/include/zen/stdlib/math.h
+activities:
+  - timestamp: 1754562791
+    start: 1754562791
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

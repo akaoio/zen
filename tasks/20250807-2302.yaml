@@ -1,0 +1,23 @@
+agent: swarm-1-zen-architect
+task: 'CRITICAL: Fix MANIFEST.json double prefix naming violations in logic.c functions (lines 2609-2706)'
+created: 1754582576
+completed: false
+files:
+  - MANIFEST.json
+activities:
+  - timestamp: 1754582576
+    start: 1754582576
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754582583
+    start: 1754582583
+    end: 0
+    method: Queen analysis shows MANIFEST.json contains incorrect double prefixes like 'logic_logic_entails' instead of correct 'logic_entails'. See tmp/logic_c_naming_analysis_swarm1_queen.md for complete analysis. Functions should use single prefix following module_action_target pattern.
+    success: false
+    fail: true
+    why_success: In progress
+    why_fail: MANIFEST.json needs correction before logic.c can be properly cleaned up

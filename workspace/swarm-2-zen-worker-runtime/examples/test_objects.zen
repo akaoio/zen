@@ -1,5 +1,0 @@
-set person name "Alice", age 30, active true
-print "Person:" person
-
-set config host "localhost", port 8080, debug false
-print "Config:" config

@@ -11,9 +11,14 @@
 #include "zen/core/visitor.h"
 #include "zen/core/scope.h"
 #include "zen/core/token.h"
+#include "zen/core/parser.h"
 #include "zen/runtime/operators.h"
+#include "zen/stdlib/module.h"
 #include "zen/types/value.h"
+#include "zen/core/error.h"
 #include "zen/stdlib/io.h"
+#include "zen/stdlib/json.h"
+#include "zen/stdlib/yaml.h"
 #include "zen/stdlib/stdlib.h"
 #include "zen/core/memory.h"
 #include "zen/core/logger.h"
@@ -36,7 +41,6 @@
 // Forward declarations
 static AST_T* builtin_function_print(visitor_T* visitor, AST_T** args, int args_size);
 static Value* ast_to_value(AST_T* node);
-static AST_T* value_to_ast(Value* value);
 
 
 static AST_T* visitor_visit_binary_op(visitor_T* visitor, AST_T* node);
@@ -53,8 +57,9 @@ static bool is_truthy(AST_T* ast);
 // Database-like file operations
 static AST_T* visitor_visit_file_get(visitor_T* visitor, AST_T* node);
 static AST_T* visitor_visit_file_put(visitor_T* visitor, AST_T* node);
+static AST_T* visitor_visit_file_reference(visitor_T* visitor, AST_T* node);
 static AST_T* visitor_navigate_property_path(visitor_T* visitor, AST_T* root, AST_T* property_path);
-static void visitor_set_property_path(visitor_T* visitor, AST_T* root, AST_T* property_path, AST_T* value);
+// Removed unused function declaration
 
 // Advanced runtime optimization functions
 static void visitor_push_call_frame(visitor_T* visitor, AST_T* function_def, AST_T** args, size_t arg_count, const char* function_name);
@@ -260,9 +265,14 @@ AST_T* visitor_visit(visitor_T* visitor, AST_T* node)
             
         // Database-like file operations
         case AST_FILE_GET:
+            printf("DEBUG: Visiting FILE_GET node\n");
             return visitor_visit_file_get(visitor, node);
         case AST_FILE_PUT:
+            printf("DEBUG: Visiting FILE_PUT node\n");
             return visitor_visit_file_put(visitor, node);
+        case AST_FILE_REFERENCE:
+            printf("DEBUG: Visiting FILE_REFERENCE node\n");
+            return visitor_visit_file_reference(visitor, node);
             
         // Formal Logic AST nodes - placeholder implementations
         case AST_LOGICAL_QUANTIFIER:
@@ -282,6 +292,16 @@ AST_T* visitor_visit(visitor_T* visitor, AST_T* node)
         case AST_MATHEMATICAL_FUNCTION:
             // For logical AST nodes, return the node itself (pure AST operations)
             result = (AST_T*)node;
+            break;
+        
+        case AST_IMPORT:
+            // TODO: Implement import functionality
+            result = ast_new(AST_NOOP);
+            break;
+        
+        case AST_EXPORT:
+            // TODO: Implement export functionality  
+            result = ast_new(AST_NOOP);
             break;
             
         default:
@@ -427,7 +447,7 @@ AST_T* visitor_visit_function_call(visitor_T* visitor, AST_T* node)
         size_t argc = (size_t)node->function_call_arguments_size;
         
         if (argc > 0) {
-            value_args = malloc(sizeof(Value*) * argc);
+            value_args = memory_alloc(sizeof(Value*) * argc);
             if (!value_args) {
                 return ast_new(AST_NULL);
             }
@@ -452,7 +472,7 @@ AST_T* visitor_visit_function_call(visitor_T* visitor, AST_T* node)
                     value_unref(value_args[i]);
                 }
             }
-            free(value_args);
+            memory_free(value_args);
         }
         
         // Convert result back to AST
@@ -555,6 +575,8 @@ static AST_T* builtin_function_print(visitor_T* visitor, AST_T** args, int args_
     return ast_new(AST_NOOP);
 }
 
+
+
 /**
  * @brief Convert AST node to Value object
  * @param node AST node to convert
@@ -583,13 +605,7 @@ static Value* ast_to_value(AST_T* node)
             return value_new_boolean(node->boolean_value);
         case AST_NUMBER:
             LOG_VISITOR_DEBUG("Converting AST_NUMBER (%f) to Value", node->number_value);
-            Value* num_val = value_new_number(node->number_value);
-            if (num_val) {
-                LOG_VISITOR_DEBUG("Created Value type=%d, number=%f", num_val->type, num_val->as.number);
-            } else {
-                LOG_VISITOR_DEBUG("Failed to create number Value!");
-            }
-            return num_val;
+            return value_new_number(node->number_value);
         case AST_STRING:
             LOG_VISITOR_DEBUG("Converting AST_STRING ('%s') to Value", node->string_value ? node->string_value : "");
             return value_new_string(node->string_value ? node->string_value : "");
@@ -604,9 +620,11 @@ static Value* ast_to_value(AST_T* node)
                     Value* element_val = ast_to_value(node->array_elements[i]);
                     if (element_val) {
                         array_push(array_val, element_val);
-                        value_unref(element_val); // array_push should add its own reference
+                        value_unref(element_val);
                     }
                 }
+                
+                LOG_VISITOR_DEBUG("Converted AST_ARRAY to Value with %zu elements", node->array_size);
                 return array_val;
             }
         case AST_OBJECT:
@@ -621,23 +639,27 @@ static Value* ast_to_value(AST_T* node)
                         Value* value_val = ast_to_value(node->object_values[i]);
                         if (value_val) {
                             object_set(object_val, node->object_keys[i], value_val);
-                            value_unref(value_val); // object_set should add its own reference
+                            value_unref(value_val);
                         }
                     }
                 }
+                
+                LOG_VISITOR_DEBUG("Converted AST_OBJECT to Value with %zu pairs", node->object_size);
                 return object_val;
             }
         default:
+            LOG_VISITOR_DEBUG("Unknown AST type %d, returning null", node->type);
             return value_new_null();
     }
 }
+
 
 /**
  * @brief Convert Value object to AST node
  * @param value Value object to convert
  * @return AST node or NULL on failure
  */
-static AST_T* value_to_ast(Value* value)
+AST_T* value_to_ast(Value* value)
 {
     if (!value) {
         return ast_new(AST_NULL);
@@ -668,7 +690,9 @@ static AST_T* value_to_ast(Value* value)
             {
                 AST_T* ast = ast_new(AST_STRING);
                 if (ast && value->as.string && value->as.string->data) {
-                    ast->string_value = strdup(value->as.string->data);
+                    // NOTE: Removed automatic @ prefix conversion here to prevent infinite loops
+                    // The @ prefix should only be processed during initial parsing, not value conversion
+                    ast->string_value = memory_strdup(value->as.string->data);
                 }
                 return ast;
             }
@@ -683,7 +707,7 @@ static AST_T* value_to_ast(Value* value)
                 
                 if (length > 0) {
                     // Allocate array for elements
-                    ast->array_elements = malloc(sizeof(AST_T*) * length);
+                    ast->array_elements = memory_alloc(sizeof(AST_T*) * length);
                     if (!ast->array_elements) {
                         ast_free(ast);
                         return ast_new(AST_NULL);
@@ -711,19 +735,19 @@ static AST_T* value_to_ast(Value* value)
                 
                 if (obj->length > 0) {
                     // Allocate arrays for keys and values
-                    ast->object_keys = malloc(sizeof(char*) * obj->length);
-                    ast->object_values = malloc(sizeof(AST_T*) * obj->length);
+                    ast->object_keys = memory_alloc(sizeof(char*) * obj->length);
+                    ast->object_values = memory_alloc(sizeof(AST_T*) * obj->length);
                     
                     if (!ast->object_keys || !ast->object_values) {
-                        if (ast->object_keys) free(ast->object_keys);
-                        if (ast->object_values) free(ast->object_values);
+                        if (ast->object_keys) memory_free(ast->object_keys);
+                        if (ast->object_values) memory_free(ast->object_values);
                         ast_free(ast);
                         return ast_new(AST_NULL);
                     }
                     
                     // Copy keys and convert values
                     for (size_t i = 0; i < obj->length; i++) {
-                        ast->object_keys[i] = strdup(obj->pairs[i].key);
+                        ast->object_keys[i] = memory_strdup(obj->pairs[i].key);
                         ast->object_values[i] = value_to_ast(obj->pairs[i].value);
                     }
                 } else {
@@ -1273,7 +1297,7 @@ static AST_T* visitor_visit_for_loop(visitor_T* visitor, AST_T* node)
             // Create a temporary variable definition for the iterator
             AST_T* iterator_def = ast_new(AST_VARIABLE_DEFINITION);
             if (iterator_def && node->scope) {
-                iterator_def->variable_definition_variable_name = strdup(node->iterator_variable);
+                iterator_def->variable_definition_variable_name = memory_strdup(node->iterator_variable);
                 iterator_def->variable_definition_value = element;
                 iterator_def->scope = node->scope;
                 
@@ -1309,12 +1333,12 @@ static AST_T* visitor_visit_for_loop(visitor_T* visitor, AST_T* node)
             // Create a string AST node for the key
             AST_T* key_ast = ast_new(AST_STRING);
             if (key_ast) {
-                key_ast->string_value = strdup(key);
+                key_ast->string_value = memory_strdup(key);
                 
                 // Create iterator variable definition
                 AST_T* iterator_def = ast_new(AST_VARIABLE_DEFINITION);
                 if (iterator_def && node->scope) {
-                    iterator_def->variable_definition_variable_name = strdup(node->iterator_variable);
+                    iterator_def->variable_definition_variable_name = memory_strdup(node->iterator_variable);
                     iterator_def->variable_definition_value = key_ast;
                     iterator_def->scope = node->scope;
                     
@@ -1374,12 +1398,36 @@ static AST_T* visitor_execute_user_function(visitor_T* visitor, AST_T* fdef, AST
     
     const char* function_name = fdef->function_definition_name ? fdef->function_definition_name : "anonymous";
     
-    // Check parameter count matches argument count
-    if (fdef->function_definition_args_size != (size_t)args_size) {
-        visitor_throw_exception(visitor, ast_new(AST_NULL), "Argument count mismatch", function_name);
-        LOG_ERROR(LOG_CAT_VISITOR, "Function '%s' expects %zu arguments, got %d", 
-                  function_name, fdef->function_definition_args_size, args_size);
-        return ast_new(AST_NULL);
+    // Check parameter count, accounting for rest parameters
+    bool has_rest_param = false;
+    size_t min_args = fdef->function_definition_args_size;
+    
+    // Check if the last parameter is a rest parameter (AST_SPREAD)
+    if (fdef->function_definition_args_size > 0) {
+        AST_T* last_param = fdef->function_definition_args[fdef->function_definition_args_size - 1];
+        if (last_param && last_param->type == AST_SPREAD) {
+            has_rest_param = true;
+            min_args = fdef->function_definition_args_size - 1; // Exclude rest param from count
+        }
+    }
+    
+    // Validate argument count
+    if (has_rest_param) {
+        // With rest parameters, we need at least min_args arguments
+        if ((size_t)args_size < min_args) {
+            visitor_throw_exception(visitor, ast_new(AST_NULL), "Too few arguments", function_name);
+            LOG_ERROR(LOG_CAT_VISITOR, "Function '%s' with rest parameters expects at least %zu arguments, got %d", 
+                      function_name, min_args, args_size);
+            return ast_new(AST_NULL);
+        }
+    } else {
+        // Without rest parameters, argument count must match exactly
+        if (fdef->function_definition_args_size != (size_t)args_size) {
+            visitor_throw_exception(visitor, ast_new(AST_NULL), "Argument count mismatch", function_name);
+            LOG_ERROR(LOG_CAT_VISITOR, "Function '%s' expects %zu arguments, got %d", 
+                      function_name, fdef->function_definition_args_size, args_size);
+            return ast_new(AST_NULL);
+        }
     }
     
     // Check for stack overflow
@@ -1401,13 +1449,15 @@ static AST_T* visitor_execute_user_function(visitor_T* visitor, AST_T* fdef, AST
     
     // Bind parameters to arguments by creating temporary variable definitions
     AST_T** param_bindings = NULL;
-    if (args_size > 0) {
-        param_bindings = malloc(sizeof(AST_T*) * args_size);
+    if (fdef->function_definition_args_size > 0) {
+        param_bindings = memory_alloc(sizeof(AST_T*) * fdef->function_definition_args_size);
         if (!param_bindings) {
             return ast_new(AST_NULL);
         }
         
-        for (int i = 0; i < args_size; i++) {
+        // Bind regular parameters first
+        size_t regular_param_count = has_rest_param ? min_args : fdef->function_definition_args_size;
+        for (size_t i = 0; i < regular_param_count; i++) {
             // Evaluate the argument
             AST_T* arg_value = visitor_visit(visitor, args[i]);
             if (!arg_value) {
@@ -1417,13 +1467,54 @@ static AST_T* visitor_execute_user_function(visitor_T* visitor, AST_T* fdef, AST
             // Create a variable definition for the parameter
             AST_T* param_def = ast_new(AST_VARIABLE_DEFINITION);
             if (param_def && fdef->function_definition_args[i] && fdef->function_definition_args[i]->variable_name) {
-                param_def->variable_definition_variable_name = strdup(fdef->function_definition_args[i]->variable_name);
+                param_def->variable_definition_variable_name = memory_strdup(fdef->function_definition_args[i]->variable_name);
                 param_def->variable_definition_value = arg_value;
                 param_def->scope = function_scope;
                 
                 // Add to function scope
                 scope_add_variable_definition(function_scope, param_def);
                 param_bindings[i] = param_def;
+            }
+        }
+        
+        // Handle rest parameter if present
+        if (has_rest_param) {
+            AST_T* rest_param = fdef->function_definition_args[fdef->function_definition_args_size - 1];
+            if (rest_param && rest_param->type == AST_SPREAD && rest_param->spread_expression && 
+                rest_param->spread_expression->variable_name) {
+                
+                // Collect remaining arguments into an array
+                size_t rest_arg_count = (size_t)args_size > min_args ? (size_t)args_size - min_args : 0;
+                AST_T** rest_elements = NULL;
+                
+                if (rest_arg_count > 0) {
+                    rest_elements = memory_alloc(sizeof(AST_T*) * rest_arg_count);
+                    if (rest_elements) {
+                        for (size_t j = 0; j < rest_arg_count; j++) {
+                            AST_T* rest_arg_value = visitor_visit(visitor, args[min_args + j]);
+                            rest_elements[j] = rest_arg_value ? rest_arg_value : ast_new(AST_NULL);
+                        }
+                    }
+                }
+                
+                // Create array AST node for rest arguments
+                AST_T* rest_array = ast_new_array(rest_elements, rest_arg_count);
+                
+                // Create variable definition for the rest parameter
+                AST_T* rest_param_def = ast_new(AST_VARIABLE_DEFINITION);
+                if (rest_param_def) {
+                    rest_param_def->variable_definition_variable_name = memory_strdup(rest_param->spread_expression->variable_name);
+                    rest_param_def->variable_definition_value = rest_array;
+                    rest_param_def->scope = function_scope;
+                    
+                    // Add to function scope
+                    scope_add_variable_definition(function_scope, rest_param_def);
+                    param_bindings[fdef->function_definition_args_size - 1] = rest_param_def;
+                }
+                
+                if (rest_elements) {
+                    memory_free(rest_elements);
+                }
             }
         }
     }
@@ -1485,7 +1576,7 @@ static AST_T* visitor_execute_user_function(visitor_T* visitor, AST_T* fdef, AST
     
     // Clean up parameter bindings (in a real implementation, we'd remove them from scope)
     if (param_bindings) {
-        free(param_bindings);
+        memory_free(param_bindings);
     }
     
     // Handle exceptions
@@ -1541,7 +1632,7 @@ static void visitor_push_call_frame(visitor_T* visitor, AST_T* function_def, AST
     frame->previous = visitor->call_stack;
     frame->start_time = clock();
     frame->recursion_depth = visitor->call_stack_depth;
-    frame->function_name = function_name ? strdup(function_name) : NULL;
+    frame->function_name = function_name ? memory_strdup(function_name) : NULL;
     
     visitor->call_stack = frame;
     visitor->call_stack_depth++;
@@ -1598,7 +1689,7 @@ static FunctionProfile* visitor_get_or_create_profile(visitor_T* visitor, const 
     // Create new profile if space available
     if (visitor->profile_count < visitor->profile_capacity) {
         FunctionProfile* profile = &visitor->function_profiles[visitor->profile_count];
-        profile->function_name = strdup(function_name);
+        profile->function_name = memory_strdup(function_name);
         profile->execution_count = 0;
         profile->total_execution_time = 0.0;
         profile->is_hot_function = false;
@@ -1623,7 +1714,7 @@ static FunctionProfile* visitor_get_or_create_profile(visitor_T* visitor, const 
     
     // Create the new profile
     FunctionProfile* profile = &visitor->function_profiles[visitor->profile_count];
-    profile->function_name = strdup(function_name);
+    profile->function_name = memory_strdup(function_name);
     profile->execution_count = 0;
     profile->total_execution_time = 0.0;
     profile->is_hot_function = false;
@@ -1761,51 +1852,125 @@ static AST_T* visitor_apply_tail_call_optimization(visitor_T* visitor, AST_T* no
  */
 static AST_T* visitor_visit_file_get(visitor_T* visitor, AST_T* node)
 {
+    printf("DEBUG: visitor_visit_file_get called\n");
     if (!visitor || !node || !node->file_get_path) {
+        printf("DEBUG: Early return - visitor=%p, node=%p, path=%p\n", 
+               (void*)visitor, (void*)node, 
+               node ? (void*)node->file_get_path : NULL);
         return ast_new(AST_NULL);
     }
     
     // Evaluate file path
+    printf("DEBUG: Evaluating file path...\n");
     AST_T* path_result = visitor_visit(visitor, node->file_get_path);
+    printf("DEBUG: path_result=%p\n", (void*)path_result);
+    if (path_result) {
+        printf("DEBUG: path_result type=%d, string_value=%s\n", 
+               path_result->type, 
+               path_result->type == AST_STRING && path_result->string_value ? path_result->string_value : "NULL");
+    }
     if (!path_result || path_result->type != AST_STRING || !path_result->string_value) {
+        printf("DEBUG: Invalid path result, returning NULL\n");
         return ast_new(AST_NULL);
     }
     
     char* file_path = path_result->string_value;
+    printf("DEBUG: Using file path: %s\n", file_path);
     
     // Load file contents based on extension
     char* extension = strrchr(file_path, '.');
     if (!extension) {
+        printf("DEBUG: No extension found in path %s\n", file_path);
         LOG_ERROR(LOG_CAT_VISITOR, "File get: No extension found in path %s", file_path);
         return ast_new(AST_NULL);
     }
     
-    // For now, return a placeholder implementation
-    // TODO: Implement actual JSON/YAML file loading when those stdlib functions are available
+    printf("DEBUG: File extension: %s\n", extension);
     LOG_VISITOR_DEBUG("File get operation on %s (extension: %s)", file_path, extension);
     
-    // Return a simple object as placeholder
-    AST_T* result = ast_new(AST_OBJECT);
-    if (result) {
-        result->object_size = 1;
-        result->object_keys = memory_alloc(sizeof(char*));
-        result->object_values = memory_alloc(sizeof(AST_T*));
-        if (result->object_keys && result->object_values) {
-            result->object_keys[0] = memory_strdup("status");
-            result->object_values[0] = ast_new_string("file_get_placeholder");
+    // Check if file exists
+    printf("DEBUG: Checking if file exists: %s\n", file_path);
+    if (!io_file_exists_internal(file_path)) {
+        printf("DEBUG: File not found: %s\n", file_path);
+        LOG_ERROR(LOG_CAT_VISITOR, "File not found: %s", file_path);
+        return ast_new(AST_NULL);
+    }
+    printf("DEBUG: File exists!\n");
+    
+    AST_T* result = NULL;
+    
+    // Handle JSON files
+    if (strcmp(extension, ".json") == 0) {
+        printf("DEBUG: Handling JSON file\n");
+        LOG_VISITOR_DEBUG("Loading JSON file: %s", file_path);
+        Value* file_content = io_load_json_file_internal(file_path);
+        printf("DEBUG: io_load_json_file_internal returned: %p\n", (void*)file_content);
+        if (!file_content) {
+            printf("DEBUG: Failed to load JSON file\n");
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to load JSON file: %s", file_path);
+            return ast_new(AST_NULL);
         }
+        
+        printf("DEBUG: Loaded JSON file, value type: %d\n", file_content->type);
+        LOG_VISITOR_DEBUG("Loaded JSON file, value type: %d", file_content->type);
+        
+        // Convert Value to AST
+        printf("DEBUG: Converting Value to AST...\n");
+        result = value_to_ast(file_content);
+        printf("DEBUG: value_to_ast returned: %p\n", (void*)result);
+        if (result) {
+            printf("DEBUG: AST type: %d\n", result->type);
+        }
+        value_unref(file_content);
+        
+        if (!result) {
+            printf("DEBUG: value_to_ast returned NULL\n");
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to convert JSON content to AST for file: %s", file_path);
+            return ast_new(AST_NULL);
+        }
+        
+        LOG_VISITOR_DEBUG("Converted to AST, type: %d", result->type);
         
         // If no property path, return entire file content
         if (!node->file_get_property) {
+            printf("DEBUG: No property path, returning entire file content (result=%p, type=%d)\n", 
+                   (void*)result, result ? (int)result->type : -1);
+            LOG_VISITOR_DEBUG("No property path, returning entire file content");
             return result;
         }
         
+        LOG_VISITOR_DEBUG("Property path exists, navigating...");
         // Navigate property path using helper function
         AST_T* property_result = visitor_visit(visitor, node->file_get_property);
         if (property_result) {
+            LOG_VISITOR_DEBUG("Property result type: %d", property_result->type);
             AST_T* navigated = visitor_navigate_property_path(visitor, result, property_result);
             return navigated ? navigated : ast_new(AST_NULL);
         }
+    }
+    // Handle plain text files
+    else if (strcmp(extension, ".txt") == 0 || strcmp(extension, ".zen") == 0) {
+        char* file_content = io_read_file_internal(file_path);
+        if (!file_content) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to read text file: %s", file_path);
+            return ast_new(AST_NULL);
+        }
+        
+        // Create string AST node
+        result = ast_new(AST_STRING);
+        if (result) {
+            result->string_value = file_content; // Transfer ownership
+        } else {
+            memory_free(file_content);
+            return ast_new(AST_NULL);
+        }
+        
+        return result;
+    }
+    // Unsupported file format
+    else {
+        LOG_ERROR(LOG_CAT_VISITOR, "Unsupported file format %s for file %s", extension, file_path);
+        return ast_new(AST_NULL);
     }
     
     return result ? result : ast_new(AST_NULL);
@@ -1838,26 +2003,116 @@ static AST_T* visitor_visit_file_put(visitor_T* visitor, AST_T* node)
     char* file_path = path_result->string_value;
     char* extension = strrchr(file_path, '.');
     
-    // For now, return a placeholder implementation
-    // TODO: Implement actual JSON/YAML file saving when those stdlib functions are available
-    LOG_VISITOR_DEBUG("File put operation on %s (extension: %s)", file_path, extension ? extension : "none");
-    
-    // Create a placeholder file content structure
-    AST_T* file_content = ast_new(AST_OBJECT);
-    if (!file_content) {
+    // Determine file format and handle accordingly
+    if (!extension) {
+        LOG_ERROR(LOG_CAT_VISITOR, "File put: No extension found in path %s", file_path);
         return ast_new(AST_NULL);
     }
     
-    // Set value at property path using helper function
-    if (node->file_put_property) {
-        AST_T* property_result = visitor_visit(visitor, node->file_put_property);
-        if (property_result) {
-            visitor_set_property_path(visitor, file_content, property_result, value_result);
+    LOG_VISITOR_DEBUG("File put operation on %s (extension: %s)", file_path, extension);
+    
+    // Handle JSON files
+    if (strcmp(extension, ".json") == 0) {
+        Value* file_content_value = NULL;
+        
+        // Check if file exists and load existing content
+        if (io_file_exists_internal(file_path)) {
+            file_content_value = io_load_json_file_internal(file_path);
+            if (!file_content_value) {
+                // If file exists but can't be loaded, create empty object
+                file_content_value = object_new();
+            }
+        } else {
+            // Create new empty object
+            file_content_value = object_new();
+        }
+        
+        if (!file_content_value) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to create file content structure for %s", file_path);
+            return ast_new(AST_NULL);
+        }
+        
+        // Convert value_result to Value for processing
+        Value* new_value = ast_to_value(value_result);
+        if (!new_value) {
+            value_unref(file_content_value);
+            return ast_new(AST_NULL);
+        }
+        
+        // If no property path, replace entire file content
+        if (!node->file_put_property) {
+            value_unref(file_content_value);
+            file_content_value = new_value;
+        } else {
+            // Set value at property path
+            AST_T* property_result = visitor_visit(visitor, node->file_put_property);
+            if (property_result && property_result->type == AST_STRING && property_result->string_value) {
+                // For now, only handle simple string properties
+                // TODO: Handle compound property paths for nested object modification
+                if (file_content_value->type == VALUE_OBJECT) {
+                    object_set(file_content_value, property_result->string_value, new_value);
+                } else {
+                    LOG_ERROR(LOG_CAT_VISITOR, "Cannot set property on non-object file content");
+                    value_unref(file_content_value);
+                    value_unref(new_value);
+                    return ast_new(AST_NULL);
+                }
+            }
+            value_unref(new_value);
+        }
+        
+        // Convert to JSON string and save to file
+        char* json_string = json_stringify_pretty(file_content_value, 2);
+        value_unref(file_content_value);
+        
+        if (!json_string) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to stringify JSON for file %s", file_path);
+            return ast_new(AST_NULL);
+        }
+        
+        bool write_success = io_write_file_internal(file_path, json_string);
+        memory_free(json_string);
+        
+        if (write_success) {
+            LOG_VISITOR_DEBUG("Successfully wrote JSON file %s", file_path);
+            return ast_new_boolean(1);
+        } else {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to write JSON file %s", file_path);
+            return ast_new(AST_NULL);
         }
     }
-    
-    // Return success placeholder
-    return ast_new_boolean(1);
+    // Handle plain text files
+    else if (strcmp(extension, ".txt") == 0 || strcmp(extension, ".zen") == 0) {
+        // Convert value to string representation
+        Value* value_as_value = ast_to_value(value_result);
+        if (!value_as_value) {
+            return ast_new(AST_NULL);
+        }
+        
+        char* content_string = value_to_string_safe(value_as_value);
+        value_unref(value_as_value);
+        
+        if (!content_string) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to convert value to string for file %s", file_path);
+            return ast_new(AST_NULL);
+        }
+        
+        bool write_success = io_write_file_internal(file_path, content_string);
+        memory_free(content_string);
+        
+        if (write_success) {
+            LOG_VISITOR_DEBUG("Successfully wrote text file %s", file_path);
+            return ast_new_boolean(1);
+        } else {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to write text file %s", file_path);
+            return ast_new(AST_NULL);
+        }
+    }
+    // Unsupported file format
+    else {
+        LOG_ERROR(LOG_CAT_VISITOR, "Unsupported file format %s for file %s", extension, file_path);
+        return ast_new(AST_NULL);
+    }
 }
 
 /**
@@ -1900,47 +2155,121 @@ static AST_T* visitor_navigate_property_path(visitor_T* visitor, AST_T* root, AS
 }
 
 /**
- * @brief Set value at property path in object structure
+ * @brief Visit file reference node (@ prefix cross-file references)
  * @param visitor Visitor instance
- * @param root Root object to modify
- * @param property_path Property path AST
- * @param value Value to set
+ * @param node File reference AST node
+ * @return AST node containing the referenced value
  */
-static void visitor_set_property_path(visitor_T* visitor, AST_T* root, AST_T* property_path, AST_T* value)
+static AST_T* visitor_visit_file_reference(visitor_T* visitor, AST_T* node)
 {
-    if (!visitor || !root || !property_path || !value) {
-        return;
+    if (!visitor || !node || !node->file_ref_target_file) {
+        return ast_new(AST_NULL);
     }
     
-    if (property_path->type == AST_STRING && property_path->string_value) {
-        // Simple property set
-        if (root->type == AST_OBJECT) {
-            // Find existing key or add new one
-            for (size_t i = 0; i < root->object_size; i++) {
-                if (root->object_keys[i] && 
-                    strcmp(root->object_keys[i], property_path->string_value) == 0) {
-                    // Update existing value
-                    if (root->object_values[i]) {
-                        ast_free(root->object_values[i]);
-                    }
-                    root->object_values[i] = value;
-                    return;
-                }
-            }
-            
-            // Add new key-value pair
-            root->object_size++;
-            root->object_keys = memory_realloc(root->object_keys, root->object_size * sizeof(char*));
-            root->object_values = memory_realloc(root->object_values, root->object_size * sizeof(AST_T*));
-            
-            if (root->object_keys && root->object_values) {
-                root->object_keys[root->object_size - 1] = memory_strdup(property_path->string_value);
-                root->object_values[root->object_size - 1] = value;
-            }
+    printf("DEBUG: Resolving file reference: %s -> %s\n", 
+           node->file_ref_target_file,
+           node->file_ref_property_path ? node->file_ref_property_path : "root");
+    
+    const char* target_file = node->file_ref_target_file;
+    const char* property_path = node->file_ref_property_path;
+    
+    // Check if target file exists
+    if (!io_file_exists_internal(target_file)) {
+        LOG_ERROR(LOG_CAT_VISITOR, "Referenced file not found: %s", target_file);
+        return ast_new(AST_NULL);
+    }
+    
+    // Determine file extension for loading strategy
+    char* extension = strrchr(target_file, '.');
+    if (!extension) {
+        LOG_ERROR(LOG_CAT_VISITOR, "Referenced file has no extension: %s", target_file);
+        return ast_new(AST_NULL);
+    }
+    
+    AST_T* file_content = NULL;
+    
+    // Load target file content based on extension
+    if (strcmp(extension, ".json") == 0) {
+        Value* json_content = io_load_json_file_internal(target_file);
+        if (!json_content) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to load referenced JSON file: %s", target_file);
+            return ast_new(AST_NULL);
+        }
+        
+        file_content = value_to_ast(json_content);
+        value_unref(json_content);
+        
+        if (!file_content) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to convert referenced JSON content to AST: %s", target_file);
+            return ast_new(AST_NULL);
         }
     }
-    // TODO: Handle compound property paths for nested object modification
+    // Add YAML support
+    else if (strcmp(extension, ".yaml") == 0 || strcmp(extension, ".yml") == 0) {
+        char* yaml_string = io_read_file_internal(target_file);
+        if (!yaml_string) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to read referenced YAML file: %s", target_file);
+            return ast_new(AST_NULL);
+        }
+        
+        Value* yaml_content = yaml_parse(yaml_string);
+        memory_free(yaml_string);
+        
+        if (!yaml_content || yaml_content->type == VALUE_ERROR) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to parse referenced YAML file: %s", target_file);
+            if (yaml_content) value_unref(yaml_content);
+            return ast_new(AST_NULL);
+        }
+        
+        file_content = value_to_ast(yaml_content);
+        value_unref(yaml_content);
+        
+        if (!file_content) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to convert referenced YAML content to AST: %s", target_file);
+            return ast_new(AST_NULL);
+        }
+    }
+    else {
+        LOG_ERROR(LOG_CAT_VISITOR, "Unsupported file type for reference: %s", extension);
+        return ast_new(AST_NULL);
+    }
+    
+    // If no property path, return entire file content
+    if (!property_path || strlen(property_path) == 0) {
+        return file_content;
+    }
+    
+    // Navigate to the specified property path
+    // Parse dot-separated property path like "office.alice" 
+    char* path_copy = memory_strdup(property_path);
+    char* token = strtok(path_copy, ".");
+    AST_T* current = file_content;
+    
+    while (token && current) {
+        // Navigate one level deeper
+        AST_T* prop_ast = ast_new(AST_STRING);
+        prop_ast->string_value = memory_strdup(token);
+        
+        AST_T* next = visitor_navigate_property_path(visitor, current, prop_ast);
+        
+        // Clean up the property AST
+        ast_free(prop_ast);
+        
+        if (!next) {
+            // Property not found
+            memory_free(path_copy);
+            return ast_new(AST_NULL);
+        }
+        
+        current = next;
+        token = strtok(NULL, ".");
+    }
+    
+    memory_free(path_copy);
+    return current ? current : ast_new(AST_NULL);
 }
+
+// Removed unused visitor_set_property_path function
 
 // =============================================================================
 // Public Advanced Runtime API Functions
@@ -1992,6 +2321,119 @@ bool visitor_optimize_hot_function(visitor_T* visitor, const char* function_name
     // No optimization for now - just ignore
     return false;
 }
+
+/**
+ * @brief Execute import statement
+ * @param visitor Visitor instance
+ * @param node Import AST node
+ * @return AST_T* Result of import execution
+ */
+AST_T* visitor_visit_import(visitor_T* visitor, AST_T* node) {
+    if (!visitor || !node || node->type != AST_IMPORT) {
+        return ast_new(AST_NOOP);
+    }
+    
+    // Get import path
+    const char* import_path = node->import_path;
+    if (!import_path || strlen(import_path) == 0) {
+        // Error: no import path
+        return ast_new(AST_NOOP);
+    }
+    
+    // Load the module using the module system
+    Value* module = module_load_file(import_path);
+    if (!module || error_is_error(module)) {
+        // Import failed
+        if (module) {
+            value_unref(module);
+        }
+        return ast_new(AST_NOOP);
+    }
+    
+    // Handle different import types
+    if (node->import_names && node->import_names_size > 0) {
+        // Named imports: import propA newA, propB newB from "config.json"
+        for (size_t i = 0; i < node->import_names_size; i++) {
+            const char* import_spec = node->import_names[i];
+            char* original_name = NULL;
+            char* alias_name = NULL;
+            
+            // Parse "original:alias" format
+            char* colon = strchr(import_spec, ':');
+            if (colon) {
+                // Has alias
+                size_t orig_len = colon - import_spec;
+                original_name = memory_alloc(orig_len + 1);
+                strncpy(original_name, import_spec, orig_len);
+                original_name[orig_len] = '\0';
+                alias_name = memory_strdup(colon + 1);
+            } else {
+                // No alias
+                original_name = memory_strdup(import_spec);
+                alias_name = memory_strdup(import_spec);
+            }
+            
+            // Get the value from the module
+            Value* imported_value = NULL;
+            if (module->type == VALUE_OBJECT) {
+                imported_value = object_get(module, original_name);
+                if (!imported_value) {
+                    // Try to get from nested data object (for JSON/YAML)
+                    Value* data = object_get(module, "data");
+                    if (data && data->type == VALUE_OBJECT) {
+                        imported_value = object_get(data, original_name);
+                    }
+                }
+            }
+            
+            if (imported_value) {
+                // Convert Value to AST and add to scope
+                AST_T* imported_ast = value_to_ast(imported_value);
+                if (imported_ast) {
+                    AST_T* var_def = ast_new_variable_definition(alias_name, imported_ast);
+                    var_def->scope = node->scope;
+                    scope_add_variable_definition(node->scope, var_def);
+                }
+            }
+            
+            memory_free(original_name);
+            memory_free(alias_name);
+        }
+    } else {
+        // Simple import: import "module.zen"
+        // Module is loaded but not assigned to any variable
+        // The module's side effects (variable definitions, function calls) have occurred
+    }
+    
+    value_unref(module);
+    return ast_new(AST_NOOP);
+}
+
+/**
+ * @brief Execute export statement
+ * @param visitor Visitor instance
+ * @param node Export AST node
+ * @return AST_T* Result of export execution
+ */
+AST_T* visitor_visit_export(visitor_T* visitor, AST_T* node) {
+    if (!visitor || !node || node->type != AST_EXPORT) {
+        return ast_new(AST_NOOP);
+    }
+    
+    // Execute the export value (function definition, variable definition, etc.)
+    AST_T* result = NULL;
+    if (node->export_value) {
+        result = visitor_visit(visitor, node->export_value);
+    }
+    
+    // In a complete implementation, we would:
+    // 1. Store the exported value in a module exports table
+    // 2. Make it available for other modules to import
+    // For now, just execute the definition/assignment
+    
+    return result ? result : ast_new(AST_NOOP);
+}
+
 
 
 

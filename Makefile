@@ -1,7 +1,7 @@
 # ZEN Language Makefile
 CC = gcc
 CFLAGS = -g -Wall -Wextra -Werror -std=c11 -Isrc/include
-LDFLAGS = -lm
+LDFLAGS = -lm -lcurl -lpcre2-8 -lyaml
 PREFIX ?= /usr/local
 BUILD_DIR ?= .
 

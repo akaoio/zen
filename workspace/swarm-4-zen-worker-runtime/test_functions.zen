@@ -1,9 +1,0 @@
-print "=== Function Tests ==="
-
-function greet name
-    print "Hello,", name
-
-greet "Alice"
-greet "Bob"
-
-print "=== Function Tests Complete ==="

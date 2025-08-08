@@ -92,7 +92,7 @@ Input → Lexer → Parser → AST → Visitor → Output
 
 **src/stdlib/**: Built-in functions
 - `io.c`: File operations, print functions, user input
-- `json.c`: JSON parsing/stringification (cJSON integration)
+- `json.c`: JSON parsing/stringification (native implementation)
 - `string.c`: String manipulation functions
 - `math.c`: Mathematical operations and constants
 - `convert.c`: Type conversion utilities

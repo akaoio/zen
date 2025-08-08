@@ -1,0 +1,1638 @@
+/*
+ * json.c
+ * JSON parsing and generation - Self-contained implementation
+ * 
+ * This file follows MANIFEST.json specification
+ * Function signatures must match manifest exactly
+ */
+
+#define _GNU_SOURCE  // For strdup
+#include "zen/stdlib/json.h"
+#include "zen/types/value.h"
+#include "zen/types/array.h"
+#include "zen/types/object.h"
+#include "zen/core/memory.h"
+#include "zen/config.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <math.h>
+#include <stdbool.h>
+
+// Helper functions for our self-contained cJSON implementation
+static cJSON* cjson_new_item(void);
+static void cjson_free(cJSON* item);
+static void cjson_free_recursive(cJSON* item);
+
+// Forward declarations for array and object functions
+
+// JSON parsing state
+typedef struct {
+    const char* input;
+    size_t pos;
+    size_t length;
+} JsonParser;
+
+// Maximum recursion depth to prevent infinite recursion
+#define JSON_MAX_DEPTH 64
+
+// Circular reference detection structure
+typedef struct {
+    const Value** visited;
+    size_t visited_count;
+    size_t visited_capacity;
+    size_t depth;
+} JsonRefTracker;
+
+// Forward declarations
+static Value* parse_value(JsonParser* parser);
+static Value* parse_object(JsonParser* parser);
+static Value* parse_array(JsonParser* parser);
+static Value* parse_string(JsonParser* parser);
+static Value* parse_number(JsonParser* parser);
+static void skip_whitespace(JsonParser* parser);
+static char peek_char(JsonParser* parser);
+static char next_char(JsonParser* parser);
+static bool expect_char(JsonParser* parser, char expected);
+
+// Circular reference detection functions
+static JsonRefTracker* json_ref_tracker_new(void);
+static void json_ref_tracker_free(JsonRefTracker* tracker);
+static bool json_ref_tracker_add(JsonRefTracker* tracker, const Value* value);
+static bool json_ref_tracker_contains(const JsonRefTracker* tracker, const Value* value);
+static char* json_stringify_safe(const Value* value, JsonRefTracker* tracker);
+
+/**
+ * @brief Parse JSON string to Value
+ * @param json_string JSON string to parse
+ * @return Newly allocated Value representing the JSON data, or error Value on failure
+ */
+Value* json_parse(const char* json_string) {
+    if (!json_string) {
+        Value* error = value_new(VALUE_ERROR);
+        if (error && error->as.error) {
+            error->as.error->message = memory_strdup("JSON string is NULL");
+            error->as.error->code = -1;
+        }
+        return error;
+    }
+    
+    JsonParser parser = {
+        .input = json_string,
+        .pos = 0,
+        .length = strlen(json_string)
+    };
+    
+    skip_whitespace(&parser);
+    Value* result = parse_value(&parser);
+    
+    if (!result) {
+        Value* error = value_new(VALUE_ERROR);
+        if (error && error->as.error) {
+            error->as.error->message = memory_strdup("Failed to parse JSON");
+            error->as.error->code = -1;
+        }
+        return error;
+    }
+    
+    return result;
+}
+
+/**
+ * @brief Convert Value to JSON string
+ * @param value Value to convert to JSON
+ * @return Newly allocated JSON string, or NULL on error
+ */
+char* json_stringify(const Value* value) {
+    JsonRefTracker* tracker = json_ref_tracker_new();
+    if (!tracker) {
+        return NULL;
+    }
+    
+    char* result = json_stringify_safe(value, tracker);
+    json_ref_tracker_free(tracker);
+    
+    return result;
+}
+                    memory_free(result);
+                    result = temp;
+                }
+                
+                char* item_json = json_stringify(value->as.array->items[i]);
+                if (!item_json) {
+                    memory_free(result);
+                    return NULL;
+                }
+                
+                char* temp = memory_alloc(strlen(result) + strlen(item_json) + 1);
+                if (!temp) {
+                    memory_free(result);
+                    memory_free(item_json);
+                    return NULL;
+                }
+                size_t result_len = strlen(result);
+                size_t item_len = strlen(item_json);
+                strncpy(temp, result, result_len);
+                temp[result_len] = '\0';
+                strncat(temp, item_json, item_len);
+                memory_free(result);
+                memory_free(item_json);
+                result = temp;
+            }
+            
+            // Add closing bracket
+            char* temp = memory_alloc(strlen(result) + 2);
+            if (!temp) {
+                memory_free(result);
+                return NULL;
+            }
+            size_t result_len = strlen(result);
+            strncpy(temp, result, result_len);
+            temp[result_len] = '\0';
+            strncat(temp, "]", 1);
+            memory_free(result);
+            return temp;
+        }
+        
+        case VALUE_OBJECT: {
+            if (!value->as.object) {
+                return memory_strdup("{}");
+            }
+            
+            // Start with opening brace
+            char* result = memory_strdup("{");
+            if (!result) return NULL;
+            
+            for (size_t i = 0; i < value->as.object->length; i++) {
+                if (i > 0) {
+                    char* temp = memory_alloc(strlen(result) + 2);
+                    if (!temp) {
+                        memory_free(result);
+                        return NULL;
+                    }
+                    size_t result_len = strlen(result);
+                    strncpy(temp, result, result_len);
+                    temp[result_len] = '\0';
+                    strncat(temp, ",", 1);
+                    memory_free(result);
+                    result = temp;
+                }
+                
+                // Add key
+                Value key_val = { .type = VALUE_STRING };
+                ZenString key_str = { .data = value->as.object->pairs[i].key, .length = strlen(value->as.object->pairs[i].key) };
+                key_val.as.string = &key_str;
+                
+                char* key_json = json_stringify(&key_val);
+                if (!key_json) {
+                    memory_free(result);
+                    return NULL;
+                }
+                
+                char* value_json = json_stringify(value->as.object->pairs[i].value);
+                if (!value_json) {
+                    memory_free(result);
+                    memory_free(key_json);
+                    return NULL;
+                }
+                
+                char* temp = memory_alloc(strlen(result) + strlen(key_json) + strlen(value_json) + 2);
+                if (!temp) {
+                    memory_free(result);
+                    memory_free(key_json);
+                    memory_free(value_json);
+                    return NULL;
+                }
+                size_t result_len = strlen(result);
+                size_t key_len = strlen(key_json);
+                size_t value_len = strlen(value_json);
+                strncpy(temp, result, result_len);
+                temp[result_len] = '\0';
+                strncat(temp, key_json, key_len);
+                strncat(temp, ":", 1);
+                strncat(temp, value_json, value_len);
+                
+                memory_free(result);
+                memory_free(key_json);
+                memory_free(value_json);
+                result = temp;
+            }
+            
+            // Add closing brace
+            char* temp = memory_alloc(strlen(result) + 2);
+            if (!temp) {
+                memory_free(result);
+                return NULL;
+            }
+            size_t result_len = strlen(result);
+            strncpy(temp, result, result_len);
+            temp[result_len] = '\0';
+            strncat(temp, "}", 1);
+            memory_free(result);
+            return temp;
+        }
+        
+        default:
+            return memory_strdup("null");
+    }
+}
+
+/**
+ * @brief Convert Value to cJSON object (self-contained implementation)
+ * @param value Value to convert
+ * @return cJSON object representing the value
+ */
+cJSON* json_value_to_cjson(const Value* value) {
+    if (!value) {
+        cJSON* item = cjson_new_item();
+        if (item) {
+            item->type = cJSON_NULL;
+        }
+        return item;
+    }
+    
+    cJSON* item = cjson_new_item();
+    if (!item) {
+        return NULL;
+    }
+    
+    switch (value->type) {
+        case VALUE_NULL:
+            item->type = cJSON_NULL;
+            break;
+            
+        case VALUE_BOOLEAN:
+            item->type = value->as.boolean ? cJSON_True : cJSON_False;
+            item->valuedouble = value->as.boolean ? 1.0 : 0.0;
+            break;
+            
+        case VALUE_NUMBER:
+            item->type = cJSON_Number;
+            item->valuedouble = value->as.number;
+            break;
+            
+        case VALUE_STRING:
+            item->type = cJSON_String;
+            if (value->as.string && value->as.string->data) {
+                item->valuestring = memory_strdup(value->as.string->data);
+                if (!item->valuestring) {
+                    cjson_free(item);
+                    return NULL;
+                }
+            } else {
+                item->valuestring = memory_strdup("");
+            }
+            break;
+            
+        case VALUE_ARRAY:
+            item->type = cJSON_Array;
+            if (value->as.array) {
+                cJSON* prev = NULL;
+                for (size_t i = 0; i < value->as.array->length; i++) {
+                    cJSON* array_item = json_value_to_cjson(value->as.array->items[i]);
+                    if (!array_item) {
+                        cjson_free_recursive(item);
+                        return NULL;
+                    }
+                    
+                    if (!item->child) {
+                        item->child = array_item;
+                    } else {
+                        prev->next = array_item;
+                        array_item->prev = prev;
+                    }
+                    prev = array_item;
+                }
+            }
+            break;
+            
+        case VALUE_OBJECT:
+            item->type = cJSON_Object;
+            if (value->as.object) {
+                cJSON* prev = NULL;
+                for (size_t i = 0; i < value->as.object->length; i++) {
+                    const char* key = value->as.object->pairs[i].key;
+                    Value* val = value->as.object->pairs[i].value;
+                    
+                    cJSON* object_item = json_value_to_cjson(val);
+                    if (!object_item) {
+                        cjson_free_recursive(item);
+                        return NULL;
+                    }
+                    
+                    // Set the key name
+                    object_item->string = memory_strdup(key);
+                    if (!object_item->string) {
+                        cjson_free_recursive(object_item);
+                        cjson_free_recursive(item);
+                        return NULL;
+                    }
+                    
+                    if (!item->child) {
+                        item->child = object_item;
+                    } else {
+                        prev->next = object_item;
+                        object_item->prev = prev;
+                    }
+                    prev = object_item;
+                }
+            }
+            break;
+            
+        default:
+            // For error types or unknown types, treat as null
+            item->type = cJSON_NULL;
+            break;
+    }
+    
+    return item;
+}
+
+/**
+ * @brief Convert cJSON to Value (self-contained implementation)
+ * @param json cJSON object to convert
+ * @return Newly allocated Value
+ */
+Value* json_cjson_to_value(const cJSON* json) {
+    if (!json) {
+        return value_new_null();
+    }
+    
+    switch (json->type) {
+        case cJSON_NULL:
+            return value_new_null();
+            
+        case cJSON_False:
+            return value_new_boolean(false);
+            
+        case cJSON_True:
+            return value_new_boolean(true);
+            
+        case cJSON_Number:
+            return value_new_number(json->valuedouble);
+            
+        case cJSON_String:
+            if (json->valuestring) {
+                return value_new_string(json->valuestring);
+            } else {
+                return value_new_string("");
+            }
+            
+        case cJSON_Array: {
+            Value* arr = value_new(VALUE_ARRAY);
+            if (!arr) {
+                return NULL;
+            }
+            
+            cJSON* current = json->child;
+            while (current) {
+                Value* item_value = json_cjson_to_value(current);
+                if (!item_value) {
+                    value_unref(arr);
+                    return NULL;
+                }
+                
+                array_push(arr, item_value);
+                current = current->next;
+            }
+            
+            return arr;
+        }
+        
+        case cJSON_Object: {
+            Value* obj = value_new(VALUE_OBJECT);
+            if (!obj) {
+                return NULL;
+            }
+            
+            cJSON* current = json->child;
+            while (current) {
+                if (current->string) {
+                    Value* item_value = json_cjson_to_value(current);
+                    if (!item_value) {
+                        value_unref(obj);
+                        return NULL;
+                    }
+                    
+                    object_set(obj, current->string, item_value);
+                }
+                current = current->next;
+            }
+            
+            return obj;
+        }
+        
+        default:
+            // For invalid or unknown types, return null
+            return value_new_null();
+    }
+}
+
+// Stdlib wrapper functions for file loading
+// These functions provide the stdlib-compatible interface
+
+/**
+ * @brief Load JSON file wrapper function for stdlib
+ * @param args Array of Value arguments (filename)
+ * @param argc Number of arguments
+ * @return Parsed JSON Value or error
+ */
+Value* json_load_file(Value** args, size_t argc) {
+    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
+        return value_new_error("loadJsonFile requires a filename string", -1);
+    }
+    
+    // Use the io_load_json_file_internal function from io.c
+    extern Value* io_load_json_file_internal(const char* filepath);
+    return io_load_json_file_internal(args[0]->as.string->data);
+}
+
+// Forward declarations for pretty printing
+static char* json_stringify_pretty_value(const Value* value, int indent_level, int indent_size);
+static char* create_indentation(int indent_level, int indent_size);
+
+/**
+ * @brief Convert Value to formatted JSON string with indentation
+ * @param value Value to convert to JSON
+ * @param indent_size Number of spaces per indentation level
+ * @return Newly allocated formatted JSON string, or NULL on error
+ */
+char* json_stringify_pretty(const Value* value, int indent_size) {
+    if (!value) {
+        return memory_strdup("null");
+    }
+    
+    if (indent_size <= 0) {
+        // If invalid indent size, fall back to regular stringify
+        return json_stringify(value);
+    }
+    
+    return json_stringify_pretty_value(value, 0, indent_size);
+}
+
+/**
+ * @brief Parse JSON file with proper error handling
+ * @param filename Path to JSON file to parse
+ * @return Parsed Value or error Value with helpful error message
+ */
+Value* json_parse_file_safe(const char* filename) {
+    if (!filename) {
+        return value_new_error("JSON filename is NULL", -1);
+    }
+    
+    // Check if file exists
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        char error_msg[ZEN_MAX_ERROR_MESSAGE_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "File not found or cannot be opened: %s", filename);
+        return value_new_error(error_msg, -2);
+    }
+    
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    if (file_size <= 0) {
+        fclose(file);
+        char error_msg[ZEN_MAX_ERROR_MESSAGE_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "File is empty or cannot determine size: %s", filename);
+        return value_new_error(error_msg, -3);
+    }
+    
+    if (file_size > ZEN_MAX_CACHE_SIZE) { // 64MB limit from config
+        fclose(file);
+        char error_msg[ZEN_MAX_ERROR_MESSAGE_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "File too large (>64MB): %s", filename);
+        return value_new_error(error_msg, -4);
+    }
+    
+    // Allocate buffer for file contents
+    char* buffer = memory_alloc(file_size + 1);
+    if (!buffer) {
+        fclose(file);
+        return value_new_error("Memory allocation failed for file buffer", -5);
+    }
+    
+    // Read file contents
+    size_t bytes_read = fread(buffer, 1, file_size, file);
+    fclose(file);
+    
+    if (bytes_read != (size_t)file_size) {
+        memory_free(buffer);
+        char error_msg[ZEN_MAX_ERROR_MESSAGE_SIZE];
+        snprintf(error_msg, sizeof(error_msg), "Failed to read complete file: %s", filename);
+        return value_new_error(error_msg, -6);
+    }
+    
+    buffer[file_size] = '\0';
+    
+    // Parse JSON with enhanced error reporting
+    JsonParser parser = {
+        .input = buffer,
+        .pos = 0,
+        .length = strlen(buffer)
+    };
+    
+    skip_whitespace(&parser);
+    Value* result = parse_value(&parser);
+    
+    if (!result) {
+        memory_free(buffer);
+        char error_msg[ZEN_MAX_ERROR_MESSAGE_SIZE];
+        snprintf(error_msg, sizeof(error_msg), 
+                "Invalid JSON syntax in file %s at position %zu", 
+                filename, parser.pos);
+        return value_new_error(error_msg, -7);
+    }
+    
+    // Check if there's trailing content
+    skip_whitespace(&parser);
+    if (parser.pos < parser.length) {
+        value_unref(result);
+        memory_free(buffer);
+        char error_msg[ZEN_MAX_ERROR_MESSAGE_SIZE];
+        snprintf(error_msg, sizeof(error_msg), 
+                "Unexpected content after JSON in file %s at position %zu", 
+                filename, parser.pos);
+        return value_new_error(error_msg, -8);
+    }
+    
+    memory_free(buffer);
+    return result;
+}
+
+
+// Helper functions for pretty printing
+
+/**
+ * @brief Create indentation string with specified level and size
+ * @param indent_level Current indentation level
+ * @param indent_size Number of spaces per level
+ * @return Newly allocated indentation string
+ */
+static char* create_indentation(int indent_level, int indent_size) {
+    int total_spaces = indent_level * indent_size;
+    if (total_spaces <= 0) {
+        return memory_strdup("");
+    }
+    
+    char* indent = memory_alloc(total_spaces + 1);
+    if (!indent) return NULL;
+    
+    for (int i = 0; i < total_spaces; i++) {
+        indent[i] = ' ';
+    }
+    indent[total_spaces] = '\0';
+    
+    return indent;
+}
+
+/**
+ * @brief Convert Value to formatted JSON string with indentation (recursive)
+ * @param value Value to convert
+ * @param indent_level Current indentation level
+ * @param indent_size Number of spaces per indentation level
+ * @return Newly allocated formatted JSON string
+ */
+static char* json_stringify_pretty_value(const Value* value, int indent_level, int indent_size) {
+    if (!value) {
+        return memory_strdup("null");
+    }
+    
+    switch (value->type) {
+        case VALUE_NULL:
+            return memory_strdup("null");
+            
+        case VALUE_BOOLEAN:
+            return memory_strdup(value->as.boolean ? "true" : "false");
+            
+        case VALUE_NUMBER: {
+            char* buffer = memory_alloc(32);
+            if (!buffer) return NULL;
+            
+            // Check if it's an integer
+            if (value->as.number == floor(value->as.number)) {
+                snprintf(buffer, 32, "%.0f", value->as.number);
+            } else {
+                snprintf(buffer, 32, "%g", value->as.number);
+            }
+            return buffer;
+        }
+        
+        case VALUE_STRING: {
+            if (!value->as.string || !value->as.string->data) {
+                return memory_strdup("\"\"");
+            }
+            
+            // Estimate escaped length (worst case: all chars need escaping)
+            size_t escaped_len = value->as.string->length * 2 + 3; // +3 for quotes and null
+            char* buffer = memory_alloc(escaped_len);
+            if (!buffer) return NULL;
+            
+            buffer[0] = '"';
+            size_t j = 1;
+            
+            for (size_t i = 0; i < value->as.string->length && value->as.string->data[i]; i++) {
+                char c = value->as.string->data[i];
+                switch (c) {
+                    case '"':  buffer[j++] = '\\'; buffer[j++] = '"'; break;
+                    case '\\': buffer[j++] = '\\'; buffer[j++] = '\\'; break;
+                    case '\b': buffer[j++] = '\\'; buffer[j++] = 'b'; break;
+                    case '\f': buffer[j++] = '\\'; buffer[j++] = 'f'; break;
+                    case '\n': buffer[j++] = '\\'; buffer[j++] = 'n'; break;
+                    case '\r': buffer[j++] = '\\'; buffer[j++] = 'r'; break;
+                    case '\t': buffer[j++] = '\\'; buffer[j++] = 't'; break;
+                    default:
+                        if (c < 32) {
+                            j += snprintf(buffer + j, escaped_len - j, "\\u%04x", (unsigned char)c);
+                        } else {
+                            buffer[j++] = c;
+                        }
+                        break;
+                }
+            }
+            buffer[j++] = '"';
+            buffer[j] = '\0';
+            return buffer;
+        }
+        
+        case VALUE_ARRAY: {
+            if (!value->as.array || value->as.array->length == 0) {
+                return memory_strdup("[]");
+            }
+            
+            // Calculate total size needed for pretty-formatted array
+            size_t total_size = 100; // Initial buffer size
+            char* result = memory_alloc(total_size);
+            if (!result) return NULL;
+            
+            strncpy(result, "[\n", total_size - 1);
+            result[total_size - 1] = '\0';
+            
+            char* item_indent = create_indentation(indent_level + 1, indent_size);
+            if (!item_indent) {
+                memory_free(result);
+                return NULL;
+            }
+            
+            for (size_t i = 0; i < value->as.array->length; i++) {
+                char* item_json = json_stringify_pretty_value(value->as.array->items[i], 
+                                                              indent_level + 1, indent_size);
+                if (!item_json) {
+                    memory_free(result);
+                    memory_free(item_indent);
+                    return NULL;
+                }
+                
+                // Resize buffer if needed
+                size_t needed = strlen(result) + strlen(item_indent) + strlen(item_json) + 10;
+                if (needed > total_size) {
+                    total_size = needed * 2;
+                    char* new_result = memory_realloc(result, total_size);
+                    if (!new_result) {
+                        memory_free(result);
+                        memory_free(item_json);
+                        memory_free(item_indent);
+                        return NULL;
+                    }
+                    result = new_result;
+                }
+                
+                size_t current_len = strlen(result);
+                size_t remaining = total_size - current_len - 1;
+                strncat(result, item_indent, remaining);
+                current_len = strlen(result);
+                remaining = total_size - current_len - 1;
+                strncat(result, item_json, remaining);
+                if (i < value->as.array->length - 1) {
+                    current_len = strlen(result);
+                    remaining = total_size - current_len - 1;
+                    if (remaining > 0) strncat(result, ",", remaining);
+                }
+                current_len = strlen(result);
+                remaining = total_size - current_len - 1;
+                if (remaining > 0) strncat(result, "\n", remaining);
+                
+                memory_free(item_json);
+            }
+            
+            memory_free(item_indent);
+            
+            char* close_indent = create_indentation(indent_level, indent_size);
+            if (close_indent) {
+                size_t needed = strlen(result) + strlen(close_indent) + 2;
+                if (needed > total_size) {
+                    char* new_result = memory_realloc(result, needed);
+                    if (new_result) {
+                        result = new_result;
+                        total_size = needed;
+                    }
+                }
+                size_t current_len = strlen(result);
+                size_t remaining = total_size - current_len - 1;
+                strncat(result, close_indent, remaining);
+                memory_free(close_indent);
+            }
+            size_t current_len = strlen(result);
+            size_t remaining = total_size - current_len - 1;
+            if (remaining > 0) strncat(result, "]", remaining);
+            
+            return result;
+        }
+        
+        case VALUE_OBJECT: {
+            if (!value->as.object || value->as.object->length == 0) {
+                return memory_strdup("{}");
+            }
+            
+            // Calculate total size needed for pretty-formatted object
+            size_t total_size = 100; // Initial buffer size
+            char* result = memory_alloc(total_size);
+            if (!result) return NULL;
+            
+            strncpy(result, "{\n", total_size - 1);
+            result[total_size - 1] = '\0';
+            
+            char* item_indent = create_indentation(indent_level + 1, indent_size);
+            if (!item_indent) {
+                memory_free(result);
+                return NULL;
+            }
+            
+            for (size_t i = 0; i < value->as.object->length; i++) {
+                // Format key as string
+                Value key_val = { .type = VALUE_STRING };
+                ZenString key_str = { 
+                    .data = value->as.object->pairs[i].key, 
+                    .length = strlen(value->as.object->pairs[i].key) 
+                };
+                key_val.as.string = &key_str;
+                
+                char* key_json = json_stringify_pretty_value(&key_val, indent_level + 1, indent_size);
+                if (!key_json) {
+                    memory_free(result);
+                    memory_free(item_indent);
+                    return NULL;
+                }
+                
+                char* value_json = json_stringify_pretty_value(value->as.object->pairs[i].value, 
+                                                               indent_level + 1, indent_size);
+                if (!value_json) {
+                    memory_free(result);
+                    memory_free(item_indent);
+                    memory_free(key_json);
+                    return NULL;
+                }
+                
+                // Resize buffer if needed
+                size_t needed = strlen(result) + strlen(item_indent) + strlen(key_json) + 
+                               strlen(value_json) + 10;
+                if (needed > total_size) {
+                    total_size = needed * 2;
+                    char* new_result = memory_realloc(result, total_size);
+                    if (!new_result) {
+                        memory_free(result);
+                        memory_free(key_json);
+                        memory_free(value_json);
+                        memory_free(item_indent);
+                        return NULL;
+                    }
+                    result = new_result;
+                }
+                
+                size_t current_len = strlen(result);
+                size_t remaining = total_size - current_len - 1;
+                strncat(result, item_indent, remaining);
+                current_len = strlen(result);
+                remaining = total_size - current_len - 1;
+                strncat(result, key_json, remaining);
+                current_len = strlen(result);
+                remaining = total_size - current_len - 1;
+                strncat(result, ": ", remaining > 2 ? 2 : remaining);
+                current_len = strlen(result);
+                remaining = total_size - current_len - 1;
+                strncat(result, value_json, remaining);
+                if (i < value->as.object->length - 1) {
+                    current_len = strlen(result);
+                    remaining = total_size - current_len - 1;
+                    if (remaining > 0) strncat(result, ",", remaining);
+                }
+                current_len = strlen(result);
+                remaining = total_size - current_len - 1;
+                if (remaining > 0) strncat(result, "\n", remaining);
+                
+                memory_free(key_json);
+                memory_free(value_json);
+            }
+            
+            memory_free(item_indent);
+            
+            char* close_indent = create_indentation(indent_level, indent_size);
+            if (close_indent) {
+                size_t needed = strlen(result) + strlen(close_indent) + 2;
+                if (needed > total_size) {
+                    char* new_result = memory_realloc(result, needed);
+                    if (new_result) {
+                        result = new_result;
+                        total_size = needed;
+                    }
+                }
+                size_t current_len = strlen(result);
+                size_t remaining = total_size - current_len - 1;
+                strncat(result, close_indent, remaining);
+                memory_free(close_indent);
+            }
+            size_t current_len = strlen(result);
+            size_t remaining = total_size - current_len - 1;
+            if (remaining > 0) strncat(result, "}", remaining);
+            
+            return result;
+        }
+        
+        default:
+            return memory_strdup("null");
+    }
+}
+
+// Helper functions for parsing
+
+static void skip_whitespace(JsonParser* parser) {
+    while (parser->pos < parser->length && isspace(parser->input[parser->pos])) {
+        parser->pos++;
+    }
+}
+
+static char peek_char(JsonParser* parser) {
+    if (parser->pos >= parser->length) {
+        return '\0';
+    }
+    return parser->input[parser->pos];
+}
+
+static char next_char(JsonParser* parser) {
+    if (parser->pos >= parser->length) {
+        return '\0';
+    }
+    return parser->input[parser->pos++];
+}
+
+static bool expect_char(JsonParser* parser, char expected) {
+    skip_whitespace(parser);
+    if (peek_char(parser) == expected) {
+        next_char(parser);
+        return true;
+    }
+    return false;
+}
+
+static Value* parse_value(JsonParser* parser) {
+    skip_whitespace(parser);
+    char c = peek_char(parser);
+    
+    switch (c) {
+        case '{':
+            return parse_object(parser);
+        case '[':
+            return parse_array(parser);
+        case '"':
+            return parse_string(parser);
+        case 't':
+            if (parser->pos + 4 <= parser->length && strncmp(&parser->input[parser->pos], "true", 4) == 0) {
+                parser->pos += 4;
+                return value_new_boolean(true);
+            }
+            break;
+        case 'f':
+            if (parser->pos + 5 <= parser->length && strncmp(&parser->input[parser->pos], "false", 5) == 0) {
+                parser->pos += 5;
+                return value_new_boolean(false);
+            }
+            break;
+        case 'n':
+            if (parser->pos + 4 <= parser->length && strncmp(&parser->input[parser->pos], "null", 4) == 0) {
+                parser->pos += 4;
+                return value_new_null();
+            }
+            break;
+        default:
+            if (c == '-' || isdigit(c)) {
+                return parse_number(parser);
+            }
+            break;
+    }
+    
+    return NULL; // Parse error
+}
+
+static Value* parse_object(JsonParser* parser) {
+    if (!expect_char(parser, '{')) {
+        return NULL;
+    }
+    
+    Value* obj = value_new(VALUE_OBJECT);
+    if (!obj) return NULL;
+    
+    skip_whitespace(parser);
+    if (peek_char(parser) == '}') {
+        next_char(parser);
+        return obj; // Empty object
+    }
+    
+    while (true) {
+        skip_whitespace(parser);
+        
+        // Parse key
+        Value* key_val = parse_string(parser);
+        if (!key_val || key_val->type != VALUE_STRING) {
+            value_unref(obj);
+            if (key_val) value_unref(key_val);
+            return NULL;
+        }
+        
+        // Expect colon
+        if (!expect_char(parser, ':')) {
+            value_unref(obj);
+            value_unref(key_val);
+            return NULL;
+        }
+        
+        // Parse value
+        Value* val = parse_value(parser);
+        if (!val) {
+            value_unref(obj);
+            value_unref(key_val);
+            return NULL;
+        }
+        
+        // Add to object
+        if (key_val->as.string && key_val->as.string->data) {
+            object_set(obj, key_val->as.string->data, val);
+        }
+        value_unref(key_val);
+        
+        skip_whitespace(parser);
+        char c = peek_char(parser);
+        if (c == '}') {
+            next_char(parser);
+            break;
+        } else if (c == ',') {
+            next_char(parser);
+            continue;
+        } else {
+            value_unref(obj);
+            return NULL; // Parse error
+        }
+    }
+    
+    return obj;
+}
+
+static Value* parse_array(JsonParser* parser) {
+    if (!expect_char(parser, '[')) {
+        return NULL;
+    }
+    
+    Value* arr = value_new(VALUE_ARRAY);
+    if (!arr) return NULL;
+    
+    skip_whitespace(parser);
+    if (peek_char(parser) == ']') {
+        next_char(parser);
+        return arr; // Empty array
+    }
+    
+    while (true) {
+        Value* item = parse_value(parser);
+        if (!item) {
+            value_unref(arr);
+            return NULL;
+        }
+        
+        // Add to array
+        array_push(arr, item);
+        
+        skip_whitespace(parser);
+        char c = peek_char(parser);
+        if (c == ']') {
+            next_char(parser);
+            break;
+        } else if (c == ',') {
+            next_char(parser);
+            continue;
+        } else {
+            value_unref(arr);
+            return NULL; // Parse error
+        }
+    }
+    
+    return arr;
+}
+
+static Value* parse_string(JsonParser* parser) {
+    if (!expect_char(parser, '"')) {
+        return NULL;
+    }
+    
+    size_t start = parser->pos;
+    size_t len = 0;
+    
+    // First pass: find end and calculate unescaped length
+    while (parser->pos < parser->length) {
+        char c = parser->input[parser->pos];
+        if (c == '"') {
+            break;
+        } else if (c == '\\') {
+            parser->pos++;
+            if (parser->pos >= parser->length) {
+                return NULL; // Unterminated escape
+            }
+            parser->pos++;
+            len++;
+        } else {
+            parser->pos++;
+            len++;
+        }
+    }
+    
+    if (parser->pos >= parser->length) {
+        return NULL; // Unterminated string
+    }
+    
+    // Allocate buffer for unescaped string
+    char* str_data = memory_alloc(len + 1);
+    if (!str_data) return NULL;
+    
+    // Second pass: unescape
+    size_t str_pos = 0;
+    parser->pos = start;
+    
+    while (parser->pos < parser->length && parser->input[parser->pos] != '"') {
+        char c = parser->input[parser->pos++];
+        if (c == '\\') {
+            if (parser->pos >= parser->length) {
+                memory_free(str_data);
+                return NULL;
+            }
+            char escape = parser->input[parser->pos++];
+            switch (escape) {
+                case '"':  str_data[str_pos++] = '"'; break;
+                case '\\': str_data[str_pos++] = '\\'; break;
+                case '/':  str_data[str_pos++] = '/'; break;
+                case 'b':  str_data[str_pos++] = '\b'; break;
+                case 'f':  str_data[str_pos++] = '\f'; break;
+                case 'n':  str_data[str_pos++] = '\n'; break;
+                case 'r':  str_data[str_pos++] = '\r'; break;
+                case 't':  str_data[str_pos++] = '\t'; break;
+                default:
+                    str_data[str_pos++] = escape; // Keep unknown escapes as-is
+                    break;
+            }
+        } else {
+            str_data[str_pos++] = c;
+        }
+    }
+    
+    str_data[str_pos] = '\0';
+    parser->pos++; // Skip closing quote
+    
+    Value* result = value_new_string(str_data);
+    memory_free(str_data);
+    return result;
+}
+
+static Value* parse_number(JsonParser* parser) {
+    size_t start = parser->pos;
+    
+    // Handle negative sign
+    if (peek_char(parser) == '-') {
+        next_char(parser);
+    }
+    
+    // Handle digits before decimal point
+    if (!isdigit(peek_char(parser))) {
+        return NULL;
+    }
+    
+    while (isdigit(peek_char(parser))) {
+        next_char(parser);
+    }
+    
+    // Handle decimal point
+    if (peek_char(parser) == '.') {
+        next_char(parser);
+        if (!isdigit(peek_char(parser))) {
+            return NULL;
+        }
+        while (isdigit(peek_char(parser))) {
+            next_char(parser);
+        }
+    }
+    
+    // Handle exponent
+    char c = peek_char(parser);
+    if (c == 'e' || c == 'E') {
+        next_char(parser);
+        c = peek_char(parser);
+        if (c == '+' || c == '-') {
+            next_char(parser);
+        }
+        if (!isdigit(peek_char(parser))) {
+            return NULL;
+        }
+        while (isdigit(peek_char(parser))) {
+            next_char(parser);
+        }
+    }
+    
+    // Extract number string and convert
+    size_t num_len = parser->pos - start;
+    char* num_str = memory_alloc(num_len + 1);
+    if (!num_str) return NULL;
+    
+    strncpy(num_str, &parser->input[start], num_len);
+    num_str[num_len] = '\0';
+    
+    double value = strtod(num_str, NULL);
+    memory_free(num_str);
+    
+    return value_new_number(value);
+}
+
+// Helper functions for self-contained cJSON implementation
+
+/**
+ * @brief Create a new cJSON item
+ * @return Newly allocated cJSON item or NULL on failure
+ */
+static cJSON* cjson_new_item(void) {
+    cJSON* item = memory_alloc(sizeof(cJSON));
+    if (item) {
+        memset(item, 0, sizeof(cJSON));
+        item->type = cJSON_Invalid;
+    }
+    return item;
+}
+
+/**
+ * @brief Free a single cJSON item (non-recursive)
+ * @param item cJSON item to free
+ */
+static void cjson_free(cJSON* item) {
+    if (!item) {
+        return;
+    }
+    
+    if (item->valuestring) {
+        memory_free(item->valuestring);
+    }
+    
+    if (item->string) {
+        memory_free(item->string);
+    }
+    
+    memory_free(item);
+}
+
+/**
+ * @brief Free cJSON item and all its children recursively
+ * @param item cJSON item to free
+ */
+static void cjson_free_recursive(cJSON* item) {
+    if (!item) {
+        return;
+    }
+    
+    // Free all children
+    cJSON* current = item->child;
+    while (current) {
+        cJSON* next = current->next;
+        cjson_free_recursive(current);
+        current = next;
+    }
+    
+    // Free this item
+    cjson_free(item);
+}
+
+// Stdlib wrapper functions
+
+/**
+ * @brief Parse JSON string - stdlib wrapper
+ * @param args Arguments array containing JSON string
+ * @param argc Number of arguments
+ * @return Parsed value or error
+ */
+Value* json_parse_stdlib(Value** args, size_t argc) {
+    if (argc != 1) {
+        return value_new_error("jsonParse requires exactly 1 argument", -1);
+    }
+    
+    if (!args[0] || args[0]->type != VALUE_STRING) {
+        return value_new_error("jsonParse requires a string argument", -1);
+    }
+    
+    return json_parse(args[0]->as.string->data);
+}
+
+/**
+ * @brief Convert value to JSON string - stdlib wrapper
+ * @param args Arguments array containing value to stringify
+ * @param argc Number of arguments
+ * @return JSON string or error
+ */
+Value* json_stringify_stdlib(Value** args, size_t argc) {
+    if (argc != 1) {
+        return value_new_error("jsonStringify requires exactly 1 argument", -1);
+    }
+    
+    if (!args[0]) {
+        return value_new_string("null");
+    }
+    
+    char* json_str = json_stringify(args[0]);
+    if (!json_str) {
+        return value_new_error("Failed to stringify value", -1);
+    }
+    
+    Value* result = value_new_string(json_str);
+    memory_free(json_str);
+    return result;
+}
+
+/**
+ * @brief Convert value to formatted JSON with indentation - stdlib wrapper
+ * @param args Arguments array containing value and optional indent size
+ * @param argc Number of arguments
+ * @return Formatted JSON string or error
+ */
+Value* json_stringify_pretty_stdlib(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_error("jsonPretty requires at least 1 argument", -1);
+    }
+    
+    if (!args[0]) {
+        return value_new_string("null");
+    }
+    
+    // Default indent size is 2
+    int indent_size = 2;
+    
+    // Optional second argument for indent size
+    if (argc >= 2 && args[1] && args[1]->type == VALUE_NUMBER) {
+        indent_size = (int)args[1]->as.number;
+        if (indent_size < 0) indent_size = 0;
+        if (indent_size > 8) indent_size = 8;  // Reasonable maximum
+    }
+    
+    char* json_str = json_stringify_pretty(args[0], indent_size);
+    if (!json_str) {
+        return value_new_error("Failed to stringify value", -1);
+    }
+    
+    Value* result = value_new_string(json_str);
+    memory_free(json_str);
+    return result;
+}
+
+// ============================================================================
+// Circular Reference Detection Implementation
+// ============================================================================
+
+/**
+ * @brief Create a new reference tracker for circular detection
+ * @return New tracker or NULL on failure
+ */
+static JsonRefTracker* json_ref_tracker_new(void) {
+    JsonRefTracker* tracker = memory_alloc(sizeof(JsonRefTracker));
+    if (!tracker) {
+        return NULL;
+    }
+    
+    tracker->visited_capacity = 16; // Initial capacity
+    tracker->visited = memory_alloc(sizeof(const Value*) * tracker->visited_capacity);
+    if (!tracker->visited) {
+        memory_free(tracker);
+        return NULL;
+    }
+    
+    tracker->visited_count = 0;
+    tracker->depth = 0;
+    
+    return tracker;
+}
+
+/**
+ * @brief Free reference tracker and all associated memory
+ * @param tracker Tracker to free
+ */
+static void json_ref_tracker_free(JsonRefTracker* tracker) {
+    if (!tracker) {
+        return;
+    }
+    
+    if (tracker->visited) {
+        memory_free(tracker->visited);
+    }
+    
+    memory_free(tracker);
+}
+
+/**
+ * @brief Add a value to the tracker's visited set
+ * @param tracker Reference tracker
+ * @param value Value to add
+ * @return true on success, false on failure
+ */
+static bool json_ref_tracker_add(JsonRefTracker* tracker, const Value* value) {
+    if (!tracker || !value) {
+        return false;
+    }
+    
+    // Check if we need to expand capacity
+    if (tracker->visited_count >= tracker->visited_capacity) {
+        size_t new_capacity = tracker->visited_capacity * 2;
+        const Value** new_visited = memory_realloc(tracker->visited, 
+                                                  sizeof(const Value*) * new_capacity);
+        if (!new_visited) {
+            return false;
+        }
+        
+        tracker->visited = new_visited;
+        tracker->visited_capacity = new_capacity;
+    }
+    
+    tracker->visited[tracker->visited_count++] = value;
+    return true;
+}
+
+/**
+ * @brief Check if a value is already in the tracker's visited set
+ * @param tracker Reference tracker
+ * @param value Value to check
+ * @return true if value is already visited, false otherwise
+ */
+static bool json_ref_tracker_contains(const JsonRefTracker* tracker, const Value* value) {
+    if (!tracker || !value || !tracker->visited) {
+        return false;
+    }
+    
+    for (size_t i = 0; i < tracker->visited_count; i++) {
+        if (tracker->visited[i] == value) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Convert Value to JSON string with circular reference detection
+ * @param value Value to convert to JSON
+ * @param tracker Reference tracker for circular detection
+ * @return Newly allocated JSON string, or NULL on error
+ */
+static char* json_stringify_safe(const Value* value, JsonRefTracker* tracker) {
+    if (!value) {
+        return memory_strdup("null");
+    }
+    
+    // Check depth limit to prevent stack overflow
+    if (tracker->depth >= JSON_MAX_DEPTH) {
+        return memory_strdup("\"[Max Depth Reached]\"");
+    }
+    
+    // Check for circular references only for objects and arrays
+    if (value->type == VALUE_OBJECT || value->type == VALUE_ARRAY) {
+        if (json_ref_tracker_contains(tracker, value)) {
+            return memory_strdup("\"[Circular Reference]\"");
+        }
+        
+        // Add to visited set
+        if (!json_ref_tracker_add(tracker, value)) {
+            return NULL; // Memory allocation failed
+        }
+    }
+    
+    tracker->depth++;
+    char* result = NULL;
+    
+    switch (value->type) {
+        case VALUE_NULL:
+            result = memory_strdup("null");
+            break;
+            
+        case VALUE_BOOLEAN:
+            result = memory_strdup(value->as.boolean ? "true" : "false");
+            break;
+            
+        case VALUE_NUMBER: {
+            char* buffer = memory_alloc(32);
+            if (!buffer) {
+                tracker->depth--;
+                return NULL;
+            }
+            
+            // Check if it's an integer
+            if (value->as.number == floor(value->as.number)) {
+                snprintf(buffer, 32, "%.0f", value->as.number);
+            } else {
+                snprintf(buffer, 32, "%g", value->as.number);
+            }
+            result = buffer;
+            break;
+        }
+        
+        case VALUE_STRING: {
+            if (!value->as.string || !value->as.string->data) {
+                result = memory_strdup("\"\"");
+                break;
+            }
+            
+            // Estimate escaped length (worst case: all chars need escaping)
+            size_t escaped_len = value->as.string->length * 2 + 3; // +3 for quotes and null
+            char* buffer = memory_alloc(escaped_len);
+            if (!buffer) {
+                tracker->depth--;
+                return NULL;
+            }
+            
+            buffer[0] = '"';
+            size_t j = 1;
+            
+            for (size_t i = 0; i < value->as.string->length && value->as.string->data[i]; i++) {
+                char c = value->as.string->data[i];
+                switch (c) {
+                    case '"':  buffer[j++] = '\\'; buffer[j++] = '"'; break;
+                    case '\\': buffer[j++] = '\\'; buffer[j++] = '\\'; break;
+                    case '\b': buffer[j++] = '\\'; buffer[j++] = 'b'; break;
+                    case '\f': buffer[j++] = '\\'; buffer[j++] = 'f'; break;
+                    case '\n': buffer[j++] = '\\'; buffer[j++] = 'n'; break;
+                    case '\r': buffer[j++] = '\\'; buffer[j++] = 'r'; break;
+                    case '\t': buffer[j++] = '\\'; buffer[j++] = 't'; break;
+                    default:
+                        if (c < 32) {
+                            j += snprintf(buffer + j, escaped_len - j, "\\u%04x", (unsigned char)c);
+                        } else {
+                            buffer[j++] = c;
+                        }
+                        break;
+                }
+            }
+            buffer[j++] = '"';
+            buffer[j] = '\0';
+            result = buffer;
+            break;
+        }
+        
+        case VALUE_ARRAY: {
+            if (!value->as.array) {
+                result = memory_strdup("[]");
+                break;
+            }
+            
+            // Start with opening bracket
+            result = memory_strdup("[");
+            if (!result) {
+                tracker->depth--;
+                return NULL;
+            }
+            
+            for (size_t i = 0; i < value->as.array->length; i++) {
+                if (i > 0) {
+                    char* temp = memory_alloc(strlen(result) + 2);
+                    if (!temp) {
+                        memory_free(result);
+                        tracker->depth--;
+                        return NULL;
+                    }
+                    strcpy(temp, result);
+                    strcat(temp, ",");
+                    memory_free(result);
+                    result = temp;
+                }
+                
+                char* item_json = json_stringify_safe(value->as.array->items[i], tracker);
+                if (!item_json) {
+                    memory_free(result);
+                    tracker->depth--;
+                    return NULL;
+                }
+                
+                char* temp = memory_alloc(strlen(result) + strlen(item_json) + 1);
+                if (!temp) {
+                    memory_free(result);
+                    memory_free(item_json);
+                    tracker->depth--;
+                    return NULL;
+                }
+                strcpy(temp, result);
+                strcat(temp, item_json);
+                memory_free(result);
+                memory_free(item_json);
+                result = temp;
+            }
+            
+            // Add closing bracket
+            char* temp = memory_alloc(strlen(result) + 2);
+            if (!temp) {
+                memory_free(result);
+                tracker->depth--;
+                return NULL;
+            }
+            strcpy(temp, result);
+            strcat(temp, "]");
+            memory_free(result);
+            result = temp;
+            break;
+        }
+        
+        case VALUE_OBJECT: {
+            if (!value->as.object) {
+                result = memory_strdup("{}");
+                break;
+            }
+            
+            // Start with opening brace
+            result = memory_strdup("{");
+            if (!result) {
+                tracker->depth--;
+                return NULL;
+            }
+            
+            for (size_t i = 0; i < value->as.object->length; i++) {
+                if (i > 0) {
+                    char* temp = memory_alloc(strlen(result) + 2);
+                    if (!temp) {
+                        memory_free(result);
+                        tracker->depth--;
+                        return NULL;
+                    }
+                    strcpy(temp, result);
+                    strcat(temp, ",");
+                    memory_free(result);
+                    result = temp;
+                }
+                
+                // Add key (safe since it's a string)
+                Value key_val = { .type = VALUE_STRING };
+                ZenString key_str = { .data = value->as.object->pairs[i].key, .length = strlen(value->as.object->pairs[i].key) };
+                key_val.as.string = &key_str;
+                
+                char* key_json = json_stringify_safe(&key_val, tracker);
+                if (!key_json) {
+                    memory_free(result);
+                    tracker->depth--;
+                    return NULL;
+                }
+                
+                char* value_json = json_stringify_safe(value->as.object->pairs[i].value, tracker);
+                if (!value_json) {
+                    memory_free(result);
+                    memory_free(key_json);
+                    tracker->depth--;
+                    return NULL;
+                }
+                
+                char* temp = memory_alloc(strlen(result) + strlen(key_json) + strlen(value_json) + 2);
+                if (!temp) {
+                    memory_free(result);
+                    memory_free(key_json);
+                    memory_free(value_json);
+                    tracker->depth--;
+                    return NULL;
+                }
+                strcpy(temp, result);
+                strcat(temp, key_json);
+                strcat(temp, ":");
+                strcat(temp, value_json);
+                
+                memory_free(result);
+                memory_free(key_json);
+                memory_free(value_json);
+                result = temp;
+            }
+            
+            // Add closing brace
+            char* temp = memory_alloc(strlen(result) + 2);
+            if (!temp) {
+                memory_free(result);
+                tracker->depth--;
+                return NULL;
+            }
+            strcpy(temp, result);
+            strcat(temp, "}");
+            memory_free(result);
+            result = temp;
+            break;
+        }
+        
+        default:
+            result = memory_strdup("null");
+            break;
+    }
+    
+    tracker->depth--;
+    return result;
+}

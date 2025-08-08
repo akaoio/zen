@@ -1,0 +1,5 @@
+function test ...numbers
+    set x 5
+    print x
+
+test 1 2 3

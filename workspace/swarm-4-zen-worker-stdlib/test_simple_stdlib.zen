@@ -1,4 +1,0 @@
-# Test simple stdlib functions
-set text "hello world"
-print upper(text)
-print len(text)

@@ -1,0 +1,242 @@
+# Undecidable Values for Quantum Computing
+# Handling indeterminate quantum states and measurements
+
+print "⚛️  Quantum Computing with UNDECIDABLE states"
+print "============================================"
+
+# Quantum superposition representation
+function create_qubit alpha beta
+    # Qubit in superposition: α|0⟩ + β|1⟩
+    # Before measurement, state is undecidable
+    return {
+        alpha: alpha,
+        beta: beta,
+        state: undecidable,  # Superposition state
+        measured: false
+    }
+
+# Quantum measurement with probabilistic collapse
+function measure_qubit qubit
+    if qubit.measured = true
+        # Already measured - state is decided
+        return qubit.state
+    
+    # Before measurement, result is fundamentally undecidable
+    print "🔬 Measuring qubit in superposition..."
+    print "   Before measurement: state =" qubit.state
+    
+    # Simulate quantum measurement collapse
+    set probability_0 qubit.alpha * qubit.alpha
+    set probability_1 qubit.beta * qubit.beta
+    
+    set random_value random()
+    if random_value < probability_0
+        set qubit.state 0
+        print "   🎲 Collapsed to |0⟩"
+    else
+        set qubit.state 1
+        print "   🎲 Collapsed to |1⟩"
+    
+    set qubit.measured true
+    return qubit.state
+
+# Quantum entanglement with Bell states
+function create_bell_pair type
+    # Bell states: |Φ+⟩, |Φ-⟩, |Ψ+⟩, |Ψ-⟩
+    set qubit_a { state: undecidable, measured: false, entangled: true }
+    set qubit_b { state: undecidable, measured: false, entangled: true }
+    
+    return {
+        type: type,
+        qubit_a: qubit_a,
+        qubit_b: qubit_b,
+        correlation: undecidable  # Correlation undecidable until measurement
+    }
+
+# EPR paradox demonstration
+function epr_experiment bell_pair
+    print "🔬 Performing EPR experiment..."
+    print "   Both qubits in undecidable entangled state"
+    
+    # Measure first qubit
+    set result_a measure_entangled_qubit bell_pair.qubit_a bell_pair
+    print "   Alice measures:" result_a
+    
+    # Due to entanglement, second qubit's state becomes decided instantly
+    if bell_pair.type = "phi_plus" or bell_pair.type = "phi_minus"
+        # Perfect correlation or anti-correlation
+        if bell_pair.type = "phi_plus"
+            set bell_pair.qubit_b.state result_a  # Same state
+        else
+            set bell_pair.qubit_b.state 1 - result_a  # Opposite state
+        
+        set bell_pair.qubit_b.measured true
+        set bell_pair.correlation "decided"
+    else
+        # Other Bell states have different correlations
+        set bell_pair.qubit_b.state undecidable
+        set bell_pair.correlation undecidable
+    
+    return {
+        alice_result: result_a,
+        bob_state: bell_pair.qubit_b.state,
+        spooky_action: bell_pair.correlation ≠ undecidable
+    }
+
+# Quantum algorithm with uncertain outcomes
+function grovers_algorithm database target iterations
+    # Grover's algorithm for unstructured search
+    print "🔍 Running Grover's algorithm..."
+    
+    set n database.size
+    set optimal_iterations sqrt(n)
+    
+    # Initialize superposition of all states (all undecidable)
+    set quantum_register []
+    for i in range 0 n
+        quantum_register.push undecidable
+    
+    # Grover iterations
+    for iteration in range 1 iterations
+        # Oracle marking (theoretical - actual quantum computers needed)
+        set marked_states oracle_mark database target
+        
+        # Amplitude amplification
+        set amplitudes diffusion_operator quantum_register marked_states
+        
+        # Check if we're close to optimal
+        if abs(iteration - optimal_iterations) < 0.5
+            print "   📊 Near optimal iteration count"
+        else
+            print "   ⚠️  Sub-optimal iteration - success probability undecidable"
+    
+    # Measurement
+    set measurement_result measure_quantum_register quantum_register
+    
+    if iterations ≠ optimal_iterations
+        print "   🎲 Non-optimal iterations - result reliability undecidable"
+        return undecidable
+    
+    return measurement_result
+
+# Quantum error correction with undecidable syndromes
+function quantum_error_correction logical_qubit
+    print "🛡️  Performing quantum error correction..."
+    
+    # Measure syndrome qubits
+    set syndrome []
+    for i in range 0 logical_qubit.syndrome_qubits.length
+        set syndrome_bit measure_qubit logical_qubit.syndrome_qubits[i]
+        syndrome.push syndrome_bit
+    
+    # Determine error type
+    set error_type classify_error syndrome
+    
+    if error_type = undecidable
+        print "   ⚠️  Error syndrome undecidable - correction uncertain"
+        return undecidable
+    
+    # Apply correction
+    set corrected_qubit apply_correction logical_qubit error_type
+    return corrected_qubit
+
+# Quantum cryptography with security analysis
+function bb84_protocol alice_bits alice_bases bob_bases
+    print "🔐 Running BB84 quantum key distribution..."
+    
+    set shared_key []
+    set eavesdropping_detected false
+    
+    for i in range 0 alice_bits.length
+        set alice_bit alice_bits[i]
+        set alice_base alice_bases[i]
+        set bob_base bob_bases[i]
+        
+        if alice_base = bob_base
+            # Same basis - bit should be preserved
+            shared_key.push alice_bit
+        else
+            # Different bases - result undecidable due to quantum uncertainty
+            print "   🎲 Different bases at position" i "- bit undecidable"
+            # This bit is discarded in actual protocol
+    
+    # Eavesdropping detection
+    set error_rate calculate_error_rate shared_key
+    
+    if error_rate > 0.11  # Quantum bound for eavesdropping
+        print "   🚨 Error rate too high - eavesdropping detected"
+        set eavesdropping_detected true
+        return undecidable  # Key security undecidable
+    
+    return {
+        key: shared_key,
+        secure: not eavesdropping_detected,
+        error_rate: error_rate
+    }
+
+# Quantum machine learning with uncertain features
+function quantum_neural_network training_data quantum_features
+    print "🧠 Training quantum neural network..."
+    
+    set weights []
+    set undecidable_features 0
+    
+    # Initialize quantum feature map
+    for feature in quantum_features
+        if feature.type = "superposition"
+            # Superposition features are undecidable until measured
+            weights.push undecidable
+            set undecidable_features undecidable_features + 1
+        else
+            weights.push random_weight()
+    
+    # Training with undecidable features
+    if undecidable_features > quantum_features.length / 2
+        print "   ⚠️  Too many undecidable features - training convergence uncertain"
+        return undecidable
+    
+    # Variational quantum eigensolver for optimization
+    set optimal_weights vqe_optimization weights training_data
+    
+    return {
+        weights: optimal_weights,
+        accuracy: undecidable,  # Quantum ML accuracy often undecidable
+        quantum_advantage: true
+    }
+
+# Test quantum computing scenarios
+print "\n🔬 Testing quantum computing with undecidable states:\n"
+
+# Test quantum superposition
+print "🔍 Testing quantum superposition..."
+set qubit create_qubit 0.707 0.707  # |+⟩ state
+print "Qubit before measurement:" qubit.state
+set measurement measure_qubit qubit
+print "Qubit after measurement:" measurement
+
+# Test quantum entanglement
+print "\n🔍 Testing quantum entanglement..."
+set bell_pair create_bell_pair "phi_plus"
+print "Entangled pair correlation:" bell_pair.correlation
+set epr_result epr_experiment bell_pair
+print "EPR experiment result:" epr_result
+
+# Test Grover's algorithm
+print "\n🔍 Testing Grover's algorithm..."
+set database { size: 16, items: ["a", "b", "c", "target", "e"] }
+set target "target"
+set grovers_result grovers_algorithm database target 3  # Sub-optimal iterations
+print "Grover's result:" grovers_result
+
+# Test quantum cryptography
+print "\n🔍 Testing BB84 quantum cryptography..."
+set alice_bits [1, 0, 1, 1, 0]
+set alice_bases ["rectilinear", "diagonal", "rectilinear", "diagonal", "rectilinear"]
+set bob_bases ["rectilinear", "rectilinear", "diagonal", "diagonal", "rectilinear"]
+
+set bb84_result bb84_protocol alice_bits alice_bases bob_bases
+print "BB84 protocol result:" bb84_result
+
+print "\n✅ Undecidable values perfectly model quantum uncertainty!"
+print "⚛️  Handle superposition, entanglement, and measurement indeterminacy"
+print "🔬 Enable realistic quantum computing simulations in classical systems"

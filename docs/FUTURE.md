@@ -491,11 +491,6 @@ for user in users
 # Current boolean logic:
 if x > 5 and y < 10
     
-# Enhanced natural language (Phase 2):
-if x is greater than 5 and y is less than 10
-if user is admin or user is moderator  
-if file exists and file is readable
-
 # Formal logic extension (Phase 3):
 if ∀x ∈ domain: P(x) implies Q(x)
 ```

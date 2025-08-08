@@ -1,0 +1,6 @@
+function show_args ...args
+    print "Got args:"
+    print args
+    return null
+
+show_args 1 2 3

@@ -1,8 +1,0 @@
-set x 42
-print x
-
-set y "Hello World"
-print y
-
-set z true
-print z

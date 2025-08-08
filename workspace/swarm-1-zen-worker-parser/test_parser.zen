@@ -1,4 +1,0 @@
-set x 5
-set y 10
-set result x + y * 2
-print result

@@ -28,11 +28,11 @@
 #define TEST_COLOR_CYAN    "\033[36m"
 
 // Global test statistics
-extern int zen_test_total;
-extern int zen_test_passed;
-extern int zen_test_failed;
-extern const char* zen_current_test_name;
-extern const char* zen_current_suite_name;
+extern int test_total;
+extern int test_passed;
+extern int test_failed;
+extern const char* current_test_name;
+extern const char* current_suite_name;
 
 // Test result tracking
 typedef struct {
@@ -45,13 +45,19 @@ typedef struct {
 /**
  * @brief Initialize test framework
  */
-void zen_test_init(void);
+void test_init(void);
+
+/**
+ * @brief Clean up all test framework resources
+ * This function ensures all dynamically allocated test resources are freed
+ */
+void test_cleanup(void);
 
 /**
  * @brief Finalize test framework and print results
  * @return 0 if all tests passed, 1 if any failed
  */
-int zen_test_finalize(void);
+int test_finalize(void);
 
 /**
  * @brief Record test failure with detailed information
@@ -59,29 +65,29 @@ int zen_test_finalize(void);
  * @param file Source file name
  * @param line Line number
  */
-void zen_test_fail(const char* message, const char* file, int line);
+void test_fail(const char* message, const char* file, int line);
 
 /**
  * @brief Start a test suite
  * @param suite_name Name of the test suite
  */
-void zen_test_suite_start(const char* suite_name);
+void test_suite_start(const char* suite_name);
 
 /**
  * @brief End a test suite
  */
-void zen_test_suite_end(void);
+void test_suite_end(void);
 
 /**
  * @brief Start an individual test
  * @param test_name Name of the test
  */
-void zen_test_start(const char* test_name);
+void test_start(const char* test_name);
 
 /**
  * @brief End an individual test
  */
-void zen_test_end(void);
+void test_end(void);
 
 // Forward declare all test functions
 #define DECLARE_TEST(name) static void test_##name(void);
@@ -89,9 +95,9 @@ void zen_test_end(void);
 // Call a test function with framework setup
 #define RUN_TEST(name) \
     do { \
-        zen_test_start(#name); \
+        test_start(#name); \
         test_##name(); \
-        zen_test_end(); \
+        test_end(); \
     } while(0)
 
 // Define a test function
@@ -100,12 +106,14 @@ void zen_test_end(void);
 // Test suite macro - creates main function and runner
 #define TEST_SUITE_BEGIN(name) \
     int main(void) { \
-        zen_test_init(); \
-        zen_test_suite_start(#name);
+        test_init(); \
+        test_suite_start(#name);
 
 #define TEST_SUITE_END \
-        zen_test_suite_end(); \
-        return zen_test_finalize(); \
+        test_suite_end(); \
+        int result = test_finalize(); \
+        test_cleanup(); \
+        return result; \
     }
 
 // Assertion macros
@@ -114,7 +122,7 @@ void zen_test_end(void);
         if (!(condition)) { \
             char msg[256]; \
             snprintf(msg, sizeof(msg), "Expected true, got false: %s", #condition); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -124,7 +132,7 @@ void zen_test_end(void);
         if (condition) { \
             char msg[256]; \
             snprintf(msg, sizeof(msg), "Expected false, got true: %s", #condition); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -134,7 +142,7 @@ void zen_test_end(void);
         if ((actual) != (expected)) { \
             char msg[256]; \
             snprintf(msg, sizeof(msg), "Expected %ld, got %ld", (long)(expected), (long)(actual)); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -144,7 +152,7 @@ void zen_test_end(void);
         if ((actual) == (expected)) { \
             char msg[256]; \
             snprintf(msg, sizeof(msg), "Expected not equal to %ld, but got %ld", (long)(expected), (long)(actual)); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -156,7 +164,7 @@ void zen_test_end(void);
             snprintf(msg, sizeof(msg), "Expected \"%s\", got \"%s\"", \
                     expected ? expected : "(null)", \
                     actual ? actual : "(null)"); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -166,7 +174,7 @@ void zen_test_end(void);
         if (actual && expected && strcmp(actual, expected) == 0) { \
             char msg[512]; \
             snprintf(msg, sizeof(msg), "Expected not equal to \"%s\", but got \"%s\"", expected, actual); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -176,7 +184,7 @@ void zen_test_end(void);
         if (ptr != NULL) { \
             char msg[256]; \
             snprintf(msg, sizeof(msg), "Expected NULL, got %p", (void*)ptr); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -184,7 +192,7 @@ void zen_test_end(void);
 #define ASSERT_NOT_NULL(ptr) \
     do { \
         if (ptr == NULL) { \
-            zen_test_fail("Expected non-NULL pointer, got NULL", __FILE__, __LINE__); \
+            test_fail("Expected non-NULL pointer, got NULL", __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
@@ -196,15 +204,42 @@ void zen_test_end(void);
             char msg[256]; \
             snprintf(msg, sizeof(msg), "Expected %f, got %f (diff: %f > %f)", \
                     (double)(expected), (double)(actual), diff, (double)(epsilon)); \
-            zen_test_fail(msg, __FILE__, __LINE__); \
+            test_fail(msg, __FILE__, __LINE__); \
             return; \
         } \
     } while(0)
 
-// Memory testing helpers
+// Memory testing helpers - forward declare memory stats and test globals
+extern size_t test_start_current_allocated;
+extern size_t test_start_outstanding_allocs;
+
 #define ASSERT_NO_MEMORY_LEAKS() \
     do { \
-        /* TODO: Integrate with memory system to check for leaks */ \
+        MemoryStats stats; \
+        memory_get_stats(&stats); \
+        if (stats.current_allocated > test_start_current_allocated) { \
+            char msg[256]; \
+            size_t leaked = stats.current_allocated - test_start_current_allocated; \
+            snprintf(msg, sizeof(msg), "Memory leak detected: %zu bytes", leaked); \
+            test_fail(msg, __FILE__, __LINE__); \
+            return; \
+        } \
+    } while(0)
+
+// Enhanced memory leak detection with detailed reporting
+#define ASSERT_NO_MEMORY_LEAKS_DETAILED() \
+    do { \
+        MemoryStats stats; \
+        memory_get_stats(&stats); \
+        size_t leaked_bytes = stats.current_allocated - test_start_current_allocated; \
+        size_t leaked_allocs = (stats.allocation_count - stats.free_count) - test_start_outstanding_allocs; \
+        if (leaked_bytes > 0 || leaked_allocs > 0) { \
+            char msg[512]; \
+            snprintf(msg, sizeof(msg), "Memory leak: %zu bytes, %zu outstanding allocations", \
+                    leaked_bytes, leaked_allocs); \
+            test_fail(msg, __FILE__, __LINE__); \
+            return; \
+        } \
     } while(0)
 
 // Test output macros
@@ -223,18 +258,18 @@ typedef struct {
     void (*teardown)(void);
 } TestFixture;
 
-extern TestFixture zen_test_fixture;
+extern TestFixture test_fixture;
 
 #define TEST_FIXTURE_SETUP(func) \
-    zen_test_fixture.setup = func
+    test_fixture.setup = func
 
 #define TEST_FIXTURE_TEARDOWN(func) \
-    zen_test_fixture.teardown = func
+    test_fixture.teardown = func
 
 // Skip test macro (for tests that need features not yet implemented)
 #define SKIP_TEST(reason) \
     do { \
-        printf(TEST_COLOR_YELLOW "[SKIP] %s: %s" TEST_COLOR_RESET "\n", zen_current_test_name, reason); \
+        printf(TEST_COLOR_YELLOW "[SKIP] %s: %s" TEST_COLOR_RESET "\n", current_test_name, reason); \
         return; \
     } while(0)
 

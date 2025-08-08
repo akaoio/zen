@@ -12,7 +12,7 @@
  * @param filepath Path to the file to read
  * @return Newly allocated string containing file contents, or NULL on error
  */
-char* zen_read_file(const char* filepath)
+char* io_read_file_internal(const char* filepath)
 {
     if (!filepath) {
         return NULL;
@@ -67,7 +67,7 @@ char* zen_read_file(const char* filepath)
  * @brief Print Value to stdout with newline
  * @param value Value to print
  */
-void zen_print(const Value* value) {
+void io_print_internal(const Value* value) {
     if (!value) {
         printf("null\n");
         return;
@@ -86,7 +86,7 @@ void zen_print(const Value* value) {
  * @brief Print Value to stdout without newline
  * @param value Value to print
  */
-void zen_print_no_newline(const Value* value) {
+void io_print_no_newline_internal(const Value* value) {
     if (!value) {
         printf("null");
         return;
@@ -105,7 +105,7 @@ void zen_print_no_newline(const Value* value) {
  * @brief Read a line from stdin
  * @return Newly allocated string containing user input, or NULL on error
  */
-char* zen_input(void) {
+char* io_input_internal(void) {
     char* buffer = NULL;
     size_t buffer_size = 0;
     ssize_t chars_read = getline(&buffer, &buffer_size, stdin);
@@ -130,12 +130,12 @@ char* zen_input(void) {
  * @param prompt Prompt string to display
  * @return Newly allocated string containing user input, or NULL on error
  */
-char* zen_input_prompt(const char* prompt) {
+char* io_input_prompt_internal(const char* prompt) {
     if (prompt) {
         printf("%s", prompt);
         fflush(stdout);
     }
-    return zen_input();
+    return io_input_internal();
 }
 
 /**
@@ -144,7 +144,7 @@ char* zen_input_prompt(const char* prompt) {
  * @param content Content to write
  * @return true on success, false on failure
  */
-bool zen_write_file(const char* filepath, const char* content) {
+bool io_write_file_internal(const char* filepath, const char* content) {
     if (!filepath || !content) {
         return false;
     }
@@ -167,7 +167,7 @@ bool zen_write_file(const char* filepath, const char* content) {
  * @param content Content to append
  * @return true on success, false on failure
  */
-bool zen_append_file(const char* filepath, const char* content) {
+bool io_append_file_internal(const char* filepath, const char* content) {
     if (!filepath || !content) {
         return false;
     }
@@ -189,7 +189,7 @@ bool zen_append_file(const char* filepath, const char* content) {
  * @param filepath Path to check
  * @return true if file exists, false otherwise
  */
-bool zen_file_exists(const char* filepath) {
+bool io_file_exists_internal(const char* filepath) {
     if (!filepath) {
         return false;
     }
@@ -207,12 +207,12 @@ bool zen_file_exists(const char* filepath) {
  * @param filepath Path to JSON file
  * @return Value object representing the JSON data, or NULL on error
  */
-Value* zen_load_json_file(const char* filepath) {
-    if (!filepath || !zen_file_exists(filepath)) {
+Value* io_load_json_file_internal(const char* filepath) {
+    if (!filepath || !io_file_exists_internal(filepath)) {
         return NULL;
     }
     
-    char* content = zen_read_file(filepath);
+    char* content = io_read_file_internal(filepath);
     if (!content) {
         return NULL;
     }
@@ -223,84 +223,13 @@ Value* zen_load_json_file(const char* filepath) {
     return result;
 }
 
-/**
- * @brief Load YAML file as Value object (using JSON parser for basic compatibility)
- * @param filepath Path to YAML file
- * @return Value object representing the YAML data, or NULL on error
- */
-Value* zen_load_yaml_file(const char* filepath) {
-    // For now, we'll implement basic YAML support using our JSON parser
-    // This is a simplified implementation that handles basic YAML syntax
-    if (!filepath || !zen_file_exists(filepath)) {
-        return NULL;
-    }
-    
-    char* content = zen_read_file(filepath);
-    if (!content) {
-        return NULL;
-    }
-    
-    // Basic YAML to JSON conversion (simplified)
-    // This handles basic key-value pairs and converts them to JSON format
-    size_t content_len = strlen(content);
-    char* json_content = calloc(content_len * 2, sizeof(char)); // Extra space for conversion
-    if (!json_content) {
-        free(content);
-        return NULL;
-    }
-    
-    // Simple YAML to JSON conversion
-    strcat(json_content, "{");
-    
-    char* line = strtok(content, "\n");
-    bool first_item = true;
-    
-    while (line) {
-        // Skip comments and empty lines
-        char* trimmed = line;
-        while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-        
-        if (*trimmed != '#' && *trimmed != '\0') {
-            char* colon = strchr(trimmed, ':');
-            if (colon) {
-                if (!first_item) {
-                    strcat(json_content, ",");
-                }
-                first_item = false;
-                
-                *colon = '\0';
-                char* key = trimmed;
-                char* value = colon + 1;
-                
-                // Trim value
-                while (*value == ' ' || *value == '\t') value++;
-                
-                // Add key-value pair in JSON format
-                strcat(json_content, "\"");
-                strcat(json_content, key);
-                strcat(json_content, "\":\"");
-                strcat(json_content, value);
-                strcat(json_content, "\"");
-            }
-        }
-        line = strtok(NULL, "\n");
-    }
-    
-    strcat(json_content, "}");
-    
-    Value* result = json_parse(json_content);
-    free(content);
-    free(json_content);
-    
-    return result;
-}
 
 /**
  * @brief Resolve module path with extensions
  * @param module_path Base path for the module
  * @return Newly allocated string with resolved path, or NULL if not found
  */
-char* zen_resolve_module_path(const char* module_path) {
+char* io_resolve_module_path_internal(const char* module_path) {
     if (!module_path) {
         return NULL;
     }
@@ -313,10 +242,12 @@ char* zen_resolve_module_path(const char* module_path) {
         char* full_path = malloc(path_len);
         if (!full_path) continue;
         
-        strcpy(full_path, module_path);
-        strcat(full_path, extensions[i]);
+        size_t module_len = strlen(module_path);
+        strncpy(full_path, module_path, module_len);
+        full_path[module_len] = '\0';
+        strncat(full_path, extensions[i], path_len - module_len - 1);
         
-        if (zen_file_exists(full_path)) {
+        if (io_file_exists_internal(full_path)) {
             return full_path;
         }
         
@@ -324,9 +255,128 @@ char* zen_resolve_module_path(const char* module_path) {
     }
     
     // Check if the path exists as-is
-    if (zen_file_exists(module_path)) {
+    if (io_file_exists_internal(module_path)) {
         return strdup(module_path);
     }
     
     return NULL;
+}
+
+// STDLIB WRAPPER FUNCTIONS - Match MANIFEST.json signatures
+
+/**
+ * @brief Print function for stdlib integration
+ * @param args Array of Value arguments 
+ * @param argc Number of arguments
+ * @return Always returns null Value
+ */
+Value* io_print(Value** args, size_t argc) {
+    for (size_t i = 0; i < argc; i++) {
+        if (i > 0) printf(" ");
+        io_print_no_newline_internal(args[i]);
+    }
+    printf("\n");
+    return value_new_null();
+}
+
+/**
+ * @brief Input function for stdlib integration
+ * @param args Array of Value arguments (optional prompt)
+ * @param argc Number of arguments
+ * @return String Value containing user input
+ */
+Value* io_input(Value** args, size_t argc) {
+    char* input_str = NULL;
+    
+    if (argc > 0 && args[0] && args[0]->type == VALUE_STRING) {
+        input_str = io_input_prompt_internal(args[0]->as.string->data);
+    } else {
+        input_str = io_input_internal();
+    }
+    
+    if (!input_str) {
+        return value_new_string("");
+    }
+    
+    Value* result = value_new_string(input_str);
+    free(input_str);
+    return result;
+}
+
+/**
+ * @brief Read file function for stdlib integration
+ * @param args Array of Value arguments (filepath)
+ * @param argc Number of arguments
+ * @return String Value containing file contents or error
+ */
+Value* io_read_file(Value** args, size_t argc) {
+    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
+        Value* error = value_new(VALUE_ERROR);
+        if (error && error->as.error) {
+            error->as.error->message = strdup("readFile requires a string filepath argument");
+            error->as.error->code = -1;
+        }
+        return error;
+    }
+    
+    char* content = io_read_file_internal(args[0]->as.string->data);
+    if (!content) {
+        Value* error = value_new(VALUE_ERROR);
+        if (error && error->as.error) {
+            error->as.error->message = strdup("Failed to read file");
+            error->as.error->code = -1;
+        }
+        return error;
+    }
+    
+    Value* result = value_new_string(content);
+    free(content);
+    return result;
+}
+
+/**
+ * @brief Write file function for stdlib integration
+ * @param args Array of Value arguments (filepath, content)
+ * @param argc Number of arguments
+ * @return Boolean Value indicating success
+ */
+Value* io_write_file(Value** args, size_t argc) {
+    if (argc < 2 || !args[0] || !args[1] || 
+        args[0]->type != VALUE_STRING || args[1]->type != VALUE_STRING) {
+        return value_new_boolean(false);
+    }
+    
+    bool success = io_write_file_internal(args[0]->as.string->data, args[1]->as.string->data);
+    return value_new_boolean(success);
+}
+
+/**
+ * @brief Append to file function for stdlib integration
+ * @param args Array of Value arguments (filepath, content)
+ * @param argc Number of arguments
+ * @return Boolean Value indicating success
+ */
+Value* io_append_file(Value** args, size_t argc) {
+    if (argc < 2 || !args[0] || !args[1] || 
+        args[0]->type != VALUE_STRING || args[1]->type != VALUE_STRING) {
+        return value_new_boolean(false);
+    }
+    
+    bool success = io_append_file_internal(args[0]->as.string->data, args[1]->as.string->data);
+    return value_new_boolean(success);
+}
+
+/**
+ * @brief Check file exists function for stdlib integration
+ * @param args Array of Value arguments (filepath)
+ * @param argc Number of arguments
+ * @return Boolean Value indicating if file exists
+ */
+Value* io_file_exists(Value** args, size_t argc) {
+    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
+        return value_new_boolean(false);
+    }
+    
+    bool exists = io_file_exists_internal(args[0]->as.string->data);
+    return value_new_boolean(exists);
 }

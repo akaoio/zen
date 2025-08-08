@@ -1,0 +1,24 @@
+agent: swarm-2-zen-worker-lexer
+task: Standardize include guards and function naming in lexer module
+created: 1754581232
+completed: false
+files:
+  - src/core/lexer.c
+  - src/include/zen/core/lexer.h
+activities:
+  - timestamp: 1754581232
+    start: 1754581232
+    end: 0
+    method: Task initialized
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet
+  - timestamp: 1754581402
+    start: 1754581402
+    end: 0
+    method: Fixed lexer.h include guards to use ZEN_CORE_LEXER_H standard. Continuing with remaining core headers.
+    success: false
+    fail: false
+    why_success: In progress
+    why_fail: Not completed yet

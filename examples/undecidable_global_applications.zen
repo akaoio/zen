@@ -1,0 +1,275 @@
+# Global Applications of UNDECIDABLE Values
+# Comprehensive examples showing worldwide use cases
+
+print "🌍 UNDECIDABLE Values for Global Applications"
+print "============================================"
+
+# Medical Diagnosis with Uncertainty
+function medical_diagnosis symptoms tests patient_history
+    print "🏥 Medical Diagnosis System with Undecidable States"
+    
+    set diagnosis_confidence 0.0
+    set possible_conditions []
+    
+    for symptom in symptoms
+        set symptom_match check_symptom_database symptom
+        if symptom_match = undecidable
+            print "   ⚠️  Symptom '" + symptom + "' has uncertain significance"
+            diagnosis_confidence -= 0.1
+    
+    for test in tests
+        set test_result interpret_test_result test
+        if test_result = undecidable
+            print "   🔬 Test '" + test.name + "' shows inconclusive results"
+            diagnosis_confidence -= 0.2
+    
+    # If too much uncertainty, diagnosis is undecidable
+    if diagnosis_confidence < 0.5
+        print "   🤷 Insufficient evidence - diagnosis undecidable"
+        return undecidable
+    
+    return generate_diagnosis possible_conditions diagnosis_confidence
+
+# Climate Change Prediction
+function climate_prediction models time_horizon uncertainty_factors
+    print "🌡️  Climate Change Prediction with Undecidable Variables"
+    
+    set predictions []
+    set undecidable_factors 0
+    
+    for factor in uncertainty_factors
+        set factor_impact estimate_climate_impact factor
+        
+        if factor_impact = undecidable
+            print "   🌪️  Climate factor '" + factor + "' has undecidable impact"
+            set undecidable_factors undecidable_factors + 1
+    
+    # If too many undecidable factors, prediction is unreliable
+    if undecidable_factors > uncertainty_factors.length / 2
+        print "   🤔 Too many unknown factors - climate prediction undecidable"
+        return undecidable
+    
+    # Long-term predictions become increasingly undecidable
+    if time_horizon > 50
+        print "   ⏰ Long-term prediction (>" + time_horizon + " years) undecidable"
+        return undecidable
+    
+    return aggregate_climate_models models
+
+# Financial Market Analysis
+function market_analysis stocks economic_indicators geopolitical_events
+    print "💰 Financial Market Analysis with Undecidable Events"
+    
+    set market_sentiment undecidable
+    set risk_assessment []
+    
+    # Analyze geopolitical uncertainty
+    for event in geopolitical_events
+        set event_impact assess_geopolitical_impact event
+        
+        if event_impact = undecidable
+            print "   🌍 Geopolitical event '" + event + "' has undecidable market impact"
+            set market_sentiment undecidable
+    
+    # Black Swan events make predictions undecidable
+    set black_swan_probability estimate_black_swan_probability()
+    if black_swan_probability > 0.1
+        print "   🖤 High black swan probability - market prediction undecidable"
+        return undecidable
+    
+    return {
+        sentiment: market_sentiment,
+        recommendation: market_sentiment = undecidable ? "hold" : "analyze_further"
+    }
+
+# Legal System - Burden of Proof
+function legal_verdict evidence witness_testimony case_complexity
+    print "⚖️  Legal System with Undecidable Evidence"
+    
+    set evidence_strength 0.0
+    set reasonable_doubt false
+    
+    for piece in evidence
+        set evidence_reliability assess_evidence_reliability piece
+        
+        if evidence_reliability = undecidable
+            print "   📋 Evidence '" + piece.type + "' has undecidable reliability"
+            set reasonable_doubt true
+    
+    for testimony in witness_testimony
+        set testimony_credibility assess_witness_credibility testimony
+        
+        if testimony_credibility = undecidable
+            print "   👤 Witness testimony has undecidable credibility"
+            set reasonable_doubt true
+    
+    # In legal systems, undecidable evidence creates reasonable doubt
+    if reasonable_doubt
+        print "   ⚠️  Reasonable doubt exists - verdict undecidable"
+        print "   📖 Legal principle: 'Beyond reasonable doubt' not met"
+        return undecidable  # Presumption of innocence
+    
+    return determine_guilt evidence_strength
+
+# Urban Planning with Uncertainty
+function urban_planning population_growth traffic_patterns environmental_impact
+    print "🏙️  Urban Planning with Undecidable Factors"
+    
+    set planning_decisions []
+    set infrastructure_needs []
+    
+    # Population growth is often undecidable long-term
+    if population_growth.prediction_horizon > 20
+        print "   👥 Long-term population growth undecidable"
+        set population_growth.reliability undecidable
+    
+    # Traffic patterns with autonomous vehicles
+    set av_adoption_rate estimate_autonomous_vehicle_adoption()
+    if av_adoption_rate = undecidable
+        print "   🚗 Autonomous vehicle impact on traffic undecidable"
+        return undecidable
+    
+    # Environmental impact assessment
+    for impact in environmental_impact
+        set impact_severity assess_environmental_severity impact
+        
+        if impact_severity = undecidable
+            print "   🌱 Environmental impact '" + impact.type + "' undecidable"
+            # Apply precautionary principle
+            return "apply_precautionary_measures"
+    
+    return generate_urban_plan planning_decisions
+
+# Education System Effectiveness
+function education_effectiveness teaching_methods student_diversity technology_impact
+    print "📚 Education System with Undecidable Effectiveness"
+    
+    set effectiveness_metrics []
+    set long_term_outcomes undecidable
+    
+    # Different teaching methods for different students
+    for method in teaching_methods
+        set method_effectiveness test_teaching_method method student_diversity
+        
+        if method_effectiveness = undecidable
+            print "   📖 Teaching method '" + method + "' has undecidable effectiveness"
+    
+    # Technology impact on learning
+    set tech_impact assess_technology_impact technology_impact
+    if tech_impact = undecidable
+        print "   💻 Technology impact on learning undecidable"
+        long_term_outcomes = undecidable
+    
+    # Long-term educational outcomes are inherently undecidable
+    print "   🎓 Long-term educational success inherently undecidable"
+    return {
+        short_term: effectiveness_metrics,
+        long_term: undecidable,
+        recommendation: "continuous_assessment_needed"
+    }
+
+# Pandemic Response Strategy
+function pandemic_response virus_mutations vaccine_effectiveness social_compliance
+    print "🦠 Pandemic Response with Undecidable Virus Evolution"
+    
+    set response_strategy []
+    set effectiveness_prediction undecidable
+    
+    # Virus mutations are fundamentally undecidable
+    for mutation in virus_mutations
+        if mutation.impact = undecidable
+            print "   🧬 Virus mutation '" + mutation.type + "' impact undecidable"
+            set effectiveness_prediction undecidable
+    
+    # Vaccine effectiveness against future variants
+    set future_effectiveness predict_vaccine_effectiveness vaccine_effectiveness
+    if future_effectiveness = undecidable
+        print "   💉 Vaccine effectiveness against future variants undecidable"
+    
+    # Social compliance is unpredictable
+    set compliance_rate estimate_social_compliance social_compliance
+    if compliance_rate = undecidable
+        print "   👥 Social compliance with measures undecidable"
+        return undecidable
+    
+    return {
+        strategy: "adaptive_approach",
+        certainty: effectiveness_prediction,
+        recommendation: "prepare_for_multiple_scenarios"
+    }
+
+# Space Exploration Mission Planning
+function space_mission_planning destination technology_readiness risk_factors
+    print "🚀 Space Mission with Undecidable Risk Factors"
+    
+    set mission_success_probability undecidable
+    set critical_risks []
+    
+    # Technology readiness for deep space
+    if destination.distance > 1000000  # Beyond Mars
+        print "   🌌 Deep space mission - technology readiness undecidable"
+        set mission_success_probability undecidable
+    
+    # Unknown risk factors in space exploration
+    for risk in risk_factors
+        set risk_probability assess_space_risk risk
+        
+        if risk_probability = undecidable
+            print "   ⚠️  Space risk '" + risk.type + "' probability undecidable"
+            critical_risks.push risk
+    
+    # If too many undecidable risks, mission viability is undecidable
+    if critical_risks.length > 3
+        print "   🤷 Too many undecidable risks - mission viability undecidable"
+        return undecidable
+    
+    return {
+        go_no_go: mission_success_probability ≠ undecidable,
+        confidence: mission_success_probability,
+        recommendation: "extensive_simulation_required"
+    }
+
+# Test global applications
+print "\n🌐 Testing global applications with undecidable values:\n"
+
+# Test medical diagnosis
+print "🔍 Testing medical diagnosis..."
+set symptoms ["fatigue", "unknown_symptom", "headache"]
+set tests [{ name: "blood_test", result: "inconclusive" }]
+set patient_history { age: 45, previous_conditions: [] }
+
+set diagnosis_result medical_diagnosis symptoms tests patient_history
+print "Medical diagnosis result:" diagnosis_result
+
+# Test climate prediction
+print "\n🔍 Testing climate prediction..."
+set climate_models ["gcm_model", "regional_model"]
+set time_horizon 75  # Long-term prediction
+set uncertainty_factors ["solar_activity", "volcanic_eruptions", "unknown_feedback_loops"]
+
+set climate_result climate_prediction climate_models time_horizon uncertainty_factors
+print "Climate prediction result:" climate_result
+
+# Test legal verdict
+print "\n🔍 Testing legal system..."
+set evidence [{ type: "dna", reliability: undecidable }, { type: "witness", reliability: "high" }]
+set witness_testimony [{ credibility: undecidable, statement: "uncertain_identification" }]
+set case_complexity "high"
+
+set legal_result legal_verdict evidence witness_testimony case_complexity
+print "Legal verdict result:" legal_result
+
+# Test pandemic response
+print "\n🔍 Testing pandemic response..."
+set virus_mutations [{ type: "spike_protein", impact: undecidable }]
+set vaccine_effectiveness { current: 0.85, future: undecidable }
+set social_compliance { mask_wearing: 0.6, vaccination: undecidable }
+
+set pandemic_result pandemic_response virus_mutations vaccine_effectiveness social_compliance
+print "Pandemic response result:" pandemic_result
+
+print "\n🌍 UNDECIDABLE values enable realistic global problem solving!"
+print "🤝 Help humanity make better decisions under uncertainty"
+print "⚖️  Promote intellectual humility and evidence-based reasoning"
+print "🔬 Enable more honest scientific and policy discussions"
+print "✨ Make the world's complex systems more transparent and trustworthy"

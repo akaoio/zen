@@ -8,6 +8,7 @@
 #define _GNU_SOURCE  // For strdup
 #include "zen/stdlib/string.h"
 #include "zen/types/value.h"
+#include "zen/core/error.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -15,12 +16,18 @@
 
 /**
  * @brief Get the length of a string value
- * @param str_value String value to measure
+ * @param args Arguments array containing string value
+ * @param argc Number of arguments
  * @return Length as a number value, or error on invalid input
  */
-Value* zen_string_length(const Value* str_value) {
+Value* string_length(Value** args, size_t argc) {
+    if (argc != 1) {
+        return error_new("length() requires exactly 1 argument");
+    }
+    
+    const Value* str_value = args[0];
     if (!str_value || str_value->type != VALUE_STRING) {
-        return value_new_number(0);
+        return error_new("length() requires a string argument");
     }
     
     if (!str_value->as.string || !str_value->as.string->data) {
@@ -32,12 +39,18 @@ Value* zen_string_length(const Value* str_value) {
 
 /**
  * @brief Convert string to uppercase
- * @param str_value String value to convert
+ * @param args Arguments array containing string value
+ * @param argc Number of arguments
  * @return New string value in uppercase
  */
-Value* zen_string_upper(const Value* str_value) {
+Value* string_upper(Value** args, size_t argc) {
+    if (argc != 1) {
+        return error_new("upper() requires exactly 1 argument");
+    }
+    
+    const Value* str_value = args[0];
     if (!str_value || str_value->type != VALUE_STRING) {
-        return value_new_string("");
+        return error_new("upper() requires a string argument");
     }
     
     if (!str_value->as.string || !str_value->as.string->data) {
@@ -67,7 +80,12 @@ Value* zen_string_upper(const Value* str_value) {
  * @param str_value String value to convert
  * @return New string value in lowercase
  */
-Value* zen_string_lower(const Value* str_value) {
+Value* string_lower(Value** args, size_t argc) {
+    if (argc != 1) {
+        return error_new("lower() requires exactly 1 argument");
+    }
+    
+    const Value* str_value = args[0];
     if (!str_value || str_value->type != VALUE_STRING) {
         return value_new_string("");
     }
@@ -99,7 +117,12 @@ Value* zen_string_lower(const Value* str_value) {
  * @param str_value String value to trim
  * @return New trimmed string value
  */
-Value* zen_string_trim(const Value* str_value) {
+Value* string_trim(Value** args, size_t argc) {
+    if (argc != 1) {
+        return error_new("trim() requires exactly 1 argument");
+    }
+    
+    const Value* str_value = args[0];
     if (!str_value || str_value->type != VALUE_STRING) {
         return value_new_string("");
     }
@@ -144,7 +167,22 @@ Value* zen_string_trim(const Value* str_value) {
  * @param delimiter Delimiter string
  * @return Array value containing split parts
  */
-Value* zen_string_split(const Value* str_value, const char* delimiter) {
+Value* string_split(Value** args, size_t argc) {
+    if (argc != 2) {
+        return error_new("split() requires exactly 2 arguments");
+    }
+    
+    const Value* str_value = args[0];
+    if (!str_value || str_value->type != VALUE_STRING) {
+        return error_new("split() requires a string as first argument");
+    }
+    
+    const Value* delim_value = args[1];
+    if (!delim_value || delim_value->type != VALUE_STRING) {
+        return error_new("split() requires a string delimiter as second argument");
+    }
+    
+    const char* delimiter = delim_value->as.string->data;
     Value* result = value_new(VALUE_ARRAY);
     if (!result || !result->as.array) {
         return result;
@@ -213,7 +251,22 @@ Value* zen_string_split(const Value* str_value, const char* delimiter) {
  * @param substring Substring to find
  * @return Boolean value indicating if substring was found
  */
-Value* zen_string_contains(const Value* str_value, const char* substring) {
+Value* string_contains(Value** args, size_t argc) {
+    if (argc != 2) {
+        return error_new("contains() requires exactly 2 arguments");
+    }
+    
+    const Value* str_value = args[0];
+    if (!str_value || str_value->type != VALUE_STRING) {
+        return error_new("contains() requires a string as first argument");
+    }
+    
+    const Value* substr_value = args[1];
+    if (!substr_value || substr_value->type != VALUE_STRING) {
+        return error_new("contains() requires a string as second argument");
+    }
+    
+    const char* substring = substr_value->as.string->data;
     if (!str_value || str_value->type != VALUE_STRING || !substring) {
         return value_new_boolean(false);
     }
@@ -233,7 +286,28 @@ Value* zen_string_contains(const Value* str_value, const char* substring) {
  * @param replace Replacement string
  * @return New string value with replacements made
  */
-Value* zen_string_replace(const Value* str_value, const char* search, const char* replace) {
+Value* string_replace(Value** args, size_t argc) {
+    if (argc != 3) {
+        return error_new("replace() requires exactly 3 arguments");
+    }
+    
+    const Value* str_value = args[0];
+    if (!str_value || str_value->type != VALUE_STRING) {
+        return error_new("replace() requires a string as first argument");
+    }
+    
+    const Value* search_value = args[1];
+    if (!search_value || search_value->type != VALUE_STRING) {
+        return error_new("replace() requires a string as second argument");
+    }
+    
+    const Value* replace_value = args[2];
+    if (!replace_value || replace_value->type != VALUE_STRING) {
+        return error_new("replace() requires a string as third argument");
+    }
+    
+    const char* search = search_value->as.string->data;
+    const char* replace = replace_value->as.string->data;
     if (!str_value || str_value->type != VALUE_STRING || !search || !replace) {
         return value_copy(str_value);
     }

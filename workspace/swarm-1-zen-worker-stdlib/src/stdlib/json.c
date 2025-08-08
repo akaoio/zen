@@ -9,18 +9,20 @@
 #define _GNU_SOURCE  // For strdup
 #include "zen/stdlib/json.h"
 #include "zen/types/value.h"
+#include "zen/types/array.h"
+#include "zen/types/object.h"
 #include "zen/core/memory.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <math.h>
+#include <errno.h>
+
+// Maximum file size for JSON parsing (64MB) to prevent memory exhaustion
+#define MAX_JSON_FILE_SIZE (64 * 1024 * 1024)
 
 // Forward declarations for array and object functions
-Value* array_new(size_t initial_capacity);
-void array_push(Value* array, Value* item);
-Value* object_new(void);
-void object_set(Value* object, const char* key, Value* value);
 
 // JSON parsing state
 typedef struct {
@@ -55,10 +57,22 @@ Value* json_parse(const char* json_string) {
         return error;
     }
     
+    size_t json_length = strlen(json_string);
+    
+    // Check file size limit to prevent memory exhaustion
+    if (json_length > MAX_JSON_FILE_SIZE) {
+        Value* error = value_new(VALUE_ERROR);
+        if (error && error->as.error) {
+            error->as.error->message = memory_strdup("JSON string exceeds maximum size limit (64MB)");
+            error->as.error->code = -2;
+        }
+        return error;
+    }
+    
     JsonParser parser = {
         .input = json_string,
         .pos = 0,
-        .length = strlen(json_string)
+        .length = json_length
     };
     
     skip_whitespace(&parser);
@@ -159,8 +173,10 @@ char* json_stringify(const Value* value) {
                         memory_free(result);
                         return NULL;
                     }
-                    strcpy(temp, result);
-                    strcat(temp, ",");
+                    size_t result_len = strlen(result);
+                    strncpy(temp, result, result_len);
+                    temp[result_len] = ',';
+                    temp[result_len + 1] = '\0';
                     memory_free(result);
                     result = temp;
                 }
@@ -177,8 +193,11 @@ char* json_stringify(const Value* value) {
                     memory_free(item_json);
                     return NULL;
                 }
-                strcpy(temp, result);
-                strcat(temp, item_json);
+                size_t result_len = strlen(result);
+                size_t item_len = strlen(item_json);
+                strncpy(temp, result, result_len);
+                temp[result_len] = '\0';
+                strncat(temp, item_json, item_len);
                 memory_free(result);
                 memory_free(item_json);
                 result = temp;
@@ -190,8 +209,10 @@ char* json_stringify(const Value* value) {
                 memory_free(result);
                 return NULL;
             }
-            strcpy(temp, result);
-            strcat(temp, "]");
+            size_t result_len = strlen(result);
+            strncpy(temp, result, result_len);
+            temp[result_len] = ']';
+            temp[result_len + 1] = '\0';
             memory_free(result);
             return temp;
         }
@@ -212,8 +233,10 @@ char* json_stringify(const Value* value) {
                         memory_free(result);
                         return NULL;
                     }
-                    strcpy(temp, result);
-                    strcat(temp, ",");
+                    size_t result_len = strlen(result);
+                    strncpy(temp, result, result_len);
+                    temp[result_len] = ',';
+                    temp[result_len + 1] = '\0';
                     memory_free(result);
                     result = temp;
                 }
@@ -260,8 +283,10 @@ char* json_stringify(const Value* value) {
                 memory_free(result);
                 return NULL;
             }
-            strcpy(temp, result);
-            strcat(temp, "}");
+            size_t result_len = strlen(result);
+            strncpy(temp, result, result_len);
+            temp[result_len] = '}';
+            temp[result_len + 1] = '\0';
             memory_free(result);
             return temp;
         }
@@ -271,26 +296,227 @@ char* json_stringify(const Value* value) {
     }
 }
 
-/**
- * @brief Convert Value to cJSON object (stub for compatibility)
- * @param value Value to convert
- * @return NULL (not implemented without cJSON)
- */
-cJSON* value_to_cjson(const Value* value) {
-    (void)value; // Suppress unused parameter warning
-    // This function requires cJSON library which is not available
-    return NULL;
+// Helper functions for cJSON management
+static cJSON* cjson_create(cJSON_Type type) {
+    cJSON* item = memory_alloc(sizeof(cJSON));
+    if (!item) return NULL;
+    
+    item->next = NULL;
+    item->prev = NULL;
+    item->child = NULL;
+    item->type = type;
+    item->valuestring = NULL;
+    item->valuedouble = 0.0;
+    item->string = NULL;
+    
+    return item;
+}
+
+static void cjson_delete(cJSON* item) {
+    if (!item) return;
+    
+    cJSON* child = item->child;
+    while (child) {
+        cJSON* next = child->next;
+        cjson_delete(child);
+        child = next;
+    }
+    
+    if (item->valuestring) memory_free(item->valuestring);
+    if (item->string) memory_free(item->string);
+    memory_free(item);
+}
+
+static void cjson_add_item_to_object(cJSON* object, const char* name, cJSON* item) {
+    if (!object || !name || !item) return;
+    
+    item->string = memory_strdup(name);
+    
+    if (!object->child) {
+        object->child = item;
+    } else {
+        cJSON* child = object->child;
+        while (child->next) {
+            child = child->next;
+        }
+        child->next = item;
+        item->prev = child;
+    }
+}
+
+static void cjson_add_item_to_array(cJSON* array, cJSON* item) {
+    if (!array || !item) return;
+    
+    if (!array->child) {
+        array->child = item;
+    } else {
+        cJSON* child = array->child;
+        while (child->next) {
+            child = child->next;
+        }
+        child->next = item;
+        item->prev = child;
+    }
 }
 
 /**
- * @brief Convert cJSON to Value (stub for compatibility)
+ * @brief Convert Value to cJSON object
+ * @param value Value to convert
+ * @return cJSON object representing the value, or NULL on error
+ */
+cJSON* value_to_cjson(const Value* value) {
+    if (!value) {
+        return cjson_create(cJSON_NULL);
+    }
+    
+    switch (value->type) {
+        case VALUE_NULL:
+            return cjson_create(cJSON_NULL);
+            
+        case VALUE_BOOLEAN: {
+            cJSON* item = cjson_create(value->as.boolean ? cJSON_True : cJSON_False);
+            return item;
+        }
+        
+        case VALUE_NUMBER: {
+            cJSON* item = cjson_create(cJSON_Number);
+            if (item) {
+                item->valuedouble = value->as.number;
+            }
+            return item;
+        }
+        
+        case VALUE_STRING: {
+            if (!value->as.string || !value->as.string->data) {
+                cJSON* item = cjson_create(cJSON_String);
+                if (item) {
+                    item->valuestring = memory_strdup("");
+                }
+                return item;
+            }
+            
+            cJSON* item = cjson_create(cJSON_String);
+            if (item) {
+                item->valuestring = memory_strdup(value->as.string->data);
+            }
+            return item;
+        }
+        
+        case VALUE_ARRAY: {
+            cJSON* array_item = cjson_create(cJSON_Array);
+            if (!array_item) return NULL;
+            
+            if (value->as.array) {
+                for (size_t i = 0; i < value->as.array->length; i++) {
+                    cJSON* child_item = value_to_cjson(value->as.array->items[i]);
+                    if (!child_item) {
+                        cjson_delete(array_item);
+                        return NULL;
+                    }
+                    cjson_add_item_to_array(array_item, child_item);
+                }
+            }
+            return array_item;
+        }
+        
+        case VALUE_OBJECT: {
+            cJSON* object_item = cjson_create(cJSON_Object);
+            if (!object_item) return NULL;
+            
+            if (value->as.object) {
+                for (size_t i = 0; i < value->as.object->length; i++) {
+                    const char* key = value->as.object->pairs[i].key;
+                    Value* val = value->as.object->pairs[i].value;
+                    
+                    cJSON* child_item = value_to_cjson(val);
+                    if (!child_item) {
+                        cjson_delete(object_item);
+                        return NULL;
+                    }
+                    cjson_add_item_to_object(object_item, key, child_item);
+                }
+            }
+            return object_item;
+        }
+        
+        case VALUE_FUNCTION:
+        case VALUE_ERROR:
+        case VALUE_UNDECIDABLE:
+        default:
+            // For non-JSON-serializable types, return null
+            return cjson_create(cJSON_NULL);
+    }
+}
+
+/**
+ * @brief Convert cJSON to Value
  * @param json cJSON object to convert
- * @return NULL value (not implemented without cJSON)
+ * @return Newly allocated Value representing the JSON data
  */
 Value* cjson_to_value(const cJSON* json) {
-    (void)json; // Suppress unused parameter warning
-    // This function requires cJSON library which is not available
-    return value_new_null();
+    if (!json) {
+        return value_new_null();
+    }
+    
+    switch (json->type) {
+        case cJSON_NULL:
+            return value_new_null();
+            
+        case cJSON_False:
+            return value_new_boolean(false);
+            
+        case cJSON_True:
+            return value_new_boolean(true);
+            
+        case cJSON_Number:
+            return value_new_number(json->valuedouble);
+            
+        case cJSON_String: {
+            if (!json->valuestring) {
+                return value_new_string("");
+            }
+            return value_new_string(json->valuestring);
+        }
+        
+        case cJSON_Array: {
+            Value* array = value_new(VALUE_ARRAY);
+            if (!array) return NULL;
+            
+            cJSON* child = json->child;
+            while (child) {
+                Value* child_value = cjson_to_value(child);
+                if (!child_value) {
+                    value_unref(array);
+                    return NULL;
+                }
+                array_push(array, child_value);
+                child = child->next;
+            }
+            return array;
+        }
+        
+        case cJSON_Object: {
+            Value* object = value_new(VALUE_OBJECT);
+            if (!object) return NULL;
+            
+            cJSON* child = json->child;
+            while (child) {
+                if (child->string) {
+                    Value* child_value = cjson_to_value(child);
+                    if (!child_value) {
+                        value_unref(object);
+                        return NULL;
+                    }
+                    object_set(object, child->string, child_value);
+                }
+                child = child->next;
+            }
+            return object;
+        }
+        
+        default:
+            return value_new_null();
+    }
 }
 
 // Helper functions for parsing
@@ -539,6 +765,18 @@ static Value* parse_string(JsonParser* parser) {
     return result;
 }
 
+/**
+ * @brief Parse a JSON number with comprehensive validation
+ * 
+ * This function parses a JSON number and performs comprehensive validation:
+ * - Checks for valid number format using strtod endptr
+ * - Rejects infinity and NaN values (not allowed in JSON specification)  
+ * - Detects overflow/underflow conditions using errno
+ * - Ensures JSON compliance by only accepting finite numbers
+ *
+ * @param parser JSON parser state
+ * @return Value containing parsed number, or NULL if invalid
+ */
 static Value* parse_number(JsonParser* parser) {
     size_t start = parser->pos;
     
@@ -591,8 +829,153 @@ static Value* parse_number(JsonParser* parser) {
     strncpy(num_str, &parser->input[start], num_len);
     num_str[num_len] = '\0';
     
-    double value = strtod(num_str, NULL);
-    memory_free(num_str);
+    // Clear errno before conversion to detect overflow/underflow
+    errno = 0;
+    char* endptr = NULL;
+    double value = strtod(num_str, &endptr);
     
+    // Check for parsing errors
+    if (endptr == num_str || *endptr != '\0') {
+        memory_free(num_str);
+        return NULL; // Invalid number format
+    }
+    
+    // Check for infinity, NaN, or overflow
+    if (!isfinite(value)) {
+        memory_free(num_str);
+        return NULL; // JSON doesn't support infinity or NaN
+    }
+    
+    // Check for overflow/underflow (ERANGE set by strtod)
+    if (errno == ERANGE) {
+        memory_free(num_str);
+        return NULL; // Number too large or too small to represent
+    }
+    
+    memory_free(num_str);
     return value_new_number(value);
+}
+
+// Stdlib wrapper functions
+
+/**
+ * @brief Load JSON file wrapper function for stdlib
+ * @param args Array of Value arguments (filename)
+ * @param argc Number of arguments
+ * @return Parsed JSON Value or error
+ */
+Value* json_load_file(Value** args, size_t argc) {
+    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
+        return value_new_error("loadJsonFile requires a filename string", -1);
+    }
+    
+    // Use the io_load_json_file_internal function from io.c
+    extern Value* io_load_json_file_internal(const char* filepath);
+    return io_load_json_file_internal(args[0]->as.string->data);
+}
+
+/**
+ * @brief Parse JSON file with proper error handling and size limits
+ * @param filename Path to JSON file to parse
+ * @return Parsed JSON Value or error Value on failure
+ */
+Value* json_parse_file_safe(const char* filename) {
+    if (!filename) {
+        return value_new_error("Filename is NULL", -1);
+    }
+    
+    // Check if file exists using io functions
+    extern bool io_file_exists_internal(const char* filepath);
+    if (!io_file_exists_internal(filename)) {
+        return value_new_error("File does not exist", -1);
+    }
+    
+    // Read file content first, then check size limit
+    extern char* io_read_file_internal(const char* filepath);
+    char* content = io_read_file_internal(filename);
+    if (!content) {
+        return value_new_error("Failed to read file", -1);
+    }
+    
+    // Check file size after reading to prevent memory exhaustion from huge files
+    size_t content_length = strlen(content);
+    if (content_length > MAX_JSON_FILE_SIZE) {
+        memory_free(content);
+        return value_new_error("File exceeds maximum size limit (64MB)", -2);
+    }
+    
+    // Parse JSON content (will also check size, providing double protection)
+    Value* result = json_parse(content);
+    memory_free(content);
+    
+    return result;
+}
+
+/**
+ * @brief Parse JSON string - stdlib wrapper
+ * @param args Arguments array containing JSON string
+ * @param argc Number of arguments
+ * @return Parsed value or error
+ */
+Value* json_parse_stdlib(Value** args, size_t argc) {
+    if (argc != 1) {
+        return value_new_error("jsonParse requires exactly 1 argument", -1);
+    }
+    
+    if (!args[0] || args[0]->type != VALUE_STRING) {
+        return value_new_error("jsonParse requires a string argument", -1);
+    }
+    
+    return json_parse(args[0]->as.string->data);
+}
+
+/**
+ * @brief Convert value to JSON string - stdlib wrapper
+ * @param args Arguments array containing value to stringify
+ * @param argc Number of arguments
+ * @return JSON string or error
+ */
+Value* json_stringify_stdlib(Value** args, size_t argc) {
+    if (argc != 1) {
+        return value_new_error("jsonStringify requires exactly 1 argument", -1);
+    }
+    
+    if (!args[0]) {
+        return value_new_string("null");
+    }
+    
+    char* json_str = json_stringify(args[0]);
+    if (!json_str) {
+        return value_new_error("Failed to stringify value", -1);
+    }
+    
+    Value* result = value_new_string(json_str);
+    memory_free(json_str);
+    return result;
+}
+
+/**
+ * @brief Convert value to formatted JSON with indentation - stdlib wrapper
+ * @param args Arguments array containing value and optional indent size
+ * @param argc Number of arguments
+ * @return Formatted JSON string or error
+ */
+Value* json_stringify_pretty_stdlib(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_error("jsonPretty requires at least 1 argument", -1);
+    }
+    
+    if (!args[0]) {
+        return value_new_string("null");
+    }
+    
+    // For now, just use regular stringify - pretty printing can be added later
+    char* json_str = json_stringify(args[0]);
+    if (!json_str) {
+        return value_new_error("Failed to stringify value", -1);
+    }
+    
+    Value* result = value_new_string(json_str);
+    memory_free(json_str);
+    return result;
 }

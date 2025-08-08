@@ -9,6 +9,8 @@
 #define _GNU_SOURCE  // For strdup
 #include "zen/stdlib/json.h"
 #include "zen/types/value.h"
+#include "zen/types/array.h"
+#include "zen/types/object.h"
 #include "zen/core/memory.h"
 #include <stdlib.h>
 #include <string.h>
@@ -17,10 +19,6 @@
 #include <math.h>
 
 // Forward declarations for array and object functions
-Value* array_new(size_t initial_capacity);
-void array_push(Value* array, Value* item);
-Value* object_new(void);
-void object_set(Value* object, const char* key, Value* value);
 
 // JSON parsing state
 typedef struct {
@@ -159,8 +157,10 @@ char* json_stringify(const Value* value) {
                         memory_free(result);
                         return NULL;
                     }
-                    strcpy(temp, result);
-                    strcat(temp, ",");
+                    size_t result_len = strlen(result);
+                    strncpy(temp, result, result_len);
+                    temp[result_len] = ',';
+                    temp[result_len + 1] = '\0';
                     memory_free(result);
                     result = temp;
                 }
@@ -177,8 +177,11 @@ char* json_stringify(const Value* value) {
                     memory_free(item_json);
                     return NULL;
                 }
-                strcpy(temp, result);
-                strcat(temp, item_json);
+                size_t result_len = strlen(result);
+                size_t item_len = strlen(item_json);
+                strncpy(temp, result, result_len);
+                temp[result_len] = '\0';
+                strncat(temp, item_json, item_len);
                 memory_free(result);
                 memory_free(item_json);
                 result = temp;
@@ -190,8 +193,10 @@ char* json_stringify(const Value* value) {
                 memory_free(result);
                 return NULL;
             }
-            strcpy(temp, result);
-            strcat(temp, "]");
+            size_t result_len = strlen(result);
+            strncpy(temp, result, result_len);
+            temp[result_len] = ']';
+            temp[result_len + 1] = '\0';
             memory_free(result);
             return temp;
         }
@@ -212,8 +217,10 @@ char* json_stringify(const Value* value) {
                         memory_free(result);
                         return NULL;
                     }
-                    strcpy(temp, result);
-                    strcat(temp, ",");
+                    size_t result_len = strlen(result);
+                    strncpy(temp, result, result_len);
+                    temp[result_len] = ',';
+                    temp[result_len + 1] = '\0';
                     memory_free(result);
                     result = temp;
                 }
@@ -260,8 +267,10 @@ char* json_stringify(const Value* value) {
                 memory_free(result);
                 return NULL;
             }
-            strcpy(temp, result);
-            strcat(temp, "}");
+            size_t result_len = strlen(result);
+            strncpy(temp, result, result_len);
+            temp[result_len] = '}';
+            temp[result_len + 1] = '\0';
             memory_free(result);
             return temp;
         }
@@ -595,4 +604,91 @@ static Value* parse_number(JsonParser* parser) {
     memory_free(num_str);
     
     return value_new_number(value);
+}
+
+// Stdlib wrapper functions
+
+/**
+ * @brief Load JSON file wrapper function for stdlib
+ * @param args Array of Value arguments (filename)
+ * @param argc Number of arguments
+ * @return Parsed JSON Value or error
+ */
+Value* json_load_file(Value** args, size_t argc) {
+    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
+        return value_new_error("loadJsonFile requires a filename string", -1);
+    }
+    
+    // Use the io_load_json_file_internal function from io.c
+    extern Value* io_load_json_file_internal(const char* filepath);
+    return io_load_json_file_internal(args[0]->as.string->data);
+}
+
+/**
+ * @brief Parse JSON string - stdlib wrapper
+ * @param args Arguments array containing JSON string
+ * @param argc Number of arguments
+ * @return Parsed value or error
+ */
+Value* json_parse_stdlib(Value** args, size_t argc) {
+    if (argc != 1) {
+        return value_new_error("jsonParse requires exactly 1 argument", -1);
+    }
+    
+    if (!args[0] || args[0]->type != VALUE_STRING) {
+        return value_new_error("jsonParse requires a string argument", -1);
+    }
+    
+    return json_parse(args[0]->as.string->data);
+}
+
+/**
+ * @brief Convert value to JSON string - stdlib wrapper
+ * @param args Arguments array containing value to stringify
+ * @param argc Number of arguments
+ * @return JSON string or error
+ */
+Value* json_stringify_stdlib(Value** args, size_t argc) {
+    if (argc != 1) {
+        return value_new_error("jsonStringify requires exactly 1 argument", -1);
+    }
+    
+    if (!args[0]) {
+        return value_new_string("null");
+    }
+    
+    char* json_str = json_stringify(args[0]);
+    if (!json_str) {
+        return value_new_error("Failed to stringify value", -1);
+    }
+    
+    Value* result = value_new_string(json_str);
+    memory_free(json_str);
+    return result;
+}
+
+/**
+ * @brief Convert value to formatted JSON with indentation - stdlib wrapper
+ * @param args Arguments array containing value and optional indent size
+ * @param argc Number of arguments
+ * @return Formatted JSON string or error
+ */
+Value* json_stringify_pretty_stdlib(Value** args, size_t argc) {
+    if (argc < 1) {
+        return value_new_error("jsonPretty requires at least 1 argument", -1);
+    }
+    
+    if (!args[0]) {
+        return value_new_string("null");
+    }
+    
+    // For now, just use regular stringify - pretty printing can be added later
+    char* json_str = json_stringify(args[0]);
+    if (!json_str) {
+        return value_new_error("Failed to stringify value", -1);
+    }
+    
+    Value* result = value_new_string(json_str);
+    memory_free(json_str);
+    return result;
 }

@@ -9,7 +9,7 @@ model: sonnet
 You are a Worker sub-agent for the ZEN language project, created through Claude Code's sub-agent system.
 
 Agent ID: swarm-2-zen-worker-parser
-Created: 2025-08-07T07:21:08.947Z
+Created: 2025-08-07T09:53:31.604Z
 Specialization: parser
 
 
@@ -152,6 +152,55 @@ This simplified coordination reduces overhead while maintaining effective multi-
 - Follow established patterns from existing code
 - Implement with memory safety as top priority
 - Create comprehensive doxygen documentation
+
+**⚠️ NAMING ENFORCEMENT**: ALL functions MUST follow `module_action_target` pattern:
+```bash
+# MANDATORY: Validate function name before implementation
+validate_worker_function_name() {
+    local func_name=$1
+    local specialty="{{AGENT_SPECIALIZATION}}"
+    
+    # Check pattern compliance
+    if ! echo "$func_name" | grep -E "^[a-z]+_[a-z]+_[a-z]+$" > /dev/null; then
+        echo "❌ NAMING VIOLATION: '$func_name' doesn't follow module_action_target pattern"
+        echo "   Report to architect immediately"
+        return 1
+    fi
+    
+    # Check module matches specialty
+    local module=$(echo "$func_name" | cut -d'_' -f1)
+    case "$specialty" in
+        "lexer") [[ "$module" == "lexer" ]] || { echo "❌ Module mismatch: $specialty worker implementing $module function"; return 1; } ;;
+        "parser") [[ "$module" == "parser" ]] || { echo "❌ Module mismatch: $specialty worker implementing $module function"; return 1; } ;;
+        "runtime") [[ "$module" =~ ^(visitor|operator)$ ]] || { echo "❌ Module mismatch: $specialty worker implementing $module function"; return 1; } ;;
+        "memory") [[ "$module" =~ ^(memory|error)$ ]] || { echo "❌ Module mismatch: $specialty worker implementing $module function"; return 1; } ;;
+        "stdlib") [[ "$module" =~ ^(io|json|string|math|convert|datetime|system)$ ]] || { echo "❌ Module mismatch: $specialty worker implementing $module function"; return 1; } ;;
+        "types") [[ "$module" =~ ^(value|array|object)$ ]] || { echo "❌ Module mismatch: $specialty worker implementing $module function"; return 1; } ;;
+    esac
+    
+    echo "✅ Function name approved: $func_name"
+    return 0
+}
+
+# MANDATORY: Run before ANY function implementation
+before_implement() {
+    local func_name=$1
+    
+    # Validate naming
+    validate_worker_function_name "$func_name" || return 1
+    
+    # Check MANIFEST.json signature exists
+    local signature=$(jq -r ".files[].functions[] | select(.name==\"$func_name\") | .signature" MANIFEST.json)
+    if [ -z "$signature" ]; then
+        echo "❌ FUNCTION NOT IN MANIFEST: $func_name"
+        echo "   Request architect to add with proper naming"
+        return 1
+    fi
+    
+    echo "✅ Ready to implement: $func_name with signature: $signature"
+    return 0
+}
+```
 
 ### 2. Quality Assurance  
 - Write defensive code with proper error handling

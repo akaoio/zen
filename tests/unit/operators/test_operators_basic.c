@@ -7,8 +7,6 @@
 #include "zen/runtime/operators.h"
 #include "zen/types/value.h"
 
-TEST_SUITE(operators_basic_tests)
-
 TEST(test_op_add_numbers) {
     Value* left = value_new_number(5.0);
     Value* right = value_new_number(3.0);
@@ -354,4 +352,23 @@ TEST(test_op_edge_cases) {
     value_unref(result);
 }
 
-END_TEST_SUITE
+TEST_SUITE_BEGIN(operators_basic_tests)
+    RUN_TEST(test_op_add_numbers);
+    RUN_TEST(test_op_add_strings);
+    RUN_TEST(test_op_add_string_number);
+    RUN_TEST(test_op_subtract_numbers);
+    RUN_TEST(test_op_multiply_numbers);
+    RUN_TEST(test_op_divide_numbers);
+    RUN_TEST(test_op_divide_by_zero);
+    RUN_TEST(test_op_modulo_numbers);
+    RUN_TEST(test_op_equals_same_type);
+    RUN_TEST(test_op_equals_different_types);
+    RUN_TEST(test_op_not_equals);
+    RUN_TEST(test_op_less_than);
+    RUN_TEST(test_op_greater_than);
+    RUN_TEST(test_op_logical_and);
+    RUN_TEST(test_op_logical_or);
+    RUN_TEST(test_op_logical_not);
+    RUN_TEST(test_op_truthy_values);
+    RUN_TEST(test_op_edge_cases);
+TEST_SUITE_END

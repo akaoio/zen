@@ -7,6 +7,7 @@
 
 #define _GNU_SOURCE
 #include "zen/types/value.h"
+#include "zen/core/memory.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -18,9 +19,9 @@
  * @param argc Number of arguments
  * @return Object with stdout, stderr, and exit_code
  */
-Value* zen_system_exec(Value** args, size_t argc) {
+Value* system_exec(Value** args, size_t argc) {
     if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("zen_system_exec requires a command string", -1);
+        return value_new_error("system_exec requires a command string", -1);
     }
     
     const char* command = args[0]->as.string->data;
@@ -40,7 +41,7 @@ Value* zen_system_exec(Value** args, size_t argc) {
     // Read output
     char buffer[4096];
     size_t total_size = 0;
-    char* output = malloc(1);
+    char* output = memory_alloc(1);
     if (!output) {
         pclose(fp);
         return value_new_error("Memory allocation failed", -1);
@@ -49,9 +50,9 @@ Value* zen_system_exec(Value** args, size_t argc) {
     
     while (fgets(buffer, sizeof(buffer), fp)) {
         size_t len = strlen(buffer);
-        char* new_output = realloc(output, total_size + len + 1);
+        char* new_output = memory_realloc(output, total_size + len + 1);
         if (!new_output) {
-            free(output);
+            memory_free(output);
             pclose(fp);
             return value_new_error("Memory allocation failed", -1);
         }
@@ -66,6 +67,6 @@ Value* zen_system_exec(Value** args, size_t argc) {
     // Create result as string (simplified from object since object functions aren't available)
     Value* result = value_new_string(output);
     
-    free(output);
+    memory_free(output);
     return result;
 }

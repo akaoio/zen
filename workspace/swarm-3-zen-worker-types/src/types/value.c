@@ -12,10 +12,11 @@
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
-#include <math.h>
-#include <float.h>
-#include <errno.h>
+#include <math.h>  // For NAN, INFINITY, isnan, isinf, floor
 #include "zen/types/value.h"
+#include "zen/types/set.h"
+#include "zen/types/priority_queue.h"
+#include "zen/types/object.h"
 #include "zen/core/memory.h"
 
 // Internal helper functions
@@ -31,20 +32,13 @@ static void class_free(ZenClass* class_def);
 static ZenInstance* instance_create(Value* class_def);
 static void instance_free(ZenInstance* instance);
 
-// Enhanced helper functions for error system and stdlib support
-static bool value_validate_type(const Value* value, ValueType expected_type);
-static Value* value_new_error_with_message(const char* message, int error_code);
-static bool value_is_truthy(const Value* value);
-static double value_to_number_safe(const Value* value, bool* success);
-static bool value_is_valid_number(double num);
-
 /**
  * @brief Create new value of specified type
  * @param type The type of value to create
  * @return Newly allocated value or NULL on failure
  */
 Value* value_new(ValueType type) {
-    if (type < VALUE_NULL || type > VALUE_INSTANCE) {
+    if (type < VALUE_NULL || type > VALUE_PRIORITY_QUEUE) {
         return NULL;
     }
     
@@ -52,9 +46,6 @@ Value* value_new(ValueType type) {
     if (!value) {
         return NULL;
     }
-    
-    // Initialize with zeros first
-    memset(value, 0, sizeof(Value));
     
     value->type = type;
     value->ref_count = 1;
@@ -66,6 +57,9 @@ Value* value_new(ValueType type) {
             break;
         case VALUE_BOOLEAN:
             value->as.boolean = false;
+            break;
+        case VALUE_UNDECIDABLE:
+            // Undecidable values represent Gödel's incompleteness - no data needed
             break;
         case VALUE_NUMBER:
             value->as.number = 0.0;
@@ -100,8 +94,12 @@ Value* value_new(ValueType type) {
                 memory_free(value);
                 return NULL;
             }
-            memset(value->as.error, 0, sizeof(ZenError));
             value->as.error->message = memory_strdup("Unknown error");
+            if (!value->as.error->message) {
+                memory_free(value->as.error);
+                memory_free(value);
+                return NULL;
+            }
             value->as.error->code = -1;
             break;
         case VALUE_CLASS:
@@ -114,6 +112,20 @@ Value* value_new(ValueType type) {
         case VALUE_INSTANCE:
             // Instance needs to be created with a specific class
             value->as.instance = NULL;
+            break;
+        case VALUE_SET:
+            value->as.set = datastructures_set_create();
+            if (!value->as.set) {
+                memory_free(value);
+                return NULL;
+            }
+            break;
+        case VALUE_PRIORITY_QUEUE:
+            value->as.priority_queue = datastructures_priority_queue_create();
+            if (!value->as.priority_queue) {
+                memory_free(value);
+                return NULL;
+            }
             break;
     }
     
@@ -184,6 +196,23 @@ Value* value_new_boolean(bool val) {
 }
 
 /**
+ * @brief Create a new undecidable value (Gödel-approved for incompleteness theorem)
+ * @return New undecidable Value representing statements that cannot be proven true or false
+ */
+Value* value_new_undecidable(void) {
+    Value* value = memory_alloc(sizeof(Value));
+    if (!value) {
+        return NULL;
+    }
+    
+    value->type = VALUE_UNDECIDABLE;
+    value->ref_count = 1;
+    // Undecidable values don't need additional data
+    
+    return value;
+}
+
+/**
  * @brief Create null value
  * @return Newly allocated null value or NULL on failure
  */
@@ -215,6 +244,8 @@ Value* value_copy(const Value* value) {
             return value_new_null();
         case VALUE_BOOLEAN:
             return value_new_boolean(value->as.boolean);
+        case VALUE_UNDECIDABLE:
+            return value_new_undecidable();
         case VALUE_NUMBER:
             return value_new_number(value->as.number);
         case VALUE_STRING:
@@ -237,7 +268,7 @@ Value* value_copy(const Value* value) {
                 // Grow array if needed
                 if (dst_array->length >= dst_array->capacity) {
                     size_t new_capacity = dst_array->capacity * 2;
-                    Value** new_items = realloc(dst_array->items, new_capacity * sizeof(Value*));
+                    Value** new_items = memory_realloc(dst_array->items, new_capacity * sizeof(Value*));
                     if (!new_items) {
                         value_free(copied_item);
                         value_free(new_value);
@@ -257,29 +288,43 @@ Value* value_copy(const Value* value) {
             if (!new_value) return NULL;
             
             ZenObject* src_obj = value->as.object;
+            if (!src_obj) {
+                return new_value;
+            }
             
-            // Copy all key-value pairs (simplified - just copying structure for now)
+            // Deep copy all key-value pairs using object_set
             for (size_t i = 0; i < src_obj->length; i++) {
                 ZenObjectPair* pair = &src_obj->pairs[i];
-                if (pair->value) {
+                if (pair->key && pair->value) {
                     Value* copied_value = value_copy(pair->value);
                     if (!copied_value) {
                         value_free(new_value);
                         return NULL;
                     }
                     
-                    // For now, just free the copied value to prevent leak
-                    // Full object copying would need object_set implementation
-                    value_free(copied_value);
+                    // Set the copied value in the new object
+                    object_set(new_value, pair->key, copied_value);
+                    
+                    // Unref our temporary reference (object_set adds its own ref)
+                    value_unref(copied_value);
                 }
             }
             
             return new_value;
         }
         case VALUE_FUNCTION:
+            // Functions are typically shared/referenced, not copied
+            // Return a reference to the original function
+            return value_ref((Value*)value);
         case VALUE_ERROR:
-            // For now, return a new instance of the same type
-            return value_new(value->type);
+            // Deep copy error with message and code
+            if (value->as.error) {
+                return value_new_error(
+                    value->as.error->message,
+                    value->as.error->code
+                );
+            }
+            return value_new(VALUE_ERROR);
         case VALUE_CLASS:
             // Classes are typically not copied, but referenced
             return value_ref((Value*)value);
@@ -291,6 +336,61 @@ Value* value_copy(const Value* value) {
                 return new_instance;
             }
             return NULL;
+        }
+        case VALUE_SET: {
+            // Deep copy set by converting to array, then back to set
+            Value* array = set_to_array(value);
+            if (!array) return NULL;
+            
+            Value* new_set = set_new();
+            if (!new_set) {
+                value_unref(array);
+                return NULL;
+            }
+            
+            if (array->type == VALUE_ARRAY) {
+                ZenArray* arr_data = array->as.array;
+                for (size_t i = 0; i < arr_data->length; i++) {
+                    Value* copied_item = value_copy(arr_data->items[i]);
+                    if (copied_item) {
+                        Value* result = set_add(new_set, copied_item);
+                        value_unref(copied_item);
+                        if (result) value_unref(result);
+                    }
+                }
+            }
+            
+            value_unref(array);
+            return new_set;
+        }
+        case VALUE_PRIORITY_QUEUE: {
+            // Deep copy priority queue by converting to array, then rebuilding
+            Value* array = priority_queue_to_array(value);
+            if (!array) return NULL;
+            
+            Value* new_queue = priority_queue_new();
+            if (!new_queue) {
+                value_unref(array);
+                return NULL;
+            }
+            
+            if (array->type == VALUE_ARRAY) {
+                ZenArray* arr_data = array->as.array;
+                // Note: This loses priority information, but copies structure
+                for (size_t i = 0; i < arr_data->length; i++) {
+                    Value* copied_item = value_copy(arr_data->items[i]);
+                    Value* priority_val = value_new_number(1.0); // Default priority
+                    if (copied_item && priority_val) {
+                        Value* result = priority_queue_push(new_queue, copied_item, priority_val);
+                        if (result) value_unref(result);
+                    }
+                    if (copied_item) value_unref(copied_item);
+                    if (priority_val) value_unref(priority_val);
+                }
+            }
+            
+            value_unref(array);
+            return new_queue;
         }
         default:
             return NULL;
@@ -304,15 +404,6 @@ Value* value_copy(const Value* value) {
 void value_free(Value* value) {
     if (!value) {
         return;
-    }
-    
-    // Safety check: ensure reference count is 0 before freeing
-    if (value->ref_count > 0) {
-        #ifdef DEBUG
-        fprintf(stderr, "WARNING: Freeing value with ref_count %zu > 0\n", value->ref_count);
-        #endif
-        // Set ref_count to 0 to prevent further issues
-        value->ref_count = 0;
     }
     
     value_free_data(value);
@@ -334,11 +425,12 @@ char* value_to_string(const Value* value) {
             return memory_strdup("null");
         case VALUE_BOOLEAN:
             return memory_strdup(value->as.boolean ? "true" : "false");
+        case VALUE_UNDECIDABLE:
+            return memory_strdup("undecidable");
         case VALUE_NUMBER: {
-            char* result = memory_alloc(32); // Enough for most numbers
-            if (!result) return NULL;
-            snprintf(result, 32, "%.15g", value->as.number);
-            return result;
+            char buffer[32];
+            snprintf(buffer, sizeof(buffer), "%.15g", value->as.number);
+            return memory_strdup(buffer);
         }
         case VALUE_STRING:
             return memory_strdup(value->as.string && value->as.string->data ? value->as.string->data : "");
@@ -360,9 +452,9 @@ char* value_to_string(const Value* value) {
                 if (!item_strings[i]) {
                     // Clean up on failure
                     for (size_t j = 0; j < i; j++) {
-                        free(item_strings[j]);
+                        memory_free(item_strings[j]);
                     }
-                    free(item_strings);
+                    memory_free(item_strings);
                     return NULL;
                 }
                 total_size += strlen(item_strings[i]) + 2; // +2 for ", "
@@ -377,15 +469,25 @@ char* value_to_string(const Value* value) {
                 return NULL;
             }
             
-            strcpy(result, "[");
+            snprintf(result, total_size, "[");
             for (size_t i = 0; i < array->length; i++) {
-                strcat(result, item_strings[i]);
-                if (i < array->length - 1) {
-                    strcat(result, ", ");
+                size_t current_len = strlen(result);
+                size_t remaining = total_size - current_len;
+                if (remaining > 0) {
+                    strncat(result, item_strings[i], remaining - 1);
+                    current_len = strlen(result);
+                    remaining = total_size - current_len;
+                    if (i < array->length - 1 && remaining > 2) {
+                        strncat(result, ", ", remaining - 1);
+                    }
                 }
                 memory_free(item_strings[i]);
             }
-            strcat(result, "]");
+            size_t current_len = strlen(result);
+            size_t remaining = total_size - current_len;
+            if (remaining > 1) {
+                strncat(result, "]", remaining - 1);
+            }
             
             memory_free(item_strings);
             return result;
@@ -398,7 +500,7 @@ char* value_to_string(const Value* value) {
             if (value->as.error && value->as.error->message) {
                 char* result = memory_alloc(strlen(value->as.error->message) + 16);
                 if (!result) return NULL;
-                sprintf(result, "<error: %s>", value->as.error->message);
+                snprintf(result, strlen(value->as.error->message) + 16, "<error: %s>", value->as.error->message);
                 return result;
             }
             return memory_strdup("<error>");
@@ -406,7 +508,7 @@ char* value_to_string(const Value* value) {
             if (value->as.class_def && value->as.class_def->name) {
                 char* result = memory_alloc(strlen(value->as.class_def->name) + 16);
                 if (!result) return NULL;
-                sprintf(result, "<class %s>", value->as.class_def->name);
+                snprintf(result, strlen(value->as.class_def->name) + 16, "<class %s>", value->as.class_def->name);
                 return result;
             }
             return memory_strdup("<class>");
@@ -416,10 +518,89 @@ char* value_to_string(const Value* value) {
                 value->as.instance->class_def->as.class_def->name) {
                 char* result = memory_alloc(strlen(value->as.instance->class_def->as.class_def->name) + 32);
                 if (!result) return NULL;
-                sprintf(result, "<instance of %s>", value->as.instance->class_def->as.class_def->name);
+                snprintf(result, strlen(value->as.instance->class_def->as.class_def->name) + 32, "<instance of %s>", value->as.instance->class_def->as.class_def->name);
                 return result;
             }
             return memory_strdup("<instance>");
+        case VALUE_SET: {
+            // Convert set to array and display as {item1, item2, ...}
+            Value* array = set_to_array(value);
+            if (!array || array->type != VALUE_ARRAY) {
+                if (array) value_unref(array);
+                return memory_strdup("{}");
+            }
+            
+            ZenArray* arr_data = array->as.array;
+            if (arr_data->length == 0) {
+                value_unref(array);
+                return memory_strdup("{}");
+            }
+            
+            // Build set string representation
+            size_t total_size = 32;
+            char** item_strings = memory_alloc(arr_data->length * sizeof(char*));
+            if (!item_strings) {
+                value_unref(array);
+                return memory_strdup("{}");
+            }
+            
+            for (size_t i = 0; i < arr_data->length; i++) {
+                item_strings[i] = value_to_string(arr_data->items[i]);
+                if (item_strings[i]) {
+                    total_size += strlen(item_strings[i]) + 2;
+                }
+            }
+            
+            char* result = memory_alloc(total_size);
+            if (!result) {
+                for (size_t i = 0; i < arr_data->length; i++) {
+                    if (item_strings[i]) memory_free(item_strings[i]);
+                }
+                memory_free(item_strings);
+                value_unref(array);
+                return memory_strdup("{}");
+            }
+            
+            snprintf(result, total_size, "{");
+            for (size_t i = 0; i < arr_data->length; i++) {
+                if (item_strings[i]) {
+                    size_t current_len = strlen(result);
+                    size_t remaining = total_size - current_len;
+                    if (i > 0 && remaining > 2) {
+                        strncat(result, ", ", remaining - 1);
+                        current_len = strlen(result);
+                        remaining = total_size - current_len;
+                    }
+                    if (remaining > 0) {
+                        strncat(result, item_strings[i], remaining - 1);
+                    }
+                    memory_free(item_strings[i]);
+                }
+            }
+            size_t current_len = strlen(result);
+            size_t remaining = total_size - current_len;
+            if (remaining > 1) {
+                strncat(result, "}", remaining - 1);
+            }
+            
+            memory_free(item_strings);
+            value_unref(array);
+            return result;
+        }
+        case VALUE_PRIORITY_QUEUE: {
+            // Show priority queue size and type
+            Value* size_val = priority_queue_size(value);
+            if (size_val && size_val->type == VALUE_NUMBER) {
+                char* result = memory_alloc(32);
+                if (result) {
+                    snprintf(result, 32, "<priority_queue size=%.0f>", size_val->as.number);
+                }
+                value_unref(size_val);
+                return result ? result : memory_strdup("<priority_queue>");
+            }
+            if (size_val) value_unref(size_val);
+            return memory_strdup("<priority_queue>");
+        }
         default:
             return memory_strdup("<unknown>");
     }
@@ -449,6 +630,9 @@ bool value_equals(const Value* a, const Value* b) {
             return true; // All nulls are equal
         case VALUE_BOOLEAN:
             return a->as.boolean == b->as.boolean;
+        case VALUE_UNDECIDABLE:
+            // All undecidable values are equivalent - they represent the same logical state
+            return true;
         case VALUE_NUMBER:
             return a->as.number == b->as.number;
         case VALUE_STRING:
@@ -490,6 +674,48 @@ bool value_equals(const Value* a, const Value* b) {
         case VALUE_INSTANCE:
             // Instances are equal if they're the same object
             return a->as.instance == b->as.instance;
+        case VALUE_SET: {
+            // Sets are equal if they contain the same elements
+            Value* size_a = set_size(a);
+            Value* size_b = set_size(b);
+            
+            if (!size_a || !size_b || size_a->type != VALUE_NUMBER || size_b->type != VALUE_NUMBER) {
+                if (size_a) value_unref(size_a);
+                if (size_b) value_unref(size_b);
+                return false;
+            }
+            
+            bool equal = size_a->as.number == size_b->as.number;
+            value_unref(size_a);
+            value_unref(size_b);
+            
+            if (!equal) return false;
+            
+            // Check if all elements in a are in b
+            Value* array_a = set_to_array(a);
+            if (!array_a || array_a->type != VALUE_ARRAY) {
+                if (array_a) value_unref(array_a);
+                return false;
+            }
+            
+            ZenArray* arr_data = array_a->as.array;
+            for (size_t i = 0; i < arr_data->length; i++) {
+                Value* contains = set_contains(b, arr_data->items[i]);
+                if (!contains || contains->type != VALUE_BOOLEAN || !contains->as.boolean) {
+                    if (contains) value_unref(contains);
+                    value_unref(array_a);
+                    return false;
+                }
+                value_unref(contains);
+            }
+            
+            value_unref(array_a);
+            return true;
+        }
+        case VALUE_PRIORITY_QUEUE:
+            // Priority queues are equal if they're the same object
+            // (Content comparison would require destructive operations)
+            return a->as.priority_queue == b->as.priority_queue;
         default:
             return false;
     }
@@ -512,33 +738,40 @@ const char* value_type_name(ValueType type) {
         case VALUE_ERROR:     return "error";
         case VALUE_CLASS:     return "class";
         case VALUE_INSTANCE:  return "instance";
+        case VALUE_SET:       return "set";
+        case VALUE_PRIORITY_QUEUE: return "priority_queue";
         default:              return "unknown";
     }
 }
 
 /**
- * @brief Increment reference count of value
+ * @brief Increment reference count of value using thread-safe atomic operations
  * @param value Value to reference (may be NULL)
  * @return The same value pointer for convenience
+ * @note Thread-safe atomic operation using memory.c utilities
  */
 Value* value_ref(Value* value) {
     if (value) {
-        // Use atomic reference counting for thread safety
         memory_ref_inc(&value->ref_count);
     }
     return value;
 }
 
 /**
- * @brief Decrement reference count and free if zero
+ * @brief Decrement reference count and free if zero using thread-safe atomic operations
  * @param value Value to unreference (may be NULL)
+ * @note Thread-safe atomic operation using memory.c utilities
  */
 void value_unref(Value* value) {
     if (!value) {
         return;
     }
     
-    // Use atomic decrement for thread safety
+    if (value->ref_count == 0) {
+        // Double unref protection - should not happen but handle gracefully
+        return;
+    }
+    
     size_t new_count = memory_ref_dec(&value->ref_count);
     
     if (new_count == 0) {
@@ -560,6 +793,7 @@ static void value_free_data(Value* value) {
     switch (value->type) {
         case VALUE_NULL:
         case VALUE_BOOLEAN:
+        case VALUE_UNDECIDABLE:
         case VALUE_NUMBER:
             // No dynamic data to free
             break;
@@ -582,7 +816,10 @@ static void value_free_data(Value* value) {
             }
             break;
         case VALUE_FUNCTION:
-            // Function pointers don't need to be freed for now
+            // Function pointers are typically statically allocated or
+            // managed elsewhere in the runtime, so we just clear the pointer
+            // In a full implementation, this might free function closures
+            // or decrement reference counts on captured variables
             value->as.function = NULL;
             break;
         case VALUE_ERROR:
@@ -604,6 +841,18 @@ static void value_free_data(Value* value) {
             if (value->as.instance) {
                 instance_free(value->as.instance);
                 value->as.instance = NULL;
+            }
+            break;
+        case VALUE_SET:
+            if (value->as.set) {
+                datastructures_set_free(value->as.set);
+                value->as.set = NULL;
+            }
+            break;
+        case VALUE_PRIORITY_QUEUE:
+            if (value->as.priority_queue) {
+                datastructures_priority_queue_free(value->as.priority_queue);
+                value->as.priority_queue = NULL;
             }
             break;
     }
@@ -726,7 +975,8 @@ static ZenString* string_create(const char* str) {
         return NULL;
     }
     
-    strcpy(zen_str->data, str);
+    strncpy(zen_str->data, str, zen_str->capacity - 1);
+    zen_str->data[zen_str->capacity - 1] = '\0';
     return zen_str;
 }
 
@@ -752,19 +1002,19 @@ static void string_free(ZenString* zen_str) {
  * @return Newly allocated ZenClass or NULL on failure
  */
 static ZenClass* class_create(const char* name, const char* parent_name) {
-    ZenClass* class_def = malloc(sizeof(ZenClass));
+    ZenClass* class_def = memory_alloc(sizeof(ZenClass));
     if (!class_def) {
         return NULL;
     }
     
-    class_def->name = name ? strdup(name) : NULL;
-    class_def->parent_class_name = parent_name ? strdup(parent_name) : NULL;
+    class_def->name = name ? memory_strdup(name) : NULL;
+    class_def->parent_class_name = parent_name ? memory_strdup(parent_name) : NULL;
     class_def->parent_class = NULL;
     class_def->methods = value_new(VALUE_OBJECT);
     if (!class_def->methods) {
-        if (class_def->name) free(class_def->name);
-        if (class_def->parent_class_name) free(class_def->parent_class_name);
-        free(class_def);
+        if (class_def->name) memory_free(class_def->name);
+        if (class_def->parent_class_name) memory_free(class_def->parent_class_name);
+        memory_free(class_def);
         return NULL;
     }
     class_def->constructor = NULL;
@@ -782,10 +1032,10 @@ static void class_free(ZenClass* class_def) {
     }
     
     if (class_def->name) {
-        free(class_def->name);
+        memory_free(class_def->name);
     }
     if (class_def->parent_class_name) {
-        free(class_def->parent_class_name);
+        memory_free(class_def->parent_class_name);
     }
     if (class_def->parent_class) {
         value_unref(class_def->parent_class);
@@ -797,7 +1047,7 @@ static void class_free(ZenClass* class_def) {
         value_unref(class_def->constructor);
     }
     
-    free(class_def);
+    memory_free(class_def);
 }
 
 /**
@@ -810,7 +1060,7 @@ static ZenInstance* instance_create(Value* class_def) {
         return NULL;
     }
     
-    ZenInstance* instance = malloc(sizeof(ZenInstance));
+    ZenInstance* instance = memory_alloc(sizeof(ZenInstance));
     if (!instance) {
         return NULL;
     }
@@ -819,7 +1069,7 @@ static ZenInstance* instance_create(Value* class_def) {
     instance->properties = value_new(VALUE_OBJECT);
     if (!instance->properties) {
         value_unref(instance->class_def);
-        free(instance);
+        memory_free(instance);
         return NULL;
     }
     
@@ -842,7 +1092,7 @@ static void instance_free(ZenInstance* instance) {
         value_unref(instance->properties);
     }
     
-    free(instance);
+    memory_free(instance);
 }
 
 /**
@@ -852,7 +1102,7 @@ static void instance_free(ZenInstance* instance) {
  * @return Newly allocated class value or NULL on failure
  */
 Value* value_new_class(const char* name, const char* parent_name) {
-    Value* value = calloc(1, sizeof(Value));
+    Value* value = memory_alloc(sizeof(Value));
     if (!value) {
         return NULL;
     }
@@ -878,7 +1128,7 @@ Value* value_new_instance(Value* class_def) {
         return NULL;
     }
     
-    Value* value = calloc(1, sizeof(Value));
+    Value* value = memory_alloc(sizeof(Value));
     if (!value) {
         return NULL;
     }
@@ -909,15 +1159,16 @@ void value_class_add_method(Value* class_val, const char* method_name, Value* me
         return;
     }
     
-    // Use object_set when it's implemented
-    // For now, just store the reference to the function
-    // This would need proper object implementation to work fully
+    // Store methods in the class's methods object using object_set
     if (strcmp(method_name, "init") == 0) {
         // Special handling for constructor
         if (class_val->as.class_def->constructor) {
             value_unref(class_val->as.class_def->constructor);
         }
         class_val->as.class_def->constructor = value_ref(method_func);
+    } else {
+        // Store regular method in methods object
+        object_set(class_val->as.class_def->methods, method_name, method_func);
     }
 }
 
@@ -939,6 +1190,12 @@ Value* value_class_get_method(Value* class_val, const char* method_name) {
     // Check for constructor
     if (strcmp(method_name, "init") == 0) {
         return class_val->as.class_def->constructor;
+    }
+    
+    // Look up method in methods object
+    Value* method = object_get(class_val->as.class_def->methods, method_name);
+    if (method) {
+        return method; // object_get already increments ref count
     }
     
     // Check parent class if method not found
@@ -964,8 +1221,8 @@ void value_instance_set_property(Value* instance, const char* property_name, Val
         return;
     }
     
-    // Use object_set when it's implemented
-    // For now, simplified storage
+    // Set property using object_set on the properties object
+    object_set(instance->as.instance->properties, property_name, value);
 }
 
 /**
@@ -983,43 +1240,26 @@ Value* value_instance_get_property(Value* instance, const char* property_name) {
         return NULL;
     }
     
-    // Use object_get when it's implemented
-    // For now, return NULL
-    return NULL;
+    // Get property using object_get on the properties object
+    return object_get(instance->as.instance->properties, property_name);
 }
 
-// Enhanced helper function implementations for error system and stdlib support
+// Enhanced type system functions for advanced operations
 
 /**
- * @brief Validate that a value is of the expected type
- * @param value Value to validate
- * @param expected_type Expected ValueType
- * @return true if value is valid and matches expected type
+ * @brief Create an error value for stdlib functions
+ * @param message Error message
+ * @param error_code Error code
+ * @return New error Value
  */
-__attribute__((unused)) static bool value_validate_type(const Value* value, ValueType expected_type) {
-    if (!value) {
-        return false;
-    }
-    
-    return value->type == expected_type;
-}
-
-/**
- * @brief Create a new error value with a specific message and code
- * @param message Error message (will be copied)
- * @param error_code Error code number
- * @return New error Value or NULL on failure
- */
-static Value* value_new_error_with_message(const char* message, int error_code) {
+Value* value_new_error(const char* message, int error_code) {
     Value* value = memory_alloc(sizeof(Value));
     if (!value) {
         return NULL;
     }
     
-    memset(value, 0, sizeof(Value));
     value->type = VALUE_ERROR;
     value->ref_count = 1;
-    
     value->as.error = memory_alloc(sizeof(ZenError));
     if (!value->as.error) {
         memory_free(value);
@@ -1039,11 +1279,11 @@ static Value* value_new_error_with_message(const char* message, int error_code) 
 }
 
 /**
- * @brief Determine if a value is "truthy" in ZEN context
+ * @brief Check if value is truthy (for conditional expressions)
  * @param value Value to test
- * @return true if value is truthy, false otherwise
+ * @return true if truthy, false otherwise
  */
-static bool value_is_truthy(const Value* value) {
+bool value_is_truthy_public(const Value* value) {
     if (!value) {
         return false;
     }
@@ -1056,8 +1296,7 @@ static bool value_is_truthy(const Value* value) {
         case VALUE_NUMBER:
             return value->as.number != 0.0 && !isnan(value->as.number);
         case VALUE_STRING:
-            return value->as.string && value->as.string->data && 
-                   strlen(value->as.string->data) > 0;
+            return value->as.string && value->as.string->data && value->as.string->length > 0;
         case VALUE_ARRAY:
             return value->as.array && value->as.array->length > 0;
         case VALUE_OBJECT:
@@ -1065,87 +1304,26 @@ static bool value_is_truthy(const Value* value) {
         case VALUE_FUNCTION:
             return value->as.function != NULL;
         case VALUE_ERROR:
-            return false; // Errors are falsy
+            return false; // Errors are considered falsy
         case VALUE_CLASS:
+            return value->as.class_def != NULL;
         case VALUE_INSTANCE:
-            return true; // Objects are truthy
+            return value->as.instance != NULL;
+        case VALUE_SET: {
+            Value* size_val = set_size(value);
+            bool is_truthy = size_val && size_val->type == VALUE_NUMBER && size_val->as.number > 0;
+            if (size_val) value_unref(size_val);
+            return is_truthy;
+        }
+        case VALUE_PRIORITY_QUEUE: {
+            Value* empty_val = priority_queue_is_empty(value);
+            bool is_truthy = empty_val && empty_val->type == VALUE_BOOLEAN && !empty_val->as.boolean;
+            if (empty_val) value_unref(empty_val);
+            return is_truthy;
+        }
         default:
             return false;
     }
-}
-
-/**
- * @brief Safely convert a value to a number
- * @param value Value to convert
- * @param success Output parameter indicating if conversion succeeded
- * @return Converted number (0.0 if conversion failed)
- */
-static double value_to_number_safe(const Value* value, bool* success) {
-    if (success) *success = false;
-    
-    if (!value) {
-        return 0.0;
-    }
-    
-    switch (value->type) {
-        case VALUE_NULL:
-            if (success) *success = true;
-            return 0.0;
-        case VALUE_BOOLEAN:
-            if (success) *success = true;
-            return value->as.boolean ? 1.0 : 0.0;
-        case VALUE_NUMBER:
-            if (success) *success = true;
-            return value->as.number;
-        case VALUE_STRING: {
-            if (!value->as.string || !value->as.string->data) {
-                return 0.0;
-            }
-            
-            char* endptr;
-            errno = 0;
-            double result = strtod(value->as.string->data, &endptr);
-            
-            // Check if entire string was consumed and no errors occurred
-            if (endptr != value->as.string->data && *endptr == '\0' && errno == 0) {
-                if (success) *success = true;
-                return result;
-            }
-            return 0.0;
-        }
-        default:
-            return 0.0; // Can't convert other types
-    }
-}
-
-/**
- * @brief Check if a double value is a valid number (not NaN or infinity)
- * @param num Number to validate
- * @return true if number is valid and finite
- */
-__attribute__((unused)) static bool value_is_valid_number(double num) {
-    return !isnan(num) && isfinite(num);
-}
-
-// Public utility functions for enhanced type operations
-
-/**
- * @brief Create an error value for stdlib functions
- * @param message Error message
- * @param error_code Error code
- * @return New error Value
- */
-Value* value_new_error(const char* message, int error_code) {
-    return value_new_error_with_message(message, error_code);
-}
-
-/**
- * @brief Check if value is truthy (for conditional expressions)
- * @param value Value to test
- * @return true if truthy, false otherwise
- */
-bool value_is_truthy_public(const Value* value) {
-    return value_is_truthy(value);
 }
 
 /**
@@ -1154,9 +1332,50 @@ bool value_is_truthy_public(const Value* value) {
  * @return Converted number or NaN if conversion fails
  */
 double value_to_number_or_nan(const Value* value) {
-    bool success;
-    double result = value_to_number_safe(value, &success);
-    return success ? result : NAN;
+    if (!value) {
+        return NAN;
+    }
+    
+    switch (value->type) {
+        case VALUE_NULL:
+            return 0.0;
+        case VALUE_BOOLEAN:
+            return value->as.boolean ? 1.0 : 0.0;
+        case VALUE_NUMBER:
+            return value->as.number;
+        case VALUE_STRING: {
+            if (!value->as.string || !value->as.string->data || value->as.string->length == 0) {
+                return 0.0;
+            }
+            
+            char* endptr;
+            double result = strtod(value->as.string->data, &endptr);
+            
+            // Check if entire string was consumed (valid number)
+            if (*endptr == '\0') {
+                return result;
+            }
+            
+            // Handle special cases
+            if (strcmp(value->as.string->data, "Infinity") == 0) {
+                return INFINITY;
+            }
+            if (strcmp(value->as.string->data, "-Infinity") == 0) {
+                return -INFINITY;
+            }
+            if (strcmp(value->as.string->data, "NaN") == 0) {
+                return NAN;
+            }
+            
+            return NAN; // Invalid string
+        }
+        case VALUE_ARRAY:
+            return value->as.array ? (double)value->as.array->length : NAN;
+        case VALUE_OBJECT:
+            return value->as.object ? (double)value->as.object->length : NAN;
+        default:
+            return NAN;
+    }
 }
 
 /**
@@ -1169,12 +1388,25 @@ char* value_to_string_safe(const Value* value) {
         return memory_strdup("null");
     }
     
-    // Use existing value_to_string but with memory_alloc/memory_strdup
+    // Use the existing value_to_string implementation
+    // but add additional safety checks
     char* result = value_to_string(value);
-    
-    // Ensure we always return something, even on failure
     if (!result) {
-        result = memory_strdup("<error converting to string>");
+        // Fallback for critical failures
+        switch (value->type) {
+            case VALUE_NULL: return memory_strdup("null");
+            case VALUE_BOOLEAN: return memory_strdup("<boolean>");
+            case VALUE_UNDECIDABLE: return memory_strdup("undecidable");
+            case VALUE_NUMBER: return memory_strdup("<number>");
+            case VALUE_STRING: return memory_strdup("<string>");
+            case VALUE_ARRAY: return memory_strdup("<array>");
+            case VALUE_OBJECT: return memory_strdup("<object>");
+            case VALUE_FUNCTION: return memory_strdup("<function>");
+            case VALUE_ERROR: return memory_strdup("<error>");
+            case VALUE_CLASS: return memory_strdup("<class>");
+            case VALUE_INSTANCE: return memory_strdup("<instance>");
+            default: return memory_strdup("<unknown>");
+        }
     }
     
     return result;
@@ -1188,7 +1420,7 @@ char* value_to_string_safe(const Value* value) {
  */
 bool value_is_comparable(const Value* a, const Value* b) {
     if (!a || !b) {
-        return false;
+        return true; // Can compare with null
     }
     
     // Same types are always comparable
@@ -1196,23 +1428,26 @@ bool value_is_comparable(const Value* a, const Value* b) {
         return true;
     }
     
-    // Numbers and booleans are comparable with each other
-    if ((a->type == VALUE_NUMBER || a->type == VALUE_BOOLEAN) && 
-        (b->type == VALUE_NUMBER || b->type == VALUE_BOOLEAN)) {
+    // Numbers and booleans can be compared with each other
+    if ((a->type == VALUE_NUMBER && b->type == VALUE_BOOLEAN) ||
+        (a->type == VALUE_BOOLEAN && b->type == VALUE_NUMBER)) {
         return true;
     }
     
-    // Strings can be compared with numbers if the string is numeric
-    if (a->type == VALUE_STRING && b->type == VALUE_NUMBER) {
-        bool success;
-        value_to_number_safe(a, &success);
-        return success;
+    // Strings can be compared with numbers for lexicographic ordering
+    if ((a->type == VALUE_STRING && b->type == VALUE_NUMBER) ||
+        (a->type == VALUE_NUMBER && b->type == VALUE_STRING)) {
+        return true;
     }
     
-    if (a->type == VALUE_NUMBER && b->type == VALUE_STRING) {
-        bool success;
-        value_to_number_safe(b, &success);
-        return success;
+    // Arrays can be compared by length
+    if (a->type == VALUE_ARRAY && b->type == VALUE_ARRAY) {
+        return true;
+    }
+    
+    // Objects can be compared by number of properties
+    if (a->type == VALUE_OBJECT && b->type == VALUE_OBJECT) {
+        return true;
     }
     
     return false;
@@ -1229,14 +1464,48 @@ size_t value_get_length(const Value* value) {
     }
     
     switch (value->type) {
+        case VALUE_NULL:
+            return 0;
+        case VALUE_BOOLEAN:
+            return 1; // Booleans have conceptual length of 1
+        case VALUE_NUMBER:
+            return 1; // Numbers have conceptual length of 1
         case VALUE_STRING:
             return value->as.string ? value->as.string->length : 0;
         case VALUE_ARRAY:
             return value->as.array ? value->as.array->length : 0;
         case VALUE_OBJECT:
             return value->as.object ? value->as.object->length : 0;
+        case VALUE_FUNCTION:
+            return 0; // Functions don't have meaningful length
+        case VALUE_ERROR:
+            return value->as.error && value->as.error->message ? strlen(value->as.error->message) : 0;
+        case VALUE_CLASS:
+            return 0; // Classes don't have meaningful length
+        case VALUE_INSTANCE:
+            return 0; // Instances length would depend on properties
+        case VALUE_SET: {
+            Value* size_val = set_size(value);
+            size_t length = 0;
+            if (size_val && size_val->type == VALUE_NUMBER) {
+                length = (size_t)size_val->as.number;
+            }
+            if (size_val) value_unref(size_val);
+            return length;
+        }
+        case VALUE_PRIORITY_QUEUE: {
+            Value* size_val = priority_queue_size(value);
+            size_t length = 0;
+            if (size_val && size_val->type == VALUE_NUMBER) {
+                length = (size_t)size_val->as.number;
+            }
+            if (size_val) value_unref(size_val);
+            return length;
+        }
         default:
             return 0;
     }
 }
+
+// Set and priority queue constructors removed - use set_new and priority_queue_new instead
 

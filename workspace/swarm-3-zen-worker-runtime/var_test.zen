@@ -1,3 +1,0 @@
-print "before"
-set x 42
-print "after"

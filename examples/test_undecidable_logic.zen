@@ -1,0 +1,34 @@
+# Test UNDECIDABLE value type and three-valued logic
+
+print "=== UNDECIDABLE Value Tests ==="
+
+# Basic undecidable value
+set u undecidable
+print "undecidable value: " + u
+
+# Logical operations with undecidable
+set t true
+set f false
+
+print "\n=== Three-Valued Logic (Standard Operators) ==="
+print "true AND undecidable = " + (t and u)
+print "false AND undecidable = " + (f and u) 
+print "undecidable AND true = " + (u and t)
+print "undecidable AND false = " + (u and f)
+print "undecidable AND undecidable = " + (u and u)
+
+print "\ntrue OR undecidable = " + (t or u)
+print "false OR undecidable = " + (f or u)
+print "undecidable OR true = " + (u or t)
+print "undecidable OR false = " + (u or f)
+print "undecidable OR undecidable = " + (u or u)
+
+print "\nNOT undecidable = " + (not u)
+
+# Comparisons
+print "\n=== Comparisons with UNDECIDABLE ==="
+print "undecidable = undecidable: " + (u = u)
+print "undecidable ≠ true: " + (u ≠ t)
+print "undecidable ≠ false: " + (u ≠ f)
+
+print "\n=== UNDECIDABLE demonstrates Gödel's incompleteness ===\\"

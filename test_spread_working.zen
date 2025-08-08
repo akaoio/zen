@@ -1,0 +1,9 @@
+function sum ...numbers
+    set total 0
+    print "Numbers array:"
+    print numbers
+    return 42
+
+set result sum 1 2 3 4 5
+print "Sum result:"
+print result

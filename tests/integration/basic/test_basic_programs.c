@@ -9,25 +9,78 @@
 #include "zen/core/visitor.h"
 #include "zen/core/scope.h"
 
-TEST_SUITE(basic_programs_tests)
+// Forward declare all tests
+DECLARE_TEST(test_variable_assignment_and_use);
+DECLARE_TEST(test_simple_arithmetic);
+DECLARE_TEST(test_string_operations);
+DECLARE_TEST(test_function_definition_and_call);
+DECLARE_TEST(test_conditional_statement);
+DECLARE_TEST(test_print_statement);
+DECLARE_TEST(test_multiple_function_calls);
+DECLARE_TEST(test_nested_expressions);
+DECLARE_TEST(test_comparison_operations);
+DECLARE_TEST(test_logical_operations);
+DECLARE_TEST(test_function_with_multiple_parameters);
+DECLARE_TEST(test_string_concatenation_complex);
+DECLARE_TEST(test_variable_scope_in_function);
+DECLARE_TEST(test_recursive_function);
+DECLARE_TEST(test_while_loop);
+DECLARE_TEST(test_for_loop);
+DECLARE_TEST(test_mixed_data_types);
+DECLARE_TEST(test_boolean_literals);
+DECLARE_TEST(test_null_handling);
+DECLARE_TEST(test_error_recovery);
 
-static AST_T* execute_zen_code(const char* code) {
-    lexer_T* lexer = init_lexer((char*)code);
-    if (!lexer) return NULL;
+static bool execute_code(const char* code) {
+    lexer_T* lexer = lexer_new((char*)code);
+    if (!lexer) return false;
     
-    parser_T* parser = init_parser(lexer);
-    if (!parser) return NULL;
+    parser_T* parser = parser_new(lexer);
+    if (!parser) {
+        lexer_free(lexer);
+        return false;
+    }
     
-    scope_T* scope = init_scope();
-    if (!scope) return NULL;
+    scope_T* scope = scope_new();
+    if (!scope) {
+        parser_free(parser);
+        lexer_free(lexer);
+        return false;
+    }
     
     AST_T* ast = parser_parse_statements(parser, scope);
-    if (!ast) return NULL;
+    if (!ast) {
+        scope_free(scope);
+        parser_free(parser);
+        lexer_free(lexer);
+        return false;
+    }
     
-    visitor_T* visitor = init_visitor();
-    if (!visitor) return NULL;
+    visitor_T* visitor = visitor_new();
+    if (!visitor) {
+        ast_free(ast);
+        scope_free(scope);
+        parser_free(parser);
+        lexer_free(lexer);
+        return false;
+    }
     
-    return visitor_visit(visitor, ast);
+    AST_T* result = visitor_visit(visitor, ast);
+    
+    // Check if execution was successful (result should not be NULL)
+    bool success = (result != NULL);
+    
+    // CRITICAL: Do NOT free visitor result - it's managed by AST tree and scope
+    // The visitor result may be stored in the AST tree or scope and will be freed by ast_free/scope_free
+    
+    // Clean up all allocated resources
+    visitor_free(visitor);
+    ast_free(ast);
+    scope_free(scope);
+    parser_free(parser);
+    lexer_free(lexer);
+    
+    return success;
 }
 
 TEST(test_variable_assignment_and_use) {
@@ -35,10 +88,10 @@ TEST(test_variable_assignment_and_use) {
         "set x 42\n"
         "set y x\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
     // Should execute without errors
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_simple_arithmetic) {
@@ -47,9 +100,9 @@ TEST(test_simple_arithmetic) {
         "set b 5\n"
         "set sum a + b\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
     // The sum should be calculated correctly
     // Exact verification depends on how variables are accessible after execution
 }
@@ -60,9 +113,9 @@ TEST(test_string_operations) {
         "set name \"World\"\n"
         "set message greeting + \" \" + name\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_function_definition_and_call) {
@@ -72,9 +125,9 @@ TEST(test_function_definition_and_call) {
         "\n"
         "set result add 3 4\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_conditional_statement) {
@@ -85,9 +138,9 @@ TEST(test_conditional_statement) {
         "else\n"
         "    set status \"minor\"\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_print_statement) {
@@ -95,9 +148,9 @@ TEST(test_print_statement) {
         "set message \"Hello, ZEN!\"\n"
         "print message\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
     // Note: This will actually print to stdout during test
 }
 
@@ -109,18 +162,18 @@ TEST(test_multiple_function_calls) {
         "print square 5\n"
         "print square 10\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_nested_expressions) {
     char* code = 
         "set result (3 + 4) * (5 - 2)\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_comparison_operations) {
@@ -130,9 +183,9 @@ TEST(test_comparison_operations) {
         "set is_equal x = 10\n"
         "set is_not_equal x != 5\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_logical_operations) {
@@ -143,9 +196,9 @@ TEST(test_logical_operations) {
         "set or_result a | b\n"
         "set not_result !a\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_function_with_multiple_parameters) {
@@ -155,9 +208,9 @@ TEST(test_function_with_multiple_parameters) {
         "\n"
         "set result calculate 1 2 3\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_string_concatenation_complex) {
@@ -167,9 +220,9 @@ TEST(test_string_concatenation_complex) {
         "set third \"world\"\n"
         "set sentence first + \" \" + second + \" \" + third + \"!\"\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_variable_scope_in_function) {
@@ -181,9 +234,9 @@ TEST(test_variable_scope_in_function) {
         "\n"
         "set result test_scope 5\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_recursive_function) {
@@ -197,7 +250,8 @@ TEST(test_recursive_function) {
         "set result factorial 5\n";
     
     // Note: This test may not work if recursion isn't implemented yet
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
+    (void)result;  // Intentionally unused - just testing for crashes
     
     // Don't assert success since recursion might not be implemented
     // Just verify it doesn't crash
@@ -209,9 +263,9 @@ TEST(test_while_loop) {
         "while counter < 5\n"
         "    set counter counter + 1\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_for_loop) {
@@ -221,7 +275,8 @@ TEST(test_for_loop) {
         "    set sum sum + i\n";
     
     // Note: For loop syntax might not be implemented yet
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
+    (void)result;  // Intentionally unused - just testing for crashes
     
     // Don't assert success since for loops might not be implemented
 }
@@ -234,9 +289,9 @@ TEST(test_mixed_data_types) {
         "set nothing null\n"
         "set message text + number\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_boolean_literals) {
@@ -245,9 +300,9 @@ TEST(test_boolean_literals) {
         "set flag2 false\n"
         "set combined flag1 & !flag2\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_null_handling) {
@@ -255,9 +310,9 @@ TEST(test_null_handling) {
         "set empty_var null\n"
         "set result empty_var = null\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
     
-    ASSERT_NOT_NULL(result);
+    ASSERT_TRUE(result);
 }
 
 TEST(test_error_recovery) {
@@ -267,10 +322,32 @@ TEST(test_error_recovery) {
         "set + invalid_syntax\n"
         "set another_valid_var 13\n";
     
-    AST_T* result = execute_zen_code(code);
+    bool result = execute_code(code);
+    (void)result;  // Intentionally unused - just testing for crashes
     
     // Should not crash, might return NULL or partial result
     // Exact behavior depends on error recovery implementation
 }
 
-END_TEST_SUITE
+TEST_SUITE_BEGIN(basic_programs_tests)
+    RUN_TEST(test_variable_assignment_and_use);
+    RUN_TEST(test_simple_arithmetic);
+    RUN_TEST(test_string_operations);
+    RUN_TEST(test_function_definition_and_call);
+    RUN_TEST(test_conditional_statement);
+    RUN_TEST(test_print_statement);
+    RUN_TEST(test_multiple_function_calls);
+    RUN_TEST(test_nested_expressions);
+    RUN_TEST(test_comparison_operations);
+    RUN_TEST(test_logical_operations);
+    RUN_TEST(test_function_with_multiple_parameters);
+    RUN_TEST(test_string_concatenation_complex);
+    RUN_TEST(test_variable_scope_in_function);
+    RUN_TEST(test_recursive_function);
+    RUN_TEST(test_while_loop);
+    RUN_TEST(test_for_loop);
+    RUN_TEST(test_mixed_data_types);
+    RUN_TEST(test_boolean_literals);
+    RUN_TEST(test_null_handling);
+    RUN_TEST(test_error_recovery);
+TEST_SUITE_END

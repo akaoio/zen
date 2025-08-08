@@ -79,7 +79,7 @@ create_agent_from_dna() {
 
 # Function to show usage
 usage() {
-    echo "Usage: $0 [init|add-worker|status|clean|create-swarm|create-overlord]"
+    echo "Usage: $0 [init|add-worker|status|clean|create-swarm|create-overlord|populate]"
     echo ""
     echo "Commands:"
     echo "  init              - Create initial swarm (1 queen, 1 architect, 2 workers)"
@@ -88,6 +88,7 @@ usage() {
     echo "  clean             - Remove all generated agents"
     echo "  create-swarm      - Create a new swarm with specific ID"
     echo "  create-overlord   - Create the Overlord meta-agent (system evolution)"
+    echo "  populate          - 🧬 Full ecosystem setup: assemble DNA, create all 4 swarms + overlord"
     echo ""
     echo "Examples:"
     echo "  $0 init"
@@ -96,6 +97,7 @@ usage() {
     echo "  $0 create-swarm swarm-1"
     echo "  $0 create-swarm swarm-2 --workers lexer,parser,types"
     echo "  $0 create-overlord"
+    echo "  $0 populate         # Complete multi-swarm ecosystem setup"
 }
 
 # Initialize swarm with basic agents
@@ -368,6 +370,96 @@ create_overlord() {
     echo ""
 }
 
+# Populate complete multi-swarm ecosystem
+populate_ecosystem() {
+    echo -e "${BLUE}🧬 POPULATING COMPLETE ZEN MULTI-SWARM ECOSYSTEM${NC}"
+    echo "=================================================="
+    echo ""
+    
+    # Step 1: Clean existing agents
+    echo -e "${YELLOW}Step 1: Cleaning existing agents...${NC}"
+    clean_agents
+    echo ""
+    
+    # Step 2: Check dependencies
+    echo -e "${YELLOW}Step 2: Checking dependencies...${NC}"
+    if [ ! -f "$SWARM_DIR/assemble-dna.js" ]; then
+        echo -e "${RED}❌ assemble-dna.js not found${NC}"
+        return 1
+    fi
+    
+    if ! npm list js-yaml >/dev/null 2>&1; then
+        echo -e "${YELLOW}Installing js-yaml...${NC}"
+        npm install js-yaml
+    fi
+    echo -e "${GREEN}✓ Dependencies ready${NC}"
+    echo ""
+    
+    # Step 3: Assemble DNA for all swarms
+    echo -e "${YELLOW}Step 3: Assembling DNA for all swarms...${NC}"
+    echo -e "${BLUE}  🧬 Generating DNA for swarm-1...${NC}"
+    node "$SWARM_DIR/assemble-dna.js" --swarm-id swarm-1
+    
+    echo -e "${BLUE}  🧬 Generating DNA for swarm-2...${NC}"
+    node "$SWARM_DIR/assemble-dna.js" --swarm-id swarm-2
+    
+    echo -e "${BLUE}  🧬 Generating DNA for swarm-3...${NC}"
+    node "$SWARM_DIR/assemble-dna.js" --swarm-id swarm-3
+    
+    echo -e "${BLUE}  🧬 Generating DNA for swarm-4...${NC}"
+    node "$SWARM_DIR/assemble-dna.js" --swarm-id swarm-4
+    
+    echo -e "${BLUE}  🧠 Generating Overlord DNA...${NC}"
+    node "$SWARM_DIR/assemble-dna.js" --role overlord
+    
+    echo -e "${GREEN}✓ All DNA assembled${NC}"
+    echo ""
+    
+    # Step 4: Create all swarms
+    echo -e "${YELLOW}Step 4: Creating all swarms (32 agents total)...${NC}"
+    
+    echo -e "${BLUE}  Creating swarm-1...${NC}"
+    create_swarm swarm-1
+    echo ""
+    
+    echo -e "${BLUE}  Creating swarm-2...${NC}"
+    create_swarm swarm-2
+    echo ""
+    
+    echo -e "${BLUE}  Creating swarm-3...${NC}"
+    create_swarm swarm-3
+    echo ""
+    
+    echo -e "${BLUE}  Creating swarm-4...${NC}"
+    create_swarm swarm-4
+    echo ""
+    
+    # Step 5: Create overlord
+    echo -e "${YELLOW}Step 5: Creating Overlord meta-agent...${NC}"
+    create_overlord
+    echo ""
+    
+    # Step 6: Show final status
+    echo -e "${GREEN}🎉 ECOSYSTEM POPULATION COMPLETE!${NC}"
+    echo "================================="
+    echo ""
+    show_status
+    echo ""
+    echo -e "${GREEN}✨ Complete ZEN Multi-Swarm Ecosystem Ready!${NC}"
+    echo ""
+    echo -e "${BLUE}Available Commands:${NC}"
+    echo "  swarm-1 work         # Activate swarm-1 for parallel development"
+    echo "  swarm-2 work         # Activate swarm-2 for parallel development"
+    echo "  swarm-3 work         # Activate swarm-3 for parallel development"
+    echo "  swarm-4 work         # Activate swarm-4 for parallel development"
+    echo "  overlord work        # Activate meta-system evolution"
+    echo "  overlord analyze     # Comprehensive multi-swarm analysis"
+    echo ""
+    echo -e "${YELLOW}Total Agents Created:${NC} $(ls "$CLAUDE_DIR"/*.md 2>/dev/null | wc -l)"
+    echo -e "${YELLOW}Swarms Active:${NC} 4 specialized swarms + 1 overlord meta-system"
+    echo ""
+}
+
 # Main command handling
 case "$1" in
     init)
@@ -387,6 +479,9 @@ case "$1" in
         ;;
     create-overlord)
         create_overlord
+        ;;
+    populate)
+        populate_ecosystem
         ;;
     *)
         usage

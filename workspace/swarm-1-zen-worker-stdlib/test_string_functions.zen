@@ -1,6 +1,0 @@
-// Test string functions individually
-set test "Hello World"
-print test
-
-set result upper test
-print result

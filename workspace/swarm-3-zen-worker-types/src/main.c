@@ -7,6 +7,7 @@
 #include "zen/core/visitor.h"
 #include "zen/core/scope.h"
 #include "zen/core/memory.h"
+#include "zen/core/logger.h"
 #include "zen/stdlib/io.h"
 
 #define MAX_INPUT_SIZE 1024
@@ -15,6 +16,7 @@ static bool repl_running = true;
 
 /**
  * @brief Print help information
+ * @param void Function takes no parameters
  */
 void print_help()
 {
@@ -23,7 +25,13 @@ void print_help()
     printf("  zen                    - Start interactive REPL\n");
     printf("  zen <filename>         - Execute ZEN file\n");
     printf("  zen --help             - Show this help\n");
+    printf("  zen --debug            - Enable debug logging\n");
+    printf("  zen --verbose          - Enable verbose logging (INFO level)\n");
+    printf("  zen --silent           - Disable all logging\n");
+    printf("  zen --log-file <file>  - Log to file instead of stdout/stderr\n");
     printf("\nSupported file extensions: .zen, .zn\n");
+    printf("\nLogging categories (use ZEN_LOG_CATEGORIES env var):\n");
+    printf("  GENERAL, LEXER, PARSER, AST, VISITOR, MEMORY, VALUES, STDLIB, ALL\n");
     exit(0);
 }
 
@@ -59,13 +67,13 @@ static bool execute_line(const char* line, scope_T* global_scope) {
     }
     
     // Parse and execute ZEN code
-    lexer_T* lexer = init_lexer((char*)line);
+    lexer_T* lexer = lexer_new((char*)line);
     if (!lexer) {
         printf("Error: Failed to create lexer\n");
         return true;
     }
     
-    parser_T* parser = init_parser(lexer);
+    parser_T* parser = parser_new(lexer);
     if (!parser) {
         printf("Error: Failed to create parser\n");
         return true;
@@ -80,7 +88,7 @@ static bool execute_line(const char* line, scope_T* global_scope) {
         return true;
     }
     
-    visitor_T* visitor = init_visitor();
+    visitor_T* visitor = visitor_new();
     if (!visitor) {
         printf("Error: Failed to create visitor\n");
         return true;
@@ -123,53 +131,66 @@ static bool execute_line(const char* line, scope_T* global_scope) {
  */
 int main(int argc, char* argv[])
 {
-    // Enable memory debugging for leak detection  
-    memory_debug_enable(true);
+    // Initialize logging system first
+    logger_init();
     
-    // Handle help flag
-    if (argc >= 2 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
-        print_help();
+    // Process command line arguments
+    int file_arg_start = 1;
+    const char* log_file = NULL;
+    
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            print_help();
+        } else if (strcmp(argv[i], "--debug") == 0) {
+            logger_set_level(LOG_LEVEL_DEBUG);
+            file_arg_start = i + 1;
+        } else if (strcmp(argv[i], "--verbose") == 0) {
+            logger_set_level(LOG_LEVEL_INFO);
+            file_arg_start = i + 1;
+        } else if (strcmp(argv[i], "--silent") == 0) {
+            logger_set_level(LOG_LEVEL_SILENT);
+            file_arg_start = i + 1;
+        } else if (strcmp(argv[i], "--log-file") == 0 && i + 1 < argc) {
+            log_file = argv[i + 1];
+            logger_set_file(log_file);
+            file_arg_start = i + 2;
+            i++; // Skip the filename argument
+        } else {
+            break; // Found a non-flag argument (likely a file)
+        }
     }
     
     // Create global scope for persistent variables
-    scope_T* global_scope = init_scope();
+    scope_T* global_scope = scope_new();
     if (!global_scope) {
         fprintf(stderr, "Error: Failed to create global scope\n");
         return 1;
     }
     
-    if (argc >= 2) {
+    if (file_arg_start < argc) {
         // File execution mode
-        for (int i = 1; i < argc; i++) {
+        for (int i = file_arg_start; i < argc; i++) {
             int len = strlen(argv[i]);
             if ((len >= 4 && strcmp(&argv[i][len-4], ".zen") == 0) || 
                 (len >= 3 && strcmp(&argv[i][len-3], ".zn") == 0)) {
                 
-                char* file_contents = zen_read_file(argv[i]);
+                char* file_contents = io_read_file_internal(argv[i]);
                 if (!file_contents) {
                     fprintf(stderr, "Error: Could not read file '%s'\n", argv[i]);
                     return 1;
                 }
                 
-                
-                lexer_T* lexer = init_lexer(file_contents);
+                lexer_T* lexer = lexer_new(file_contents);
                 if (!lexer) {
                     fprintf(stderr, "Error: Failed to create lexer for file '%s'\n", argv[i]);
                     return 1;
                 }
                 
-                parser_T* parser = init_parser(lexer);
+                parser_T* parser = parser_new(lexer);
                 if (!parser) {
                     fprintf(stderr, "Error: Failed to create parser for file '%s'\n", argv[i]);
                     return 1;
                 }
-                
-                // Replace parser's default scope with global scope
-                // Free parser's internal scope first to prevent leak
-                if (parser->scope) {
-                    scope_free(parser->scope);
-                }
-                parser->scope = global_scope;
                 
                 AST_T* root = parser_parse_statements(parser, global_scope);
                 if (!root) {
@@ -177,24 +198,51 @@ int main(int argc, char* argv[])
                     return 1;
                 }
                 
-                visitor_T* visitor = init_visitor();
+                visitor_T* visitor = visitor_new();
                 if (!visitor) {
                     fprintf(stderr, "Error: Failed to create visitor for file '%s'\n", argv[i]);
                     return 1;
                 }
                 
-                visitor_visit(visitor, root);
+                // Execute the parsed AST - this performs all side effects (print, variable assignments, etc.)
+                AST_T* result = visitor_visit(visitor, root);
                 
-                // Cleanup resources
-                ast_free(root);  // Free the AST after visiting
+                // Handle any meaningful return value from execution
+                if (result && result->type != AST_NOOP) {
+                    switch (result->type) {
+                        case AST_STRING:
+                            if (result->string_value) {
+                                printf("%s\n", result->string_value);
+                            }
+                            break;
+                        case AST_NUMBER:
+                            printf("%.15g\n", result->number_value);
+                            break;
+                        case AST_BOOLEAN:
+                            printf("%s\n", result->boolean_value ? "true" : "false");
+                            break;
+                        case AST_NULL:
+                            printf("null\n");
+                            break;
+                        default:
+                            // Don't print other types like compound results
+                            break;
+                    }
+                }
+                
+                // CRITICAL: Free all allocated resources to prevent memory leaks
+                // CRITICAL DOUBLE-FREE FIX: Do NOT free visitor result 
+                // The visitor result can be:
+                // 1. A reference to a node in the original parse tree (freed by ast_free(root))
+                // 2. A new temporary node created by visitor (should be handled by visitor_free)
+                // 3. A shared node stored in scope (freed by scope_free)
+                // In all cases, freeing the result separately causes double-free crashes
+                
                 visitor_free(visitor);
-                
-                // Temporarily clear parser's scope reference so parser_free doesn't double-free it
-                parser->scope = NULL;
-                parser_free(parser);  
-                
+                ast_free(root);  // This will free the entire parse tree
+                parser_free(parser);
                 lexer_free(lexer);
-                free(file_contents);  // This was allocated by zen_read_file
+                free(file_contents);
                 
             } else {
                 print_help();
@@ -225,11 +273,13 @@ int main(int argc, char* argv[])
         }
     }
     
-    // Cleanup global scope
+    // CRITICAL: Free global scope before exit
     scope_free(global_scope);
     
-    // Print memory leak report and cleanup
-    memory_print_leak_report();
+    // CRITICAL: Cleanup logging system
+    logger_cleanup();
+    
+    // CRITICAL: Cleanup memory debugging system to prevent false leak reports
     memory_debug_cleanup();
     
     return 0;
