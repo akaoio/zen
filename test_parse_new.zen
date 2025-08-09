@@ -1,3 +1,0 @@
-print "About to call new"
-new Animal
-print "Called new"

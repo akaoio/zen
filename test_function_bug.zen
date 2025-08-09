@@ -1,9 +1,0 @@
-# Test Bug #4: Double-free crash in function parameters
-function simple_func a
-    print "Param a: " + a
-    return a
-
-print "Testing simple function call..."
-set result simple_func "hello"
-print "Result: " + result
-print "Function test completed"

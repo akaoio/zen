@@ -1,6 +1,0 @@
-class Person
-    method greet name
-        print "Hello " + name
-
-set person new Person
-print "Class system test completed"

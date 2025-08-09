@@ -1,0 +1,4 @@
+# Direct expression test
+set x 3
+set y x
+print y

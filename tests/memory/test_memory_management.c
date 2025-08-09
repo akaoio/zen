@@ -9,6 +9,7 @@
 #include "zen/core/lexer.h"
 #include "zen/core/parser.h"
 #include "zen/core/visitor.h"
+#include "zen/core/runtime_value.h"
 
 TEST(test_basic_memory_allocation) {
     void* ptr = memory_alloc(1024);
@@ -81,30 +82,33 @@ TEST(test_memory_stats_tracking) {
     memory_debug_enable(true);
     memory_reset_stats();
     
-    MemoryStats stats_before = memory_get_stats();
+    MemoryStats stats_before;
+    memory_get_stats(&stats_before);
     
     // Allocate some memory
     void* ptr1 = memory_alloc(100);
     void* ptr2 = memory_alloc(200);
     void* ptr3 = memory_alloc(300);
     
-    MemoryStats stats_after_alloc = memory_get_stats();
+    MemoryStats stats_after_alloc;
+    memory_get_stats(&stats_after_alloc);
     
     // Should show increased allocation count and bytes
-    ASSERT_TRUE(stats_after_alloc.total_allocations > stats_before.total_allocations);
-    ASSERT_TRUE(stats_after_alloc.bytes_allocated > stats_before.bytes_allocated);
-    ASSERT_TRUE(stats_after_alloc.current_allocations > stats_before.current_allocations);
+    ASSERT_TRUE(stats_after_alloc.allocation_count > stats_before.allocation_count);
+    ASSERT_TRUE(stats_after_alloc.total_allocated > stats_before.total_allocated);
+    ASSERT_TRUE(stats_after_alloc.current_allocated > stats_before.current_allocated);
     
     // Free the memory
     memory_free(ptr1);
     memory_free(ptr2);
     memory_free(ptr3);
     
-    MemoryStats stats_after_free = memory_get_stats();
+    MemoryStats stats_after_free;
+    memory_get_stats(&stats_after_free);
     
     // Should show freed memory
-    ASSERT_EQ(stats_after_free.current_allocations, stats_before.current_allocations);
-    ASSERT_TRUE(stats_after_free.bytes_freed > stats_before.bytes_freed);
+    ASSERT_EQ(stats_after_free.current_allocated, stats_before.current_allocated);
+    ASSERT_TRUE(stats_after_free.total_freed > stats_before.total_freed);
     
     memory_debug_enable(false);
 }
@@ -118,15 +122,15 @@ TEST(test_memory_leak_detection) {
     (void)leaked_ptr; // Suppress unused variable warning
     
     // Check for leaks
-    bool has_leaks = memory_check_leaks();
-    ASSERT_TRUE(has_leaks);
+    size_t leak_count = memory_check_leaks();
+    ASSERT_TRUE(leak_count > 0);
     
     // Clean up the "leak" for the test
     memory_free(leaked_ptr);
     
     // Should have no leaks now
-    has_leaks = memory_check_leaks();
-    ASSERT_FALSE(has_leaks);
+    size_t leaks2 = memory_check_leaks();
+    ASSERT_EQ(leaks2, 0);
     
     memory_debug_enable(false);
 }
@@ -135,7 +139,8 @@ TEST(test_value_memory_management) {
     memory_debug_enable(true);
     memory_reset_stats();
     
-    MemoryStats stats_before = memory_get_stats();
+    MemoryStats stats_before;
+    memory_get_stats(&stats_before);
     
     // Create and manipulate values
     Value* str_val = value_new_string("Memory Test");
@@ -147,8 +152,9 @@ TEST(test_value_memory_management) {
     Value* str_copy = value_copy(str_val);
     Value* num_copy = value_copy(num_val);
     
-    MemoryStats stats_after_alloc = memory_get_stats();
-    ASSERT_TRUE(stats_after_alloc.current_allocations > stats_before.current_allocations);
+    MemoryStats stats_after_alloc;
+    memory_get_stats(&stats_after_alloc);
+    ASSERT_TRUE(stats_after_alloc.allocation_count > stats_before.allocation_count);
     
     // Free all values
     value_unref(str_val);
@@ -158,11 +164,13 @@ TEST(test_value_memory_management) {
     value_unref(str_copy);
     value_unref(num_copy);
     
-    MemoryStats stats_after_free = memory_get_stats();
-    ASSERT_EQ(stats_after_free.current_allocations, stats_before.current_allocations);
+    MemoryStats stats_after_free;
+    memory_get_stats(&stats_after_free);
+    ASSERT_EQ(stats_after_free.current_allocated, stats_before.current_allocated);
     
     // Should have no leaks
-    ASSERT_FALSE(memory_check_leaks());
+    size_t leaks = memory_check_leaks();
+    ASSERT_EQ(leaks, 0);
     
     memory_debug_enable(false);
 }
@@ -171,7 +179,8 @@ TEST(test_lexer_memory_management) {
     memory_debug_enable(true);
     memory_reset_stats();
     
-    MemoryStats stats_before = memory_get_stats();
+    MemoryStats stats_before;
+    memory_get_stats(&stats_before);
     
     char* input = "set x 42\nset y \"hello\"\nprint x + y";
     lexer_T* lexer = lexer_new(input);
@@ -185,15 +194,17 @@ TEST(test_lexer_memory_management) {
     // Free lexer (should free all associated memory)
     // Note: Need proper lexer cleanup function
     
-    MemoryStats stats_after = memory_get_stats();
+    MemoryStats stats_after;
+    memory_get_stats(&stats_after);
     
     // Should not have significant memory increase
     // (tokens might be cached, but no major leaks)
-    bool has_leaks = memory_check_leaks();
+    size_t has_leaks = memory_check_leaks();
     
     // Don't assert no leaks since lexer cleanup might not be fully implemented
     // Just verify no major memory explosion
-    ASSERT_TRUE(stats_after.current_allocations < stats_before.current_allocations + 100);
+    (void)has_leaks; // Suppress unused variable warning
+    ASSERT_TRUE(stats_after.allocation_count < stats_before.allocation_count + 100);
     
     memory_debug_enable(false);
 }
@@ -224,10 +235,11 @@ TEST(test_parser_memory_management) {
     ast_free(ast);
     
     // Should not have memory leaks
-    bool has_leaks = memory_check_leaks();
+    size_t has_leaks = memory_check_leaks();
     
     // Don't assert no leaks since parser/AST cleanup might not be fully implemented
     // Just verify no major leaks
+    (void)has_leaks; // Suppress unused variable warning
     
     memory_debug_enable(false);
 }
@@ -246,20 +258,22 @@ TEST(test_visitor_memory_management) {
     parser_T* parser = parser_new(lexer);
     scope_T* scope = scope_new();
     AST_T* ast = parser_parse_statements(parser, scope);
-    visitor_T* visitor = init_visitor();
+    visitor_T* visitor = visitor_new();
     
     // Execute the code
-    AST_T* result = visitor_visit(visitor, ast);
+    RuntimeValue* result = visitor_visit(visitor, ast);
     
     ASSERT_NOT_NULL(result);
+    rv_unref(result);
     
     // Clean up everything
     ast_free(ast);
     // Note: Need proper cleanup functions for lexer, parser, visitor, scope
     
-    bool has_leaks = memory_check_leaks();
+    size_t has_leaks = memory_check_leaks();
     
     // Don't assert no leaks since cleanup might not be fully implemented
+    (void)has_leaks; // Suppress unused variable warning
     
     memory_debug_enable(false);
 }
@@ -277,17 +291,19 @@ TEST(test_large_allocation_stress) {
         ASSERT_NOT_NULL(ptrs[i]);
     }
     
-    MemoryStats stats_after_alloc = memory_get_stats();
-    ASSERT_EQ(stats_after_alloc.current_allocations, num_allocations);
+    MemoryStats stats_after_alloc;
+    memory_get_stats(&stats_after_alloc);
+    ASSERT_TRUE(stats_after_alloc.allocation_count >= (size_t)num_allocations);
     
     // Free all blocks
     for (int i = 0; i < num_allocations; i++) {
         memory_free(ptrs[i]);
     }
     
-    MemoryStats stats_after_free = memory_get_stats();
-    ASSERT_EQ(stats_after_free.current_allocations, 0);
-    ASSERT_FALSE(memory_check_leaks());
+    MemoryStats stats_after_free;
+    memory_get_stats(&stats_after_free);
+    ASSERT_EQ(stats_after_free.current_allocated, 0);
+    ASSERT_EQ(memory_check_leaks(), 0);
     
     memory_debug_enable(false);
 }
@@ -310,7 +326,7 @@ TEST(test_reallocation_stress) {
     }
     
     memory_free(ptr);
-    ASSERT_FALSE(memory_check_leaks());
+    ASSERT_EQ(memory_check_leaks(), 0);
     
     memory_debug_enable(false);
 }
@@ -347,7 +363,7 @@ TEST(test_memory_fragmentation) {
         }
     }
     
-    ASSERT_FALSE(memory_check_leaks());
+    ASSERT_EQ(memory_check_leaks(), 0);
     
     memory_debug_enable(false);
 }

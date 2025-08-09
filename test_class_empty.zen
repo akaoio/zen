@@ -1,7 +1,0 @@
-# Test 1: Empty class
-class Empty
-
-print "Empty class defined"
-set e new Empty
-print "Empty instance created"
-print e

@@ -1,0 +1,2 @@
+set obj key "value"
+print obj.key

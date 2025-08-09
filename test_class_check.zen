@@ -1,6 +1,0 @@
-class Animal
-    method speak
-        return "woof"
-
-print "Class defined"
-print Animal

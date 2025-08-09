@@ -1,7 +1,0 @@
-class Animal
-    method speak
-        return "woof"
-
-print "Class defined"
-set cat new Animal
-print "Instance created"

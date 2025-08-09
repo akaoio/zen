@@ -1,4 +1,0 @@
-set arr [1, 2, 3]
-print "Array length:" arr.length
-for item in arr
-    print "Item:" item

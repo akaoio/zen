@@ -1,8 +1,0 @@
-class Animal
-    constructor name
-        print "In constructor"
-
-print "Defining class"
-print "About to create instance"
-set cat new Animal "Fluffy"
-print "Created instance"

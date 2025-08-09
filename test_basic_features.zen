@@ -1,0 +1,15 @@
+# Test basic ZEN functionality
+
+# Variables
+set x 42
+set name "ZEN"
+set flag true
+
+# Arithmetic
+set sum x + 10
+print "Sum: " + sum
+
+# Objects
+set person name "Alice", age 30
+print person
+EOF < /dev/null

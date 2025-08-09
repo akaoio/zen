@@ -14,6 +14,13 @@ typedef struct PARSER_STRUCT {
     scope_T *scope;
     bool owns_scope;  // True if parser owns the scope and should free it
 
+    // Parsing context flags
+    struct {
+        bool in_variable_assignment;
+        bool in_method_body;
+        bool in_function_call;
+    } context;
+
     // Performance optimization cache
     struct {
         struct AST_STRUCT **cached_expressions;
@@ -255,6 +262,14 @@ AST_T *parser_parse_array(parser_T *parser, scope_T *scope);
  */
 AST_T *parser_parse_object(parser_T *parser, scope_T *scope);
 
+/**
+ * @brief Parse ZEN object literal creating AST_OBJECT nodes instead of AST_FUNCTION_CALL
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* Object literal AST node
+ */
+AST_T *parser_parse_object_literal(parser_T *parser, scope_T *scope);
+
 /* Control flow parsing functions */
 
 /**
@@ -320,6 +335,13 @@ int parser_get_precedence(int token_type);
  * @return int 1 if binary operator, 0 otherwise
  */
 int parser_is_binary_operator(int token_type);
+
+/**
+ * @brief Enhanced detection algorithm for object literals in ZEN syntax
+ * @param parser Parser instance
+ * @return int 1 if object literal detected, 0 otherwise
+ */
+int parser_detect_object_literal(parser_T *parser);
 
 /**
  * @brief Look ahead to determine if parsing an object literal

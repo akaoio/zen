@@ -1,0 +1,3 @@
+function add x y
+    print "Adding " + x + " and " + y
+    return x + y

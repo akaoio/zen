@@ -1,0 +1,10 @@
+# Step by step test
+print "Step 1"
+set x 1
+print "Step 2"
+set y 2
+print "Step 3"
+set z x + y
+print "Step 4"
+print z
+print "Done"

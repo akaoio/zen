@@ -2,6 +2,7 @@
 #include "zen/core/logger.h"
 #include "zen/core/memory.h"
 #include "zen/core/parser.h"
+#include "zen/core/runtime_value.h"
 #include "zen/core/scope.h"
 #include "zen/core/visitor.h"
 #include "zen/stdlib/io.h"
@@ -82,7 +83,10 @@ static bool execute_line(const char *line, scope_T *global_scope)
         return true;
     }
 
-    // Use the global scope
+    // Use the global scope - free the original parser scope first to prevent leak
+    if (parser->scope) {
+        scope_free(parser->scope);
+    }
     parser->scope = global_scope;
 
     AST_T *root = parser_parse_statements(parser, global_scope);
@@ -108,29 +112,19 @@ static bool execute_line(const char *line, scope_T *global_scope)
     }
 
     // Execute the parsed code
-    AST_T *result = visitor_visit(visitor, root);
+    RuntimeValue *result = visitor_visit(visitor, root);
 
-    // Print result if it's not NOOP
-    if (result && result->type != AST_NOOP) {
-        switch (result->type) {
-        case AST_STRING:
-            if (result->string_value) {
-                printf("%s\n", result->string_value);
-            }
-            break;
-        case AST_NUMBER:
-            printf("%.15g\n", result->number_value);
-            break;
-        case AST_BOOLEAN:
-            printf("%s\n", result->boolean_value ? "true" : "false");
-            break;
-        case AST_NULL:
-            printf("null\n");
-            break;
-        default:
-            // Don't print other types
-            break;
-        }
+    // Print result if it's not null
+    // In REPL mode, we show RV_NULL as "null" since user might have explicitly typed null
+    if (result && result->type != RV_NULL) {
+        char *str = rv_to_string(result);
+        printf("%s\n", str);
+        memory_free(str);
+    }
+
+    // Clean up RuntimeValue
+    if (result) {
+        rv_unref(result);
     }
 
     // CRITICAL: Free all resources to prevent memory leaks
@@ -243,35 +237,29 @@ int main(int argc, char *argv[])
                     return 1;
                 }
 
+                // Execute the parsed AST
+
                 // Execute the parsed AST - this performs all side effects (print, variable
                 // assignments, etc.)
-                AST_T *result = visitor_visit(visitor, root);
+                RuntimeValue *result = visitor_visit(visitor, root);
 
                 // Handle any meaningful return value from execution
-                if (result && result->type != AST_NOOP) {
-                    switch (result->type) {
-                    case AST_STRING:
-                        if (result->string_value) {
-                            printf("%s\n", result->string_value);
-                        }
-                        break;
-                    case AST_NUMBER:
-                        printf("%.15g\n", result->number_value);
-                        break;
-                    case AST_BOOLEAN:
-                        printf("%s\n", result->boolean_value ? "true" : "false");
-                        break;
-                    case AST_NULL:
-                        printf("null\n");
-                        break;
-                    default:
-                        // Don't print other types like compound results
-                        break;
-                    }
+                // Don't print RV_NULL as it represents "no output" rather than literal values
+                if (result && result->type != RV_NULL) {
+                    char *str = rv_to_string(result);
+                    printf("%s\n", str);
+                    memory_free(str);
                 }
 
-                // Note: Do not free visitor result as it may share nodes with root AST
-                // The root AST cleanup will handle all shared nodes properly
+                // Clean up RuntimeValue
+                if (result) {
+                    rv_unref(result);
+                }
+
+                // CRITICAL FIX: Do NOT free visitor result!
+                // The visitor result is typically part of the AST tree and will be freed by
+                // ast_free(root) Freeing it separately causes double-free crashes Only the root AST
+                // should be freed - it will recursively free all its children
 
                 visitor_free(visitor);
                 ast_free(root);  // This will free the entire parse tree
@@ -280,7 +268,8 @@ int main(int argc, char *argv[])
                 memory_free(file_contents);
 
             } else {
-                print_help();
+                fprintf(stderr, "Error: File '%s' must have .zen or .zn extension\n", argv[i]);
+                return 1;
             }
         }
     } else {

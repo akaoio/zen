@@ -1,0 +1,54 @@
+# Test basic operations with RuntimeValue implementation
+
+# Test 1: Simple print
+print "Testing RuntimeValue implementation"
+
+# Test 2: Variable assignment and arithmetic
+set x 10
+set y 20
+set result x + y
+print "10 + 20 = " + result
+
+# Test 3: Function definition and call
+function add a b
+    return a + b
+
+set sum add 5 3
+print "5 + 3 = " + sum
+
+# Test 4: Control flow
+set i 0
+while i < 3
+    print "Iteration: " + i
+    set i i + 1
+
+# Test 5: Conditional
+if result = 30
+    print "Arithmetic works correctly!"
+else
+    print "Something is wrong with arithmetic"
+
+# Test 6: Array operations
+set arr 1, 2, 3, 4, 5
+print "Array: " + arr
+print "Array length: " + arr.length
+print "First element: " + arr[0]
+
+# Test 7: Object operations
+set person name "Alice", age 25
+print "Person: " + person
+print "Name: " + person.name
+
+# Test 8: Nested function calls
+function multiply x y
+    return x * y
+
+function calculate a b
+    set sum add a b
+    set product multiply a b
+    return sum + product
+
+set calc_result calculate 4 5
+print "4 + 5 + (4 * 5) = " + calc_result
+
+print "All tests completed!"

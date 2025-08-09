@@ -1,0 +1,20 @@
+# Test comprehensive ZEN functionality
+
+# Variables
+set x 42
+set name "ZEN"
+set flag true
+
+# Arithmetic
+set sum x + 10
+set product x * 2
+print "Sum: " + sum
+print "Product: " + product
+
+# Functions
+function greet person
+    return "Hello, " + person + "!"
+
+print greet name
+
+# Functions with return values

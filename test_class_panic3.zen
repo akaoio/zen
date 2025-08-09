@@ -1,3 +1,0 @@
-# Panic Test 3: new with number instead of class name
-set x new 42
-print "Should not reach here"

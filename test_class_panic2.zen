@@ -1,3 +1,0 @@
-# Panic Test 2: new with non-existent class
-set x new NonExistentClass
-print "Should not reach here"

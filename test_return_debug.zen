@@ -1,0 +1,5 @@
+function get_number
+    return 42
+
+set x get_number
+print x

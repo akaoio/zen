@@ -1,0 +1,4 @@
+function greet
+    print "Hello"
+
+greet

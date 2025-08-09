@@ -1,9 +1,0 @@
-# Edge case: Class name that's a keyword-like name
-class new
-print "Class named 'new' defined"
-
-class set  
-print "Class named 'set' defined"
-
-class function
-print "Class named 'function' defined"

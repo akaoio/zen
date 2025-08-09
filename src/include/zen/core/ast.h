@@ -726,4 +726,22 @@ AST_T *ast_new_class_definition(const char *class_name,
                                 AST_T **methods,
                                 size_t methods_count);
 
+/**
+ * @brief Create a deep copy of an AST node with cycle detection
+ * @param original Original AST node to copy
+ * @return Deep copy of the AST node, or NULL on failure/infinite recursion
+ *
+ * This function performs a deep copy of an AST tree while detecting and handling
+ * circular references that could cause infinite recursion. It uses a visited
+ * nodes tracker to identify cycles and returns shared references for already
+ * visited nodes, effectively converting circular structures into DAGs.
+ *
+ * Key features:
+ * - Detects infinite recursion and circular references
+ * - Limits recursion depth to prevent stack overflow
+ * - Memory-safe with proper cleanup on failure
+ * - Handles all AST node types comprehensively
+ */
+AST_T *ast_copy(AST_T *original);
+
 #endif  // ZEN_CORE_AST_H

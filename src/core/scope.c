@@ -64,6 +64,19 @@ void scope_free(scope_T *scope)
  */
 AST_T *scope_add_function_definition(scope_T *scope, AST_T *fdef)
 {
+    // Check if function already exists in scope to avoid duplicates
+    if (fdef && fdef->function_definition_name) {
+        for (size_t i = 0; i < scope->function_definitions_size; i++) {
+            AST_T *existing = scope->function_definitions[i];
+            if (existing && existing->function_definition_name &&
+                strcmp(existing->function_definition_name, fdef->function_definition_name) == 0) {
+                // Function already exists - just return the existing one
+                return existing;
+            }
+        }
+    }
+
+    // Function doesn't exist, add it
     scope->function_definitions_size += 1;
 
     if (scope->function_definitions == NULL) {
@@ -111,6 +124,9 @@ AST_T *scope_add_variable_definition(scope_T *scope, AST_T *vdef)
         return NULL;
     }
 
+    // printf("DEBUG: SCOPE ADD - variable '%s', node=%p\n",
+    //        vdef->variable_definition_variable_name, (void*)vdef);
+
     // CRITICAL FIX: Don't create copies of AST nodes - just store references
     // The original AST tree owns the memory, scope just references it
     // This prevents double-free issues entirely
@@ -121,7 +137,10 @@ AST_T *scope_add_variable_definition(scope_T *scope, AST_T *vdef)
         if (existing && existing->variable_definition_variable_name &&
             strcmp(existing->variable_definition_variable_name,
                    vdef->variable_definition_variable_name) == 0) {
-            // Just replace the reference - don't free anything
+            // CRITICAL FIX: Always update the reference, even for same node
+            // This ensures that variable values are properly updated in loops
+            // printf("DEBUG: SCOPE - updating variable '%s', old_node=%p, new_node=%p\n",
+            //        vdef->variable_definition_variable_name, (void*)existing, (void*)vdef);
             scope->variable_definitions[i] = vdef;
             return vdef;
         }

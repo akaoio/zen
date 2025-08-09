@@ -9,9 +9,10 @@
 #include "zen/core/visitor.h"
 #include "zen/core/scope.h"
 #include "zen/core/memory.h"
+#include "zen/core/runtime_value.h"
 
 // Use the same pattern as integration tests but with explicit double-free protection
-static AST_T* execute_code_safe(const char* code) {
+static RuntimeValue* execute_code_safe(const char* code) {
     lexer_T* lexer = lexer_new((char*)code);
     if (!lexer) return NULL;
     
@@ -45,7 +46,7 @@ static AST_T* execute_code_safe(const char* code) {
         return NULL;
     }
     
-    AST_T* result = visitor_visit(visitor, ast);
+    RuntimeValue* result = visitor_visit(visitor, ast);
     
     // Clean up resources
     visitor_free(visitor);
@@ -53,56 +54,54 @@ static AST_T* execute_code_safe(const char* code) {
     parser_free(parser);
     lexer_free(lexer);
     
-    // Only free original AST if result is different (avoids double-free)
-    if (result != ast) {
-        ast_free(ast);
-    }
+    // Always free the AST - it's not related to the RuntimeValue result
+    ast_free(ast);
     
     return result;
 }
 
 TEST(test_simple_variable_declaration) {
     char* code = "set x 42";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_string_variable) {
     char* code = "set name \"Alice\"";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_boolean_variable) {
     char* code = "set active true";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_null_variable) {
     char* code = "set empty null";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_float_variable) {
     char* code = "set pi 3.14159";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_reference) {
     char* code = 
         "set x 10\n"
         "set y x";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_multiple_variable_declarations) {
@@ -110,23 +109,23 @@ TEST(test_multiple_variable_declarations) {
         "set a 1\n"
         "set b 2\n"
         "set c 3";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_with_expression) {
     char* code = "set result 5 + 3";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_string_concatenation_variable) {
     char* code = "set greeting \"Hello \" + \"World\"";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_names) {
@@ -136,25 +135,25 @@ TEST(test_variable_names) {
         "set snake_case 3\n"
         "set with123numbers 4\n"
         "set _private 5";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_zen_inline_array_syntax) {
     // ZEN uses comma syntax for arrays
     char* code = "set scores 85, 92, 78";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_zen_inline_object_syntax) {
     // ZEN object syntax: key value pairs
     char* code = "set person name \"Alice\", age 30, active true";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_multiline_array) {
@@ -163,9 +162,9 @@ TEST(test_multiline_array) {
         "    \"pen\",\n"
         "    \"book\",\n"
         "    \"lamp\"";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_multiline_object) {
@@ -174,27 +173,27 @@ TEST(test_multiline_object) {
         "    debug true,\n"
         "    retries 3,\n"
         "    timeout 1000";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_nested_structures) {
     char* code = 
         "set scores 8, 9, 10\n"
         "set profile name \"Linh\", scores scores, active true";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_redefinition) {
     char* code = 
         "set x 10\n"
         "set x 20";  // Redefining variable
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_case_sensitivity) {
@@ -202,9 +201,9 @@ TEST(test_variable_case_sensitivity) {
         "set Variable 1\n"
         "set variable 2\n"  // Different from Variable
         "set VARIABLE 3";   // Different from both above
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_special_variable_names) {
@@ -214,9 +213,9 @@ TEST(test_special_variable_names) {
         "set var 2\n"      // Not a keyword in ZEN
         "set let 3\n"      // Not a keyword in ZEN
         "set const 4";     // Not a keyword in ZEN
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_zen_assignment_vs_comparison) {
@@ -224,16 +223,16 @@ TEST(test_zen_assignment_vs_comparison) {
     char* code = 
         "set x 10\n"
         "set is_ten x = 10";  // This should work - comparison
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_with_complex_expression) {
     char* code = "set result (10 + 5) * 2 - 3";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_with_function_call) {
@@ -242,9 +241,9 @@ TEST(test_variable_with_function_call) {
         "    return x * 2\n"
         "\n"
         "set result double 21";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_scope_global) {
@@ -254,9 +253,9 @@ TEST(test_variable_scope_global) {
         "    return global_var\n"  // Should access global
         "\n"
         "set result test";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_scope_local) {
@@ -266,19 +265,19 @@ TEST(test_variable_scope_local) {
         "    return local_var\n"
         "\n"
         "set result test 5";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_undefined_variable_error) {
     char* code = "set result undefined_variable + 1";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     (void)result; // Suppress unused variable warning
     // Should handle undefined variable gracefully
     // Might return NULL or error result depending on implementation
     if (result) {
-        ast_free(result);
+        rv_unref(result);
     }
 }
 
@@ -286,41 +285,41 @@ TEST(test_variable_with_scientific_notation) {
     char* code = 
         "set large 1.5e10\n"
         "set small 2.3e-5";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_variable_with_unicode_string) {
     char* code = "set message \"Hello 世界 🌍\"";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_empty_string_variable) {
     char* code = "set empty_string \"\"";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_zero_variable) {
     char* code = 
         "set zero_int 0\n"
         "set zero_float 0.0";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST(test_negative_number_variable) {
     char* code = 
         "set negative_int -42\n"
         "set negative_float -3.14";
-    AST_T* result = execute_code_safe(code);
+    RuntimeValue* result = execute_code_safe(code);
     ASSERT_NOT_NULL(result);
-    ast_free(result);
+    rv_unref(result);
 }
 
 TEST_SUITE_BEGIN(variables_tests)

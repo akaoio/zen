@@ -1,7 +1,0 @@
-print "Testing new expression"
-
-class Animal
-
-print "Class defined"
-set cat new Animal
-print "Instance created"

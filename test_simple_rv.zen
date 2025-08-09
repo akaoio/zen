@@ -1,0 +1,2 @@
+# Very simple test
+print "Hello from RuntimeValue"

@@ -10,6 +10,7 @@
 #include "zen/core/scope.h"
 #include "zen/core/ast_memory_pool.h"
 #include "zen/core/memory.h"
+#include "zen/core/runtime_value.h"
 
 // Forward declare all tests
 DECLARE_TEST(test_variable_assignment_and_use);
@@ -34,6 +35,8 @@ DECLARE_TEST(test_null_handling);
 DECLARE_TEST(test_error_recovery);
 
 static bool execute_code(const char* code) {
+    // AST pool should be initialized once by test framework
+    
     lexer_T* lexer = lexer_new((char*)code);
     if (!lexer) return false;
     
@@ -67,13 +70,15 @@ static bool execute_code(const char* code) {
         return false;
     }
     
-    AST_T* result = visitor_visit(visitor, ast);
+    RuntimeValue* result = visitor_visit(visitor, ast);
     
     // Check if execution was successful (result should not be NULL)
     bool success = (result != NULL);
     
-    // CRITICAL: Do NOT free visitor result - it's managed by AST tree and scope
-    // The visitor result may be stored in the AST tree or scope and will be freed by ast_free/scope_free
+    // Free the runtime value result
+    if (result) {
+        rv_unref(result);
+    }
     
     // Clean up all allocated resources
     visitor_free(visitor);
@@ -84,7 +89,6 @@ static bool execute_code(const char* code) {
     
     // CRITICAL FIX: Clean up global state to prevent memory accumulation between tests
     // This prevents the massive memory leaks seen in integration test suites
-    ast_pool_cleanup_global();
     
     return success;
 }

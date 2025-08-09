@@ -1,5 +1,0 @@
-set arr [1, 2, 3]
-print "Array: " + arr[0]
-
-set obj name "Alice", age 25
-print "Object: " + obj.name

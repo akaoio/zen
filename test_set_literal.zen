@@ -1,7 +1,0 @@
-print "Test 1"
-set x 5
-print "Set x"
-set y "hello"
-print "Set y"
-set z print "during set"
-print "Done"

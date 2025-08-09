@@ -1,4 +1,2 @@
 set arr 1, 2, 3
 print arr
-set len arr.length
-print len

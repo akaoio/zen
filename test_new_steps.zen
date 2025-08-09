@@ -1,9 +1,0 @@
-class Animal
-    method speak
-        return "woof"
-
-print "1. Class defined"
-set x "test"
-print "2. Can set regular vars"
-set y new
-print "3. ERROR: Should not reach here"

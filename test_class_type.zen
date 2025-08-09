@@ -1,6 +1,0 @@
-class Animal
-    method speak
-        return "woof"
-
-print "Class type check"
-print typeof Animal

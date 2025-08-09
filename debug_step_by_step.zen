@@ -1,8 +1,0 @@
-print "Step 1"
-class Animal
-    method speak
-        return "woof"
-
-print "Step 2 - Class defined" 
-new Animal
-print "Step 3 - After new"

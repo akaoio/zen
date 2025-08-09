@@ -1,5 +1,0 @@
-set arr 1, 2, 3
-print "Array:"
-print arr
-print "Type of arr:"
-print typeof arr

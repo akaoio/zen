@@ -1,9 +1,0 @@
-print "=== Testing working features ==="
-print 42
-print "hello world"
-print true
-print false
-print null
-print 1, 2, 3
-print [10, 20, 30]
-print "a", "b", "c"

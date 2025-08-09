@@ -550,8 +550,55 @@ static char *value_to_string_internal(const Value *value, int depth)
         memory_free(item_strings);
         return result;
     }
-    case VALUE_OBJECT:
-        return memory_strdup("{}");  // Simplified object representation
+    case VALUE_OBJECT: {
+        if (!value->as.object || value->as.object->length == 0) {
+            return memory_strdup("{}");
+        }
+
+        // Calculate required buffer size
+        size_t buffer_size = 3;  // "{}"\0
+        for (size_t i = 0; i < value->as.object->length; i++) {
+            if (value->as.object->pairs[i].key) {
+                buffer_size += strlen(value->as.object->pairs[i].key) + 4;  // "key":
+            }
+            if (value->as.object->pairs[i].value) {
+                char *value_str = value_to_string(value->as.object->pairs[i].value);
+                if (value_str) {
+                    buffer_size += strlen(value_str) + 3;  // value + ", "
+                    memory_free(value_str);
+                }
+            }
+        }
+
+        char *result = memory_alloc(buffer_size);
+        if (!result)
+            return memory_strdup("{}");
+
+        strcpy(result, "{");
+        for (size_t i = 0; i < value->as.object->length; i++) {
+            if (i > 0)
+                strcat(result, ", ");
+
+            if (value->as.object->pairs[i].key) {
+                strcat(result, value->as.object->pairs[i].key);
+                strcat(result, ": ");
+            }
+
+            if (value->as.object->pairs[i].value) {
+                char *value_str = value_to_string(value->as.object->pairs[i].value);
+                if (value_str) {
+                    strcat(result, value_str);
+                    memory_free(value_str);
+                } else {
+                    strcat(result, "null");
+                }
+            } else {
+                strcat(result, "null");
+            }
+        }
+        strcat(result, "}");
+        return result;
+    }
     case VALUE_FUNCTION:
         return memory_strdup("<function>");
     case VALUE_ERROR:

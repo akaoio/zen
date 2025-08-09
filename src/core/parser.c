@@ -28,6 +28,12 @@ parser_T *parser_new(lexer_T *lexer)
     parser->lexer = lexer;
     parser->current_token = lexer_get_next_token(lexer);
     parser->prev_token = NULL;  // Initialize to NULL, not same as current_token
+
+    // Initialize context flags
+    parser->context.in_variable_assignment = false;
+    parser->context.in_method_body = false;
+    parser->context.in_function_call = false;
+
     parser->scope = scope_new();
     if (!parser->scope) {
         if (parser->current_token) {
@@ -284,100 +290,35 @@ AST_T *parser_parse_expr(parser_T *parser, scope_T *scope)
     // Parse comma expressions (lowest precedence)
     AST_T *left = parser_parse_ternary_expr(parser, scope);
 
-    // Check for comma-separated expressions
+    // Check for comma-separated expressions (array literals)
     if (parser->current_token->type == TOKEN_COMMA) {
-        // Determine if this is an object literal (identifiers) or array literal (values)
-        bool is_object_literal = false;
+        // Create array literal for comma-separated expressions
+        AST_T *array = ast_new(AST_ARRAY);
+        array->array_elements = memory_alloc(sizeof(AST_T *));
+        array->array_size = 1;
 
-        // Check if first element is a variable (identifier)
-        if (left->type == AST_VARIABLE) {
-            // Look ahead to see if all comma-separated elements are identifiers
-            // This determines object literal vs array literal context
-            is_object_literal = true;
+        // First element from left expression
+        array->array_elements[0] = left;
 
-            // Temporarily save parser state to look ahead
-            token_T *saved_token = parser->current_token;
-            unsigned int saved_i = parser->lexer->i;
+        size_t arr_size = 1;
 
-            // Check next elements after comma
-            while (parser->current_token->type == TOKEN_COMMA) {
-                parser_eat(parser, TOKEN_COMMA);
-                if (parser->current_token->type != TOKEN_ID) {
-                    is_object_literal = false;
-                    break;
-                }
-                parser_eat(parser, TOKEN_ID);
+        while (parser->current_token->type == TOKEN_COMMA) {
+            parser_eat(parser, TOKEN_COMMA);
+
+            // Parse next expression in array
+            AST_T *element = parser_parse_ternary_expr(parser, scope);
+            if (element) {
+                arr_size++;
+                array->array_elements =
+                    memory_realloc(array->array_elements, arr_size * sizeof(AST_T *));
+                array->array_elements[arr_size - 1] = element;
+                array->array_size = arr_size;
+            } else {
+                break;  // Invalid expression
             }
-
-            // Restore parser state
-            parser->current_token = saved_token;
-            parser->lexer->i = saved_i;
         }
 
-        if (is_object_literal) {
-            // Create object literal for identifier patterns like "name, age"
-            AST_T *object = ast_new(AST_OBJECT);
-            object->object_keys = memory_alloc(sizeof(char *));
-            object->object_values = memory_alloc(sizeof(AST_T *));
-            object->object_size = 1;
-
-            // First key from left expression
-            object->object_keys[0] = memory_strdup(left->variable_name);
-            object->object_values[0] = ast_new_variable(left->variable_name);
-
-            size_t obj_size = 1;
-
-            while (parser->current_token->type == TOKEN_COMMA) {
-                parser_eat(parser, TOKEN_COMMA);
-
-                if (parser->current_token->type == TOKEN_ID) {
-                    obj_size++;
-                    object->object_keys =
-                        memory_realloc(object->object_keys, obj_size * sizeof(char *));
-                    object->object_values =
-                        memory_realloc(object->object_values, obj_size * sizeof(AST_T *));
-
-                    char *key = memory_strdup(parser->current_token->value);
-                    object->object_keys[obj_size - 1] = key;
-                    object->object_values[obj_size - 1] = ast_new_variable(key);
-
-                    parser_eat(parser, TOKEN_ID);
-                    object->object_size = obj_size;
-                } else {
-                    break;  // Invalid comma expression
-                }
-            }
-
-            return object;
-        } else {
-            // Create array literal for value patterns like "1, 2, 3"
-            AST_T *array = ast_new(AST_ARRAY);
-            array->array_elements = memory_alloc(sizeof(AST_T *));
-            array->array_size = 1;
-
-            // First element from left expression
-            array->array_elements[0] = left;
-
-            size_t arr_size = 1;
-
-            while (parser->current_token->type == TOKEN_COMMA) {
-                parser_eat(parser, TOKEN_COMMA);
-
-                // Parse next expression in array
-                AST_T *element = parser_parse_ternary_expr(parser, scope);
-                if (element) {
-                    arr_size++;
-                    array->array_elements =
-                        memory_realloc(array->array_elements, arr_size * sizeof(AST_T *));
-                    array->array_elements[arr_size - 1] = element;
-                    array->array_size = arr_size;
-                } else {
-                    break;  // Invalid expression
-                }
-            }
-
-            return array;
-        }
+        return array;
     }
 
     return left;
@@ -435,7 +376,39 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
     char *var_name = memory_strdup(parser->current_token->value);
     parser_eat(parser, TOKEN_ID);
 
-    AST_T *value = parser_parse_expr(parser, scope);
+    // Set variable assignment context
+    parser->context.in_variable_assignment = true;
+
+    // Check if this is an object literal before parsing as a general expression
+    AST_T *value = NULL;
+
+    // Handle multiline expressions: if we encounter a newline followed by indented content,
+    // we need to parse the indented content as the value
+    if (parser->current_token->type == TOKEN_NEWLINE) {
+        parser_eat(parser, TOKEN_NEWLINE);
+        if (parser->current_token->type == TOKEN_INDENT) {
+            parser_eat(parser, TOKEN_INDENT);
+            // Parse the indented content as an expression
+            value = parser_parse_expr(parser, scope);
+            // Consume the DEDENT if present
+            if (parser->current_token->type == TOKEN_DEDENT) {
+                parser_eat(parser, TOKEN_DEDENT);
+            }
+        } else {
+            // No indented content after newline, this is an error or empty assignment
+            value = NULL;
+        }
+    } else if (parser_peek_for_object_literal(parser)) {
+        // Use new enhanced parser for object literals - creates AST_OBJECT instead of
+        // AST_FUNCTION_CALL
+        value = parser_parse_object_literal(parser, scope);
+    } else {
+        // Parse as general expression (numbers, strings, arrays, etc.)
+        value = parser_parse_expr(parser, scope);
+    }
+
+    // Clear variable assignment context
+    parser->context.in_variable_assignment = false;
 
     AST_T *var_def = ast_new_variable_definition(var_name, value);
     var_def->scope = scope;
@@ -443,7 +416,10 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
     // Free the duplicated string since ast_new_variable_definition makes its own copy
     memory_free(var_name);
 
-    scope_add_variable_definition(scope, var_def);
+    // NOTE: We do NOT add the variable to scope here anymore.
+    // The visitor will do this after evaluating the expression.
+    // This prevents issues with unevaluated expressions and scope corruption.
+    // scope_add_variable_definition(scope, var_def);
 
     return var_def;
 }
@@ -531,8 +507,10 @@ AST_T *parser_parse_function_definition(parser_T *parser, scope_T *scope)
     }
     func_def->scope = scope;
 
-    // Function will be added to scope during visitor execution
-    // Don't add it here to avoid double-addition
+    // CRITICAL FIX: Add function to scope during parsing for object literal disambiguation
+    // This allows parser_detect_object_literal to check user-defined functions
+    // The visitor will also add it, but scope_add_function_definition handles duplicates safely
+    scope_add_function_definition(scope, func_def);
 
     return func_def;
 }
@@ -687,7 +665,7 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
             array_access->property_name = memory_alloc(32);
             snprintf(array_access->property_name,
                      32,
-                     "[%ld]",
+                     "%ld",
                      (long)(index->type == AST_NUMBER ? index->number_value : 0));
             array_access->scope = scope;
             array_access->left = index;
@@ -716,8 +694,10 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
  */
 AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
 {
-    // Check if this looks like an object literal (key-value pairs)
-    if (parser_peek_for_object_literal(parser)) {
+    // Only check for object literals in variable assignment contexts
+    // Skip object literal detection in method bodies and function calls
+    if (parser->context.in_variable_assignment && !parser->context.in_method_body &&
+        !parser->context.in_function_call && parser_peek_for_object_literal(parser)) {
         return parser_parse_object(parser, scope);
     }
 
@@ -879,7 +859,7 @@ AST_T *parser_parse_array(parser_T *parser, scope_T *scope)
 
     while (parser->current_token->type != TOKEN_RBRACKET &&
            parser->current_token->type != TOKEN_EOF) {
-        AST_T *element = parser_parse_expr(parser, scope);
+        AST_T *element = parser_parse_ternary_expr(parser, scope);
 
         if (element) {
             element_count++;
@@ -999,10 +979,18 @@ AST_T *parser_parse_object(parser_T *parser, scope_T *scope)
     }
 
     AST_T *object = ast_new_object(keys, values, pair_count);
-    object->scope = scope;
+    if (object) {
+        object->scope = scope;
+    }
 
-    // Clean up keys array (ast_new_object copies the data)
+    // Clean up keys array and the individual key strings
+    // (ast_new_object copies the keys, so we need to free our copies)
     if (keys) {
+        for (size_t i = 0; i < pair_count; i++) {
+            if (keys[i]) {
+                memory_free(keys[i]);
+            }
+        }
         memory_free(keys);
     }
     if (values) {
@@ -1129,6 +1117,9 @@ AST_T *parser_parse_for_loop(parser_T *parser, scope_T *scope)
     AST_T *for_loop = ast_new_for_loop(iterator, iterable, body);
     for_loop->scope = scope;
 
+    // Free the duplicated iterator string since ast_new_for_loop makes its own copy
+    memory_free(iterator);
+
     return for_loop;
 }
 
@@ -1250,73 +1241,164 @@ int parser_is_binary_operator(int token_type)
 }
 
 /**
- * @brief Look ahead to determine if parsing an object literal
+ * @brief Enhanced detection algorithm for object literals in ZEN syntax
  * @param parser Parser instance
  * @return int 1 if object literal, 0 otherwise
+ * @note This function implements robust lookahead to identify ID VALUE [, ID VALUE]* patterns
+ * @note Ensures proper lexer state restoration and handles ZEN's brace-free object syntax
  */
-int parser_peek_for_object_literal(parser_T *parser)
+int parser_detect_object_literal(parser_T *parser)
 {
     if (!parser || !parser->lexer) {
         return 0;
     }
 
-    // Save current lexer state
+    // Save current lexer state for restoration
     size_t saved_current = parser->lexer->i;
     size_t saved_line = parser->lexer->line_number;
     size_t saved_column = parser->lexer->column_number;
 
-    // Look for pattern: ID followed by something that could be a value
-    // In ZEN object literals look like: key value, key2 value2
-    token_T *first_token = lexer_peek_token(parser->lexer, 0);
+    // Use current_token as the first token, then peek ahead for the rest
+    token_T *tokens[5] = {NULL};
+    int token_count = 0;
 
-    if (!first_token || first_token->type != TOKEN_ID) {
-        // Restore lexer state
-        parser->lexer->i = saved_current;
-        parser->lexer->line_number = saved_line;
-        parser->lexer->column_number = saved_column;
-        token_free(first_token);
-        return 0;
+    // First token is the current token
+    if (parser->current_token && parser->current_token->type != TOKEN_EOF) {
+        // Create a manual copy of current token instead of using token_copy
+        tokens[0] = memory_alloc(sizeof(token_T));
+        tokens[0]->type = parser->current_token->type;
+        tokens[0]->value =
+            parser->current_token->value ? memory_strdup(parser->current_token->value) : NULL;
+        token_count++;
+
+        // Peek ahead for additional tokens (starting from offset 0, which should be the next token)
+        for (int i = 1; i < 5; i++) {
+            token_T *peeked = lexer_peek_token(
+                parser->lexer, i - 1);  // offset i-1 because we already have current
+            if (!peeked || peeked->type == TOKEN_EOF) {
+                if (peeked)
+                    token_free(peeked);
+                break;
+            }
+            tokens[i] = peeked;
+            token_count++;
+        }
     }
 
-    // Look at second token (offset 1 from current position)
-    token_T *second_token = lexer_peek_token(parser->lexer, 1);
-
-    // Restore lexer state before analysis
+    // Restore lexer state immediately after collection
     parser->lexer->i = saved_current;
     parser->lexer->line_number = saved_line;
     parser->lexer->column_number = saved_column;
 
-    if (!second_token) {
-        token_free(first_token);
-        return 0;
-    }
+    // Collected tokens for analysis
 
-    // Check if second token could be a value in an object literal
-    // Valid patterns: ID value, ID "string", ID number, ID true/false/null, ID array, ID ID
-    // Also handle comma-separated keys: ID, ID (treated as object with key references)
+    // Analyze collected tokens for object literal patterns
     int is_object_literal = 0;
-    switch (second_token->type) {
-    case TOKEN_STRING:
-    case TOKEN_NUMBER:
-    case TOKEN_TRUE:
-    case TOKEN_FALSE:
-    case TOKEN_NULL:
-    case TOKEN_UNDECIDABLE:
-    case TOKEN_LBRACKET:  // Array as value
-    case TOKEN_ID:        // Another identifier as value
-        is_object_literal = 1;
-        break;
-    case TOKEN_COMMA:  // Comma-separated keys without values
-        is_object_literal = 1;
-        break;
-    default:
-        is_object_literal = 0;
-        break;
+
+    if (token_count >= 1 && tokens[0]->type == TOKEN_ID) {
+        // CRITICAL: Don't treat known function names as object literal keys
+        if (tokens[0]->value) {
+            // Check against known functions and builtins
+            if (strcmp(tokens[0]->value, "print") == 0 || strcmp(tokens[0]->value, "input") == 0 ||
+                strcmp(tokens[0]->value, "readFile") == 0 ||
+                strcmp(tokens[0]->value, "writeFile") == 0 ||
+                strcmp(tokens[0]->value, "appendFile") == 0 ||
+                strcmp(tokens[0]->value, "fileExists") == 0 ||
+                strcmp(tokens[0]->value, "length") == 0 || strcmp(tokens[0]->value, "upper") == 0 ||
+                strcmp(tokens[0]->value, "lower") == 0 || strcmp(tokens[0]->value, "trim") == 0 ||
+                strcmp(tokens[0]->value, "split") == 0 ||
+                strcmp(tokens[0]->value, "contains") == 0 ||
+                strcmp(tokens[0]->value, "replace") == 0) {
+                // This is a known builtin function - not an object literal
+                printf("DEBUG: token[0]='%s' is a known builtin function, rejecting\n",
+                       tokens[0]->value);
+                goto cleanup_and_return;
+            }
+
+            // CRITICAL FIX: Also check user-defined functions in scope
+            if (parser->scope && scope_get_function_definition(parser->scope, tokens[0]->value)) {
+                // This is a user-defined function - not an object literal
+                printf("DEBUG: token[0]='%s' is a user-defined function, rejecting\n",
+                       tokens[0]->value);
+                goto cleanup_and_return;
+            }
+        }
+
+        if (token_count >= 4) {
+            // Pattern: ID VALUE, ID VALUE (strong object literal indicator)
+            if ((tokens[1]->type == TOKEN_STRING || tokens[1]->type == TOKEN_NUMBER ||
+                 tokens[1]->type == TOKEN_TRUE || tokens[1]->type == TOKEN_FALSE ||
+                 tokens[1]->type == TOKEN_NULL || tokens[1]->type == TOKEN_UNDECIDABLE ||
+                 tokens[1]->type == TOKEN_LBRACKET || tokens[1]->type == TOKEN_ID) &&
+                tokens[2]->type == TOKEN_COMMA && tokens[3]->type == TOKEN_ID) {
+                is_object_literal = 1;
+            }
+        }
+
+        // Try single-pair pattern if multi-pair failed and we have at least 2 tokens
+        if (!is_object_literal && token_count >= 2) {
+            // Pattern: ID VALUE (potential object literal)
+            if (tokens[1]->type == TOKEN_STRING || tokens[1]->type == TOKEN_NUMBER ||
+                tokens[1]->type == TOKEN_TRUE || tokens[1]->type == TOKEN_FALSE ||
+                tokens[1]->type == TOKEN_NULL || tokens[1]->type == TOKEN_UNDECIDABLE ||
+                tokens[1]->type == TOKEN_LBRACKET) {
+                // CRITICAL FIX: For ID NUMBER patterns, be much more conservative
+                // This pattern commonly represents function calls like "test_func 42"
+                // Only treat as object literal if we have clear evidence (like comma, colon, etc.)
+                if (tokens[1]->type == TOKEN_NUMBER) {
+                    // For number values, require explicit object literal indicators
+                    // Don't auto-assume ID NUMBER is an object literal
+                    if (token_count >= 3 &&
+                        (tokens[2]->type == TOKEN_COMMA || tokens[2]->type == TOKEN_COLON)) {
+                        is_object_literal = 1;
+                    }
+                    // Otherwise, assume it's a function call with numeric argument
+                } else {
+                    // Check third token to ensure it's not a function call or binary operation
+                    if (token_count < 3 || (tokens[2]->type != TOKEN_LPAREN &&
+                                            !parser_is_binary_operator(tokens[2]->type))) {
+                        is_object_literal = 1;
+                    }
+                }
+            } else if (tokens[1]->type == TOKEN_ID) {
+                // ID ID pattern - could be object literal with identifier value
+                // Check for function call indicators
+                if (token_count < 3 ||
+                    (tokens[2]->type != TOKEN_LPAREN &&
+                     !parser_is_binary_operator(tokens[2]->type) && tokens[2]->type != TOKEN_DOT &&
+                     tokens[2]->type != TOKEN_LBRACKET)) {
+                    is_object_literal = 1;
+                }
+            } else if (tokens[1]->type == TOKEN_COMMA) {
+                // ID, pattern - comma-separated keys without values
+                is_object_literal = 1;
+            }
+        }
     }
 
-    token_free(first_token);
-    token_free(second_token);
+cleanup_and_return:
+
+    // Clean up all allocated tokens
+    for (int i = 0; i < token_count; i++) {
+        if (tokens[i]) {
+            token_free(tokens[i]);
+        }
+    }
+
     return is_object_literal;
+}
+
+/**
+ * @brief Look ahead to determine if parsing an object literal (LEGACY)
+ * @param parser Parser instance
+ * @return int 1 if object literal, 0 otherwise
+ * @deprecated This function is replaced by parser_detect_object_literal()
+ */
+int parser_peek_for_object_literal(parser_T *parser)
+{
+    // Legacy function - delegate to new enhanced detection
+    int result = parser_detect_object_literal(parser);
+    return result;
 }
 
 /**
@@ -1389,6 +1471,124 @@ int parser_peek_for_object_literal_strict(parser_T *parser)
     }
 
     return is_strict_object_literal;
+}
+
+/**
+ * @brief Parse ZEN object literal creating AST_OBJECT nodes instead of AST_FUNCTION_CALL
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* Object literal AST node (AST_OBJECT type)
+ */
+AST_T *parser_parse_object_literal(parser_T *parser, scope_T *scope)
+{
+    char **keys = NULL;
+    AST_T **values = NULL;
+    size_t pair_count = 0;
+    size_t max_pairs = 100;  // Safety limit to prevent infinite loops
+
+    while (parser->current_token->type == TOKEN_ID && pair_count < max_pairs) {
+        char *key = memory_strdup(parser->current_token->value);
+        parser_eat(parser, TOKEN_ID);
+
+        // Check if we have a value for this key
+        if (parser->current_token->type == TOKEN_EOF ||
+            parser->current_token->type == TOKEN_NEWLINE ||
+            parser->current_token->type == TOKEN_DEDENT ||
+            parser->current_token->type == TOKEN_COMMA) {
+            // No value for this key OR comma followed by another key
+            // For "name, age" case, treat both as keys without values
+            AST_T *key_value = ast_new_variable(key);  // Use key as variable reference
+
+            pair_count++;
+            keys = memory_realloc(keys, pair_count * sizeof(char *));
+            values = memory_realloc(values, pair_count * sizeof(AST_T *));
+
+            keys[pair_count - 1] = key;  // Don't free key here, it's used in the object
+            values[pair_count - 1] = key_value;
+
+            // Handle comma continuation
+            if (parser->current_token->type == TOKEN_COMMA) {
+                parser_eat(parser, TOKEN_COMMA);
+                // After comma, we must have another key or end
+                if (parser->current_token->type != TOKEN_ID) {
+                    break;  // No more keys after comma
+                }
+                continue;  // Continue to next key
+            } else {
+                break;  // End of object
+            }
+        }
+
+        // Parse value without triggering object literal detection
+        AST_T *value = NULL;
+        switch (parser->current_token->type) {
+        case TOKEN_STRING:
+            value = parser_parse_string(parser, scope);
+            break;
+        case TOKEN_NUMBER:
+            value = parser_parse_number(parser, scope);
+            break;
+        case TOKEN_TRUE:
+        case TOKEN_FALSE:
+            value = parser_parse_boolean(parser, scope);
+            break;
+        case TOKEN_NULL:
+            value = parser_parse_null(parser, scope);
+            break;
+        case TOKEN_UNDECIDABLE:
+            value = parser_parse_undecidable(parser, scope);
+            break;
+        case TOKEN_LBRACKET:
+            value = parser_parse_array(parser, scope);
+            break;
+        case TOKEN_ID:
+            // For object values, treat ID as variable reference only
+            value = parser_parse_variable(parser, scope);
+            break;
+        default:
+            value = ast_new(AST_NOOP);
+            break;
+        }
+
+        pair_count++;
+        keys = memory_realloc(keys, pair_count * sizeof(char *));
+        values = memory_realloc(values, pair_count * sizeof(AST_T *));
+
+        keys[pair_count - 1] = key;
+        values[pair_count - 1] = value;
+
+        // Check for continuation
+        if (parser->current_token->type == TOKEN_COMMA) {
+            parser_eat(parser, TOKEN_COMMA);
+            // After comma, we must have another key-value pair or end
+            if (parser->current_token->type != TOKEN_ID) {
+                break;  // No more pairs after comma
+            }
+        } else {
+            break;  // No comma means end of object
+        }
+    }
+
+    AST_T *object = ast_new_object(keys, values, pair_count);
+    if (object) {
+        object->scope = scope;
+    }
+
+    // Clean up keys array and the individual key strings
+    // (ast_new_object copies the keys, so we need to free our copies)
+    if (keys) {
+        for (size_t i = 0; i < pair_count; i++) {
+            if (keys[i]) {
+                memory_free(keys[i]);
+            }
+        }
+        memory_free(keys);
+    }
+    if (values) {
+        memory_free(values);
+    }
+
+    return object;
 }
 
 /**
@@ -1903,10 +2103,19 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
     char *class_name = memory_strdup(parser->current_token->value);
     parser_eat(parser, TOKEN_ID);
 
-    // Check for optional inheritance (extends keyword in some languages, but ZEN might be
-    // different)
+    // Check for optional inheritance with extends keyword
     char *parent_class = NULL;
-    // For now, we'll skip inheritance parsing and just handle basic classes
+    if (parser->current_token && parser->current_token->type == TOKEN_EXTENDS) {
+        parser_eat(parser, TOKEN_EXTENDS);
+        if (parser->current_token && parser->current_token->type == TOKEN_ID) {
+            parent_class = memory_strdup(parser->current_token->value);
+            parser_eat(parser, TOKEN_ID);
+        } else {
+            // Error: expected class name after extends
+            memory_free(class_name);
+            return NULL;
+        }
+    }
 
     // Parse methods - expect newline and indented method definitions
     AST_T **methods = NULL;
@@ -2076,8 +2285,14 @@ AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope)
         parser_eat(parser, TOKEN_INDENT);
     }
 
+    // Set method body context
+    parser->context.in_method_body = true;
+
     // Parse method body (indented block)
     AST_T *body = parser_parse_statements(parser, scope);
+
+    // Clear method body context
+    parser->context.in_method_body = false;
 
     // Handle end of method body
     if (parser->current_token && parser->current_token->type == TOKEN_DEDENT) {

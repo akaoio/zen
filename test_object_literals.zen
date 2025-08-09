@@ -1,3 +1,0 @@
-set person name "Bob", age 25
-print "Person object:"
-print person

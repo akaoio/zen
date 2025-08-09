@@ -13,7 +13,7 @@
  */
 AST_T *ast_new(int type)
 {
-    // Temporarily disable pool to debug infinite loop issue
+    // Temporarily disable pool due to corruption issues
     AST_T *ast = memory_alloc(sizeof(AST_T));
     if (!ast) {
         return NULL;  // Allocation failed
@@ -314,6 +314,12 @@ void ast_free(AST_T *ast)
     if (!ast)
         return;
 
+    // Check for use-after-free protection: if the node's type field has been corrupted,
+    // it likely means the memory was already freed. This prevents double-free crashes.
+    if (ast->type < 0 || ast->type > AST_MATHEMATICAL_FUNCTION) {
+        return;  // Node appears to be already freed or corrupted
+    }
+
     // Free string values
     if (ast->string_value)
         memory_free(ast->string_value);
@@ -465,7 +471,10 @@ void ast_free(AST_T *ast)
         memory_free(ast->lambda_args);
     }
 
-    // Temporarily using direct free to debug infinite loop issue
+    // Mark as freed to prevent double-free (set type to invalid value)
+    ast->type = -1;
+
+    // Free the AST node itself
     memory_free(ast);
 }
 
@@ -903,4 +912,372 @@ AST_T *ast_new_class_definition(const char *class_name,
     }
 
     return ast;
+}
+
+/* ============================================================================
+ * CRITICAL: AST COPY WITH CYCLE DETECTION
+ * ============================================================================ */
+
+// Maximum recursion depth to prevent stack overflow
+#define AST_COPY_MAX_DEPTH 1000
+
+// Structure for tracking visited nodes during copy
+typedef struct {
+    AST_T **visited_original;  // Original nodes we've seen
+    AST_T **visited_copies;    // Corresponding copies
+    size_t visited_count;      // Number of entries
+    size_t visited_capacity;   // Allocated capacity
+} VisitedNodes;
+
+/**
+ * @brief Initialize visited nodes tracker
+ * @param visited Pointer to VisitedNodes structure
+ * @return true on success, false on allocation failure
+ */
+static bool visited_nodes_init(VisitedNodes *visited)
+{
+    if (!visited)
+        return false;
+
+    visited->visited_capacity = 64;  // Start with reasonable size
+    visited->visited_original = memory_alloc(visited->visited_capacity * sizeof(AST_T *));
+    visited->visited_copies = memory_alloc(visited->visited_capacity * sizeof(AST_T *));
+    visited->visited_count = 0;
+
+    if (!visited->visited_original || !visited->visited_copies) {
+        if (visited->visited_original)
+            memory_free(visited->visited_original);
+        if (visited->visited_copies)
+            memory_free(visited->visited_copies);
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Clean up visited nodes tracker
+ * @param visited Pointer to VisitedNodes structure
+ */
+static void visited_nodes_cleanup(VisitedNodes *visited)
+{
+    if (!visited)
+        return;
+
+    if (visited->visited_original)
+        memory_free(visited->visited_original);
+    if (visited->visited_copies)
+        memory_free(visited->visited_copies);
+
+    visited->visited_original = NULL;
+    visited->visited_copies = NULL;
+    visited->visited_count = 0;
+    visited->visited_capacity = 0;
+}
+
+/**
+ * @brief Check if we've already seen this node
+ * @param visited Visited nodes tracker
+ * @param original Original node to check
+ * @return Copy of node if found, NULL otherwise
+ */
+static AST_T *visited_nodes_find(const VisitedNodes *visited, const AST_T *original)
+{
+    if (!visited || !original)
+        return NULL;
+
+    for (size_t i = 0; i < visited->visited_count; i++) {
+        if (visited->visited_original[i] == original) {
+            return visited->visited_copies[i];
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Add a node pair to the visited tracker
+ * @param visited Visited nodes tracker
+ * @param original Original node
+ * @param copy Copy node
+ * @return true on success, false on failure
+ */
+static bool visited_nodes_add(VisitedNodes *visited, AST_T *original, AST_T *copy)
+{
+    if (!visited || !original || !copy)
+        return false;
+
+    // Expand capacity if needed
+    if (visited->visited_count >= visited->visited_capacity) {
+        size_t new_capacity = visited->visited_capacity * 2;
+        AST_T **new_original =
+            memory_realloc(visited->visited_original, new_capacity * sizeof(AST_T *));
+        AST_T **new_copies =
+            memory_realloc(visited->visited_copies, new_capacity * sizeof(AST_T *));
+
+        if (!new_original || !new_copies) {
+            return false;
+        }
+
+        visited->visited_original = new_original;
+        visited->visited_copies = new_copies;
+        visited->visited_capacity = new_capacity;
+    }
+
+    visited->visited_original[visited->visited_count] = original;
+    visited->visited_copies[visited->visited_count] = copy;
+    visited->visited_count++;
+
+    return true;
+}
+
+/**
+ * @brief Internal recursive AST copy function with cycle detection
+ * @param original Original AST node to copy
+ * @param visited Visited nodes tracker for cycle detection
+ * @param depth Current recursion depth
+ * @return Copied AST node or NULL on failure
+ */
+static AST_T *ast_copy_internal(AST_T *original, VisitedNodes *visited, int depth)
+{
+    if (!original)
+        return NULL;
+
+    // Check recursion depth limit
+    if (depth > AST_COPY_MAX_DEPTH) {
+        fprintf(stderr,
+                "ERROR: AST copy recursion depth exceeded %d (infinite recursion)\n",
+                AST_COPY_MAX_DEPTH);
+        return NULL;
+    }
+
+    // Check if we've already copied this node (cycle detection)
+    AST_T *existing_copy = visited_nodes_find(visited, original);
+    if (existing_copy) {
+        // We've seen this node before - return the existing copy to break cycle
+        return existing_copy;
+    }
+
+    // Create new node of the same type
+    AST_T *copy = ast_new(original->type);
+    if (!copy)
+        return NULL;
+
+    // Add to visited nodes BEFORE recursing to handle self-references
+    if (!visited_nodes_add(visited, original, copy)) {
+        ast_free(copy);
+        return NULL;
+    }
+
+    // Copy simple fields first
+    copy->boolean_value = original->boolean_value;
+    copy->number_value = original->number_value;
+    copy->operator_type = original->operator_type;
+
+    // Copy string fields
+    if (original->string_value) {
+        copy->string_value = memory_strdup(original->string_value);
+    }
+    if (original->variable_definition_variable_name) {
+        copy->variable_definition_variable_name =
+            memory_strdup(original->variable_definition_variable_name);
+    }
+    if (original->function_definition_name) {
+        copy->function_definition_name = memory_strdup(original->function_definition_name);
+    }
+    if (original->variable_name) {
+        copy->variable_name = memory_strdup(original->variable_name);
+    }
+    if (original->function_call_name) {
+        copy->function_call_name = memory_strdup(original->function_call_name);
+    }
+    if (original->iterator_variable) {
+        copy->iterator_variable = memory_strdup(original->iterator_variable);
+    }
+    if (original->class_name) {
+        copy->class_name = memory_strdup(original->class_name);
+    }
+    if (original->parent_class) {
+        copy->parent_class = memory_strdup(original->parent_class);
+    }
+    if (original->new_class_name) {
+        copy->new_class_name = memory_strdup(original->new_class_name);
+    }
+    if (original->property_name) {
+        copy->property_name = memory_strdup(original->property_name);
+    }
+    if (original->import_path) {
+        copy->import_path = memory_strdup(original->import_path);
+    }
+    if (original->exception_variable) {
+        copy->exception_variable = memory_strdup(original->exception_variable);
+    }
+
+    // Copy single AST node fields recursively
+    copy->variable_definition_value =
+        ast_copy_internal(original->variable_definition_value, visited, depth + 1);
+    copy->function_definition_body =
+        ast_copy_internal(original->function_definition_body, visited, depth + 1);
+    copy->left = ast_copy_internal(original->left, visited, depth + 1);
+    copy->right = ast_copy_internal(original->right, visited, depth + 1);
+    copy->operand = ast_copy_internal(original->operand, visited, depth + 1);
+    copy->condition = ast_copy_internal(original->condition, visited, depth + 1);
+    copy->then_branch = ast_copy_internal(original->then_branch, visited, depth + 1);
+    copy->else_branch = ast_copy_internal(original->else_branch, visited, depth + 1);
+    copy->loop_condition = ast_copy_internal(original->loop_condition, visited, depth + 1);
+    copy->loop_body = ast_copy_internal(original->loop_body, visited, depth + 1);
+    copy->iterable = ast_copy_internal(original->iterable, visited, depth + 1);
+    copy->for_body = ast_copy_internal(original->for_body, visited, depth + 1);
+    copy->return_value = ast_copy_internal(original->return_value, visited, depth + 1);
+    copy->object = ast_copy_internal(original->object, visited, depth + 1);
+    copy->try_block = ast_copy_internal(original->try_block, visited, depth + 1);
+    copy->catch_block = ast_copy_internal(original->catch_block, visited, depth + 1);
+    copy->exception_value = ast_copy_internal(original->exception_value, visited, depth + 1);
+    copy->lambda_body = ast_copy_internal(original->lambda_body, visited, depth + 1);
+
+    // Copy arrays of AST nodes
+    if (original->function_definition_args && original->function_definition_args_size > 0) {
+        copy->function_definition_args_size = original->function_definition_args_size;
+        copy->function_definition_args =
+            memory_alloc(copy->function_definition_args_size * sizeof(AST_T *));
+        if (copy->function_definition_args) {
+            for (size_t i = 0; i < copy->function_definition_args_size; i++) {
+                copy->function_definition_args[i] =
+                    ast_copy_internal(original->function_definition_args[i], visited, depth + 1);
+            }
+        }
+    }
+
+    if (original->function_call_arguments && original->function_call_arguments_size > 0) {
+        copy->function_call_arguments_size = original->function_call_arguments_size;
+        copy->function_call_arguments =
+            memory_alloc(copy->function_call_arguments_size * sizeof(AST_T *));
+        if (copy->function_call_arguments) {
+            for (size_t i = 0; i < copy->function_call_arguments_size; i++) {
+                copy->function_call_arguments[i] =
+                    ast_copy_internal(original->function_call_arguments[i], visited, depth + 1);
+            }
+        }
+    }
+
+    if (original->new_arguments && original->new_arguments_size > 0) {
+        copy->new_arguments_size = original->new_arguments_size;
+        copy->new_arguments = memory_alloc(copy->new_arguments_size * sizeof(AST_T *));
+        if (copy->new_arguments) {
+            for (size_t i = 0; i < copy->new_arguments_size; i++) {
+                copy->new_arguments[i] =
+                    ast_copy_internal(original->new_arguments[i], visited, depth + 1);
+            }
+        }
+    }
+
+    if (original->array_elements && original->array_size > 0) {
+        copy->array_size = original->array_size;
+        copy->array_elements = memory_alloc(copy->array_size * sizeof(AST_T *));
+        if (copy->array_elements) {
+            for (size_t i = 0; i < copy->array_size; i++) {
+                copy->array_elements[i] =
+                    ast_copy_internal(original->array_elements[i], visited, depth + 1);
+            }
+        }
+    }
+
+    // Copy object keys and values
+    if (original->object_keys && original->object_values && original->object_size > 0) {
+        copy->object_size = original->object_size;
+        copy->object_keys = memory_alloc(copy->object_size * sizeof(char *));
+        copy->object_values = memory_alloc(copy->object_size * sizeof(AST_T *));
+
+        if (copy->object_keys && copy->object_values) {
+            for (size_t i = 0; i < copy->object_size; i++) {
+                copy->object_keys[i] =
+                    original->object_keys[i] ? memory_strdup(original->object_keys[i]) : NULL;
+                copy->object_values[i] =
+                    ast_copy_internal(original->object_values[i], visited, depth + 1);
+            }
+        }
+    }
+
+    if (original->compound_statements && original->compound_size > 0) {
+        copy->compound_size = original->compound_size;
+        copy->compound_statements = memory_alloc(copy->compound_size * sizeof(AST_T *));
+        if (copy->compound_statements) {
+            for (size_t i = 0; i < copy->compound_size; i++) {
+                copy->compound_statements[i] =
+                    ast_copy_internal(original->compound_statements[i], visited, depth + 1);
+            }
+        }
+    }
+
+    if (original->class_methods && original->class_methods_size > 0) {
+        copy->class_methods_size = original->class_methods_size;
+        copy->class_methods = memory_alloc(copy->class_methods_size * sizeof(AST_T *));
+        if (copy->class_methods) {
+            for (size_t i = 0; i < copy->class_methods_size; i++) {
+                copy->class_methods[i] =
+                    ast_copy_internal(original->class_methods[i], visited, depth + 1);
+            }
+        }
+    }
+
+    if (original->lambda_args && original->lambda_args_size > 0) {
+        copy->lambda_args_size = original->lambda_args_size;
+        copy->lambda_args = memory_alloc(copy->lambda_args_size * sizeof(AST_T *));
+        if (copy->lambda_args) {
+            for (size_t i = 0; i < copy->lambda_args_size; i++) {
+                copy->lambda_args[i] =
+                    ast_copy_internal(original->lambda_args[i], visited, depth + 1);
+            }
+        }
+    }
+
+    // Copy import names array
+    if (original->import_names && original->import_names_size > 0) {
+        copy->import_names_size = original->import_names_size;
+        copy->import_names = memory_alloc(copy->import_names_size * sizeof(char *));
+        if (copy->import_names) {
+            for (size_t i = 0; i < copy->import_names_size; i++) {
+                copy->import_names[i] =
+                    original->import_names[i] ? memory_strdup(original->import_names[i]) : NULL;
+            }
+        }
+    }
+
+    // Note: scope field is intentionally NOT copied to avoid circular references
+    // The copy will get a new scope when needed during evaluation
+
+    return copy;
+}
+
+/**
+ * @brief Create a deep copy of an AST node with cycle detection
+ * @param original Original AST node to copy
+ * @return Deep copy of the AST node, or NULL on failure/infinite recursion
+ *
+ * This function performs a deep copy of an AST tree while detecting and handling
+ * circular references that could cause infinite recursion. It uses a visited
+ * nodes tracker to identify cycles and returns shared references for already
+ * visited nodes, effectively converting circular structures into DAGs.
+ *
+ * Key features:
+ * - Detects infinite recursion and circular references
+ * - Limits recursion depth to prevent stack overflow
+ * - Memory-safe with proper cleanup on failure
+ * - Handles all AST node types comprehensively
+ */
+AST_T *ast_copy(AST_T *original)
+{
+    if (!original)
+        return NULL;
+
+    VisitedNodes visited;
+    if (!visited_nodes_init(&visited)) {
+        return NULL;
+    }
+
+    AST_T *result = ast_copy_internal(original, &visited, 0);
+
+    visited_nodes_cleanup(&visited);
+
+    return result;
 }

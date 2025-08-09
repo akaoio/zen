@@ -1,6 +1,7 @@
 #ifndef VISITOR_H
 #define VISITOR_H
 #include "zen/core/ast.h"
+#include "zen/core/runtime_value.h"
 #include "zen/types/value.h"
 
 #include <stdbool.h>
@@ -96,7 +97,7 @@ void visitor_free(visitor_T *visitor);
  * @param node AST node to visit
  * @return Result of evaluation
  */
-AST_T *visitor_visit(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Visit variable definition node
@@ -104,7 +105,7 @@ AST_T *visitor_visit(visitor_T *visitor, AST_T *node);
  * @param node Variable definition AST node
  * @return The defined variable value
  */
-AST_T *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Visit function definition node
@@ -112,7 +113,7 @@ AST_T *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node);
  * @param node Function definition AST node
  * @return The function definition node
  */
-AST_T *visitor_visit_function_definition(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_function_definition(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Visit variable node
@@ -120,7 +121,7 @@ AST_T *visitor_visit_function_definition(visitor_T *visitor, AST_T *node);
  * @param node Variable AST node
  * @return Variable value or NULL
  */
-AST_T *visitor_visit_variable(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_variable(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Visit function call node
@@ -128,7 +129,7 @@ AST_T *visitor_visit_variable(visitor_T *visitor, AST_T *node);
  * @param node Function call AST node
  * @return Result of function call
  */
-AST_T *visitor_visit_function_call(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Visit string node
@@ -136,7 +137,7 @@ AST_T *visitor_visit_function_call(visitor_T *visitor, AST_T *node);
  * @param node String AST node
  * @return The string node as-is
  */
-AST_T *visitor_visit_string(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_string(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Visit compound node (list of statements)
@@ -144,7 +145,7 @@ AST_T *visitor_visit_string(visitor_T *visitor, AST_T *node);
  * @param node Compound AST node
  * @return Result of last statement or NOOP
  */
-AST_T *visitor_visit_compound(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node);
 
 // Advanced runtime optimization functions
 
@@ -225,17 +226,17 @@ bool visitor_optimize_hot_function(visitor_T *visitor, const char *function_name
  * @brief Execute import statement
  * @param visitor Visitor instance
  * @param node Import AST node
- * @return AST_T* Result of import execution
+ * @return RuntimeValue* Result of import execution
  */
-AST_T *visitor_visit_import(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Execute export statement
  * @param visitor Visitor instance
  * @param node Export AST node
- * @return AST_T* Result of export execution
+ * @return RuntimeValue* Result of export execution
  */
-AST_T *visitor_visit_export(visitor_T *visitor, AST_T *node);
+RuntimeValue *visitor_visit_export(visitor_T *visitor, AST_T *node);
 
 /**
  * @brief Convert Value to AST node (helper function)

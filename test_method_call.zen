@@ -1,7 +1,0 @@
-class Test
-    method greet
-        return "Hello"
-
-set t new Test
-print "Instance created"
-print t.greet

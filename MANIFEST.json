@@ -622,10 +622,31 @@
           "isStatic": false
         },
         {
+          "name": "parser_peek_token_type",
+          "signature": "int parser_peek_token_type(parser_T *parser, int offset)",
+          "description": "Peek at token type at given offset without consuming tokens",
+          "line": 154,
+          "isStatic": false
+        },
+        {
           "name": "parser_peek_for_object_literal",
           "signature": "int parser_peek_for_object_literal(parser_T *parser)",
-          "description": "Auto-generated: parser_peek_for_object_literal function",
+          "description": "Legacy object literal detection - to be replaced by parser_detect_object_literal",
           "line": 1200,
+          "isStatic": false
+        },
+        {
+          "name": "parser_detect_object_literal",
+          "signature": "int parser_detect_object_literal(parser_T *parser)",
+          "description": "Enhanced object literal detection for ZEN syntax patterns",
+          "line": 0,
+          "isStatic": false
+        },
+        {
+          "name": "parser_parse_object_literal",
+          "signature": "AST_T *parser_parse_object_literal(parser_T *parser, scope_T *scope)",
+          "description": "Parse ZEN object literal creating AST_OBJECT nodes instead of AST_FUNCTION_CALL",
+          "line": 0,
           "isStatic": false
         },
         {

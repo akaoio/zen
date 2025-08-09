@@ -1,5 +1,0 @@
-print "Testing new handling"
-print "Function name: new"
-print "First arg: Animal"
-
-new Animal "Fluffy"

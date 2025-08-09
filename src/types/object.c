@@ -11,6 +11,7 @@
 #include "zen/types/value.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -122,9 +123,11 @@ Value *object_get(Value *object, const char *key)
     }
 
     int index = object_find_key_index(zen_object, key);
+
     if (index >= 0) {
         // Return value with incremented reference count
-        return value_ref(zen_object->pairs[index].value);
+        Value *result = value_ref(zen_object->pairs[index].value);
+        return result;
     }
 
     return NULL;  // Key not found
