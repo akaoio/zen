@@ -1,0 +1,35 @@
+print "=== Testing break in for loop ==="
+for i in 1, 2, 3, 4, 5
+    if i = 3
+        break
+    print "i = " + i
+
+print "\n=== Testing continue in for loop ==="
+for j in 1, 2, 3, 4, 5
+    if j = 3
+        continue
+    print "j = " + j
+
+print "\n=== Testing break in while loop ==="
+set m 0
+while m < 10
+    set m m + 1
+    if m = 5
+        break
+    print "m = " + m
+
+print "\n=== Testing continue in while loop ==="
+set n 0
+while n < 5
+    set n n + 1
+    if n = 3
+        continue
+    print "n = " + n
+
+print "\n=== Testing nested loops with break ==="
+for x in 1, 2, 3
+    print "Outer x = " + x
+    for y in 1, 2, 3
+        if y = 2
+            break
+        print "  Inner y = " + y

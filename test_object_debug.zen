@@ -1,2 +1,3 @@
-set obj key "value"
-print obj.key
+set p { name "Alice" }
+print "Object created"
+print p

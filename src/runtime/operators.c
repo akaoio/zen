@@ -26,16 +26,16 @@
 #include <string.h>
 
 #include "../include/zen/core/memory.h"
-#include "../include/zen/types/value.h"
+#include "../include/zen/core/runtime_value.h"
 
 /* Forward declarations for helper functions */
-static Value *create_error(const char *message);
-static bool to_number(const Value *value, double *result);
+static RuntimeValue *create_error(const char *message);
+static bool to_number(const RuntimeValue *value, double *result);
 static char *concat_strings(const char *a, const char *b);
-static bool is_truthy(const Value *value);
-static int compare_values(const Value *a, const Value *b);
-static int value_to_three_valued(const Value *value);
-static Value *three_valued_to_value(int three_val);
+static bool is_truthy(const RuntimeValue *value);
+static int compare_values(const RuntimeValue *a, const RuntimeValue *b);
+static int value_to_three_valued(const RuntimeValue *value);
+static RuntimeValue *three_valued_to_value(int three_val);
 
 /**
  * @brief Addition operator
@@ -43,16 +43,16 @@ static Value *three_valued_to_value(int three_val);
  * @param b Right operand value
  * @return Result of addition operation or error value
  */
-Value *op_add(Value *a, Value *b)
+RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in addition");
     }
 
     /* String concatenation has highest priority */
-    if (a->type == VALUE_STRING || b->type == VALUE_STRING) {
-        char *a_str = value_to_string(a);
-        char *b_str = value_to_string(b);
+    if (a->type == RV_STRING || b->type == RV_STRING) {
+        char *a_str = rv_to_string(a);
+        char *b_str = rv_to_string(b);
 
         if (!a_str || !b_str) {
             memory_free(a_str);
@@ -68,7 +68,7 @@ Value *op_add(Value *a, Value *b)
             return create_error("String concatenation failed");
         }
 
-        Value *str_val = value_new_string(result);
+        RuntimeValue *str_val = rv_new_string(result);
         memory_free(result);
         return str_val;
     }
@@ -81,7 +81,7 @@ Value *op_add(Value *a, Value *b)
 
     // Check for NaN or infinity in operands
     if (isnan(a_num) || isnan(b_num)) {
-        return value_new_number(NAN);
+        return rv_new_number(NAN);
     }
 
     // Perform addition with overflow detection
@@ -92,7 +92,7 @@ Value *op_add(Value *a, Value *b)
         return create_error("Numeric overflow in addition");
     }
 
-    return value_new_number(result);
+    return rv_new_number(result);
 }
 
 /**
@@ -101,7 +101,7 @@ Value *op_add(Value *a, Value *b)
  * @param b Right operand value
  * @return Result of subtraction operation or error value
  */
-Value *op_subtract(Value *a, Value *b)
+RuntimeValue *op_subtract(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in subtraction");
@@ -112,7 +112,7 @@ Value *op_subtract(Value *a, Value *b)
         return create_error("Cannot convert operands to numbers for subtraction");
     }
 
-    return value_new_number(a_num - b_num);
+    return rv_new_number(a_num - b_num);
 }
 
 /**
@@ -121,7 +121,7 @@ Value *op_subtract(Value *a, Value *b)
  * @param b Right operand value
  * @return Result of multiplication operation or error value
  */
-Value *op_multiply(Value *a, Value *b)
+RuntimeValue *op_multiply(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in multiplication");
@@ -134,12 +134,12 @@ Value *op_multiply(Value *a, Value *b)
 
     // Handle NaN cases
     if (isnan(a_num) || isnan(b_num)) {
-        return value_new_number(NAN);
+        return rv_new_number(NAN);
     }
 
     // Handle zero multiplication optimization
     if (a_num == 0.0 || b_num == 0.0) {
-        return value_new_number(0.0);
+        return rv_new_number(0.0);
     }
 
     double result = a_num * b_num;
@@ -149,7 +149,7 @@ Value *op_multiply(Value *a, Value *b)
         return create_error("Numeric overflow in multiplication");
     }
 
-    return value_new_number(result);
+    return rv_new_number(result);
 }
 
 /**
@@ -158,7 +158,7 @@ Value *op_multiply(Value *a, Value *b)
  * @param b Right operand value (divisor)
  * @return Result of division operation or error value
  */
-Value *op_divide(Value *a, Value *b)
+RuntimeValue *op_divide(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in division");
@@ -172,16 +172,16 @@ Value *op_divide(Value *a, Value *b)
     if (b_num == 0.0) {
         // Return infinity for division by zero (mathematical standard)
         if (a_num > 0.0) {
-            return value_new_number(INFINITY);
+            return rv_new_number(INFINITY);
         } else if (a_num < 0.0) {
-            return value_new_number(-INFINITY);
+            return rv_new_number(-INFINITY);
         } else {
             // 0/0 case
-            return value_new_number(NAN);
+            return rv_new_number(NAN);
         }
     }
 
-    return value_new_number(a_num / b_num);
+    return rv_new_number(a_num / b_num);
 }
 
 /**
@@ -190,7 +190,7 @@ Value *op_divide(Value *a, Value *b)
  * @param b Right operand value (divisor)
  * @return Result of modulo operation or error value
  */
-Value *op_modulo(Value *a, Value *b)
+RuntimeValue *op_modulo(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in modulo");
@@ -205,7 +205,7 @@ Value *op_modulo(Value *a, Value *b)
         return create_error("Modulo by zero");
     }
 
-    return value_new_number(fmod(a_num, b_num));
+    return rv_new_number(fmod(a_num, b_num));
 }
 
 /**
@@ -214,13 +214,13 @@ Value *op_modulo(Value *a, Value *b)
  * @param b Right operand value
  * @return Boolean value indicating equality or error value
  */
-Value *op_equals(Value *a, Value *b)
+RuntimeValue *op_equals(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in equality comparison");
     }
 
-    return value_new_boolean(value_equals(a, b));
+    return rv_new_boolean(rv_equals(a, b));
 }
 
 /**
@@ -229,13 +229,13 @@ Value *op_equals(Value *a, Value *b)
  * @param b Right operand value
  * @return Boolean value indicating inequality or error value
  */
-Value *op_not_equals(Value *a, Value *b)
+RuntimeValue *op_not_equals(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in inequality comparison");
     }
 
-    return value_new_boolean(!value_equals(a, b));
+    return rv_new_boolean(!rv_equals(a, b));
 }
 
 /**
@@ -244,7 +244,7 @@ Value *op_not_equals(Value *a, Value *b)
  * @param b Right operand value
  * @return Boolean value indicating if a < b or error value
  */
-Value *op_less_than(Value *a, Value *b)
+RuntimeValue *op_less_than(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in less than comparison");
@@ -255,7 +255,7 @@ Value *op_less_than(Value *a, Value *b)
         return create_error("Cannot compare values of incompatible types");
     }
 
-    return value_new_boolean(cmp < 0);
+    return rv_new_boolean(cmp < 0);
 }
 
 /**
@@ -264,7 +264,7 @@ Value *op_less_than(Value *a, Value *b)
  * @param b Right operand value
  * @return Boolean value indicating if a > b or error value
  */
-Value *op_greater_than(Value *a, Value *b)
+RuntimeValue *op_greater_than(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in greater than comparison");
@@ -275,7 +275,7 @@ Value *op_greater_than(Value *a, Value *b)
         return create_error("Cannot compare values of incompatible types");
     }
 
-    return value_new_boolean(cmp > 0);
+    return rv_new_boolean(cmp > 0);
 }
 
 /**
@@ -284,24 +284,24 @@ Value *op_greater_than(Value *a, Value *b)
  * @param b Right operand value
  * @return Result of logical AND operation or error value
  */
-Value *op_logical_and(Value *a, Value *b)
+RuntimeValue *op_logical_and(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in logical AND");
     }
 
     /* Undecidable logic: undecidable AND anything = undecidable */
-    if (a->type == VALUE_UNDECIDABLE || b->type == VALUE_UNDECIDABLE) {
-        return value_new_undecidable();
+    if (a->type == RV_NULL || b->type == RV_NULL) {
+        return rv_new_null();
     }
 
     /* Short-circuit evaluation: if a is falsy, return a */
     if (!is_truthy(a)) {
-        return value_ref(a);
+        return rv_ref(a);
     }
 
     /* Otherwise return b */
-    return value_ref(b);
+    return rv_ref(b);
 }
 
 /**
@@ -310,24 +310,24 @@ Value *op_logical_and(Value *a, Value *b)
  * @param b Right operand value
  * @return Result of logical OR operation or error value
  */
-Value *op_logical_or(Value *a, Value *b)
+RuntimeValue *op_logical_or(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in logical OR");
     }
 
     /* Undecidable logic: undecidable OR anything = undecidable */
-    if (a->type == VALUE_UNDECIDABLE || b->type == VALUE_UNDECIDABLE) {
-        return value_new_undecidable();
+    if (a->type == RV_NULL || b->type == RV_NULL) {
+        return rv_new_null();
     }
 
     /* Short-circuit evaluation: if a is truthy, return a */
     if (is_truthy(a)) {
-        return value_ref(a);
+        return rv_ref(a);
     }
 
     /* Otherwise return b */
-    return value_ref(b);
+    return rv_ref(b);
 }
 
 /**
@@ -335,18 +335,18 @@ Value *op_logical_or(Value *a, Value *b)
  * @param a Operand value to negate
  * @return Boolean value indicating logical negation or error value
  */
-Value *op_logical_not(Value *a)
+RuntimeValue *op_logical_not(RuntimeValue *a)
 {
     if (!a) {
         return create_error("Null operand in logical NOT");
     }
 
     /* Undecidable logic: NOT undecidable = undecidable */
-    if (a->type == VALUE_UNDECIDABLE) {
-        return value_new_undecidable();
+    if (a->type == RV_NULL) {
+        return rv_new_null();
     }
 
-    return value_new_boolean(!is_truthy(a));
+    return rv_new_boolean(!is_truthy(a));
 }
 
 /* Helper function implementations */
@@ -356,16 +356,10 @@ Value *op_logical_not(Value *a)
  * @param message Error message
  * @return Error value
  */
-static Value *create_error(const char *message)
+static RuntimeValue *create_error(const char *message)
 {
-    Value *error = value_new(VALUE_ERROR);
-    if (error && message) {
-        error->as.error = memory_alloc(sizeof(ZenError));
-        if (error->as.error) {
-            error->as.error->message = memory_strdup(message);
-            error->as.error->code = -1;
-        }
-    }
+    RuntimeValue *error = rv_new_error(message, -1);
+    // Error creation handled by rv_new_error
     return error;
 }
 
@@ -375,35 +369,34 @@ static Value *create_error(const char *message)
  * @param result Pointer to store the result
  * @return true if conversion successful, false otherwise
  */
-static bool to_number(const Value *value, double *result)
+static bool to_number(const RuntimeValue *value, double *result)
 {
     if (!value || !result) {
         return false;
     }
 
     switch (value->type) {
-    case VALUE_NUMBER:
-        *result = value->as.number;
+    case RV_NUMBER:
+        *result = value->data.number;
         return true;
 
-    case VALUE_BOOLEAN:
-        *result = value->as.boolean ? 1.0 : 0.0;
+    case RV_BOOLEAN:
+        *result = value->data.boolean ? 1.0 : 0.0;
         return true;
 
-    case VALUE_NULL:
+    case RV_NULL:
         *result = 0.0;
         return true;
 
-    case VALUE_STRING:
-        if (value->as.string && value->as.string->data) {
+    case RV_STRING:
+        if (value->data.string.data) {
             char *endptr;
-            *result = strtod(value->as.string->data, &endptr);
-            return *endptr == '\0' && endptr != value->as.string->data;
+            *result = strtod(value->data.string.data, &endptr);
+            return *endptr == '\0' && endptr != value->data.string.data;
         }
         return false;
 
-    case VALUE_UNDECIDABLE:
-        return false; /* Undecidable values cannot be converted to numbers */
+        // Removed duplicate RV_NULL case
 
     default:
         return false;
@@ -443,36 +436,35 @@ static char *concat_strings(const char *a, const char *b)
  * @param value Value to check
  * @return true if truthy, false if falsy
  */
-static bool is_truthy(const Value *value)
+static bool is_truthy(const RuntimeValue *value)
 {
     if (!value) {
         return false;
     }
 
     switch (value->type) {
-    case VALUE_NULL:
+    case RV_NULL:
         return false;
 
-    case VALUE_BOOLEAN:
-        return value->as.boolean;
+    case RV_BOOLEAN:
+        return value->data.boolean;
 
-    case VALUE_NUMBER:
-        return value->as.number != 0.0 && !isnan(value->as.number);
+    case RV_NUMBER:
+        return value->data.number != 0.0 && !isnan(value->data.number);
 
-    case VALUE_STRING:
-        return value->as.string && value->as.string->data && strlen(value->as.string->data) > 0;
+    case RV_STRING:
+        return value->data.string.data && strlen(value->data.string.data) > 0;
 
-    case VALUE_ARRAY:
-        return value->as.array && value->as.array->length > 0;
+    case RV_ARRAY:
+        return value->data.array.count > 0;
 
-    case VALUE_OBJECT:
-        return value->as.object && value->as.object->length > 0;
+    case RV_OBJECT:
+        return value->data.object.count > 0;
 
-    case VALUE_ERROR:
+    case RV_ERROR:
         return false;
 
-    case VALUE_UNDECIDABLE:
-        return false; /* Undecidable values are falsy */
+        // Removed duplicate RV_NULL case (already handled above)
 
     default:
         return true;
@@ -485,7 +477,7 @@ static bool is_truthy(const Value *value)
  * @param b Second value
  * @return -1 if a < b, 0 if a == b, 1 if a > b, INT_MIN on error
  */
-static int compare_values(const Value *a, const Value *b)
+static int compare_values(const RuntimeValue *a, const RuntimeValue *b)
 {
     if (!a || !b) {
         return INT_MIN;
@@ -494,16 +486,16 @@ static int compare_values(const Value *a, const Value *b)
     /* Same type comparisons */
     if (a->type == b->type) {
         switch (a->type) {
-        case VALUE_NULL:
+        case RV_NULL:
             return 0;
 
-        case VALUE_BOOLEAN:
-            if (a->as.boolean == b->as.boolean)
+        case RV_BOOLEAN:
+            if (a->data.boolean == b->data.boolean)
                 return 0;
-            return a->as.boolean ? 1 : -1;
+            return a->data.boolean ? 1 : -1;
 
-        case VALUE_NUMBER: {
-            double diff = a->as.number - b->as.number;
+        case RV_NUMBER: {
+            double diff = a->data.number - b->data.number;
             if (diff < 0)
                 return -1;
             if (diff > 0)
@@ -511,14 +503,13 @@ static int compare_values(const Value *a, const Value *b)
             return 0;
         }
 
-        case VALUE_STRING:
-            if (!a->as.string || !a->as.string->data || !b->as.string || !b->as.string->data) {
+        case RV_STRING:
+            if (!a->data.string.data || !b->data.string.data) {
                 return INT_MIN;
             }
-            return strcmp(a->as.string->data, b->as.string->data);
+            return strcmp(a->data.string.data, b->data.string.data);
 
-        case VALUE_UNDECIDABLE:
-            return 0; /* All undecidable values are equal to each other */
+            // Removed duplicate RV_NULL case (already handled above)
 
         default:
             return INT_MIN; /* Cannot compare arrays, objects, etc. */
@@ -556,7 +547,7 @@ static int compare_values(const Value *a, const Value *b)
  *   U ⊗ T = U, U ⊗ U = U, U ⊗ F = F
  *   F ⊗ T = F, F ⊗ U = F, F ⊗ F = F
  */
-Value *op_undecidable_and(Value *a, Value *b)
+RuntimeValue *op_undecidable_and(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in undecidable AND");
@@ -583,7 +574,7 @@ Value *op_undecidable_and(Value *a, Value *b)
  *   U ⊕ T = T, U ⊕ U = U, U ⊕ F = U
  *   F ⊕ T = T, F ⊕ U = U, F ⊕ F = F
  */
-Value *op_undecidable_or(Value *a, Value *b)
+RuntimeValue *op_undecidable_or(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in undecidable OR");
@@ -607,7 +598,7 @@ Value *op_undecidable_or(Value *a, Value *b)
  *
  * Different from Lukasiewicz - handles uncertainty differently
  */
-Value *op_kleene_and(Value *a, Value *b)
+RuntimeValue *op_kleene_and(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in Kleene AND");
@@ -618,11 +609,11 @@ Value *op_kleene_and(Value *a, Value *b)
 
     /* Kleene AND: if either is false, result is false */
     if (a_val == -1 || b_val == -1)
-        return value_new_boolean(false);
+        return rv_new_boolean(false);
     if (a_val == 1 && b_val == 1)
-        return value_new_boolean(true);
+        return rv_new_boolean(true);
 
-    return value_new_undecidable();
+    return rv_new_null();
 }
 
 /**
@@ -631,7 +622,7 @@ Value *op_kleene_and(Value *a, Value *b)
  * @param b Right operand value
  * @return Result of Kleene OR operation
  */
-Value *op_kleene_or(Value *a, Value *b)
+RuntimeValue *op_kleene_or(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in Kleene OR");
@@ -642,11 +633,11 @@ Value *op_kleene_or(Value *a, Value *b)
 
     /* Kleene OR: if either is true, result is true */
     if (a_val == 1 || b_val == 1)
-        return value_new_boolean(true);
+        return rv_new_boolean(true);
     if (a_val == -1 && b_val == -1)
-        return value_new_boolean(false);
+        return rv_new_boolean(false);
 
-    return value_new_undecidable();
+    return rv_new_null();
 }
 
 /**
@@ -657,7 +648,7 @@ Value *op_kleene_or(Value *a, Value *b)
  *
  * Useful for AI reasoning and formal logic
  */
-Value *op_undecidable_implies(Value *a, Value *b)
+RuntimeValue *op_undecidable_implies(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
         return create_error("Null operand in undecidable implication");
@@ -686,31 +677,32 @@ Value *op_undecidable_implies(Value *a, Value *b)
  *
  * For quantum computing and statistical applications
  */
-Value *op_probabilistic_and(Value *a, Value *b, double probability_a, double probability_b)
+RuntimeValue *
+op_probabilistic_and(RuntimeValue *a, RuntimeValue *b, double probability_a, double probability_b)
 {
     if (!a || !b) {
         return create_error("Null operand in probabilistic AND");
     }
 
     /* If either value is undecidable, use probability */
-    if (a->type == VALUE_UNDECIDABLE || b->type == VALUE_UNDECIDABLE) {
+    if (a->type == RV_NULL || b->type == RV_NULL) {
         double combined_probability = probability_a * probability_b;
 
         /* If combined probability is very low or high, decide */
         if (combined_probability < 0.1)
-            return value_new_boolean(false);
+            return rv_new_boolean(false);
         if (combined_probability > 0.9)
-            return value_new_boolean(true);
+            return rv_new_boolean(true);
 
         /* Otherwise remain undecidable */
-        return value_new_undecidable();
+        return rv_new_null();
     }
 
     /* Regular boolean AND for decided values */
-    bool a_bool = (a->type == VALUE_BOOLEAN) ? a->as.boolean : true;
-    bool b_bool = (b->type == VALUE_BOOLEAN) ? b->as.boolean : true;
+    bool a_bool = (a->type == RV_BOOLEAN) ? a->data.boolean : true;
+    bool b_bool = (b->type == RV_BOOLEAN) ? b->data.boolean : true;
 
-    return value_new_boolean(a_bool && b_bool);
+    return rv_new_boolean(a_bool && b_bool);
 }
 
 /**
@@ -722,7 +714,7 @@ Value *op_probabilistic_and(Value *a, Value *b, double probability_a, double pro
  *
  * Returns undecidable if no clear consensus
  */
-Value *op_consensus(Value *votes[], size_t vote_count, double threshold)
+RuntimeValue *op_consensus(RuntimeValue *votes[], size_t vote_count, double threshold)
 {
     if (!votes || vote_count == 0) {
         return create_error("No votes provided for consensus");
@@ -737,14 +729,14 @@ Value *op_consensus(Value *votes[], size_t vote_count, double threshold)
             continue;
 
         switch (votes[i]->type) {
-        case VALUE_BOOLEAN:
-            if (votes[i]->as.boolean) {
+        case RV_BOOLEAN:
+            if (votes[i]->data.boolean) {
                 true_votes++;
             } else {
                 false_votes++;
             }
             break;
-        case VALUE_UNDECIDABLE:
+        case RV_NULL:
             undecidable_votes++;
             break;
         default:
@@ -760,18 +752,18 @@ Value *op_consensus(Value *votes[], size_t vote_count, double threshold)
 
     /* If too many undecidable votes, consensus is undecidable */
     if (undecidable_ratio > 0.3) {
-        return value_new_undecidable();
+        return rv_new_null();
     }
 
     /* Check if threshold is met for either side */
     if (true_ratio >= threshold) {
-        return value_new_boolean(true);
+        return rv_new_boolean(true);
     } else if (false_ratio >= threshold) {
-        return value_new_boolean(false);
+        return rv_new_boolean(false);
     }
 
     /* No clear consensus */
-    return value_new_undecidable();
+    return rv_new_null();
 }
 
 /**
@@ -782,32 +774,32 @@ Value *op_consensus(Value *votes[], size_t vote_count, double threshold)
  *
  * Useful for planning and dynamic systems
  */
-Value *op_eventually(Value *condition, int time_horizon)
+RuntimeValue *op_eventually(RuntimeValue *condition, int time_horizon)
 {
     if (!condition) {
         return create_error("Null condition in temporal eventually");
     }
 
     /* If condition is currently decided, return it */
-    if (condition->type == VALUE_BOOLEAN) {
-        return value_ref(condition);
+    if (condition->type == RV_BOOLEAN) {
+        return rv_ref(condition);
     }
 
     /* For undecidable conditions, consider time horizon */
-    if (condition->type == VALUE_UNDECIDABLE) {
+    if (condition->type == RV_NULL) {
         if (time_horizon <= 0) {
             /* No time left - remains undecidable */
-            return value_new_undecidable();
+            return rv_new_null();
         } else if (time_horizon > 100) {
             /* Long time horizon - more likely to become true eventually */
-            return value_new_boolean(true);
+            return rv_new_boolean(true);
         } else {
             /* Medium time horizon - still undecidable */
-            return value_new_undecidable();
+            return rv_new_null();
         }
     }
 
-    return value_new_undecidable();
+    return rv_new_null();
 }
 
 /**
@@ -819,7 +811,8 @@ Value *op_eventually(Value *condition, int time_horizon)
  *
  * For handling vague concepts and boundaries
  */
-Value *op_fuzzy_membership(Value *element, Value *set, double membership_degree)
+RuntimeValue *
+op_fuzzy_membership(RuntimeValue *element, RuntimeValue *set, double membership_degree)
 {
     if (!element || !set) {
         return create_error("Null operand in fuzzy membership");
@@ -827,13 +820,13 @@ Value *op_fuzzy_membership(Value *element, Value *set, double membership_degree)
 
     /* If membership degree is clearly defined */
     if (membership_degree >= 0.8) {
-        return value_new_boolean(true);
+        return rv_new_boolean(true);
     } else if (membership_degree <= 0.2) {
-        return value_new_boolean(false);
+        return rv_new_boolean(false);
     }
 
     /* Fuzzy boundary - undecidable */
-    return value_new_undecidable();
+    return rv_new_null();
 }
 
 /* ============================================================================
@@ -845,20 +838,18 @@ Value *op_fuzzy_membership(Value *element, Value *set, double membership_degree)
  * @param value Input value
  * @return 1 for true, 0 for undecidable, -1 for false
  */
-static int value_to_three_valued(const Value *value)
+static int value_to_three_valued(const RuntimeValue *value)
 {
     if (!value)
         return -1;
 
     switch (value->type) {
-    case VALUE_BOOLEAN:
-        return value->as.boolean ? 1 : -1;
-    case VALUE_UNDECIDABLE:
+    case RV_BOOLEAN:
+        return value->data.boolean ? 1 : -1;
+    case RV_NULL:
         return 0;
-    case VALUE_NULL:
-        return -1;
-    case VALUE_NUMBER:
-        if (value->as.number == 0.0)
+    case RV_NUMBER:
+        if (value->data.number == 0.0)
             return -1;
         return 1;
     default:
@@ -871,13 +862,13 @@ static int value_to_three_valued(const Value *value)
  * @param three_val 1 for true, 0 for undecidable, -1 for false
  * @return Corresponding Value object
  */
-static Value *three_valued_to_value(int three_val)
+static RuntimeValue *three_valued_to_value(int three_val)
 {
     if (three_val > 0) {
-        return value_new_boolean(true);
+        return rv_new_boolean(true);
     } else if (three_val < 0) {
-        return value_new_boolean(false);
+        return rv_new_boolean(false);
     } else {
-        return value_new_undecidable();
+        return rv_new_null();
     }
 }

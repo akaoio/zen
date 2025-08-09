@@ -1,0 +1,25 @@
+print "=== Testing Range Operator ==="
+
+print "\n1. Basic range 1..5:"
+for i in 1..5
+    print "  i = " + i
+
+print "\n2. Descending range 5..1:"
+for j in 5..1
+    print "  j = " + j
+
+print "\n3. Range in variable:"
+set r 10..15
+print "Range 10..15 = " + r
+for k in r
+    print "  k = " + k
+
+print "\n4. Single value range 3..3:"
+for m in 3..3
+    print "  m = " + m
+
+print "\n5. Negative range -2..2:"
+for n in -2..2
+    print "  n = " + n
+
+print "\nAll range tests completed!"

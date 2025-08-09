@@ -1,5 +1,0 @@
-function test
-    print "In function"
-
-test
-print "After function"

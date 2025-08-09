@@ -1,0 +1,3 @@
+set obj name "test", greet (function n (print "Hello, " + n))
+print obj.name
+obj.greet "World"

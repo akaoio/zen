@@ -1,3 +1,0 @@
-# Variable with literal
-set x 3
-print x

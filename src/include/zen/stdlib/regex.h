@@ -14,7 +14,7 @@
 #ifndef ZEN_STDLIB_REGEX_H
 #define ZEN_STDLIB_REGEX_H
 
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,7 +38,7 @@ extern "C" {
  *     print "Found number: " + result.matches[0].text
  * ```
  */
-Value *regex_match(const Value *text_value, const Value *pattern_value);
+RuntimeValue *regex_match(const RuntimeValue *text_value, const RuntimeValue *pattern_value);
 
 /**
  * @brief Replace pattern matches in text with replacement
@@ -56,8 +56,9 @@ Value *regex_match(const Value *text_value, const Value *pattern_value);
  * print result  # "Hello NUMBER World NUMBER"
  * ```
  */
-Value *
-regex_replace(const Value *text_value, const Value *pattern_value, const Value *replacement_value);
+RuntimeValue *regex_replace(const RuntimeValue *text_value,
+                            const RuntimeValue *pattern_value,
+                            const RuntimeValue *replacement_value);
 
 /**
  * @brief Split text by regular expression pattern
@@ -74,7 +75,7 @@ regex_replace(const Value *text_value, const Value *pattern_value, const Value *
  * # parts = ["apple", "banana", "orange"]
  * ```
  */
-Value *regex_split(const Value *text_value, const Value *pattern_value);
+RuntimeValue *regex_split(const RuntimeValue *text_value, const RuntimeValue *pattern_value);
 
 /**
  * @brief Compile regular expression pattern for reuse
@@ -98,7 +99,7 @@ Value *regex_split(const Value *text_value, const Value *pattern_value);
  *     print "Pattern has " + compiled_pattern.capture_count + " groups"
  * ```
  */
-Value *regex_compile(const Value *pattern_value);
+RuntimeValue *regex_compile(const RuntimeValue *pattern_value);
 
 /**
  * @brief Cleanup regex cache on shutdown
@@ -117,7 +118,7 @@ void regex_cleanup(void);
  * @param argc Number of arguments
  * @return Match results object or error value
  */
-Value *regex_match_stdlib(Value **args, size_t argc);
+RuntimeValue *regex_match_stdlib(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Regex replace stdlib wrapper
@@ -125,7 +126,7 @@ Value *regex_match_stdlib(Value **args, size_t argc);
  * @param argc Number of arguments
  * @return New string with replacements or error value
  */
-Value *regex_replace_stdlib(Value **args, size_t argc);
+RuntimeValue *regex_replace_stdlib(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Regex split stdlib wrapper
@@ -133,7 +134,7 @@ Value *regex_replace_stdlib(Value **args, size_t argc);
  * @param argc Number of arguments
  * @return Array of string parts or error value
  */
-Value *regex_split_stdlib(Value **args, size_t argc);
+RuntimeValue *regex_split_stdlib(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Regex compile stdlib wrapper
@@ -141,7 +142,7 @@ Value *regex_split_stdlib(Value **args, size_t argc);
  * @param argc Number of arguments
  * @return Compiled pattern object or error value
  */
-Value *regex_compile_stdlib(Value **args, size_t argc);
+RuntimeValue *regex_compile_stdlib(RuntimeValue **args, size_t argc);
 
 #ifdef __cplusplus
 }

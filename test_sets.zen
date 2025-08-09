@@ -1,0 +1,5 @@
+print "Start"
+set x 1
+print "After first set"
+set y 2
+print "After second set"

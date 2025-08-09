@@ -10,7 +10,7 @@
 
 #include "zen/core/error.h"
 #include "zen/core/memory.h"
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <ctype.h>
 #include <stdio.h>

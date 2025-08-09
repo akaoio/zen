@@ -7,7 +7,7 @@
 
 #define _GNU_SOURCE
 #include "zen/core/memory.h"
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stdio.h>
 #include <stdlib.h>

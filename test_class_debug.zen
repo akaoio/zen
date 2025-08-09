@@ -1,0 +1,13 @@
+print "Testing class with debug"
+
+class Person
+    function constructor name
+        print "In constructor, name = " + name
+        set self.name name
+
+print "Class defined"
+
+set p new Person "Alice"
+print "Person created"
+print "p = "
+print p

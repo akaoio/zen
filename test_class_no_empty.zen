@@ -1,0 +1,8 @@
+print "Step 1"
+class Person
+    function constructor name
+        print "In constructor"
+print "Step 2"
+print "About to create instance"
+set p new Person "Alice"
+print "Step 3"

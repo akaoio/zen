@@ -1,0 +1,10 @@
+print "Testing break in while loop:"
+set m 0
+while m < 10
+    set m m + 1
+    print "before check, m = " + m
+    if m = 5
+        print "breaking at m = 5"
+        break
+    print "after check, m = " + m
+print "Done, final m = " + m

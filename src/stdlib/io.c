@@ -2,8 +2,8 @@
 #include "zen/stdlib/io.h"
 
 #include "zen/core/memory.h"
+#include "zen/core/runtime_value.h"
 #include "zen/stdlib/json.h"
-#include "zen/types/value.h"
 
 #include <errno.h>
 #include <stdio.h>

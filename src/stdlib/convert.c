@@ -9,7 +9,7 @@
 #include "zen/stdlib/convert.h"
 
 #include "zen/core/memory.h"
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <ctype.h>
 #include <errno.h>

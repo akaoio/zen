@@ -1,0 +1,3 @@
+set p { name "Alice" }
+set n p.name
+print n

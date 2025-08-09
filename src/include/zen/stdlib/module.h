@@ -1,7 +1,7 @@
 #ifndef ZEN_MODULE_H
 #define ZEN_MODULE_H
 
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stddef.h>
 
@@ -49,7 +49,7 @@ typedef struct ModuleProvider {
  */
 typedef struct ModuleCacheEntry {
     char *path;                    /**< Module path */
-    Value *module;                 /**< Cached module value */
+    RuntimeValue *module;          /**< Cached module value */
     struct ModuleCacheEntry *next; /**< Next entry for collision resolution */
 } ModuleCacheEntry;
 
@@ -91,7 +91,7 @@ void module_register_provider(ModuleResolver *resolver,
  * @param module_path Path to the module file
  * @return Value* Module result value, error value on failure
  */
-Value *module_load_file(const char *module_path);
+RuntimeValue *module_load_file(const char *module_path);
 
 #ifdef __cplusplus
 }

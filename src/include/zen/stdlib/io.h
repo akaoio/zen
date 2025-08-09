@@ -1,7 +1,7 @@
 #ifndef ZEN_STDLIB_IO_H
 #define ZEN_STDLIB_IO_H
 
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -19,13 +19,13 @@ char *io_read_file_internal(const char *filepath);
  * @brief Print Value to stdout with newline
  * @param value Value to print
  */
-void io_print_internal(const Value *value);
+void io_print_internal(const RuntimeValue *value);
 
 /**
  * @brief Print Value to stdout without newline
  * @param value Value to print
  */
-void io_print_no_newline_internal(const Value *value);
+void io_print_no_newline_internal(const RuntimeValue *value);
 
 /**
  * @brief Read a line from stdin
@@ -68,7 +68,7 @@ bool io_file_exists_internal(const char *filepath);
  * @param filepath Path to JSON file
  * @return Value object representing the JSON data, or NULL on error
  */
-Value *io_load_json_file_internal(const char *filepath);
+RuntimeValue *io_load_json_file_internal(const char *filepath);
 
 /**
  * @brief Resolve module path with extensions

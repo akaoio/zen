@@ -471,6 +471,13 @@ void ast_free(AST_T *ast)
         memory_free(ast->lambda_args);
     }
 
+    // Free runtime value cache if present
+    if (ast->runtime_value) {
+        // Need to include runtime_value.h to use rv_unref
+        void rv_unref(void *);  // Forward declaration
+        rv_unref(ast->runtime_value);
+    }
+
     // Mark as freed to prevent double-free (set type to invalid value)
     ast->type = -1;
 

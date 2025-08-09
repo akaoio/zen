@@ -1,4 +1,0 @@
-set arr 1, 2, 3
-print "Array created"
-set first arr[0]
-print first

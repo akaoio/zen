@@ -1,7 +1,7 @@
 #include "zen/core/error.h"
+#include "zen/core/runtime_value.h"
 #include "zen/types/priority_queue.h"
 #include "zen/types/set.h"
-#include "zen/types/value.h"
 
 /**
  * @file data_structures.c

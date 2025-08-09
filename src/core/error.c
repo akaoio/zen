@@ -7,7 +7,7 @@
 #include "zen/core/error.h"
 
 #include "zen/core/memory.h"
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -22,29 +22,13 @@
  * @param message Error message string
  * @return Newly created error Value
  */
-Value *error_new(const char *message)
+RuntimeValue *error_new(const char *message)
 {
     if (!message) {
         return NULL;
     }
 
-    Value *error = value_new(VALUE_ERROR);
-    if (!error || !error->as.error) {
-        return NULL;
-    }
-
-    // Replace the default message with our custom message
-    if (error->as.error->message) {
-        memory_free(error->as.error->message);
-    }
-    error->as.error->message = memory_strdup(message);
-    if (!error->as.error->message) {
-        value_unref(error);  // Clean up the error value
-        return NULL;
-    }
-    error->as.error->code = -1;  // Default error code
-
-    return error;
+    return rv_new_error(message, -1);
 }
 
 /**
@@ -53,13 +37,9 @@ Value *error_new(const char *message)
  * @param code Error code
  * @return Newly created error Value
  */
-Value *error_new_with_code(const char *message, int code)
+RuntimeValue *error_new_with_code(const char *message, int code)
 {
-    Value *error = error_new(message);
-    if (error && error->as.error) {
-        error->as.error->code = code;
-    }
-    return error;
+    return rv_new_error(message, code);
 }
 
 /**
@@ -68,7 +48,7 @@ Value *error_new_with_code(const char *message, int code)
  * @param ... Variable arguments for formatting
  * @return Newly created error Value
  */
-Value *error_new_formatted(const char *format, ...)
+RuntimeValue *error_new_formatted(const char *format, ...)
 {
     if (!format) {
         return NULL;
@@ -98,7 +78,7 @@ Value *error_new_formatted(const char *format, ...)
     va_end(args2);
 
     // Create error value
-    Value *error = error_new(message);
+    RuntimeValue *error = rv_new_error(message, -1);
     memory_free(message);
 
     return error;
@@ -109,19 +89,19 @@ Value *error_new_formatted(const char *format, ...)
  * @param value Value to check
  * @return true if value is an error, false otherwise
  */
-bool error_is_error(const Value *value) { return value && value->type == VALUE_ERROR; }
+bool error_is_error(const RuntimeValue *value) { return value && value->type == RV_ERROR; }
 
 /**
  * @brief Get error message from an error Value
  * @param error Error Value
  * @return Error message string, or NULL if not an error or no message
  */
-const char *error_get_message(const Value *error)
+const char *error_get_message(const RuntimeValue *error)
 {
-    if (!error_is_error(error) || !error->as.error) {
+    if (!error_is_error(error)) {
         return NULL;
     }
-    return error->as.error->message;
+    return error->data.error.message;
 }
 
 /**
@@ -129,12 +109,12 @@ const char *error_get_message(const Value *error)
  * @param error Error Value
  * @return Error code, or 0 if not an error
  */
-int error_get_code(const Value *error)
+int error_get_code(const RuntimeValue *error)
 {
-    if (!error_is_error(error) || !error->as.error) {
+    if (!error_is_error(error)) {
         return 0;
     }
-    return error->as.error->code;
+    return error->data.error.code;
 }
 
 /**
@@ -142,7 +122,7 @@ int error_get_code(const Value *error)
  * @param error Error Value to print
  * @param prefix Optional prefix string (can be NULL)
  */
-void error_print(const Value *error, const char *prefix)
+void error_print(const RuntimeValue *error, const char *prefix)
 {
     if (!error_is_error(error)) {
         return;
@@ -172,7 +152,7 @@ void error_print(const Value *error, const char *prefix)
  * @brief Print error to stderr with "Error" prefix
  * @param error Error Value to print
  */
-void error_print_simple(const Value *error) { error_print(error, "Error"); }
+void error_print_simple(const RuntimeValue *error) { error_print(error, "Error"); }
 
 /**
  * @brief Check if a Value represents a specific error code
@@ -180,7 +160,7 @@ void error_print_simple(const Value *error) { error_print(error, "Error"); }
  * @param code Error code to match
  * @return true if error matches the code, false otherwise
  */
-bool error_has_code(const Value *error, int code)
+bool error_has_code(const RuntimeValue *error, int code)
 {
     // Comprehensive NULL pointer validation
     if (!error) {
@@ -189,11 +169,6 @@ bool error_has_code(const Value *error, int code)
 
     // Validate that the value is actually an error type
     if (!error_is_error(error)) {
-        return false;
-    }
-
-    // Validate that the error structure is properly initialized
-    if (!error->as.error) {
         return false;
     }
 
@@ -216,7 +191,7 @@ bool error_has_code(const Value *error, int code)
  * @param message_substring Substring to search for in error message
  * @return true if error message contains the substring, false otherwise
  */
-bool error_has_message(const Value *error, const char *message_substring)
+bool error_has_message(const RuntimeValue *error, const char *message_substring)
 {
     if (!error_is_error(error) || !message_substring) {
         return false;
@@ -239,7 +214,7 @@ bool error_has_message(const Value *error, const char *message_substring)
  * @param operation Optional operation name that caused the error
  * @return Newly created error Value with null pointer message
  */
-Value *error_null_pointer(const char *operation)
+RuntimeValue *error_null_pointer(const char *operation)
 {
     return error_new_formatted("Null pointer in %s", operation ? operation : "operation");
 }
@@ -250,7 +225,7 @@ Value *error_null_pointer(const char *operation)
  * @param actual Actual type name received
  * @return Newly created error Value with type mismatch message
  */
-Value *error_type_mismatch(const char *expected, const char *actual)
+RuntimeValue *error_type_mismatch(const char *expected, const char *actual)
 {
     return error_new_formatted("Type mismatch: expected %s, got %s",
                                expected ? expected : "unknown",
@@ -261,7 +236,7 @@ Value *error_type_mismatch(const char *expected, const char *actual)
  * @brief Create division by zero error
  * @return Newly created error Value with division by zero message
  */
-Value *error_division_by_zero(void) { return error_new_with_code("Division by zero", -1); }
+RuntimeValue *error_division_by_zero(void) { return error_new_with_code("Division by zero", -1); }
 
 /**
  * @brief Create index out of bounds error
@@ -269,7 +244,7 @@ Value *error_division_by_zero(void) { return error_new_with_code("Division by ze
  * @param length Length/size of the container
  * @return Newly created error Value with index out of bounds message
  */
-Value *error_index_out_of_bounds(size_t index, size_t length)
+RuntimeValue *error_index_out_of_bounds(size_t index, size_t length)
 {
     return error_new_formatted("Index out of bounds: %zu >= %zu", index, length);
 }
@@ -280,7 +255,7 @@ Value *error_index_out_of_bounds(size_t index, size_t length)
  * @param argument_description Description of what was invalid about the argument
  * @return Newly created error Value with invalid argument message
  */
-Value *error_invalid_argument(const char *function_name, const char *argument_description)
+RuntimeValue *error_invalid_argument(const char *function_name, const char *argument_description)
 {
     return error_new_formatted("Invalid argument in %s: %s",
                                function_name ? function_name : "function",
@@ -291,14 +266,17 @@ Value *error_invalid_argument(const char *function_name, const char *argument_de
  * @brief Create memory allocation error
  * @return Newly created error Value with memory allocation failure message
  */
-Value *error_memory_allocation(void) { return error_new_with_code("Memory allocation failed", -2); }
+RuntimeValue *error_memory_allocation(void)
+{
+    return error_new_with_code("Memory allocation failed", -2);
+}
 
 /**
  * @brief Create file not found error
  * @param filename Name of file that was not found
  * @return Newly created error Value with file not found message
  */
-Value *error_file_not_found(const char *filename)
+RuntimeValue *error_file_not_found(const char *filename)
 {
     return error_new_formatted("File not found: %s", filename ? filename : "unknown file");
 }
@@ -308,7 +286,7 @@ Value *error_file_not_found(const char *filename)
  * @param context Context or details about what failed to parse
  * @return Newly created error Value with parsing failure message
  */
-Value *error_parsing_failed(const char *context)
+RuntimeValue *error_parsing_failed(const char *context)
 {
     return error_new_formatted("Parsing failed: %s", context ? context : "syntax error");
 }
@@ -318,7 +296,7 @@ Value *error_parsing_failed(const char *context)
  * @param variable_name Name of the undefined variable
  * @return Newly created error Value with undefined variable message
  */
-Value *error_undefined_variable(const char *variable_name)
+RuntimeValue *error_undefined_variable(const char *variable_name)
 {
     return error_new_formatted("Undefined variable: %s", variable_name ? variable_name : "unknown");
 }
@@ -328,7 +306,7 @@ Value *error_undefined_variable(const char *variable_name)
  * @param function_name Name of the undefined function
  * @return Newly created error Value with undefined function message
  */
-Value *error_undefined_function(const char *function_name)
+RuntimeValue *error_undefined_function(const char *function_name)
 {
     return error_new_formatted("Undefined function: %s", function_name ? function_name : "unknown");
 }
@@ -342,7 +320,7 @@ Value *error_undefined_function(const char *function_name)
  * @param value Value to check and potentially propagate
  * @return Original value if not an error, or error value to propagate up
  */
-Value *error_propagate(Value *value)
+RuntimeValue *error_propagate(RuntimeValue *value)
 {
     // If value is already an error, just return it (propagate it up)
     if (error_is_error(value)) {
@@ -359,7 +337,7 @@ Value *error_propagate(Value *value)
  * @param count Number of values in the array
  * @return true if any value is an error, false otherwise
  */
-bool error_occurred(Value **values, size_t count)
+bool error_occurred(RuntimeValue **values, size_t count)
 {
     if (!values) {
         return false;
@@ -379,7 +357,7 @@ bool error_occurred(Value **values, size_t count)
  * @param count Number of values in the array
  * @return First error Value found, or NULL if no errors
  */
-Value *error_first_error(Value **values, size_t count)
+RuntimeValue *error_first_error(RuntimeValue **values, size_t count)
 {
     if (!values) {
         return NULL;

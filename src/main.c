@@ -245,10 +245,24 @@ int main(int argc, char *argv[])
 
                 // Handle any meaningful return value from execution
                 // Don't print RV_NULL as it represents "no output" rather than literal values
+                // Also don't print control flow markers
                 if (result && result->type != RV_NULL) {
-                    char *str = rv_to_string(result);
-                    printf("%s\n", str);
-                    memory_free(str);
+                    // Check if it's a control flow marker string
+                    if (result->type == RV_STRING) {
+                        const char *str_val = rv_get_string(result);
+                        if (str_val && (strcmp(str_val, "__BREAK__") == 0 ||
+                                        strcmp(str_val, "__CONTINUE__") == 0)) {
+                            // Don't print control flow markers
+                        } else {
+                            char *str = rv_to_string(result);
+                            printf("%s\n", str);
+                            memory_free(str);
+                        }
+                    } else {
+                        char *str = rv_to_string(result);
+                        printf("%s\n", str);
+                        memory_free(str);
+                    }
                 }
 
                 // Clean up RuntimeValue

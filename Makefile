@@ -7,7 +7,9 @@ BUILD_DIR ?= .
 
 # Main executable
 exec = $(BUILD_DIR)/zen
-sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c src/stdlib/*.c)
+sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c) src/stdlib/io_minimal.c src/stdlib/stdlib_minimal.c
+# Temporarily disabled stdlib during Value->RuntimeValue migration:
+# src/stdlib/*.c
 objects := $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
 
 # Directories

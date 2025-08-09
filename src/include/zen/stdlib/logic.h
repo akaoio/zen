@@ -2,7 +2,7 @@
 #define ZEN_STDLIB_LOGIC_H
 
 #include "zen/core/ast.h"  // For AST-based structured logic (Gödel approved!)
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stddef.h>
 
@@ -78,7 +78,7 @@ typedef struct ZenAxiom {
  * theorem_define "pythagorean_theorem"
  *     "For all right triangles with sides a, b, c where c is hypotenuse, a² + b² = c²"
  */
-Value *logic_theorem_define(Value **args, size_t argc);
+RuntimeValue *logic_theorem_define(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Verify a proof for a given theorem with <1s performance target
@@ -88,7 +88,7 @@ Value *logic_theorem_define(Value **args, size_t argc);
  *
  * Performance target: Complete verification in under 1 second for complex proofs
  */
-Value *logic_proof_verify(Value **args, size_t argc);
+RuntimeValue *logic_proof_verify(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Add a new axiom to the formal logic system
@@ -100,7 +100,7 @@ Value *logic_proof_verify(Value **args, size_t argc);
  * axiom_add "law_of_excluded_middle"
  *     "For any proposition P, either P is true or P is false"
  */
-Value *logic_axiom_add(Value **args, size_t argc);
+RuntimeValue *logic_axiom_add(RuntimeValue **args, size_t argc);
 
 /**
  * @brief List all axioms in the logic system
@@ -108,7 +108,7 @@ Value *logic_axiom_add(Value **args, size_t argc);
  * @param argc Number of arguments (0)
  * @return Array value containing all axiom names
  */
-Value *logic_axiom_list(Value **args, size_t argc);
+RuntimeValue *logic_axiom_list(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Validate axiom consistency with existing system
@@ -116,7 +116,7 @@ Value *logic_axiom_list(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Boolean value indicating consistency, or error on failure
  */
-Value *logic_axiom_validate(Value **args, size_t argc);
+RuntimeValue *logic_axiom_validate(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Interactive proof construction - add a proof step
@@ -129,7 +129,7 @@ Value *logic_axiom_validate(Value **args, size_t argc);
  *     "Given right triangle with legs a and b, hypotenuse c"
  *     "assumption"
  */
-Value *logic_proof_step(Value **args, size_t argc);
+RuntimeValue *logic_proof_step(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Store theorem in knowledge base for future reference
@@ -137,7 +137,7 @@ Value *logic_proof_step(Value **args, size_t argc);
  * @param argc Number of arguments (1 or 2)
  * @return Boolean value indicating success, or error on failure
  */
-Value *logic_theorem_store(Value **args, size_t argc);
+RuntimeValue *logic_theorem_store(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Verify theorem validity and consistency
@@ -145,7 +145,7 @@ Value *logic_theorem_store(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Boolean value indicating validity, or error on failure
  */
-Value *logic_theorem_verify(Value **args, size_t argc);
+RuntimeValue *logic_theorem_verify(RuntimeValue **args, size_t argc);
 
 // Advanced Logic Functions
 
@@ -155,7 +155,7 @@ Value *logic_theorem_verify(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Theorem value or null if not found
  */
-Value *logic_theorem_get(Value **args, size_t argc);
+RuntimeValue *logic_theorem_get(RuntimeValue **args, size_t argc);
 
 /**
  * @brief List all theorems in the knowledge base
@@ -163,7 +163,7 @@ Value *logic_theorem_get(Value **args, size_t argc);
  * @param argc Number of arguments (0)
  * @return Array value containing all theorem names
  */
-Value *logic_theorem_list(Value **args, size_t argc);
+RuntimeValue *logic_theorem_list(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Check if a statement follows logically from given premises
@@ -171,7 +171,7 @@ Value *logic_theorem_list(Value **args, size_t argc);
  * @param argc Number of arguments (2)
  * @return Boolean value indicating logical entailment
  */
-Value *logic_entails(Value **args, size_t argc);
+RuntimeValue *logic_entails(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Apply modus ponens inference rule
@@ -181,7 +181,7 @@ Value *logic_entails(Value **args, size_t argc);
  *
  * Example: Given "if P then Q" and "P", derive "Q"
  */
-Value *logic_modus_ponens(Value **args, size_t argc);
+RuntimeValue *logic_modus_ponens(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Apply modus tollens inference rule
@@ -191,14 +191,14 @@ Value *logic_modus_ponens(Value **args, size_t argc);
  *
  * Example: Given "if P then Q" and "not Q", derive "not P"
  */
-Value *logic_modus_tollens(Value **args, size_t argc);
+RuntimeValue *logic_modus_tollens(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Check if an AST represents a Gödel sentence and return undecidable value
  * @param ast The AST to analyze for self-referential undecidable patterns
  * @return Value* containing undecidable value if Gödel sentence detected, NULL otherwise
  */
-Value *logic_check_godel_sentence(const AST_T *ast);
+RuntimeValue *logic_check_godel_sentence(const AST_T *ast);
 
 /**
  * @brief Check logical equivalence of two statements
@@ -206,7 +206,7 @@ Value *logic_check_godel_sentence(const AST_T *ast);
  * @param argc Number of arguments (2)
  * @return Boolean value indicating logical equivalence
  */
-Value *logic_equivalent(Value **args, size_t argc);
+RuntimeValue *logic_equivalent(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Generate truth table for logical expression
@@ -214,7 +214,7 @@ Value *logic_equivalent(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Object value containing truth table data
  */
-Value *logic_truth_table(Value **args, size_t argc);
+RuntimeValue *logic_truth_table(RuntimeValue **args, size_t argc);
 
 // Natural Language Processing for Logic
 
@@ -224,7 +224,7 @@ Value *logic_truth_table(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Structured logical expression or error on parse failure
  */
-Value *logic_parse_statement(Value **args, size_t argc);
+RuntimeValue *logic_parse_statement(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Convert formal logic to natural language
@@ -232,7 +232,7 @@ Value *logic_parse_statement(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return String value with natural language translation
  */
-Value *logic_to_natural(Value **args, size_t argc);
+RuntimeValue *logic_to_natural(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Validate natural language mathematical reasoning
@@ -240,7 +240,7 @@ Value *logic_to_natural(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Boolean value indicating reasoning validity
  */
-Value *logic_validate_reasoning(Value **args, size_t argc);
+RuntimeValue *logic_validate_reasoning(RuntimeValue **args, size_t argc);
 
 // Mathematical Reasoning Support
 
@@ -250,7 +250,7 @@ Value *logic_validate_reasoning(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Boolean value indicating well-formedness
  */
-Value *logic_math_well_formed(Value **args, size_t argc);
+RuntimeValue *logic_math_well_formed(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Apply algebraic manipulation rules
@@ -258,7 +258,7 @@ Value *logic_math_well_formed(Value **args, size_t argc);
  * @param argc Number of arguments (2)
  * @return Transformed expression or error if rule doesn't apply
  */
-Value *logic_math_apply_rule(Value **args, size_t argc);
+RuntimeValue *logic_math_apply_rule(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Simplify mathematical expression
@@ -266,7 +266,7 @@ Value *logic_math_apply_rule(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Simplified expression value
  */
-Value *logic_math_simplify(Value **args, size_t argc);
+RuntimeValue *logic_math_simplify(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Check mathematical equality with symbolic reasoning
@@ -274,7 +274,7 @@ Value *logic_math_simplify(Value **args, size_t argc);
  * @param argc Number of arguments (2)
  * @return Boolean value indicating mathematical equality
  */
-Value *logic_math_equal(Value **args, size_t argc);
+RuntimeValue *logic_math_equal(RuntimeValue **args, size_t argc);
 
 // Proof System Utilities
 
@@ -284,7 +284,7 @@ Value *logic_math_equal(Value **args, size_t argc);
  * @param argc Number of arguments (1)
  * @return Object value with proof statistics (steps, time, etc.)
  */
-Value *logic_proof_stats(Value **args, size_t argc);
+RuntimeValue *logic_proof_stats(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Export proof to different formats (LaTeX, Markdown, etc.)
@@ -292,7 +292,7 @@ Value *logic_proof_stats(Value **args, size_t argc);
  * @param argc Number of arguments (2)
  * @return String value with formatted proof export
  */
-Value *logic_proof_export(Value **args, size_t argc);
+RuntimeValue *logic_proof_export(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Import theorem and proof from external format
@@ -300,7 +300,7 @@ Value *logic_proof_export(Value **args, size_t argc);
  * @param argc Number of arguments (2)
  * @return Boolean value indicating successful import
  */
-Value *logic_proof_import(Value **args, size_t argc);
+RuntimeValue *logic_proof_import(RuntimeValue **args, size_t argc);
 
 // System Management
 
@@ -321,7 +321,7 @@ void logic_system_cleanup(void);
  * @param argc Number of arguments (0)
  * @return Object value with system statistics
  */
-Value *logic_system_stats(Value **args, size_t argc);
+RuntimeValue *logic_system_stats(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Reset the logic system (clear all theorems and proofs)
@@ -329,7 +329,7 @@ Value *logic_system_stats(Value **args, size_t argc);
  * @param argc Number of arguments (0 or 1)
  * @return Boolean value indicating successful reset
  */
-Value *logic_system_reset(Value **args, size_t argc);
+RuntimeValue *logic_system_reset(RuntimeValue **args, size_t argc);
 
 // Internal utility functions (not exposed to ZEN scripts)
 

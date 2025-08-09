@@ -404,9 +404,47 @@ char *rv_to_string(RuntimeValue *value)
     case RV_BOOLEAN:
         return memory_strdup(value->data.boolean ? "true" : "false");
 
-    case RV_ARRAY:
-        snprintf(buffer, sizeof(buffer), "[array of %zu elements]", value->data.array.count);
-        return memory_strdup(buffer);
+    case RV_ARRAY: {
+        if (value->data.array.count == 0) {
+            return memory_strdup("[]");
+        }
+
+        // Calculate required buffer size
+        size_t buffer_size = 3;  // "[]\0"
+        for (size_t i = 0; i < value->data.array.count; i++) {
+            if (value->data.array.elements[i]) {
+                char *elem_str = rv_to_string(value->data.array.elements[i]);
+                if (elem_str) {
+                    buffer_size += strlen(elem_str) + 3;  // element + ", "
+                    memory_free(elem_str);
+                }
+            }
+        }
+
+        char *result = memory_alloc(buffer_size);
+        if (!result)
+            return memory_strdup("[]");
+
+        strcpy(result, "[");
+        for (size_t i = 0; i < value->data.array.count; i++) {
+            if (i > 0)
+                strcat(result, ", ");
+
+            if (value->data.array.elements[i]) {
+                char *elem_str = rv_to_string(value->data.array.elements[i]);
+                if (elem_str) {
+                    strcat(result, elem_str);
+                    memory_free(elem_str);
+                } else {
+                    strcat(result, "null");
+                }
+            } else {
+                strcat(result, "null");
+            }
+        }
+        strcat(result, "]");
+        return result;
+    }
 
     case RV_OBJECT: {
         if (value->data.object.count == 0) {
@@ -539,100 +577,4 @@ const char *rv_type_name(RuntimeValue *value)
     }
 
     return "unknown";
-}
-
-// Migration utilities - Value ↔ RuntimeValue conversion
-#include "zen/types/array.h"
-#include "zen/types/object.h"
-#include "zen/types/value.h"
-
-RuntimeValue *rv_from_value(Value *value)
-{
-    if (!value)
-        return rv_new_null();
-
-    switch (value->type) {
-    case VALUE_NULL:
-        return rv_new_null();
-    case VALUE_BOOLEAN:
-        return rv_new_boolean(value->as.boolean);
-    case VALUE_NUMBER:
-        return rv_new_number(value->as.number);
-    case VALUE_STRING:
-        return rv_new_string(value->as.string && value->as.string->data ? value->as.string->data
-                                                                        : "");
-    case VALUE_UNDECIDABLE:
-        return rv_new_null();  // Treat undecidable as null for now
-    case VALUE_ARRAY: {
-        RuntimeValue *rv_array = rv_new_array();
-        for (size_t i = 0; i < value->as.array->length; i++) {
-            RuntimeValue *element = rv_from_value(value->as.array->items[i]);
-            rv_array_push(rv_array, element);
-            rv_unref(element);  // rv_array_push increments ref count
-        }
-        return rv_array;
-    }
-    case VALUE_OBJECT: {
-        RuntimeValue *rv_obj = rv_new_object();
-        for (size_t i = 0; i < value->as.object->length; i++) {
-            if (value->as.object->pairs[i].key && value->as.object->pairs[i].value) {
-                RuntimeValue *rv_val = rv_from_value(value->as.object->pairs[i].value);
-                rv_object_set(rv_obj, value->as.object->pairs[i].key, rv_val);
-                rv_unref(rv_val);  // rv_object_set increments ref count
-            }
-        }
-        return rv_obj;
-    }
-    case VALUE_FUNCTION:
-    case VALUE_ERROR:
-    case VALUE_CLASS:
-    case VALUE_INSTANCE:
-    case VALUE_SET:
-    case VALUE_PRIORITY_QUEUE:
-        // Complex types - create null for now, can be extended
-        return rv_new_null();
-    }
-    return rv_new_null();
-}
-
-Value *rv_to_value(RuntimeValue *rv)
-{
-    if (!rv)
-        return value_new_null();
-
-    switch (rv->type) {
-    case RV_NULL:
-        return value_new_null();
-    case RV_BOOLEAN:
-        return value_new_boolean(rv->data.boolean);
-    case RV_NUMBER:
-        return value_new_number(rv->data.number);
-    case RV_STRING:
-        return value_new_string(rv->data.string.data);
-    case RV_ARRAY: {
-        Value *val_array = array_new(rv->data.array.count);
-        for (size_t i = 0; i < rv->data.array.count; i++) {
-            Value *element = rv_to_value(rv->data.array.elements[i]);
-            array_push(val_array, element);
-            value_unref(element);  // array_push increments ref count
-        }
-        return val_array;
-    }
-    case RV_OBJECT: {
-        Value *val_obj = object_new();
-        for (size_t i = 0; i < rv->data.object.count; i++) {
-            if (rv->data.object.keys[i] && rv->data.object.values[i]) {
-                Value *val_val = rv_to_value(rv->data.object.values[i]);
-                object_set(val_obj, rv->data.object.keys[i], val_val);
-                value_unref(val_val);  // object_set increments ref count
-            }
-        }
-        return val_obj;
-    }
-    case RV_FUNCTION:
-    case RV_ERROR:
-        // Complex types - create null for now
-        return value_new_null();
-    }
-    return value_new_null();
 }

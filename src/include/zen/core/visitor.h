@@ -2,7 +2,6 @@
 #define VISITOR_H
 #include "zen/core/ast.h"
 #include "zen/core/runtime_value.h"
-#include "zen/types/value.h"
 
 #include <stdbool.h>
 #include <time.h>
@@ -243,6 +242,6 @@ RuntimeValue *visitor_visit_export(visitor_T *visitor, AST_T *node);
  * @param value Value to convert
  * @return AST_T* Corresponding AST node
  */
-AST_T *value_to_ast(Value *value);
+AST_T *value_to_ast(RuntimeValue *value);
 
 #endif

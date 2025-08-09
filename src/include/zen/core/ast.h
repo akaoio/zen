@@ -103,6 +103,7 @@ typedef struct AST_STRUCT {
 
     /* AST_FUNCTION_CALL */
     char *function_call_name;
+    struct AST_STRUCT *function_call_expression;  // For method calls: obj.method(args)
     struct AST_STRUCT **function_call_arguments;
     size_t function_call_arguments_size;
 
@@ -323,6 +324,10 @@ typedef struct AST_STRUCT {
     /* Memory pool management */
     bool pooled;              ///< true if allocated from memory pool
     struct AST_STRUCT *next;  ///< Next node in free list (when pooled)
+
+    /* Runtime value cache for variable definitions */
+    void *runtime_value;  ///< Cached RuntimeValue for variables (only used in
+                          ///< AST_VARIABLE_DEFINITION)
 } AST_T;
 
 /**

@@ -1,0 +1,4 @@
+set p name "Alice"
+print "p created"
+print p.name
+print "done"

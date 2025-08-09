@@ -141,6 +141,16 @@ AST_T *scope_add_variable_definition(scope_T *scope, AST_T *vdef)
             // This ensures that variable values are properly updated in loops
             // printf("DEBUG: SCOPE - updating variable '%s', old_node=%p, new_node=%p\n",
             //        vdef->variable_definition_variable_name, (void*)existing, (void*)vdef);
+
+            // IMPORTANT: When replacing a variable definition, we need to preserve
+            // any runtime_value from the old definition if the new one doesn't have one yet
+            // This prevents "null" values during variable updates like "set x x + 5"
+            if (existing->runtime_value && !vdef->runtime_value) {
+                // Forward declaration of rv_ref
+                void *rv_ref(void *);
+                vdef->runtime_value = rv_ref(existing->runtime_value);
+            }
+
             scope->variable_definitions[i] = vdef;
             return vdef;
         }

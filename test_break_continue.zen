@@ -1,0 +1,19 @@
+print "Testing break:"
+for i in 1, 2, 3, 4, 5
+    if i = 3
+        break
+    print "i = " + i
+
+print "\nTesting continue:"
+for j in 1, 2, 3, 4, 5
+    if j = 3
+        continue
+    print "j = " + j
+
+print "\nTesting in while loop:"
+set k 0
+while k < 5
+    set k k + 1
+    if k = 3
+        continue
+    print "k = " + k

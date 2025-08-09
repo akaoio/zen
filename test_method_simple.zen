@@ -1,0 +1,7 @@
+class Foo
+    function bar
+        print "in bar"
+
+set f new Foo
+print "calling method"
+f.bar

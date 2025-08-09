@@ -19,6 +19,7 @@ typedef struct PARSER_STRUCT {
         bool in_variable_assignment;
         bool in_method_body;
         bool in_function_call;
+        bool in_print_statement;
     } context;
 
     // Performance optimization cache

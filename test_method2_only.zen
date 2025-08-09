@@ -1,0 +1,6 @@
+class Test
+    function method2
+        print "Method 2"
+
+set t new Test
+t.method2

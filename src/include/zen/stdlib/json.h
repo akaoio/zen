@@ -1,7 +1,7 @@
 #ifndef ZEN_STDLIB_JSON_H
 #define ZEN_STDLIB_JSON_H
 
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 /**
  * @file json.h
@@ -29,7 +29,7 @@
  * @note Supports all JSON types: null, boolean, number, string, array, object
  * @note Performance: ~9 MB/s on typical hardware
  */
-Value *json_parse(const char *json_string);
+RuntimeValue *json_parse(const char *json_string);
 
 /**
  * @brief Convert Value to compact JSON string
@@ -38,7 +38,7 @@ Value *json_parse(const char *json_string);
  * @note Caller must free() the returned string
  * @note Produces compact JSON without whitespace
  */
-char *json_stringify(const Value *value);
+char *json_stringify(const RuntimeValue *value);
 
 /**
  * @brief Convert Value to formatted JSON string with indentation
@@ -48,7 +48,7 @@ char *json_stringify(const Value *value);
  * @note Caller must free() the returned string
  * @note Produces human-readable JSON with proper formatting
  */
-char *json_stringify_pretty(const Value *value, int indent_size);
+char *json_stringify_pretty(const RuntimeValue *value, int indent_size);
 
 /**
  * @brief Parse JSON file with comprehensive error handling
@@ -57,7 +57,7 @@ char *json_stringify_pretty(const Value *value, int indent_size);
  * @note Handles file I/O errors and JSON parsing errors
  * @note Supports files up to 64MB (MAX_JSON_FILE_SIZE)
  */
-Value *json_parse_file_safe(const char *filename);
+RuntimeValue *json_parse_file_safe(const char *filename);
 
 /* ============================================================================
  * STDLIB INTEGRATION FUNCTIONS
@@ -70,7 +70,7 @@ Value *json_parse_file_safe(const char *filename);
  * @return Parsed JSON Value or error
  * @note Used internally by ZEN's built-in json_load() function
  */
-Value *json_load_file(Value **args, size_t argc);
+RuntimeValue *json_load_file(RuntimeValue **args, size_t argc);
 
 /* ============================================================================
  * IMPLEMENTATION NOTES

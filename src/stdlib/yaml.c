@@ -13,10 +13,10 @@
 
 #include "zen/core/error.h"
 #include "zen/core/memory.h"
+#include "zen/core/runtime_value.h"
 #include "zen/stdlib/io.h"
 #include "zen/types/array.h"
 #include "zen/types/object.h"
-#include "zen/types/value.h"
 
 #include <math.h>
 #include <stdio.h>

@@ -20,11 +20,11 @@
 
 #include "zen/core/error.h"
 #include "zen/core/memory.h"
+#include "zen/core/runtime_value.h"
 #include "zen/stdlib/convert.h"
 #include "zen/stdlib/json.h"
 #include "zen/types/array.h"
 #include "zen/types/object.h"
-#include "zen/types/value.h"
 
 #include <curl/curl.h>
 #include <stdbool.h>

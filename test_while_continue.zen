@@ -1,0 +1,7 @@
+print "Testing in while loop:"
+set k 0
+while k < 5
+    set k k + 1
+    if k = 3
+        continue
+    print "k = " + k

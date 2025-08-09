@@ -1,0 +1,5 @@
+print "Before class"
+class Test
+    function hello
+        print "Hello"
+print "After class"

@@ -9,7 +9,7 @@
 #include "zen/stdlib/math.h"
 
 #include "zen/core/error.h"
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <math.h>
 #include <stdbool.h>

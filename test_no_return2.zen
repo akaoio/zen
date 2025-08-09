@@ -1,5 +1,0 @@
-function test
-    set x 42
-
-set result test
-print result

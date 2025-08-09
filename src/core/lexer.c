@@ -302,14 +302,34 @@ token_T *lexer_get_next_token(lexer_T *lexer)
             return lexer_advance_with_token(lexer, token_new(TOKEN_GREATER_THAN, ">"));
 
         case '+':
+            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+                lexer_advance(lexer);
+                return lexer_advance_with_token(lexer, token_new(TOKEN_PLUS_EQUALS, "+="));
+            }
             return lexer_advance_with_token(lexer, token_new(TOKEN_PLUS, "+"));
         case '-':
+            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+                lexer_advance(lexer);
+                return lexer_advance_with_token(lexer, token_new(TOKEN_MINUS_EQUALS, "-="));
+            }
             return lexer_advance_with_token(lexer, token_new(TOKEN_MINUS, "-"));
         case '*':
+            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+                lexer_advance(lexer);
+                return lexer_advance_with_token(lexer, token_new(TOKEN_MULTIPLY_EQUALS, "*="));
+            }
             return lexer_advance_with_token(lexer, token_new(TOKEN_MULTIPLY, "*"));
         case '/':
+            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+                lexer_advance(lexer);
+                return lexer_advance_with_token(lexer, token_new(TOKEN_DIVIDE_EQUALS, "/="));
+            }
             return lexer_advance_with_token(lexer, token_new(TOKEN_DIVIDE, "/"));
         case '%':
+            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+                lexer_advance(lexer);
+                return lexer_advance_with_token(lexer, token_new(TOKEN_MODULO_EQUALS, "%="));
+            }
             return lexer_advance_with_token(lexer, token_new(TOKEN_MODULO, "%"));
 
         case '&':
@@ -534,6 +554,12 @@ token_T *lexer_collect_number(lexer_T *lexer)
                     break;
                 }
             } else {
+                // Check if the next character is another dot (range operator)
+                if (lexer->i + 1 < strlen(lexer->contents) &&
+                    lexer->contents[lexer->i + 1] == '.') {
+                    // Don't consume this dot - it's part of the range operator
+                    break;
+                }
                 // If we already have digits, a trailing dot is acceptable (like "5.")
                 // We don't need to check for digits after the dot in this case
             }

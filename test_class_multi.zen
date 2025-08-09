@@ -1,0 +1,7 @@
+print "Before"
+class Foo
+    function bar
+        print "bar"
+    function baz
+        print "baz"
+print "After"

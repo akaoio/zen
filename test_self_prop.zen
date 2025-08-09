@@ -1,0 +1,10 @@
+class Test
+    function setName n
+        set self.name n
+    
+    function getName
+        return self.name
+
+set t new Test
+t.setName "Alice"
+print t.getName

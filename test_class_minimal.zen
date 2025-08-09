@@ -1,0 +1,7 @@
+class Foo
+    function constructor
+        print "Constructor called"
+
+print "Creating Foo"
+set x new Foo
+print "Created Foo"

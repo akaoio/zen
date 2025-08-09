@@ -1,4 +1,0 @@
-set obj name "Alice", age 25
-print "Object is:"
-print obj
-print "Done"

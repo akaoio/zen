@@ -10,7 +10,7 @@
 
 #include "zen/config.h"
 #include "zen/core/memory.h"
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stdarg.h>
 #include <stdbool.h>

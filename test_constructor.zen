@@ -1,0 +1,7 @@
+class Person
+    function constructor name
+        print "Creating person with name: " + name
+        return self
+
+set p new Person "Alice"
+print "Person created"

@@ -1,5 +1,0 @@
-function test
-    return 42
-
-set result test
-print result

@@ -1,0 +1,6 @@
+class Person
+    function greet name
+        print "Hello, " + name
+
+set p new Person
+p.greet "World"

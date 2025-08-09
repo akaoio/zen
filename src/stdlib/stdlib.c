@@ -11,6 +11,7 @@
 
 #include "zen/core/error.h"
 #include "zen/core/memory.h"
+#include "zen/core/runtime_value.h"
 #include "zen/stdlib/convert.h"
 #include "zen/stdlib/http.h"
 #include "zen/stdlib/io.h"
@@ -22,7 +23,6 @@
 #include "zen/stdlib/string.h"
 #include "zen/stdlib/yaml.h"
 #include "zen/types/array.h"
-#include "zen/types/value.h"
 
 #include <stdlib.h>
 #include <string.h>

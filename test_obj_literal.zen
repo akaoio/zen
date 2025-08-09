@@ -1,0 +1,2 @@
+set p { name "Alice", age 25 }
+print p.name

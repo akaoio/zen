@@ -1,0 +1,6 @@
+class Test
+    function test
+        print self
+
+set t new Test
+t.test

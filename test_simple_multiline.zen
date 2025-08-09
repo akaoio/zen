@@ -1,5 +1,0 @@
-set obj
-    name "test",
-    value 42
-
-print obj

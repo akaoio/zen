@@ -1,0 +1,4 @@
+print "Before set"
+set x new Foo
+print "After set"
+print x

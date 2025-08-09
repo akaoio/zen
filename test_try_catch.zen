@@ -1,0 +1,10 @@
+print "Before try"
+
+try
+    print "In try block"
+    throw "Something went wrong!"
+    print "This should not print"
+catch e
+    print "Caught exception: " + e
+
+print "After try/catch"

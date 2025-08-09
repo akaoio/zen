@@ -1,6 +1,0 @@
-set name "ZEN"
-function greet person
-    return "Hello, " + person + "\!"
-
-print greet name
-EOF < /dev/null

@@ -1,7 +1,7 @@
 #ifndef ZEN_STDLIB_LOGGING_H
 #define ZEN_STDLIB_LOGGING_H
 
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stddef.h>
 
@@ -23,7 +23,7 @@ typedef enum {
  * @param argc Number of arguments (should be 1)
  * @return Null value
  */
-Value *logging_debug(Value **args, size_t argc);
+RuntimeValue *logging_debug(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log an info message
@@ -31,7 +31,7 @@ Value *logging_debug(Value **args, size_t argc);
  * @param argc Number of arguments (should be 1)
  * @return Null value
  */
-Value *logging_info(Value **args, size_t argc);
+RuntimeValue *logging_info(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log a warning message
@@ -39,7 +39,7 @@ Value *logging_info(Value **args, size_t argc);
  * @param argc Number of arguments (should be 1)
  * @return Null value
  */
-Value *logging_warn(Value **args, size_t argc);
+RuntimeValue *logging_warn(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log an error message
@@ -47,7 +47,7 @@ Value *logging_warn(Value **args, size_t argc);
  * @param argc Number of arguments (should be 1)
  * @return Null value
  */
-Value *logging_error(Value **args, size_t argc);
+RuntimeValue *logging_error(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log a formatted debug message (printf-style)
@@ -55,7 +55,7 @@ Value *logging_error(Value **args, size_t argc);
  * @param argc Number of arguments (format + values)
  * @return Null value
  */
-Value *logging_debugf(Value **args, size_t argc);
+RuntimeValue *logging_debugf(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log a formatted info message (printf-style)
@@ -63,7 +63,7 @@ Value *logging_debugf(Value **args, size_t argc);
  * @param argc Number of arguments (format + values)
  * @return Null value
  */
-Value *logging_infof(Value **args, size_t argc);
+RuntimeValue *logging_infof(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log a formatted warning message (printf-style)
@@ -71,7 +71,7 @@ Value *logging_infof(Value **args, size_t argc);
  * @param argc Number of arguments (format + values)
  * @return Null value
  */
-Value *logging_warnf(Value **args, size_t argc);
+RuntimeValue *logging_warnf(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log a formatted error message (printf-style)
@@ -79,7 +79,7 @@ Value *logging_warnf(Value **args, size_t argc);
  * @param argc Number of arguments (format + values)
  * @return Null value
  */
-Value *logging_errorf(Value **args, size_t argc);
+RuntimeValue *logging_errorf(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log a debug message only if condition is true
@@ -87,7 +87,7 @@ Value *logging_errorf(Value **args, size_t argc);
  * @param argc Number of arguments (should be 2)
  * @return Null value
  */
-Value *logging_debug_if(Value **args, size_t argc);
+RuntimeValue *logging_debug_if(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Set minimum logging level (0=DEBUG, 1=INFO, 2=WARN, 3=ERROR)
@@ -95,7 +95,7 @@ Value *logging_debug_if(Value **args, size_t argc);
  * @param argc Number of arguments (should be 1)
  * @return Null value
  */
-Value *logging_set_level(Value **args, size_t argc);
+RuntimeValue *logging_set_level(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Log a message with context information
@@ -103,7 +103,7 @@ Value *logging_set_level(Value **args, size_t argc);
  * @param argc Number of arguments (should be 3)
  * @return Null value
  */
-Value *logging_with_context(Value **args, size_t argc);
+RuntimeValue *logging_with_context(RuntimeValue **args, size_t argc);
 
 /**
  * @brief Get current logging level
@@ -111,7 +111,7 @@ Value *logging_with_context(Value **args, size_t argc);
  * @param argc Number of arguments (unused)
  * @return Number value representing current log level
  */
-Value *logging_get_level(Value **args, size_t argc);
+RuntimeValue *logging_get_level(RuntimeValue **args, size_t argc);
 
 // Internal helper functions (not exposed to ZEN programs)
 

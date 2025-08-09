@@ -24,9 +24,6 @@
 #include "zen/stdlib/module.h"
 #include "zen/stdlib/stdlib.h"
 #include "zen/stdlib/yaml.h"
-#include "zen/types/array.h"
-#include "zen/types/object.h"
-#include "zen/types/value.h"
 
 #include <math.h>
 #include <stdbool.h>
@@ -43,7 +40,7 @@
 
 // Forward declarations
 // static RuntimeValue *builtin_function_print(visitor_T *visitor, AST_T **args, int args_size);
-static Value *ast_to_value(AST_T *node);
+static RuntimeValue *ast_to_value(AST_T *node);
 // TODO: Update these to RuntimeValue
 // static RuntimeValue *visitor_visit_class_definition(visitor_T *visitor, AST_T *node);
 // static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *node);
@@ -56,8 +53,15 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
 static RuntimeValue *visitor_visit_if_statement(visitor_T *visitor, AST_T *node);
 static RuntimeValue *visitor_visit_while_loop(visitor_T *visitor, AST_T *node);
 static RuntimeValue *visitor_visit_for_loop(visitor_T *visitor, AST_T *node);
+static RuntimeValue *visitor_visit_class_definition(visitor_T *visitor, AST_T *node);
+static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *node);
+static RuntimeValue *visitor_visit_try_catch(visitor_T *visitor, AST_T *node);
+static RuntimeValue *visitor_visit_throw(visitor_T *visitor, AST_T *node);
+static RuntimeValue *visitor_visit_compound_assignment(visitor_T *visitor, AST_T *node);
 static RuntimeValue *
 visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int args_size);
+static RuntimeValue *visitor_execute_user_function_ex(
+    visitor_T *visitor, AST_T *fdef, AST_T **args, int args_size, bool is_method_call);
 static bool is_truthy_rv(RuntimeValue *rv);
 
 // Database-like file operations
@@ -316,10 +320,18 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
     case AST_IMPORT:
     case AST_EXPORT:
-    case AST_CLASS_DEFINITION:
-    case AST_NEW_EXPRESSION:
-        // TODO: Implement these with RuntimeValue
+        // TODO: Implement module system
         return rv_new_null();
+    case AST_CLASS_DEFINITION:
+        return visitor_visit_class_definition(visitor, node);
+    case AST_NEW_EXPRESSION:
+        return visitor_visit_new_expression(visitor, node);
+    case AST_TRY_CATCH:
+        return visitor_visit_try_catch(visitor, node);
+    case AST_THROW:
+        return visitor_visit_throw(visitor, node);
+    case AST_COMPOUND_ASSIGNMENT:
+        return visitor_visit_compound_assignment(visitor, node);
 
     default:
         // For unimplemented features, return null
@@ -362,22 +374,23 @@ RuntimeValue *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
     // Evaluate the value expression
     RuntimeValue *value = NULL;
     if (node->variable_definition_value) {
+        LOG_VISITOR_DEBUG("Evaluating expression for variable '%s'",
+                          node->variable_definition_variable_name);
         value = visitor_visit(visitor, node->variable_definition_value);
+        LOG_VISITOR_DEBUG("Expression evaluated to: %s", value ? rv_to_string(value) : "NULL");
     } else {
         value = rv_new_null();
     }
 
-    // Convert the evaluated RuntimeValue back to a simple AST value node
-    // This ensures we store the evaluated result, not the expression
-    AST_T *evaluated_ast = runtime_value_to_ast(value);
-
-    // Free the old expression AST if it's different from the new one
-    if (node->variable_definition_value && node->variable_definition_value != evaluated_ast) {
-        ast_free(node->variable_definition_value);
+    // Store the evaluated RuntimeValue in the variable definition
+    // We'll add a runtime_value field to the AST node to cache the evaluated value
+    if (node->runtime_value) {
+        rv_unref(node->runtime_value);
     }
-
-    // Replace the expression with the evaluated value
-    node->variable_definition_value = evaluated_ast;
+    node->runtime_value = rv_ref(value);
+    LOG_VISITOR_DEBUG("Stored runtime_value for '%s': %s",
+                      node->variable_definition_variable_name,
+                      value ? rv_to_string(value) : "NULL");
 
     // Add variable to scope
     AST_T *result = scope_add_variable_definition(node->scope, node);
@@ -440,15 +453,37 @@ RuntimeValue *visitor_visit_variable(visitor_T *visitor, AST_T *node)
 
     AST_T *vdef = scope_get_variable_definition(node->scope, node->variable_name);
 
-    if (vdef != NULL && vdef->variable_definition_value != NULL) {
-        // Variable found with value
+    if (vdef != NULL) {
+        // Variable found
         LOG_VISITOR_DEBUG("Found variable '%s', type=%d", node->variable_name, vdef->type);
 
-        // Convert the stored AST value to RuntimeValue
-        // The value is already evaluated and stored as a simple AST node
-        RuntimeValue *result = ast_to_runtime_value(vdef->variable_definition_value);
+        // Use the cached RuntimeValue if available
+        if (vdef->runtime_value) {
+            // Create a new reference to return
+            RuntimeValue *cached = (RuntimeValue *)vdef->runtime_value;
+            LOG_VISITOR_DEBUG("Found cached value for '%s': %s",
+                              node->variable_name,
+                              cached ? rv_to_string(cached) : "NULL");
+            return rv_ref(cached);
+        }
 
-        return result;
+        // No cached RuntimeValue - try to evaluate the stored value if it's a simple literal
+        if (vdef->variable_definition_value != NULL) {
+            AST_T *val = vdef->variable_definition_value;
+            // Only convert simple literals, not expressions
+            if (val->type == AST_NUMBER || val->type == AST_STRING || val->type == AST_BOOLEAN ||
+                val->type == AST_NULL || val->type == AST_ARRAY || val->type == AST_OBJECT) {
+                RuntimeValue *result = ast_to_runtime_value(val);
+                // Cache it for next time
+                vdef->runtime_value = rv_ref(result);
+                return result;
+            }
+        }
+
+        // No value or complex expression - return null
+        LOG_VISITOR_DEBUG("Variable '%s' has no cached RuntimeValue and no simple literal value",
+                          node->variable_name);
+        return rv_new_null();
     }
 
     LOG_ERROR(LOG_CAT_VISITOR, "Undefined variable '%s'", node->variable_name);
@@ -463,7 +498,84 @@ RuntimeValue *visitor_visit_variable(visitor_T *visitor, AST_T *node)
  */
 RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
 {
-    if (!visitor || !node || !node->function_call_name) {
+    if (!visitor || !node) {
+        return rv_new_null();
+    }
+
+    // Handle method calls (obj.method syntax)
+    if (node->function_call_expression) {
+        // Evaluate the expression to get the function
+        RuntimeValue *func_rv = visitor_visit(visitor, node->function_call_expression);
+        if (!func_rv || func_rv->type != RV_FUNCTION) {
+            if (func_rv)
+                rv_unref(func_rv);
+            return rv_new_null();
+        }
+
+        // For method calls, we need to prepend 'self' as the first argument
+        bool is_method_call = (node->function_call_expression->type == AST_PROPERTY_ACCESS);
+        RuntimeValue *result = NULL;
+
+        if (is_method_call) {
+            // Get the object (self) from the property access
+            AST_T *obj_ast = node->function_call_expression->object;
+            RuntimeValue *self_rv = visitor_visit(visitor, obj_ast);
+
+            // Prepare arguments with self as first
+            size_t total_args = 1 + node->function_call_arguments_size;
+            RuntimeValue **args = memory_alloc(sizeof(RuntimeValue *) * total_args);
+
+            // First argument is self
+            args[0] = self_rv;
+
+            // Evaluate remaining arguments
+            for (size_t i = 0; i < node->function_call_arguments_size; i++) {
+                args[i + 1] = visitor_visit(visitor, node->function_call_arguments[i]);
+                if (!args[i + 1]) {
+                    args[i + 1] = rv_new_null();
+                }
+            }
+
+            // Call the function
+            AST_T *func_def = (AST_T *)func_rv->data.function.ast_node;
+
+            // Note: visitor_execute_user_function expects AST arguments, but we have RuntimeValues
+            // We need to convert back to AST temporarily or modify the function
+            // For now, let's use a simpler approach
+
+            // Create AST arguments from RuntimeValues
+            AST_T **ast_args = memory_alloc(sizeof(AST_T *) * total_args);
+            for (size_t i = 0; i < total_args; i++) {
+                ast_args[i] = runtime_value_to_ast(args[i]);
+            }
+
+            result =
+                visitor_execute_user_function_ex(visitor, func_def, ast_args, total_args, true);
+
+            // Clean up
+            for (size_t i = 0; i < total_args; i++) {
+                if (args[i])
+                    rv_unref(args[i]);
+                if (ast_args[i])
+                    ast_free(ast_args[i]);
+            }
+            memory_free(args);
+            memory_free(ast_args);
+        } else {
+            // Regular function call through expression
+            AST_T *func_def = (AST_T *)func_rv->data.function.ast_node;
+            result = visitor_execute_user_function(visitor,
+                                                   func_def,
+                                                   node->function_call_arguments,
+                                                   node->function_call_arguments_size);
+        }
+
+        rv_unref(func_rv);
+        return result ? result : rv_new_null();
+    }
+
+    // Original code for named function calls
+    if (!node->function_call_name) {
         return rv_new_null();
     }
 
@@ -473,54 +585,39 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     if (stdlib_func != NULL) {
         LOG_VISITOR_DEBUG("Found stdlib function '%s'", node->function_call_name);
         // Convert AST arguments to Value arguments
-        Value **value_args = NULL;
+        RuntimeValue **value_args = NULL;
         size_t argc = (size_t)node->function_call_arguments_size;
 
         if (argc > 0) {
-            value_args = memory_alloc(sizeof(Value *) * argc);
+            value_args = memory_alloc(sizeof(RuntimeValue *) * argc);
             if (!value_args) {
                 return rv_new_null();
             }
 
-            // Evaluate and convert each argument
+            // Evaluate each argument
             for (size_t i = 0; i < argc; i++) {
-                RuntimeValue *arg_rv = visitor_visit(visitor, node->function_call_arguments[i]);
-                AST_T *arg_ast = runtime_value_to_ast(arg_rv);
-                value_args[i] = ast_to_value(arg_ast);
-                ast_free(arg_ast);  // Free temporary AST
-                rv_unref(arg_rv);
+                value_args[i] = visitor_visit(visitor, node->function_call_arguments[i]);
                 if (!value_args[i]) {
-                    value_args[i] = value_new_null();
+                    value_args[i] = rv_new_null();
                 }
             }
         }
 
         // Call the stdlib function
-        Value *result = stdlib_func->func(value_args, argc);
+        RuntimeValue *result = stdlib_func->func(value_args, argc);
 
         // Clean up arguments
         if (value_args) {
             for (size_t i = 0; i < argc; i++) {
                 if (value_args[i]) {
-                    value_unref(value_args[i]);
+                    rv_unref(value_args[i]);
                 }
             }
             memory_free(value_args);
         }
 
-        // Convert result to RuntimeValue
-        if (result) {
-            AST_T *result_ast = value_to_ast(result);
-            value_unref(result);
-            if (!result_ast) {
-                return rv_new_null();
-            }
-            RuntimeValue *rv = ast_to_runtime_value(result_ast);
-            ast_free(result_ast);  // Free temporary AST
-            return rv;
-        } else {
-            return rv_new_null();
-        }
+        // Return the result directly - no conversion needed
+        return result ? result : rv_new_null();
     }
 
     // Handle built-in functions (legacy print support)
@@ -561,19 +658,22 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
             AST_T *class_def = class_var->variable_definition_value;
             if (class_def->type == AST_CLASS_DEFINITION) {
                 // Create a new instance
-                Value *class_val = value_new_class(class_def->class_name, class_def->parent_class);
+                // TODO: Class system not yet implemented in RuntimeValue
+                RuntimeValue *class_val = rv_new_null();  // value_new_class(class_def->class_name,
+                                                          // class_def->parent_class);
                 if (!class_val) {
                     return rv_new_null();
                 }
 
-                Value *instance = value_new_instance(class_val);
-                value_unref(class_val);
+                // TODO: Instance system not yet implemented in RuntimeValue
+                RuntimeValue *instance = rv_new_null();  // value_new_instance(class_val);
+                rv_unref(class_val);
 
                 if (instance) {
                     // Constructor method with arguments can be implemented when needed
                     // Return the new instance as RuntimeValue
                     AST_T *result_ast = value_to_ast(instance);
-                    value_unref(instance);
+                    rv_unref(instance);
                     if (!result_ast) {
                         return rv_new_null();
                     }
@@ -591,16 +691,17 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     // Check if calling a class constructor
     AST_T *class_var = scope_get_variable_definition(node->scope, node->function_call_name);
     if (class_var && class_var->variable_definition_value) {
-        Value *potential_class = ast_to_value(class_var->variable_definition_value);
-        if (potential_class && potential_class->type == VALUE_CLASS) {
+        RuntimeValue *potential_class = ast_to_value(class_var->variable_definition_value);
+        // TODO: Class system not yet implemented in RuntimeValue
+        if (false && potential_class) {  // potential_class->type == VALUE_CLASS
             // This is a class constructor call - create new instance
-            Value *instance = value_new_instance(potential_class);
+            RuntimeValue *instance = rv_new_null();  // value_new_instance(potential_class);
             if (instance) {
                 // Constructor method calling can be implemented when needed
                 // Return the new instance as RuntimeValue
                 AST_T *result_ast = value_to_ast(instance);
-                value_unref(instance);
-                value_unref(potential_class);
+                rv_unref(instance);
+                rv_unref(potential_class);
                 if (!result_ast) {
                     return rv_new_null();
                 }
@@ -610,7 +711,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
             }
         }
         if (potential_class) {
-            value_unref(potential_class);
+            rv_unref(potential_class);
         }
     }
 
@@ -622,12 +723,23 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
         // This handles ZEN's design where standalone identifiers default to function calls
         // but should fallback to variable lookup if no function exists
         AST_T *vdef = scope_get_variable_definition(node->scope, node->function_call_name);
-        if (vdef && vdef->variable_definition_value) {
+        if (vdef) {
             LOG_VISITOR_DEBUG("Function '%s' not found, treating as variable reference",
                               node->function_call_name);
-            // For literals, return them directly as RuntimeValue
-            AST_T *value = vdef->variable_definition_value;
-            return ast_to_runtime_value(value);
+            // Use the cached runtime value if available
+            if (vdef->runtime_value) {
+                return rv_ref((RuntimeValue *)vdef->runtime_value);
+            }
+            // Fallback for simple literals only
+            if (vdef->variable_definition_value) {
+                AST_T *value = vdef->variable_definition_value;
+                if (value->type == AST_NUMBER || value->type == AST_STRING ||
+                    value->type == AST_BOOLEAN || value->type == AST_NULL ||
+                    value->type == AST_ARRAY || value->type == AST_OBJECT) {
+                    return ast_to_runtime_value(value);
+                }
+            }
+            return rv_new_null();
         }
 
         // Neither function nor variable found
@@ -675,6 +787,43 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
 
         last_result = visitor_visit(visitor, node->compound_statements[i]);
 
+        // Property access handled
+
+        // Check if this is a standalone method call
+        // If the statement is a property access that returned a method function,
+        // and it's used as a standalone statement, execute it with no arguments
+        if (last_result && last_result->type == RV_FUNCTION &&
+            node->compound_statements[i]->type == AST_PROPERTY_ACCESS) {
+            // This is a method accessed as a property - execute it as a zero-arg method call
+            AST_T *prop_access = node->compound_statements[i];
+            // Execute as standalone method call
+
+            // Get the object (self) value
+            RuntimeValue *self_value = visitor_visit(visitor, prop_access->object);
+            if (!self_value) {
+                self_value = rv_new_null();
+            }
+
+            // Convert to AST for function execution
+            AST_T *self_ast = runtime_value_to_ast(self_value);
+            AST_T **args = memory_alloc(sizeof(AST_T *));
+            args[0] = self_ast;
+
+            // Execute the method with self as the first argument
+            RuntimeValue *method_result = visitor_execute_user_function_ex(
+                visitor, (AST_T *)last_result->data.function.ast_node, args, 1, true);
+
+            // Method executed
+
+            // Cleanup
+            rv_unref(self_value);
+            // Don't free self_ast - it might be referenced by the function scope
+            // ast_free(self_ast);
+            memory_free(args);
+            rv_unref(last_result);
+            last_result = method_result;
+        }
+
         // Check for control flow markers
         if (last_result && last_result->type == RV_OBJECT) {
             // Check for RETURN marker
@@ -685,6 +834,7 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
                 // Don't unref return_marker - it's owned by last_result
                 return last_result;
             }
+            // Note: We don't check for __class__ here - class definitions are normal statements
         } else if (last_result && last_result->type == RV_STRING) {
             // Check for BREAK/CONTINUE markers
             const char *str = rv_get_string(last_result);
@@ -706,11 +856,11 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
  * @param node AST node to convert
  * @return Value object or NULL on failure
  */
-static Value *ast_to_value(AST_T *node)
+static RuntimeValue *ast_to_value(AST_T *node)
 {
     if (!node) {
         LOG_VISITOR_DEBUG("ast_to_value called with NULL node");
-        return value_new_null();
+        return rv_new_null();
     }
 
     LOG_VISITOR_DEBUG("Converting AST type %d to Value", node->type);
@@ -718,35 +868,35 @@ static Value *ast_to_value(AST_T *node)
     switch (node->type) {
     case AST_NULL:
         LOG_VISITOR_DEBUG("Converting AST_NULL to Value");
-        return value_new_null();
+        return rv_new_null();
 
     case AST_UNDECIDABLE:
         LOG_VISITOR_DEBUG("Converting AST_UNDECIDABLE to Value");
-        return value_new_undecidable();
+        return rv_new_null();
 
     case AST_BOOLEAN:
         LOG_VISITOR_DEBUG("Converting AST_BOOLEAN (%s) to Value",
                           node->boolean_value ? "true" : "false");
-        return value_new_boolean(node->boolean_value);
+        return rv_new_boolean(node->boolean_value);
     case AST_NUMBER:
         LOG_VISITOR_DEBUG("Converting AST_NUMBER (%f) to Value", node->number_value);
-        return value_new_number(node->number_value);
+        return rv_new_number(node->number_value);
     case AST_STRING:
         LOG_VISITOR_DEBUG("Converting AST_STRING ('%s') to Value",
                           node->string_value ? node->string_value : "");
-        return value_new_string(node->string_value ? node->string_value : "");
+        return rv_new_string(node->string_value ? node->string_value : "");
     case AST_ARRAY: {
         // Create a new array Value
-        Value *array_val = array_new(node->array_size > 0 ? node->array_size : 1);
+        RuntimeValue *array_val = rv_new_array();
         if (!array_val)
-            return value_new_null();
+            return rv_new_null();
 
         // Convert each element and add to array
         for (size_t i = 0; i < node->array_size; i++) {
-            Value *element_val = ast_to_value(node->array_elements[i]);
+            RuntimeValue *element_val = ast_to_value(node->array_elements[i]);
             if (element_val) {
-                array_push(array_val, element_val);
-                value_unref(element_val);
+                rv_array_push(array_val, element_val);
+                rv_unref(element_val);
             }
         }
 
@@ -755,24 +905,24 @@ static Value *ast_to_value(AST_T *node)
     }
     case AST_OBJECT: {
         // Create a new object Value
-        Value *object_val = object_new();
+        RuntimeValue *object_val = rv_new_object();
         if (!object_val)
-            return value_new_null();
+            return rv_new_null();
 
         // Set each key-value pair
         for (size_t i = 0; i < node->object_size; i++) {
             if (node->object_keys[i] && node->object_values[i]) {
-                Value *value_val = ast_to_value(node->object_values[i]);
+                RuntimeValue *value_val = ast_to_value(node->object_values[i]);
                 if (value_val) {
-                    object_set(object_val, node->object_keys[i], value_val);
+                    rv_object_set(object_val, node->object_keys[i], value_val);
 
                     // Verify it was set
-                    Value *check_val = object_get(object_val, node->object_keys[i]);
+                    RuntimeValue *check_val = rv_object_get(object_val, node->object_keys[i]);
                     if (check_val) {
-                        value_unref(check_val);
+                        // rv_object_get returns borrowed reference, don't unref
                     }
 
-                    value_unref(value_val);
+                    rv_unref(value_val);
                 }
             }
         }
@@ -784,11 +934,11 @@ static Value *ast_to_value(AST_T *node)
         // For AST_VARIABLE nodes, we need to look up the actual value from scope
         // This should not happen in normal flow as variables should be resolved first
         LOG_VISITOR_DEBUG("AST_VARIABLE in ast_to_value - variable should be resolved first");
-        return value_new_null();
+        return rv_new_null();
 
     default:
         LOG_VISITOR_DEBUG("Unknown AST type %d, returning null", node->type);
-        return value_new_null();
+        return rv_new_null();
     }
 }
 
@@ -797,47 +947,45 @@ static Value *ast_to_value(AST_T *node)
  * @param value Value object to convert
  * @return AST node or NULL on failure
  */
-AST_T *value_to_ast(Value *value)
+AST_T *value_to_ast(RuntimeValue *value)
 {
     if (!value) {
         return ast_new(AST_NULL);
     }
 
     switch (value->type) {
-    case VALUE_NULL:
-        return ast_new(AST_NULL);
-    case VALUE_UNDECIDABLE:
+    case RV_NULL:  // Note: RuntimeValue doesn't have undecidable, mapping to RV_NULL
         return ast_new(AST_UNDECIDABLE);
-    case VALUE_BOOLEAN: {
+    case RV_BOOLEAN: {
         AST_T *ast = ast_new(AST_BOOLEAN);
         if (ast) {
-            ast->boolean_value = value->as.boolean;
+            ast->boolean_value = value->data.boolean;
         }
         return ast;
     }
-    case VALUE_NUMBER: {
+    case RV_NUMBER: {
         AST_T *ast = ast_new(AST_NUMBER);
         if (ast) {
-            ast->number_value = value->as.number;
+            ast->number_value = value->data.number;
         }
         return ast;
     }
-    case VALUE_STRING: {
+    case RV_STRING: {
         AST_T *ast = ast_new(AST_STRING);
-        if (ast && value->as.string && value->as.string->data) {
+        if (ast && value->data.string.data) {
             // NOTE: Removed automatic @ prefix conversion here to prevent infinite loops
             // The @ prefix should only be processed during initial parsing, not value conversion
-            ast->string_value = memory_strdup(value->as.string->data);
+            ast->string_value = memory_strdup(value->data.string.data);
         }
         return ast;
     }
-    case VALUE_ARRAY: {
+    case RV_ARRAY: {
         AST_T *ast = ast_new(AST_ARRAY);
-        if (!ast || !value->as.array)
+        if (!ast)
             return ast_new(AST_NULL);
 
         // Get array length
-        size_t length = array_length(value);
+        size_t length = value->data.array.count;
         ast->array_size = length;
 
         if (length > 0) {
@@ -850,10 +998,10 @@ AST_T *value_to_ast(Value *value)
 
             // Convert each element back to AST
             for (size_t i = 0; i < length; i++) {
-                Value *element_val = array_get(value, i);
+                RuntimeValue *element_val = value->data.array.elements[i];
                 ast->array_elements[i] = value_to_ast(element_val);
                 if (element_val)
-                    value_unref(element_val);
+                    rv_unref(element_val);
             }
         } else {
             ast->array_elements = NULL;
@@ -861,18 +1009,18 @@ AST_T *value_to_ast(Value *value)
 
         return ast;
     }
-    case VALUE_OBJECT: {
+    case RV_OBJECT: {
         AST_T *ast = ast_new(AST_OBJECT);
-        if (!ast || !value->as.object)
+        if (!ast)
             return ast_new(AST_NULL);
 
-        ZenObject *obj = value->as.object;
-        ast->object_size = obj->length;
+        // Get object data directly from RuntimeValue structure
+        ast->object_size = value->data.object.count;
 
-        if (obj->length > 0) {
+        if (value->data.object.count > 0) {
             // Allocate arrays for keys and values
-            ast->object_keys = memory_alloc(sizeof(char *) * obj->length);
-            ast->object_values = memory_alloc(sizeof(AST_T *) * obj->length);
+            ast->object_keys = memory_alloc(sizeof(char *) * value->data.object.count);
+            ast->object_values = memory_alloc(sizeof(AST_T *) * value->data.object.count);
 
             if (!ast->object_keys || !ast->object_values) {
                 if (ast->object_keys)
@@ -884,9 +1032,9 @@ AST_T *value_to_ast(Value *value)
             }
 
             // Copy keys and convert values
-            for (size_t i = 0; i < obj->length; i++) {
-                ast->object_keys[i] = memory_strdup(obj->pairs[i].key);
-                ast->object_values[i] = value_to_ast(obj->pairs[i].value);
+            for (size_t i = 0; i < value->data.object.count; i++) {
+                ast->object_keys[i] = memory_strdup(value->data.object.keys[i]);
+                ast->object_values[i] = value_to_ast(value->data.object.values[i]);
             }
         } else {
             ast->object_keys = NULL;
@@ -895,13 +1043,13 @@ AST_T *value_to_ast(Value *value)
 
         return ast;
     }
-    case VALUE_ERROR:
+    case RV_ERROR:
         LOG_ERROR(LOG_CAT_VISITOR,
                   "Error in expression evaluation: %s",
-                  value->as.error && value->as.error->message ? value->as.error->message
-                                                              : "Unknown error");
+                  value->data.error.message ? value->data.error.message : "Unknown error");
         return ast_new(AST_NULL);
-    case VALUE_CLASS: {
+    // TODO: Class system not implemented in RuntimeValue yet
+    /*case VALUE_CLASS: {
         // For now, represent class as a special object AST
         AST_T *ast = ast_new(AST_OBJECT);
         if (ast) {
@@ -909,8 +1057,9 @@ AST_T *value_to_ast(Value *value)
             // For now, just return the object representation
         }
         return ast;
-    }
-    case VALUE_INSTANCE: {
+    }*/
+    // TODO: Instance system not implemented in RuntimeValue yet
+    /*case VALUE_INSTANCE: {
         // Represent instance as an object with properties
         AST_T *ast = ast_new(AST_OBJECT);
         if (ast && value->as.instance && value->as.instance->properties) {
@@ -929,7 +1078,7 @@ AST_T *value_to_ast(Value *value)
             }
         }
         return ast;
-    }
+    }*/
     default:
         return ast_new(AST_NULL);
     }
@@ -971,8 +1120,8 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
     // Convert RuntimeValue to AST then to Value objects for operators
     AST_T *left_ast = runtime_value_to_ast(left_rv);
     AST_T *right_ast = runtime_value_to_ast(right_rv);
-    Value *left_val = ast_to_value(left_ast);
-    Value *right_val = ast_to_value(right_ast);
+    RuntimeValue *left_val = ast_to_value(left_ast);
+    RuntimeValue *right_val = ast_to_value(right_ast);
     ast_free(left_ast);
     ast_free(right_ast);
     rv_unref(left_rv);
@@ -980,19 +1129,19 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
 
     if (!left_val || !right_val) {
         if (left_val)
-            value_unref(left_val);
+            rv_unref(left_val);
         if (right_val)
-            value_unref(right_val);
+            rv_unref(right_val);
         return rv_new_null();
     }
 
-    Value *result = NULL;
+    RuntimeValue *result = NULL;
 
     // Apply the appropriate operator
     switch (node->operator_type) {
     case TOKEN_PLUS:
         result = op_add(left_val, right_val);
-        if (result && result->type == VALUE_NUMBER) {
+        if (result && result->type == RV_NUMBER) {
         }
         break;
     case TOKEN_MINUS:
@@ -1022,20 +1171,20 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
     case TOKEN_LESS_EQUALS:
         // Implement <= as !(a > b)
         {
-            Value *gt_val = op_greater_than(left_val, right_val);
+            RuntimeValue *gt_val = op_greater_than(left_val, right_val);
             if (gt_val) {
                 result = op_logical_not(gt_val);
-                value_unref(gt_val);
+                rv_unref(gt_val);
             }
         }
         break;
     case TOKEN_GREATER_EQUALS:
         // Implement >= as !(a < b)
         {
-            Value *lt_val = op_less_than(left_val, right_val);
+            RuntimeValue *lt_val = op_less_than(left_val, right_val);
             if (lt_val) {
                 result = op_logical_not(lt_val);
-                value_unref(lt_val);
+                rv_unref(lt_val);
             }
         }
         break;
@@ -1045,6 +1194,59 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
     case TOKEN_OR:
         result = op_logical_or(left_val, right_val);
         break;
+    case TOKEN_RANGE: {
+        // Handle range operator (start..end)
+        // Use left_val and right_val which are the converted values
+
+        // Both operands must be numbers
+        if (!left_val || !right_val || left_val->type != RV_NUMBER ||
+            right_val->type != RV_NUMBER) {
+            LOG_ERROR(LOG_CAT_VISITOR,
+                      "Range operator requires numeric operands (got %d, %d)",
+                      left_val ? (int)left_val->type : -1,
+                      right_val ? (int)right_val->type : -1);
+            result = NULL;
+            break;
+        }
+
+        // Create an array with values from start to end
+        double start = left_val->data.number;
+        double end = right_val->data.number;
+
+        // Ensure we're dealing with integers
+        if (start != (double)(int)start || end != (double)(int)end) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Range operator requires integer operands");
+            result = NULL;
+            break;
+        }
+
+        int istart = (int)start;
+        int iend = (int)end;
+
+        // Create array to hold range values - return RuntimeValue directly
+        RuntimeValue *range_array = rv_new_array();
+
+        // Handle ascending and descending ranges
+        if (istart <= iend) {
+            for (int i = istart; i <= iend; i++) {
+                RuntimeValue *num = rv_new_number((double)i);
+                rv_array_push(range_array, num);
+                rv_unref(num);
+            }
+        } else {
+            for (int i = istart; i >= iend; i--) {
+                RuntimeValue *num = rv_new_number((double)i);
+                rv_array_push(range_array, num);
+                rv_unref(num);
+            }
+        }
+
+        // Clean up operands before returning
+        rv_unref(left_val);
+        rv_unref(right_val);
+
+        return range_array;  // Return directly without conversion
+    }
     default:
         LOG_ERROR(LOG_CAT_VISITOR, "Unknown binary operator %d", node->operator_type);
         result = NULL;
@@ -1052,8 +1254,8 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
     }
 
     // Clean up operands
-    value_unref(left_val);
-    value_unref(right_val);
+    rv_unref(left_val);
+    rv_unref(right_val);
 
     if (!result) {
         return rv_new_null();
@@ -1061,7 +1263,7 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
 
     // Convert result to RuntimeValue
     AST_T *result_ast = value_to_ast(result);
-    value_unref(result);
+    rv_unref(result);
     RuntimeValue *result_rv = ast_to_runtime_value(result_ast);
     ast_free(result_ast);
 
@@ -1088,7 +1290,7 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
 
     // Convert RuntimeValue to AST then to Value object
     AST_T *operand_ast = runtime_value_to_ast(operand_rv);
-    Value *operand_val = ast_to_value(operand_ast);
+    RuntimeValue *operand_val = ast_to_value(operand_ast);
     ast_free(operand_ast);
     rv_unref(operand_rv);
 
@@ -1096,17 +1298,17 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
         return rv_new_null();
     }
 
-    Value *result = NULL;
+    RuntimeValue *result = NULL;
 
     // Apply the appropriate unary operator
     switch (node->operator_type) {
     case TOKEN_MINUS:
         // Unary minus: multiply by -1
         {
-            Value *neg_one = value_new_number(-1.0);
+            RuntimeValue *neg_one = rv_new_number(-1.0);
             if (neg_one) {
                 result = op_multiply(operand_val, neg_one);
-                value_unref(neg_one);
+                rv_unref(neg_one);
             }
         }
         break;
@@ -1120,7 +1322,7 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
     }
 
     // Clean up operand
-    value_unref(operand_val);
+    rv_unref(operand_val);
 
     if (!result) {
         return rv_new_null();
@@ -1128,7 +1330,7 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
 
     // Convert result to RuntimeValue
     AST_T *result_ast = value_to_ast(result);
-    value_unref(result);
+    rv_unref(result);
     RuntimeValue *result_rv = ast_to_runtime_value(result_ast);
     ast_free(result_ast);
 
@@ -1227,13 +1429,45 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
 
     // Handle different types using RuntimeValue directly
     if (rv_is_object(object_rv)) {
-        // Object property access
-        result = rv_object_get(object_rv, node->property_name);
-        if (result) {
-            // rv_object_get returns a borrowed reference, need to increase refcount
-            rv_ref(result);
+        // Check if this is a class instance by looking for __class__
+        RuntimeValue *class_obj = rv_object_get(object_rv, "__class__");
+        if (class_obj) {
+            // Look for method in class instance
+            // This is a class instance - look for method in the class
+            char method_key[256];
+            snprintf(method_key, sizeof(method_key), "__method_%s", node->property_name);
+
+            // Look for method in class
+            // Search for method key
+
+            RuntimeValue *method = rv_object_get(class_obj, method_key);
+
+            // Method lookup in class object
+
+            if (method && method->type == RV_FUNCTION) {
+                // Found the method - return it
+                // Found method
+                result = method;
+                rv_ref(result);
+            } else {
+                // Try to get instance property
+                result = rv_object_get(object_rv, node->property_name);
+                if (result) {
+                    rv_ref(result);
+                } else {
+                    result = rv_new_null();
+                }
+            }
         } else {
-            result = rv_new_null();
+            // Regular object property access
+            // Regular object property access
+            result = rv_object_get(object_rv, node->property_name);
+            if (result) {
+                // rv_object_get returns a borrowed reference, need to increase refcount
+                rv_ref(result);
+            } else {
+                result = rv_new_null();
+            }
         }
     } else if (rv_is_array(object_rv)) {
         // Handle special array property: length
@@ -1474,13 +1708,24 @@ static RuntimeValue *visitor_visit_for_loop(visitor_T *visitor, AST_T *node)
 
             // Convert element to AST for variable storage
             AST_T *element_ast = runtime_value_to_ast(element);
-            rv_unref(element);
 
             // FIXED: Update the iterator variable's value instead of creating new one
+            // Free the old AST value first to prevent memory leak
+            if (iterator_def->variable_definition_value) {
+                ast_free(iterator_def->variable_definition_value);
+            }
             iterator_def->variable_definition_value = element_ast;
+
+            // Update the cached runtime value
+            if (iterator_def->runtime_value) {
+                rv_unref(iterator_def->runtime_value);
+            }
+            iterator_def->runtime_value = rv_ref(element);
 
             // Add/update iterator in scope (scope_add handles updates automatically)
             scope_add_variable_definition(node->scope, iterator_def);
+
+            // Don't unref element here - it's a borrowed reference from rv_array_get
 
             // Execute loop body
             RuntimeValue *body_result = visitor_visit(visitor, node->for_body);
@@ -1537,6 +1782,12 @@ static RuntimeValue *visitor_visit_for_loop(visitor_T *visitor, AST_T *node)
 
             // FIXED: Update the iterator variable's value instead of creating new one
             iterator_def->variable_definition_value = key_ast;
+
+            // Update the cached runtime value with string
+            if (iterator_def->runtime_value) {
+                rv_unref(iterator_def->runtime_value);
+            }
+            iterator_def->runtime_value = rv_new_string(key);
 
             // Add/update iterator in scope (scope_add handles updates automatically)
             scope_add_variable_definition(node->scope, iterator_def);
@@ -1746,6 +1997,12 @@ static void visitor_update_ast_scope(AST_T *node, scope_T *new_scope)
 static RuntimeValue *
 visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int args_size)
 {
+    return visitor_execute_user_function_ex(visitor, fdef, args, args_size, false);
+}
+
+static RuntimeValue *visitor_execute_user_function_ex(
+    visitor_T *visitor, AST_T *fdef, AST_T **args, int args_size, bool is_method_call)
+{
     if (!visitor || !fdef || !fdef->function_definition_body) {
         return rv_new_null();
     }
@@ -1753,15 +2010,27 @@ visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int
     const char *function_name =
         fdef->function_definition_name ? fdef->function_definition_name : "anonymous";
 
-    // Simple parameter count validation (no rest parameters for now to avoid complexity)
-    if (fdef->function_definition_args_size != (size_t)args_size) {
+    // Execute function
+
+    // For methods, the first argument is 'self' which is added implicitly
+    // So we need to adjust the expected parameter count
+    size_t expected_args = fdef->function_definition_args_size;
+    size_t actual_args = args_size;
+
+    // If this is a method call (first arg is self), adjust the counts
+    if (is_method_call && actual_args > 0) {
+        // Method calls have an implicit self, so we expect one less explicit parameter
+        actual_args--;  // Don't count self in the actual args
+    }
+
+    if (expected_args != actual_args) {
         visitor_throw_exception(
             visitor, ast_new(AST_NULL), "Argument count mismatch", function_name);
         LOG_ERROR(LOG_CAT_VISITOR,
-                  "Function '%s' expects %zu arguments, got %d",
+                  "Function '%s' expects %zu arguments, got %zu",
                   function_name,
-                  fdef->function_definition_args_size,
-                  args_size);
+                  expected_args,
+                  actual_args);
         return rv_new_null();
     }
 
@@ -1784,10 +2053,12 @@ visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int
     }
 
     // Copy global variables into function scope so functions can access them
-    if (fdef->scope && fdef->scope->variable_definitions) {
+    // For methods, skip this as they should only access instance variables through self
+    if (!is_method_call && fdef->scope && fdef->scope->variable_definitions) {
         for (size_t i = 0; i < fdef->scope->variable_definitions_size; i++) {
             AST_T *global_var = fdef->scope->variable_definitions[i];
-            if (global_var) {
+            // Only add if it's actually a variable definition
+            if (global_var && global_var->type == AST_VARIABLE_DEFINITION) {
                 scope_add_variable_definition(function_scope, global_var);
             }
         }
@@ -1795,6 +2066,29 @@ visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int
 
     // SIMPLIFIED PARAMETER BINDING - Use straightforward value-based approach
     // This eliminates complex AST copying that causes double-free issues
+
+    // For method calls, we need to bind 'self' as the first parameter
+    size_t param_offset = 0;
+    if (is_method_call && args_size > 0) {
+        // Bind 'self' parameter for methods
+        RuntimeValue *self_value = visitor_visit(visitor, args[0]);
+        if (!self_value) {
+            self_value = rv_new_null();
+        }
+
+        AST_T *self_ast_value = runtime_value_to_ast(self_value);
+        rv_unref(self_value);
+
+        AST_T *self_def = ast_new(AST_VARIABLE_DEFINITION);
+        self_def->variable_definition_variable_name = memory_strdup("self");
+        self_def->variable_definition_value = self_ast_value;
+        self_def->scope = function_scope;
+
+        scope_add_variable_definition(function_scope, self_def);
+
+        param_offset = 1;  // Skip self in args array for remaining parameters
+    }
+
     for (size_t i = 0; i < fdef->function_definition_args_size; i++) {
         AST_T *param_ast = fdef->function_definition_args[i];
         if (!param_ast || !param_ast->variable_name) {
@@ -1805,7 +2099,19 @@ visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int
         }
 
         // Evaluate the argument to get its runtime value
-        RuntimeValue *arg_value = visitor_visit(visitor, args[i]);
+        // For methods, we need to offset the argument index
+        size_t arg_index = i + param_offset;
+        if (arg_index >= (size_t)args_size) {
+            LOG_ERROR(LOG_CAT_VISITOR,
+                      "Argument index %zu out of bounds (args_size=%d)",
+                      arg_index,
+                      args_size);
+            scope_free(function_scope);
+            visitor_pop_call_frame(visitor);
+            return rv_new_null();
+        }
+
+        RuntimeValue *arg_value = visitor_visit(visitor, args[arg_index]);
         if (!arg_value) {
             arg_value = rv_new_null();
         }
@@ -2140,6 +2446,358 @@ static AST_T *visitor_apply_tail_call_optimization(visitor_T *visitor, AST_T *no
  * @param enabled Whether to enable profiling
  */
 
+/**
+ * @brief Visit class definition node
+ * @param visitor Visitor instance
+ * @param node Class definition AST node
+ * @return Class object
+ */
+static RuntimeValue *visitor_visit_class_definition(visitor_T *visitor, AST_T *node)
+{
+    if (!visitor || !node || !node->class_name) {
+        return rv_new_null();
+    }
+
+    // Create a class object with special metadata
+    RuntimeValue *class_obj = rv_new_object();
+
+    // Set __class__ marker to identify this as a class
+    rv_object_set(class_obj, "__class__", rv_new_boolean(true));
+
+    // Store class name
+    rv_object_set(class_obj, "__name__", rv_new_string(node->class_name));
+
+    // Store parent class if exists
+    if (node->parent_class) {
+        rv_object_set(class_obj, "__parent__", rv_new_string(node->parent_class));
+    }
+
+    // Store methods as AST nodes for later execution
+    if (node->class_methods && node->class_methods_size > 0) {
+        for (size_t i = 0; i < node->class_methods_size; i++) {
+            AST_T *method = node->class_methods[i];
+            if (method && method->type == AST_FUNCTION_DEFINITION) {
+                // Store method in class
+
+                // Create a unique key for the method in the class object
+                char method_key[256];
+                snprintf(method_key,
+                         sizeof(method_key),
+                         "__method_%s",
+                         method->function_definition_name);
+
+                // Store the method AST as a function value
+                RuntimeValue *method_func = rv_new_function(method, node->scope);
+
+                // Store method in class
+
+                rv_object_set(class_obj, method_key, method_func);
+                rv_unref(method_func);
+            }
+        }
+    }
+
+    // Store class in scope as a variable
+    AST_T *class_var = ast_new(AST_VARIABLE_DEFINITION);
+    class_var->variable_definition_variable_name = memory_strdup(node->class_name);
+    class_var->variable_definition_value = ast_new(AST_NULL);  // Placeholder
+    class_var->runtime_value = rv_ref(class_obj);
+    class_var->scope = node->scope;
+
+    scope_add_variable_definition(node->scope, class_var);
+
+    return class_obj;
+}
+
+/**
+ * @brief Visit new expression node
+ * @param visitor Visitor instance
+ * @param node New expression AST node
+ * @return New instance object
+ */
+static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *node)
+{
+    if (!visitor || !node || !node->new_class_name) {
+        return rv_new_null();
+    }
+
+    // Look up the class
+    AST_T *class_def = scope_get_variable_definition(node->scope, node->new_class_name);
+    if (!class_def || !class_def->runtime_value) {
+        LOG_ERROR(LOG_CAT_VISITOR, "Class '%s' not found", node->new_class_name);
+        return rv_new_null();
+    }
+
+    RuntimeValue *class_obj = (RuntimeValue *)class_def->runtime_value;
+
+    // Verify it's a class
+    RuntimeValue *is_class = rv_object_get(class_obj, "__class__");
+    if (!is_class || is_class->type != RV_BOOLEAN || !is_class->data.boolean) {
+        LOG_ERROR(LOG_CAT_VISITOR, "'%s' is not a class", node->new_class_name);
+        if (is_class)
+            rv_unref(is_class);
+        return rv_new_null();
+    }
+    rv_unref(is_class);
+
+    // Create new instance
+    RuntimeValue *instance = rv_new_object();
+
+    // Set __class__ reference to the class object
+    rv_object_set(instance, "__class__", class_obj);
+
+    // Don't set self here - it will be set when methods are called
+    // rv_object_set(instance, "self", instance);
+
+    // Look for constructor method
+    RuntimeValue *constructor = rv_object_get(class_obj, "__method_constructor");
+    if (constructor && constructor->type == RV_FUNCTION) {
+        // Prepare arguments for constructor - first arg is always self
+        size_t total_args = 1 + node->new_arguments_size;
+        AST_T **constructor_args = memory_alloc(sizeof(AST_T *) * total_args);
+
+        // Create self argument as a literal containing the instance
+        AST_T *self_arg = runtime_value_to_ast(instance);
+        constructor_args[0] = self_arg;
+
+        // Copy user-provided arguments
+        for (size_t i = 0; i < node->new_arguments_size; i++) {
+            constructor_args[i + 1] = node->new_arguments[i];
+        }
+
+        // Execute constructor
+        RuntimeValue *constructor_result = visitor_execute_user_function(
+            visitor, constructor->data.function.ast_node, constructor_args, total_args);
+        if (constructor_result) {
+            rv_unref(constructor_result);
+        }
+
+        // Clean up
+        ast_free(self_arg);
+        memory_free(constructor_args);
+    }
+    if (constructor) {
+        rv_unref(constructor);
+    }
+
+    return instance;
+}
+
+/**
+ * @brief Visit try/catch block
+ * @param visitor Visitor instance
+ * @param node Try/catch AST node
+ * @return Result of try or catch block
+ */
+static RuntimeValue *visitor_visit_try_catch(visitor_T *visitor, AST_T *node)
+{
+    if (!visitor || !node || !node->try_block) {
+        return rv_new_null();
+    }
+
+    // Save current exception state
+    bool had_exception = visitor->exception_state.is_active;
+    AST_T *saved_exception_ast = visitor->exception_state.exception_value;
+    char *saved_message = visitor->exception_state.exception_message;
+    visitor->exception_state.is_active = false;
+    visitor->exception_state.exception_value = NULL;
+    visitor->exception_state.exception_message = NULL;
+
+    // Execute try block
+    RuntimeValue *result = visitor_visit(visitor, node->try_block);
+
+    // Check if exception was thrown
+    if (visitor->exception_state.is_active && node->catch_block) {
+        // Clear exception state
+        visitor->exception_state.is_active = false;
+
+        // If there's an exception variable, bind it in catch scope
+        if (node->exception_variable && node->catch_block->scope) {
+            AST_T *exc_var = ast_new(AST_VARIABLE_DEFINITION);
+            exc_var->variable_definition_variable_name = memory_strdup(node->exception_variable);
+            exc_var->variable_definition_value = ast_new(AST_NULL);
+
+            // Store the exception value
+            if (visitor->exception_state.exception_value) {
+                // Convert AST to RuntimeValue
+                RuntimeValue *exc_rv =
+                    ast_to_runtime_value(visitor->exception_state.exception_value);
+                exc_var->runtime_value = exc_rv;
+            } else if (visitor->exception_state.exception_message) {
+                exc_var->runtime_value = rv_new_string(visitor->exception_state.exception_message);
+            } else {
+                exc_var->runtime_value = rv_new_null();
+            }
+
+            exc_var->scope = node->catch_block->scope;
+            scope_add_variable_definition(node->catch_block->scope, exc_var);
+        }
+
+        // Clean up exception value
+        if (visitor->exception_state.exception_value) {
+            ast_free(visitor->exception_state.exception_value);
+            visitor->exception_state.exception_value = NULL;
+        }
+        if (visitor->exception_state.exception_message) {
+            memory_free(visitor->exception_state.exception_message);
+            visitor->exception_state.exception_message = NULL;
+        }
+
+        // Execute catch block
+        if (result)
+            rv_unref(result);
+        result = visitor_visit(visitor, node->catch_block);
+    }
+
+    // If exception wasn't caught, restore previous state
+    if (visitor->exception_state.is_active) {
+        // Exception propagates up
+    } else {
+        // Restore previous exception state
+        visitor->exception_state.is_active = had_exception;
+        visitor->exception_state.exception_value = saved_exception_ast;
+        visitor->exception_state.exception_message = saved_message;
+    }
+
+    return result ? result : rv_new_null();
+}
+
+/**
+ * @brief Visit throw statement
+ * @param visitor Visitor instance
+ * @param node Throw AST node
+ * @return Error value
+ */
+static RuntimeValue *visitor_visit_throw(visitor_T *visitor, AST_T *node)
+{
+    if (!visitor || !node) {
+        return rv_new_null();
+    }
+
+    // Evaluate the exception value
+    RuntimeValue *exception_value = NULL;
+    if (node->exception_value) {
+        exception_value = visitor_visit(visitor, node->exception_value);
+    }
+
+    // Set exception state
+    visitor->exception_state.is_active = true;
+
+    // Store exception value as AST
+    if (visitor->exception_state.exception_value) {
+        ast_free(visitor->exception_state.exception_value);
+    }
+    visitor->exception_state.exception_value =
+        exception_value ? runtime_value_to_ast(exception_value) : NULL;
+
+    // Store exception message if it's a string
+    if (visitor->exception_state.exception_message) {
+        memory_free(visitor->exception_state.exception_message);
+        visitor->exception_state.exception_message = NULL;
+    }
+
+    if (exception_value && rv_is_string(exception_value)) {
+        visitor->exception_state.exception_message = memory_strdup(rv_get_string(exception_value));
+    }
+
+    // Return error value
+    RuntimeValue *error = rv_new_error(visitor->exception_state.exception_message
+                                           ? visitor->exception_state.exception_message
+                                           : "Exception thrown",
+                                       1);
+
+    if (exception_value)
+        rv_unref(exception_value);
+
+    return error;
+}
+
+/**
+ * @brief Visit compound assignment (+=, -=, etc)
+ * @param visitor Visitor instance
+ * @param node Compound assignment AST node
+ * @return Result value
+ */
+static RuntimeValue *visitor_visit_compound_assignment(visitor_T *visitor, AST_T *node)
+{
+    if (!visitor || !node || !node->compound_target || !node->compound_value) {
+        return rv_new_null();
+    }
+
+    LOG_VISITOR_DEBUG("Compound assignment: %s op=%d",
+                      node->compound_target->variable_name,
+                      node->compound_op_type);
+
+    // The target should be a variable
+    if (node->compound_target->type != AST_VARIABLE) {
+        LOG_ERROR(LOG_CAT_VISITOR, "Compound assignment target must be a variable");
+        return rv_new_null();
+    }
+
+    // Get current value of the variable
+    RuntimeValue *current_value = visitor_visit_variable(visitor, node->compound_target);
+    if (!current_value) {
+        LOG_ERROR(LOG_CAT_VISITOR,
+                  "Undefined variable '%s' in compound assignment",
+                  node->compound_target->variable_name);
+        return rv_new_null();
+    }
+
+    // Evaluate the right side
+    RuntimeValue *right_value = visitor_visit(visitor, node->compound_value);
+    if (!right_value) {
+        rv_unref(current_value);
+        return rv_new_null();
+    }
+
+    // Perform the operation based on the operator type
+    RuntimeValue *result = NULL;
+    switch (node->compound_op_type) {
+    case TOKEN_PLUS_EQUALS:  // +=
+        result = op_add(current_value, right_value);
+        break;
+    case TOKEN_MINUS_EQUALS:  // -=
+        result = op_subtract(current_value, right_value);
+        break;
+    case TOKEN_MULTIPLY_EQUALS:  // *=
+        result = op_multiply(current_value, right_value);
+        break;
+    case TOKEN_DIVIDE_EQUALS:  // /=
+        result = op_divide(current_value, right_value);
+        break;
+    default:
+        LOG_ERROR(
+            LOG_CAT_VISITOR, "Unknown compound assignment operator: %d", node->compound_op_type);
+        result = rv_new_null();
+    }
+
+    rv_unref(current_value);
+    rv_unref(right_value);
+
+    if (!result) {
+        return rv_new_null();
+    }
+
+    // Look up the existing variable definition
+    AST_T *var_def =
+        scope_get_variable_definition(node->scope, node->compound_target->variable_name);
+    if (!var_def) {
+        LOG_ERROR(LOG_CAT_VISITOR,
+                  "Variable '%s' not found in scope",
+                  node->compound_target->variable_name);
+        rv_unref(result);
+        return rv_new_null();
+    }
+
+    // Update the runtime value directly
+    if (var_def->runtime_value) {
+        rv_unref(var_def->runtime_value);
+    }
+    var_def->runtime_value = rv_ref(result);
+
+    return result;
+}
+
 // Stub implementations for missing functions to fix linking errors
 // These functions are not in MANIFEST.json but are called by visitor code
 
@@ -2150,8 +2808,7 @@ static AST_T *visitor_apply_tail_call_optimization(visitor_T *visitor, AST_T *no
  */
 bool visitor_has_exception(visitor_T *visitor)
 {
-    (void)visitor;  // Mark as used
-    return false;   // No exception handling for now
+    return visitor && visitor->exception_state.is_active;
 }
 
 /**

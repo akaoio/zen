@@ -1,7 +1,6 @@
 #include "zen/core/ast.h"
 #include "zen/core/memory.h"
 #include "zen/core/runtime_value.h"
-#include "zen/types/value.h"
 
 RuntimeValue *ast_to_runtime_value(AST_T *ast)
 {

@@ -6,9 +6,9 @@
  */
 
 #define _GNU_SOURCE
-#include "zen/types/array.h"
+// #include "zen/types/array.h" // Removed - using RuntimeValue system
 
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stdbool.h>
 #include <stdlib.h>

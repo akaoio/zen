@@ -1,0 +1,5 @@
+print "Testing continue in for loop:"
+for j in 1, 2, 3, 4, 5
+    if j = 3
+        continue
+    print "j = " + j

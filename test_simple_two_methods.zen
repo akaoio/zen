@@ -1,0 +1,9 @@
+class Test
+    function a
+        print "A"
+    function b
+        print "B"
+
+set t new Test
+t.a
+t.b

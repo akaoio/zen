@@ -1,7 +1,7 @@
 #ifndef ZEN_HTTP_H
 #define ZEN_HTTP_H
 
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 
 #include <stddef.h>
 
@@ -35,7 +35,7 @@ typedef struct HttpHeaders {
  * @note Target response time: <100ms for typical requests
  * @note Supports JSON responses with automatic parsing
  */
-Value *http_get(const Value *url_value, const Value *headers_value);
+RuntimeValue *http_get(const RuntimeValue *url_value, const RuntimeValue *headers_value);
 
 /**
  * @brief Perform HTTP POST request with data and headers
@@ -47,7 +47,9 @@ Value *http_get(const Value *url_value, const Value *headers_value);
  * @note Automatically sets Content-Type based on data type
  * @note JSON data is automatically serialized
  */
-Value *http_post(const Value *url_value, const Value *data_value, const Value *headers_value);
+RuntimeValue *http_post(const RuntimeValue *url_value,
+                        const RuntimeValue *data_value,
+                        const RuntimeValue *headers_value);
 
 /**
  * @brief Perform HTTP PUT request with data and headers
@@ -59,7 +61,9 @@ Value *http_post(const Value *url_value, const Value *data_value, const Value *h
  * @note Automatically sets Content-Type based on data type
  * @note JSON data is automatically serialized
  */
-Value *http_put(const Value *url_value, const Value *data_value, const Value *headers_value);
+RuntimeValue *http_put(const RuntimeValue *url_value,
+                       const RuntimeValue *data_value,
+                       const RuntimeValue *headers_value);
 
 /**
  * @brief Perform HTTP DELETE request with optional headers
@@ -69,7 +73,7 @@ Value *http_put(const Value *url_value, const Value *data_value, const Value *he
  * @note Natural ZEN syntax: http delete "https://api.example.com" headers
  * @note Target response time: <100ms for typical requests
  */
-Value *http_delete(const Value *url_value, const Value *headers_value);
+RuntimeValue *http_delete(const RuntimeValue *url_value, const RuntimeValue *headers_value);
 
 /**
  * @brief Configure global HTTP request timeout
@@ -89,7 +93,7 @@ void http_configure_timeout(long timeout_seconds);
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *stdlib_http_get(Value **args, size_t argc);
+RuntimeValue *stdlib_http_get(RuntimeValue **args, size_t argc);
 
 /**
  * @brief HTTP POST wrapper for stdlib integration
@@ -97,7 +101,7 @@ Value *stdlib_http_get(Value **args, size_t argc);
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *stdlib_http_post(Value **args, size_t argc);
+RuntimeValue *stdlib_http_post(RuntimeValue **args, size_t argc);
 
 /**
  * @brief HTTP PUT wrapper for stdlib integration
@@ -105,7 +109,7 @@ Value *stdlib_http_post(Value **args, size_t argc);
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *stdlib_http_put(Value **args, size_t argc);
+RuntimeValue *stdlib_http_put(RuntimeValue **args, size_t argc);
 
 /**
  * @brief HTTP DELETE wrapper for stdlib integration
@@ -113,7 +117,7 @@ Value *stdlib_http_put(Value **args, size_t argc);
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *stdlib_http_delete(Value **args, size_t argc);
+RuntimeValue *stdlib_http_delete(RuntimeValue **args, size_t argc);
 
 /**
  * @brief HTTP timeout configuration wrapper for stdlib integration
@@ -121,7 +125,7 @@ Value *stdlib_http_delete(Value **args, size_t argc);
  * @param argc Number of arguments
  * @return Null value
  */
-Value *stdlib_http_timeout(Value **args, size_t argc);
+RuntimeValue *stdlib_http_timeout(RuntimeValue **args, size_t argc);
 
 // Internal helper functions
 
@@ -145,14 +149,14 @@ bool http_headers_add(HttpHeaders *headers, const char *key, const char *value);
  * @param headers_value ZEN object containing headers
  * @return Pointer to HttpHeaders structure or NULL on error
  */
-HttpHeaders *http_headers_from_value(const Value *headers_value);
+HttpHeaders *http_headers_from_value(const RuntimeValue *headers_value);
 
 /**
  * @brief Convert HttpHeaders structure to ZEN object value
  * @param headers Pointer to HttpHeaders structure
  * @return ZEN object value containing headers
  */
-Value *http_headers_to_value(const HttpHeaders *headers);
+RuntimeValue *http_headers_to_value(const HttpHeaders *headers);
 
 /**
  * @brief Free HttpHeaders structure and its contents
@@ -167,7 +171,8 @@ void http_headers_free(HttpHeaders *headers);
  * @param headers Response headers
  * @return ZEN object value containing response data
  */
-Value *http_create_response_object(long status, const char *body, const HttpHeaders *headers);
+RuntimeValue *
+http_create_response_object(long status, const char *body, const HttpHeaders *headers);
 
 /**
  * @brief Serialize ZEN value to request body string
@@ -175,6 +180,6 @@ Value *http_create_response_object(long status, const char *body, const HttpHead
  * @param content_type Output parameter for determined content type
  * @return Serialized string (caller must free) or NULL on error
  */
-char *http_serialize_request_data(const Value *data_value, char **content_type);
+char *http_serialize_request_data(const RuntimeValue *data_value, char **content_type);
 
 #endif /* ZEN_HTTP_H */

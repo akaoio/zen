@@ -94,9 +94,4 @@ const char *rv_get_string(RuntimeValue *value);
 bool rv_equals(RuntimeValue *a, RuntimeValue *b);
 const char *rv_type_name(RuntimeValue *value);
 
-// Migration utilities - Value ↔ RuntimeValue conversion
-struct Value;  // Forward declaration to avoid circular dependency
-RuntimeValue *rv_from_value(struct Value *value);
-struct Value *rv_to_value(RuntimeValue *rv);
-
 #endif

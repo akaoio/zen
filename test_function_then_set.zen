@@ -1,0 +1,6 @@
+function foo
+    print "Foo"
+
+print "After function"
+set x 123
+print "After set"

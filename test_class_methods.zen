@@ -1,0 +1,20 @@
+class Person
+    function __init__ name age
+        set self.name name
+        set self.age age
+    
+    function greet
+        print "Hello, I'm " + self.name
+    
+    function introduce
+        print "My name is " + self.name + " and I'm " + self.age + " years old"
+    
+    function birthday
+        set self.age self.age + 1
+        print self.name + " is now " + self.age + " years old!"
+
+set alice new Person "Alice" 25
+alice.greet
+alice.introduce
+alice.birthday
+alice.introduce

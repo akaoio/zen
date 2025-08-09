@@ -1,4 +1,0 @@
-function get_value
-    return 42
-
-print get_value

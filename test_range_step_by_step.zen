@@ -1,0 +1,13 @@
+print "Step 1: Basic range"
+for i in 1..3
+    print "i = " + i
+
+print "\nStep 2: Descending range"
+for j in 3..1
+    print "j = " + j
+
+print "\nStep 3: Range in variable"
+set r 2..4
+print "Range stored"
+
+print "\nDone"

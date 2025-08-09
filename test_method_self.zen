@@ -1,0 +1,10 @@
+class Person
+    function setName name
+        set self.name name
+    
+    function getName
+        print self.name
+
+set p new Person
+p.setName "Alice"
+p.getName

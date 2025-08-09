@@ -1,3 +1,0 @@
-# New test
-set x 1 + 2
-print x

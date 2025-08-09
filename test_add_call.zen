@@ -1,5 +1,0 @@
-function add x y
-    print "Adding"
-    return x + y
-
-add 3 4

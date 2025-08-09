@@ -1,0 +1,3 @@
+print "Line 1"
+print "\nLine 2"
+print "Line 3"
