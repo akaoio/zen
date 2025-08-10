@@ -1,15 +1,10 @@
 class Test
-    function a
-        print "In method a"
-        return "A"
+    function set_name name
+        set self.name name
     
-    function b
-        print "In method b"
-        print "self is:"
-        print self
-        print "Calling self.a"
-        return self.a
+    function get_name  
+        return self.name
 
 set t new Test
-print "Calling t.b"
-print t.b
+t.set_name "Bob"
+set n t.get_name

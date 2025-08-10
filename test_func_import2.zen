@@ -1,0 +1,5 @@
+import "test_func_module.zen"
+
+print "Version:" version
+set result greet "World"
+print "Result:" result

@@ -1,0 +1,2 @@
+import "test_simple_func_module.zen"
+print test_func

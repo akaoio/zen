@@ -405,7 +405,54 @@ AST_T *parser_parse_function_call(parser_T *parser, scope_T *scope)
 AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
 {
     parser_eat(parser, TOKEN_SET);
+    
 
+    // Check if this is a property assignment (e.g., set obj.prop value)
+    // We need to peek ahead to see if there's a dot after the identifier
+    // Note: peek offset 0 gets the next token from lexer (after current_token)
+    if (parser->current_token->type == TOKEN_ID && 
+        parser_peek_token_type(parser, 0) == TOKEN_DOT) {
+        // This is a property assignment, parse it manually
+        // Current token is the object name (e.g., "obj")
+        char *obj_name = memory_strdup(parser->current_token->value);
+        parser_eat(parser, TOKEN_ID);
+        
+        // Now we should have the dot
+        parser_eat(parser, TOKEN_DOT);
+        
+        // Now we should have the property name
+        if (parser->current_token->type != TOKEN_ID) {
+            LOG_ERROR(LOG_CAT_PARSER, "Expected property name after dot");
+            memory_free(obj_name);
+            return ast_new_noop();
+        }
+        
+        char *prop_name = memory_strdup(parser->current_token->value);
+        parser_eat(parser, TOKEN_ID);
+        
+        // Create the property access node for the left side
+        AST_T *obj_var = ast_new_variable(obj_name);
+        obj_var->scope = scope;
+        AST_T *prop_access = ast_new_property_access(obj_var, prop_name);
+        prop_access->scope = scope;
+        
+        memory_free(obj_name);
+        memory_free(prop_name);
+        
+        
+        // Parse the value to assign
+        parser->context.in_variable_assignment = true;
+        AST_T *value = parser_parse_expr(parser, scope);
+        parser->context.in_variable_assignment = false;
+        
+        
+        // Create an assignment node
+        AST_T *assignment = ast_new_assignment(prop_access, value);
+        assignment->scope = scope;
+        return assignment;
+    }
+
+    // Regular variable definition
     // CRITICAL FIX: Must duplicate token value BEFORE consuming it
     char *var_name = memory_strdup(parser->current_token->value);
     parser_eat(parser, TOKEN_ID);
@@ -1465,16 +1512,18 @@ int parser_detect_object_literal(parser_T *parser)
                 strcmp(tokens[0]->value, "contains") == 0 ||
                 strcmp(tokens[0]->value, "replace") == 0) {
                 // This is a known builtin function - not an object literal
-                printf("DEBUG: token[0]='%s' is a known builtin function, rejecting\n",
-                       tokens[0]->value);
                 goto cleanup_and_return;
             }
 
             // CRITICAL FIX: Also check user-defined functions in scope
             if (parser->scope && scope_get_function_definition(parser->scope, tokens[0]->value)) {
                 // This is a user-defined function - not an object literal
-                printf("DEBUG: token[0]='%s' is a user-defined function, rejecting\n",
-                       tokens[0]->value);
+                goto cleanup_and_return;
+            }
+            
+            // Check stdlib functions
+            if (stdlib_get(tokens[0]->value) != NULL) {
+                // This is a stdlib function - not an object literal
                 goto cleanup_and_return;
             }
         }

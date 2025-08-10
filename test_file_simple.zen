@@ -1,0 +1,2 @@
+set result file.write "test.txt" "Hello"
+print result

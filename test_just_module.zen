@@ -1,0 +1,2 @@
+print "Module is being executed"
+set module_var "Hello from module"

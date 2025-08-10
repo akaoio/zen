@@ -1,3 +1,4 @@
-set obj {}
-set obj.name "Alice"
+set obj name "empty", val 0
+set obj.name "Alice"  
 print obj.name
+print obj.val

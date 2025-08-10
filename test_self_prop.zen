@@ -1,10 +1,10 @@
 class Test
-    function setName n
-        set self.name n
+    function init name
+        set self.name name
+        return self.name
     
-    function getName
+    function get_name
         return self.name
 
 set t new Test
-t.setName "Alice"
-print t.getName
+set result t.init "Alice"

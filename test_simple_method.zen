@@ -1,2 +1,6 @@
-set t name "Test"
-t.name
+class Test
+    function greet name
+        return "Hello"
+
+set t new Test
+set msg t.greet "World"

@@ -1,6 +1,6 @@
 class Test
-    function test
-        print self
+    function check
+        return self
 
 set t new Test
-t.test
+set result t.check

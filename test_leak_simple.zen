@@ -1,0 +1,3 @@
+set x "hello"
+set y "world"
+set z x + " " + y

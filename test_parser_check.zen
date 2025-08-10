@@ -1,0 +1,6 @@
+class Test
+    function no_args
+        return "no args"
+
+set t new Test
+set r1 t.no_args

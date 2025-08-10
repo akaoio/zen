@@ -1,0 +1,6 @@
+# Test importing a module with correct syntax
+
+import "test_module.zen"
+
+# Test accessing imported functions
+print greet "World"

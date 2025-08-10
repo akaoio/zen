@@ -1,0 +1,37 @@
+# Test property assignment (set obj.prop value)
+set person name "John", age 30, city "NYC"
+
+# Test reading properties
+set original_name person.name
+set original_age person.age
+
+# Test property assignment
+set person.name "Jane"
+set person.age 35
+set person.city "LA"
+
+# Create a class with methods that use properties
+class User
+    function constructor name age
+        set self.name name
+        set self.age age
+    
+    function update_name new_name
+        set self.name new_name
+        return self.name
+    
+    function get_info
+        return self.name + " is " + self.age + " years old"
+
+# Test property assignment on class instances
+set user new User "Bob" 25
+set initial_info user.get_info
+
+# Update using method
+set updated_name user.update_name "Robert"
+
+# Direct property assignment on instance
+set user.age 26
+
+# Final check
+set final_info user.get_info

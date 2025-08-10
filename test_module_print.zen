@@ -1,0 +1,4 @@
+print "Before import"
+import "module_with_print.zen"
+print "After import"
+print module_var

@@ -1,0 +1,8 @@
+set local "Local variable works"
+print local
+
+import "test_module_minimal.zen"
+
+# Let's check if the import happened
+set test "After import"
+print test

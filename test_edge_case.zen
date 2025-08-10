@@ -1,0 +1,23 @@
+class Test
+    function method_with_arg arg
+        print "method_with_arg called with:" arg
+    
+    function method_no_arg  
+        print "method_no_arg called"
+        return "result"
+
+set t new Test
+
+# Test 1: No-arg method before calling method with args
+print "Test 1:"
+set r1 t.method_no_arg
+print "Result 1:" r1
+
+# Test 2: Call method with args
+print "\nTest 2:"
+t.method_with_arg "test"
+
+# Test 3: No-arg method after calling method with args
+print "\nTest 3:"
+set r2 t.method_no_arg
+print "Result 2:" r2

@@ -1,0 +1,4 @@
+set obj name "initial"
+print obj.name
+set obj.name "changed"
+print obj.name

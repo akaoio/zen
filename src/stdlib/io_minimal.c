@@ -110,3 +110,27 @@ void io_print_no_newline_internal(const RuntimeValue *value)
         printf("null");
     }
 }
+
+/**
+ * @brief Write string to file
+ * @param filepath Path to the file to write
+ * @param content Content to write
+ * @return true on success, false on error
+ */
+bool io_write_file_internal(const char *filepath, const char *content)
+{
+    if (!filepath || !content) {
+        return false;
+    }
+    
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        return false;
+    }
+    
+    size_t len = strlen(content);
+    size_t written = fwrite(content, 1, len, f);
+    fclose(f);
+    
+    return written == len;
+}

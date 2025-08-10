@@ -1,0 +1,11 @@
+class Test
+    function set_name name
+        set self.name name
+    
+    function get_name  
+        return self.name
+
+set t new Test
+set t.name "Alice"
+set n t.get_name
+print n

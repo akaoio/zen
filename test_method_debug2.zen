@@ -1,0 +1,13 @@
+class Test
+    function test
+        print "Method test executed"
+        return "result"
+
+set t new Test
+print "Created instance"
+print "t is:"
+print t
+print "Trying to access method"
+set method t.test
+print "Method is:"
+print method

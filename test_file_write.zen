@@ -1,0 +1,1 @@
+print file_write "test.txt" "Hello"

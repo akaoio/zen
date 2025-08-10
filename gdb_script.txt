@@ -1,0 +1,3 @@
+run test_import_fixed.zen
+where
+quit

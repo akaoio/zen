@@ -1,0 +1,5 @@
+import "test_class_module.zen"
+
+print "Version:" version
+set obj new SimpleClass
+print obj.test

@@ -1,0 +1,6 @@
+class TestClass
+    function test
+        return "Local test"
+
+set obj new TestClass
+print obj.test

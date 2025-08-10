@@ -1,0 +1,3 @@
+import "test_module.zen"
+set calc new Calculator
+print calc.multiply 5 3

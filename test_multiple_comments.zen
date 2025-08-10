@@ -1,0 +1,10 @@
+# First comment
+
+import "test_module.zen"
+
+# Second comment
+print greet "World"
+print "2 + 3 =" add 2 3
+
+# Third comment
+print "PI =" PI

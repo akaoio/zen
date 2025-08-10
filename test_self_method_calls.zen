@@ -1,0 +1,37 @@
+# Test method calls on self to execute automatically
+class Calculator
+    set value 0
+
+    function add num
+        set self.value self.value + num
+        return self.value
+
+    function multiply num
+        set self.value self.value * num
+        return self.value
+
+    function addAndMultiply addNum multNum
+        # This should call the add method automatically
+        self.add addNum
+        # This should call the multiply method automatically
+        self.multiply multNum
+        return self.value
+
+    function getValue
+        return self.value
+
+# Create instance
+set calc new Calculator
+
+# Set initial value
+calc.add 10
+print "After adding 10: " + calc.getValue
+
+# Test calling methods on self from within another method
+set calc2 new Calculator
+calc2.add 5
+print "Initial calc2 value: " + calc2.getValue
+
+set result calc2.addAndMultiply 10 3
+print "After addAndMultiply(10, 3): " + result
+print "Final calc2 value: " + calc2.getValue

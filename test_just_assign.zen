@@ -1,0 +1,2 @@
+set obj name "initial"
+set obj.name "changed"

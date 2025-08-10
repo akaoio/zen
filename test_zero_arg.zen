@@ -1,0 +1,12 @@
+class Test
+    function no_arg  
+        return "result"
+
+set t new Test
+
+# Direct call (should work)
+print t.no_arg
+
+# Assignment (should auto-execute?)
+set r t.no_arg
+print r

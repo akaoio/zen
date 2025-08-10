@@ -1,0 +1,4 @@
+set version "1.0"
+
+function greet name
+    return "Hello, " + name

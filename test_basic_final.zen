@@ -1,0 +1,32 @@
+# Basic ZEN test
+
+# Variables
+set x 10
+set y 20
+print "x + y =" x + y
+
+# Arrays
+set arr [1, 2, 3]
+print "Array:" arr
+
+# Objects
+set obj {name: "Test", value: 42}
+print "Object:" obj
+
+# Functions
+function add a b
+    return a + b
+
+print "5 + 3 =" add 5 3
+
+# Classes
+class Test
+    function greet
+        return "Hello from Test"
+
+set t new Test
+print t.greet
+
+# File operations
+file_write "test_final.txt" "Success!"
+print "File content:" file_read "test_final.txt"

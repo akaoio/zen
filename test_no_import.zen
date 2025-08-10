@@ -1,0 +1,2 @@
+set hello "Local hello"
+print hello

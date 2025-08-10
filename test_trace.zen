@@ -1,0 +1,22 @@
+print "1"
+# Test importing a module with correct syntax
+print "2"
+
+import "test_module.zen"
+print "3"
+
+# Test accessing imported functions
+print greet "World"
+print "4"
+print "2 + 3 =" add 2 3
+print "5"
+
+# Test accessing imported variables
+print "PI =" PI
+print "6"
+
+# Test using imported class
+set calc new Calculator
+print "7"
+print "5 * 3 =" calc.multiply 5 3
+print "8"

@@ -1,0 +1,11 @@
+class Test
+    function debug
+        print "Step 1: In debug method"
+        print "Step 2: self is"
+        print self
+        print "Step 3: About to access property"
+        return "done"
+
+set t new Test
+print "Calling debug method"
+print t.debug()

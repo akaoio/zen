@@ -17,7 +17,9 @@ BUILD_DIR = build
 SRC_DIR = ../src
 
 # Source files for the main ZEN implementation
-ZEN_SOURCES = $(wildcard $(SRC_DIR)/core/*.c $(SRC_DIR)/types/*.c $(SRC_DIR)/runtime/*.c $(SRC_DIR)/stdlib/*.c)
+# Only use minimal stdlib files that are compatible with RuntimeValue
+STDLIB_MINIMAL_SOURCES = $(SRC_DIR)/stdlib/stdlib_minimal.c $(SRC_DIR)/stdlib/io_minimal.c
+ZEN_SOURCES = $(wildcard $(SRC_DIR)/core/*.c $(SRC_DIR)/types/*.c $(SRC_DIR)/runtime/*.c) $(STDLIB_MINIMAL_SOURCES)
 ZEN_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/zen_%.o,$(ZEN_SOURCES))
 
 # Test framework

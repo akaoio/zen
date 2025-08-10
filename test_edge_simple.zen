@@ -1,0 +1,15 @@
+class Test
+    function method_with_arg arg
+        print "method_with_arg called"
+    
+    function method_no_arg  
+        return "result"
+
+set t new Test
+set r1 t.method_no_arg
+print "Before:" r1
+
+t.method_with_arg "test"
+
+set r2 t.method_no_arg
+print "After:" r2

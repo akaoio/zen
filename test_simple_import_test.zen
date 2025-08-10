@@ -1,0 +1,2 @@
+import "test_simple_module.zen"
+print message

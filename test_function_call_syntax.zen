@@ -1,0 +1,11 @@
+# Test various function call syntaxes
+
+# Direct function call as statement
+file_write "syntax_test.txt" "Testing function syntax"
+
+# Function call in assignment - this is where the issue occurs
+set result file_read "syntax_test.txt"
+print "Result type:" result
+
+# Function call as argument works fine
+print "Direct read:" file_read "syntax_test.txt"

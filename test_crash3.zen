@@ -1,0 +1,13 @@
+class Test
+    function with_arg arg
+        return arg
+    
+    function no_arg  
+        return "result"
+
+set t new Test
+set r1 t.no_arg
+print "r1:" r1
+
+set r2 t.with_arg "test"
+print "r2:" r2

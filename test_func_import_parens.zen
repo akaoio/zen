@@ -1,0 +1,5 @@
+import "test_func_module.zen"
+
+# With parentheses to force expression parsing
+set result (greet "World")
+print "Result:" result
