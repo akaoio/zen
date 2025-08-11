@@ -115,6 +115,9 @@ enforce-generate:
 vision:
 	@node scripts/vision.js
 
+reality:
+	@node scripts/reality.js
+
 # Setup development environment
 setup-dev: setup-hooks
 	@echo "Development environment ready!"
@@ -134,6 +137,7 @@ help:
 	@echo "  make enforce      - Enforce manifest compliance"
 	@echo "  make enforce-generate - Generate stubs from manifest"
 	@echo "  make vision       - Visualize project structure and status"
+	@echo "  make reality      - Show actual project structure with real files/functions"
 	@echo "  make lint         - Run static analysis"
 	@echo "  make test         - Run comprehensive test suite"
 	@echo "  make test-unit    - Run unit tests"
@@ -148,4 +152,4 @@ help:
 	@echo "  make setup-dev    - Setup development environment"
 	@echo "  make help         - Show this help message"
 
-.PHONY: all clean install uninstall format format-check lint test test-unit test-integration test-language test-stdlib test-memory test-valgrind test-coverage test-smoke valgrind coverage debug-lexer debug-ast enforce enforce-generate vision setup-dev setup-hooks help
+.PHONY: all clean install uninstall format format-check lint test test-unit test-integration test-language test-stdlib test-memory test-valgrind test-coverage test-smoke valgrind coverage debug-lexer debug-ast enforce enforce-generate vision reality setup-dev setup-hooks help
