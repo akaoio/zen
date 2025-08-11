@@ -22,8 +22,7 @@
 #include "zen/core/error.h"
 #include "zen/core/memory.h"
 #include "zen/core/runtime_value.h"
-#include "zen/types/array.h"
-#include "zen/types/object.h"
+// Array and object functions are in runtime_value.h
 
 #include <stdio.h>
 #include <string.h>
@@ -207,7 +206,7 @@ static RegexCache *compile_pattern_cached(const char *pattern)
  * @param pattern Original pattern string
  * @return Error message Value
  */
-static Value *get_pcre2_error_message(int error_code, PCRE2_SIZE error_offset, const char *pattern)
+static RuntimeValue *get_pcre2_error_message(int error_code, PCRE2_SIZE error_offset, const char *pattern)
 {
     PCRE2_UCHAR8 error_buffer[ZEN_MAX_ERROR_BUFFER_SIZE];
     pcre2_get_error_message_8(error_code, error_buffer, sizeof(error_buffer));
@@ -220,7 +219,7 @@ static Value *get_pcre2_error_message(int error_code, PCRE2_SIZE error_offset, c
              error_offset,
              pattern ? pattern : "null");
 
-    return error_new(full_error);
+    return rv_new_error(full_error, -1);
 }
 
 /**
@@ -229,24 +228,24 @@ static Value *get_pcre2_error_message(int error_code, PCRE2_SIZE error_offset, c
  * @param param_name Parameter name for error messages
  * @return NULL if valid, error Value if invalid
  */
-static Value *validate_string_input(const Value *value, const char *param_name)
+static RuntimeValue *validate_string_input(const RuntimeValue *value, const char *param_name)
 {
     if (!value) {
-        return error_null_pointer("regex validation");
+        return rv_new_error("Null pointer error", -1);
     }
 
-    if (value->type != VALUE_STRING) {
+    if (value->type != RV_STRING) {
         char error_msg[128];
         snprintf(error_msg,
                  sizeof(error_msg),
                  "%s must be a string, got %s",
                  param_name,
-                 value_type_name(value->type));
-        return error_new(error_msg);
+                 rv_type_name((RuntimeValue *)value));
+        return rv_new_error(error_msg, -1);
     }
 
-    if (!value->as.string || !value->as.string->data) {
-        return error_new("String value is null");
+    if (!rv_get_string((RuntimeValue *)value)) {
+        return rv_new_error("String value is null", -1);
     }
 
     return NULL;  // Valid
@@ -258,10 +257,10 @@ static Value *validate_string_input(const Value *value, const char *param_name)
  * @param pattern_value String value containing regex pattern
  * @return Object with match results or error Value
  */
-Value *regex_match(const Value *text_value, const Value *pattern_value)
+RuntimeValue *regex_match(const RuntimeValue *text_value, const RuntimeValue *pattern_value)
 {
     // Validate inputs
-    Value *error = validate_string_input(text_value, "text");
+    RuntimeValue *error = validate_string_input(text_value, "text");
     if (error)
         return error;
 
@@ -269,8 +268,8 @@ Value *regex_match(const Value *text_value, const Value *pattern_value)
     if (error)
         return error;
 
-    const char *text = text_value->as.string->data;
-    const char *pattern = pattern_value->as.string->data;
+    const char *text = rv_get_string((RuntimeValue *)text_value);
+    const char *pattern = rv_get_string((RuntimeValue *)pattern_value);
 
     // Compile pattern
     RegexCache *regex_cache = compile_pattern_cached(pattern);
@@ -297,18 +296,18 @@ Value *regex_match(const Value *text_value, const Value *pattern_value)
     );
 
     // Create result object
-    Value *result = object_new();
+    RuntimeValue *result = rv_new_object();
     if (!result) {
-        return error_memory_allocation();
+        return rv_new_error("Memory allocation failed", -1);
     }
 
     if (match_count >= 0) {
         // Match found
-        object_set(result, "matched", value_new_boolean(true));
+        rv_object_set(result, "matched", rv_new_boolean(true));
 
         // Get match groups
         PCRE2_SIZE *ovector = pcre2_get_ovector_pointer_8(regex_cache->match_data);
-        Value *matches = array_new(4);
+        RuntimeValue *matches = rv_new_array();
 
         for (int i = 0; i < match_count; i++) {
             PCRE2_SIZE start = ovector[2 * i];
@@ -321,30 +320,30 @@ Value *regex_match(const Value *text_value, const Value *pattern_value)
                     memcpy(match_str, text + start, length);
                     match_str[length] = '\0';
 
-                    Value *match_obj = object_new();
-                    object_set(match_obj, "text", value_new_string(match_str));
-                    object_set(match_obj, "start", value_new_number((double)start));
-                    object_set(match_obj, "end", value_new_number((double)end));
+                    RuntimeValue *match_obj = rv_new_object();
+                    rv_object_set(match_obj, "text", rv_new_string(match_str));
+                    rv_object_set(match_obj, "start", rv_new_number((double)start));
+                    rv_object_set(match_obj, "end", rv_new_number((double)end));
 
-                    array_push(matches, match_obj);
+                    rv_array_push(matches, match_obj);
                     memory_free(match_str);
                 }
             }
         }
 
-        object_set(result, "matches", matches);
-        object_set(result, "count", value_new_number((double)match_count));
+        rv_object_set(result, "matches", matches);
+        rv_object_set(result, "count", rv_new_number((double)match_count));
     } else if (match_count == PCRE2_ERROR_NOMATCH) {
         // No match
-        object_set(result, "matched", value_new_boolean(false));
-        object_set(result, "matches", array_new(0));
-        object_set(result, "count", value_new_number(0));
+        rv_object_set(result, "matched", rv_new_boolean(false));
+        rv_object_set(result, "matches", rv_new_array());
+        rv_object_set(result, "count", rv_new_number(0));
     } else {
         // Error occurred
-        value_free(result);
+        rv_unref(result);
         PCRE2_UCHAR8 error_buffer[ZEN_MAX_ERROR_BUFFER_SIZE];
         pcre2_get_error_message_8(match_count, error_buffer, sizeof(error_buffer));
-        return error_new((char *)error_buffer);
+        return rv_new_error((char *)error_buffer, -1);
     }
 
     return result;
@@ -357,11 +356,11 @@ Value *regex_match(const Value *text_value, const Value *pattern_value)
  * @param replacement_value String value containing replacement text
  * @return New string with replacements or error Value
  */
-Value *
-regex_replace(const Value *text_value, const Value *pattern_value, const Value *replacement_value)
+RuntimeValue *
+regex_replace(const RuntimeValue *text_value, const RuntimeValue *pattern_value, const RuntimeValue *replacement_value)
 {
     // Validate inputs
-    Value *error = validate_string_input(text_value, "text");
+    RuntimeValue *error = validate_string_input(text_value, "text");
     if (error)
         return error;
 
@@ -373,9 +372,9 @@ regex_replace(const Value *text_value, const Value *pattern_value, const Value *
     if (error)
         return error;
 
-    const char *text = text_value->as.string->data;
-    const char *pattern = pattern_value->as.string->data;
-    const char *replacement = replacement_value->as.string->data;
+    const char *text = rv_get_string((RuntimeValue *)text_value);
+    const char *pattern = rv_get_string((RuntimeValue *)pattern_value);
+    const char *replacement = rv_get_string((RuntimeValue *)replacement_value);
 
     // Compile pattern
     RegexCache *regex_cache = compile_pattern_cached(pattern);
@@ -395,7 +394,7 @@ regex_replace(const Value *text_value, const Value *pattern_value, const Value *
     PCRE2_SIZE output_length = strlen(text) * 2;  // Initial guess
     PCRE2_UCHAR8 *output_buffer = memory_alloc(output_length);
     if (!output_buffer) {
-        return error_memory_allocation();
+        return rv_new_error("Memory allocation failed", -1);
     }
 
     int result_code = pcre2_substitute_8(regex_cache->compiled_pattern,
@@ -417,7 +416,7 @@ regex_replace(const Value *text_value, const Value *pattern_value, const Value *
             output_length *= 2;
             output_buffer = memory_alloc(output_length);
             if (!output_buffer) {
-                return error_memory_allocation();
+                return rv_new_error("Memory allocation failed", -1);
             }
 
             result_code = pcre2_substitute_8(regex_cache->compiled_pattern,
@@ -437,12 +436,12 @@ regex_replace(const Value *text_value, const Value *pattern_value, const Value *
             memory_free(output_buffer);
             PCRE2_UCHAR8 error_buffer[ZEN_MAX_ERROR_BUFFER_SIZE];
             pcre2_get_error_message_8(result_code, error_buffer, sizeof(error_buffer));
-            return error_new((char *)error_buffer);
+            return rv_new_error((char *)error_buffer, -1);
         }
     }
 
     // Create result string
-    Value *result = value_new_string((char *)output_buffer);
+    RuntimeValue *result = rv_new_string((char *)output_buffer);
     memory_free(output_buffer);
 
     return result;
@@ -454,10 +453,10 @@ regex_replace(const Value *text_value, const Value *pattern_value, const Value *
  * @param pattern_value String value containing regex pattern
  * @return Array of string parts or error Value
  */
-Value *regex_split(const Value *text_value, const Value *pattern_value)
+RuntimeValue *regex_split(const RuntimeValue *text_value, const RuntimeValue *pattern_value)
 {
     // Validate inputs
-    Value *error = validate_string_input(text_value, "text");
+    RuntimeValue *error = validate_string_input(text_value, "text");
     if (error)
         return error;
 
@@ -465,8 +464,8 @@ Value *regex_split(const Value *text_value, const Value *pattern_value)
     if (error)
         return error;
 
-    const char *text = text_value->as.string->data;
-    const char *pattern = pattern_value->as.string->data;
+    const char *text = rv_get_string((RuntimeValue *)text_value);
+    const char *pattern = rv_get_string((RuntimeValue *)pattern_value);
     size_t text_length = strlen(text);
 
     // Compile pattern
@@ -483,9 +482,9 @@ Value *regex_split(const Value *text_value, const Value *pattern_value)
         return get_pcre2_error_message(error_code, error_offset, pattern);
     }
 
-    Value *result_array = array_new(8);
+    RuntimeValue *result_array = rv_new_array();
     if (!result_array) {
-        return error_memory_allocation();
+        return rv_new_error("Memory allocation failed", -1);
     }
 
     size_t offset = 0;
@@ -512,7 +511,7 @@ Value *regex_split(const Value *text_value, const Value *pattern_value)
                 if (part_str) {
                     memcpy(part_str, text + last_end, part_length);
                     part_str[part_length] = '\0';
-                    array_push(result_array, value_new_string(part_str));
+                    rv_array_push(result_array, rv_new_string(part_str));
                     memory_free(part_str);
                 }
             }
@@ -532,23 +531,23 @@ Value *regex_split(const Value *text_value, const Value *pattern_value)
                 if (remaining_str) {
                     memcpy(remaining_str, text + last_end, remaining_length);
                     remaining_str[remaining_length] = '\0';
-                    array_push(result_array, value_new_string(remaining_str));
+                    rv_array_push(result_array, rv_new_string(remaining_str));
                     memory_free(remaining_str);
                 }
             }
             break;
         } else {
             // Error occurred
-            value_free(result_array);
+            rv_unref(result_array);
             PCRE2_UCHAR8 error_buffer[ZEN_MAX_ERROR_BUFFER_SIZE];
             pcre2_get_error_message_8(match_count, error_buffer, sizeof(error_buffer));
-            return error_new((char *)error_buffer);
+            return rv_new_error((char *)error_buffer, -1);
         }
     }
 
     // If no matches were found, return array with original text
-    if (array_length(result_array) == 0) {
-        array_push(result_array, value_new_string(text));
+    if (rv_array_length(result_array) == 0) {
+        rv_array_push(result_array, rv_new_string(text));
     }
 
     return result_array;
@@ -559,14 +558,14 @@ Value *regex_split(const Value *text_value, const Value *pattern_value)
  * @param pattern_value String value containing regex pattern
  * @return Compiled pattern object or error Value
  */
-Value *regex_compile(const Value *pattern_value)
+RuntimeValue *regex_compile(const RuntimeValue *pattern_value)
 {
     // Validate input
-    Value *error = validate_string_input(pattern_value, "pattern");
+    RuntimeValue *error = validate_string_input(pattern_value, "pattern");
     if (error)
         return error;
 
-    const char *pattern = pattern_value->as.string->data;
+    const char *pattern = rv_get_string((RuntimeValue *)pattern_value);
 
     // Compile and cache pattern
     RegexCache *regex_cache = compile_pattern_cached(pattern);
@@ -583,23 +582,23 @@ Value *regex_compile(const Value *pattern_value)
     }
 
     // Create result object with pattern info
-    Value *result = object_new();
+    RuntimeValue *result = rv_new_object();
     if (!result) {
-        return error_memory_allocation();
+        return rv_new_error("Memory allocation failed", -1);
     }
 
-    object_set(result, "pattern", value_new_string(pattern));
-    object_set(result, "compiled", value_new_boolean(true));
+    rv_object_set(result, "pattern", rv_new_string(pattern));
+    rv_object_set(result, "compiled", rv_new_boolean(true));
 
     // Get pattern info
     uint32_t capture_count;
     pcre2_pattern_info_8(regex_cache->compiled_pattern, PCRE2_INFO_CAPTURECOUNT, &capture_count);
-    object_set(result, "capture_count", value_new_number((double)capture_count));
+    rv_object_set(result, "capture_count", rv_new_number((double)capture_count));
 
     uint32_t options;
     pcre2_pattern_info_8(regex_cache->compiled_pattern, PCRE2_INFO_ALLOPTIONS, &options);
-    object_set(result, "utf8", value_new_boolean((options & PCRE2_UTF) != 0));
-    object_set(result, "multiline", value_new_boolean((options & PCRE2_MULTILINE) != 0));
+    rv_object_set(result, "utf8", rv_new_boolean((options & PCRE2_UTF) != 0));
+    rv_object_set(result, "multiline", rv_new_boolean((options & PCRE2_MULTILINE) != 0));
 
     return result;
 }
@@ -637,10 +636,10 @@ void regex_cleanup(void)
  * @param argc Number of arguments
  * @return Match results object or error value
  */
-Value *regex_match_stdlib(Value **args, size_t argc)
+RuntimeValue *regex_match_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
-        return error_new("regexMatch requires exactly 2 arguments: text and pattern");
+        return rv_new_error("regexMatch requires exactly 2 arguments: text and pattern", -1);
     }
     return regex_match(args[0], args[1]);
 }
@@ -651,11 +650,11 @@ Value *regex_match_stdlib(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return New string with replacements or error value
  */
-Value *regex_replace_stdlib(Value **args, size_t argc)
+RuntimeValue *regex_replace_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc != 3) {
-        return error_new(
-            "regexReplace requires exactly 3 arguments: text, pattern, and replacement");
+        return rv_new_error(
+            "regexReplace requires exactly 3 arguments: text, pattern, and replacement", -1);
     }
     return regex_replace(args[0], args[1], args[2]);
 }
@@ -666,10 +665,10 @@ Value *regex_replace_stdlib(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return Array of string parts or error value
  */
-Value *regex_split_stdlib(Value **args, size_t argc)
+RuntimeValue *regex_split_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
-        return error_new("regexSplit requires exactly 2 arguments: text and pattern");
+        return rv_new_error("regexSplit requires exactly 2 arguments: text and pattern", -1);
     }
     return regex_split(args[0], args[1]);
 }
@@ -680,10 +679,10 @@ Value *regex_split_stdlib(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return Compiled pattern object or error value
  */
-Value *regex_compile_stdlib(Value **args, size_t argc)
+RuntimeValue *regex_compile_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("regexCompile requires exactly 1 argument: pattern");
+        return rv_new_error("regexCompile requires exactly 1 argument: pattern", -1);
     }
     return regex_compile(args[0]);
 }

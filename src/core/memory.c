@@ -25,11 +25,11 @@ static pthread_mutex_t g_memory_mutex = PTHREAD_MUTEX_INITIALIZER;
 static MemoryStats g_memory_stats = {0};
 
 /* Internal helper functions */
-static void update_stats_alloc(size_t size);
-static void update_stats_free(size_t size);
-static void add_debug_block(void *ptr, size_t size, const char *file, int line);
-static void remove_debug_block(void *ptr);
-static MemoryBlock *find_block(const void *ptr);
+static void memory_update_stats_alloc(size_t size);
+static void memory_update_stats_free(size_t size);
+static void memory_add_debug_block(void *ptr, size_t size, const char *file, int line);
+static void memory_remove_debug_block(void *ptr);
+static MemoryBlock *memory_find_block(const void *ptr);
 
 /* Forward declarations for debug functions */
 void *memory_debug_alloc(size_t size, const char *file, int line);
@@ -54,9 +54,9 @@ void *memory_alloc(size_t size)
     void *ptr = calloc(1, size);
 
     if (ptr) {
-        update_stats_alloc(size);
+        memory_update_stats_alloc(size);
         if (g_debug_enabled) {
-            add_debug_block(ptr, size, "unknown", 0);
+            memory_add_debug_block(ptr, size, "unknown", 0);
         }
     }
 
@@ -88,7 +88,7 @@ void *memory_realloc(void *ptr, size_t new_size)
     size_t old_size = 0;
     if (g_debug_enabled) {
         pthread_mutex_lock(&g_memory_mutex);
-        MemoryBlock *block = find_block(ptr);
+        MemoryBlock *block = memory_find_block(ptr);
         if (block) {
             old_size = block->size;
         }
@@ -96,23 +96,23 @@ void *memory_realloc(void *ptr, size_t new_size)
 
         // Remove debug tracking before realloc to avoid use-after-free warning
         if (old_size > 0) {
-            remove_debug_block(ptr);
+            memory_remove_debug_block(ptr);
         }
     }
 
     void *new_ptr = realloc(ptr, new_size);
     if (new_ptr) {
         if (g_debug_enabled) {
-            add_debug_block(new_ptr, new_size, "unknown", 0);
+            memory_add_debug_block(new_ptr, new_size, "unknown", 0);
         }
 
         // Update statistics - realloc is conceptually a free + alloc
         if (old_size > 0) {
             // Free the old memory
-            update_stats_free(old_size);
+            memory_update_stats_free(old_size);
         }
         // Allocate the new memory
-        update_stats_alloc(new_size);
+        memory_update_stats_alloc(new_size);
 
         // CRITICAL FIX: Only zero new memory if we have accurate old_size from debug tracking
         // When debugging is off, old_size is 0 so don't zero memory (realloc preserves data)
@@ -142,7 +142,7 @@ void memory_free(void *ptr)
     // Get size from debug tracking if available and check for double-free
     if (g_debug_enabled) {
         pthread_mutex_lock(&g_memory_mutex);
-        MemoryBlock *block = find_block(ptr);
+        MemoryBlock *block = memory_find_block(ptr);
         if (block) {
             size = block->size;
             found_in_debug = true;
@@ -166,14 +166,14 @@ void memory_free(void *ptr)
 
     // Remove from debug tracking before free
     if (found_in_debug && !already_freed) {
-        remove_debug_block(ptr);
+        memory_remove_debug_block(ptr);
     }
 
     free(ptr);
 
     // Update statistics with the actual freed size
     if (size > 0) {
-        update_stats_free(size);
+        memory_update_stats_free(size);
     }
 }
 
@@ -415,7 +415,7 @@ bool memory_validate_ptr(const void *ptr, size_t expected_size)
 
     pthread_mutex_lock(&g_memory_mutex);
 
-    MemoryBlock *block = find_block(ptr);
+    MemoryBlock *block = memory_find_block(ptr);
     bool valid = false;
 
     if (block) {
@@ -439,7 +439,7 @@ bool memory_is_tracked(const void *ptr)
     }
 
     pthread_mutex_lock(&g_memory_mutex);
-    MemoryBlock *block = find_block(ptr);
+    MemoryBlock *block = memory_find_block(ptr);
     pthread_mutex_unlock(&g_memory_mutex);
 
     return block != NULL;
@@ -469,9 +469,9 @@ void *memory_debug_alloc(size_t size, const char *file, int line)
     }
 
     if (ptr) {
-        update_stats_alloc(size);
+        memory_update_stats_alloc(size);
         if (g_debug_enabled) {
-            add_debug_block(ptr, size, file, line);
+            memory_add_debug_block(ptr, size, file, line);
         }
     }
 
@@ -503,7 +503,7 @@ void *memory_debug_realloc(void *ptr, size_t new_size, const char *file, int lin
     size_t old_size = 0;
     if (g_debug_enabled) {
         pthread_mutex_lock(&g_memory_mutex);
-        MemoryBlock *block = find_block(ptr);
+        MemoryBlock *block = memory_find_block(ptr);
         if (block) {
             old_size = block->size;
         }
@@ -512,22 +512,22 @@ void *memory_debug_realloc(void *ptr, size_t new_size, const char *file, int lin
 
     // Remove debug tracking before realloc to avoid use-after-free warning
     if (g_debug_enabled && old_size > 0) {
-        remove_debug_block(ptr);
+        memory_remove_debug_block(ptr);
     }
 
     void *new_ptr = realloc(ptr, new_size);
     if (new_ptr) {
         if (g_debug_enabled) {
-            add_debug_block(new_ptr, new_size, file, line);
+            memory_add_debug_block(new_ptr, new_size, file, line);
         }
 
         // Update statistics - realloc is conceptually a free + alloc
         if (old_size > 0) {
             // Free the old memory
-            update_stats_free(old_size);
+            memory_update_stats_free(old_size);
         }
         // Allocate the new memory
-        update_stats_alloc(new_size);
+        memory_update_stats_alloc(new_size);
 
         // CRITICAL FIX: Only zero new memory if we have accurate old_size from debug tracking
         // When debugging is off, old_size is 0 so don't zero memory (realloc preserves data)
@@ -537,7 +537,7 @@ void *memory_debug_realloc(void *ptr, size_t new_size, const char *file, int lin
 
     } else if (g_debug_enabled && old_size > 0) {
         // Realloc failed, restore debug tracking for original pointer
-        add_debug_block(ptr, old_size, file, line);
+        memory_add_debug_block(ptr, old_size, file, line);
     }
 
     return new_ptr;
@@ -567,7 +567,7 @@ void memory_debug_free(void *ptr, const char *file, int line)
     // Get size from debug tracking if available
     if (g_debug_enabled) {
         pthread_mutex_lock(&g_memory_mutex);
-        MemoryBlock *block = find_block(ptr);
+        MemoryBlock *block = memory_find_block(ptr);
         if (block) {
             size = block->size;
             found_in_debug = true;
@@ -577,14 +577,14 @@ void memory_debug_free(void *ptr, const char *file, int line)
 
     // Remove from debug tracking before free
     if (found_in_debug) {
-        remove_debug_block(ptr);
+        memory_remove_debug_block(ptr);
     }
 
     free(ptr);
 
     // Update statistics with the actual freed size
     if (size > 0) {
-        update_stats_free(size);
+        memory_update_stats_free(size);
     }
 }
 
@@ -613,7 +613,7 @@ char *memory_debug_strdup(const char *str, const char *file, int line)
 
 /* Internal helper functions */
 
-static void update_stats_alloc(size_t size)
+static void memory_update_stats_alloc(size_t size)
 {
     pthread_mutex_lock(&g_memory_mutex);
 
@@ -628,7 +628,7 @@ static void update_stats_alloc(size_t size)
     pthread_mutex_unlock(&g_memory_mutex);
 }
 
-static void update_stats_free(size_t size)
+static void memory_update_stats_free(size_t size)
 {
     pthread_mutex_lock(&g_memory_mutex);
 
@@ -641,7 +641,7 @@ static void update_stats_free(size_t size)
     pthread_mutex_unlock(&g_memory_mutex);
 }
 
-static void add_debug_block(void *ptr, size_t size, const char *file, int line)
+static void memory_add_debug_block(void *ptr, size_t size, const char *file, int line)
 {
     if (!g_debug_enabled) {
         return;
@@ -671,7 +671,7 @@ static void add_debug_block(void *ptr, size_t size, const char *file, int line)
     pthread_mutex_unlock(&g_memory_mutex);
 }
 
-static void remove_debug_block(void *ptr)
+static void memory_remove_debug_block(void *ptr)
 {
     if (!g_debug_enabled) {
         return;
@@ -693,7 +693,7 @@ static void remove_debug_block(void *ptr)
     pthread_mutex_unlock(&g_memory_mutex);
 }
 
-static MemoryBlock *find_block(const void *ptr)
+static MemoryBlock *memory_find_block(const void *ptr)
 {
     // Caller must hold mutex
     MemoryBlock *block = g_allocated_blocks;

@@ -941,7 +941,7 @@ typedef struct {
  * @param visited Pointer to VisitedNodes structure
  * @return true on success, false on allocation failure
  */
-static bool visited_nodes_init(VisitedNodes *visited)
+static bool ast_visited_nodes_init(VisitedNodes *visited)
 {
     if (!visited)
         return false;
@@ -966,7 +966,7 @@ static bool visited_nodes_init(VisitedNodes *visited)
  * @brief Clean up visited nodes tracker
  * @param visited Pointer to VisitedNodes structure
  */
-static void visited_nodes_cleanup(VisitedNodes *visited)
+static void ast_visited_nodes_cleanup(VisitedNodes *visited)
 {
     if (!visited)
         return;
@@ -988,7 +988,7 @@ static void visited_nodes_cleanup(VisitedNodes *visited)
  * @param original Original node to check
  * @return Copy of node if found, NULL otherwise
  */
-static AST_T *visited_nodes_find(const VisitedNodes *visited, const AST_T *original)
+static AST_T *ast_visited_nodes_find(const VisitedNodes *visited, const AST_T *original)
 {
     if (!visited || !original)
         return NULL;
@@ -1009,7 +1009,7 @@ static AST_T *visited_nodes_find(const VisitedNodes *visited, const AST_T *origi
  * @param copy Copy node
  * @return true on success, false on failure
  */
-static bool visited_nodes_add(VisitedNodes *visited, AST_T *original, AST_T *copy)
+static bool ast_visited_nodes_add(VisitedNodes *visited, AST_T *original, AST_T *copy)
 {
     if (!visited || !original || !copy)
         return false;
@@ -1059,7 +1059,7 @@ static AST_T *ast_copy_internal(AST_T *original, VisitedNodes *visited, int dept
     }
 
     // Check if we've already copied this node (cycle detection)
-    AST_T *existing_copy = visited_nodes_find(visited, original);
+    AST_T *existing_copy = ast_visited_nodes_find(visited, original);
     if (existing_copy) {
         // We've seen this node before - return the existing copy to break cycle
         return existing_copy;
@@ -1071,7 +1071,7 @@ static AST_T *ast_copy_internal(AST_T *original, VisitedNodes *visited, int dept
         return NULL;
 
     // Add to visited nodes BEFORE recursing to handle self-references
-    if (!visited_nodes_add(visited, original, copy)) {
+    if (!ast_visited_nodes_add(visited, original, copy)) {
         ast_free(copy);
         return NULL;
     }
@@ -1278,13 +1278,13 @@ AST_T *ast_copy(AST_T *original)
         return NULL;
 
     VisitedNodes visited;
-    if (!visited_nodes_init(&visited)) {
+    if (!ast_visited_nodes_init(&visited)) {
         return NULL;
     }
 
     AST_T *result = ast_copy_internal(original, &visited, 0);
 
-    visited_nodes_cleanup(&visited);
+    ast_visited_nodes_cleanup(&visited);
 
     return result;
 }

@@ -29,13 +29,13 @@
 #include "../include/zen/core/runtime_value.h"
 
 /* Forward declarations for helper functions */
-static RuntimeValue *create_error(const char *message);
-static bool to_number(const RuntimeValue *value, double *result);
-static char *concat_strings(const char *a, const char *b);
-static bool is_truthy(const RuntimeValue *value);
-static int compare_values(const RuntimeValue *a, const RuntimeValue *b);
-static int value_to_three_valued(const RuntimeValue *value);
-static RuntimeValue *three_valued_to_value(int three_val);
+static RuntimeValue *operators_create_error(const char *message);
+static bool operators_to_number(const RuntimeValue *value, double *result);
+static char *operators_concat_strings(const char *a, const char *b);
+static bool operators_is_truthy(const RuntimeValue *value);
+static int operators_compare_values(const RuntimeValue *a, const RuntimeValue *b);
+static int operators_value_to_three_valued(const RuntimeValue *value);
+static RuntimeValue *operators_three_valued_to_value(int three_val);
 
 /**
  * @brief Addition operator
@@ -46,7 +46,7 @@ static RuntimeValue *three_valued_to_value(int three_val);
 RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in addition");
+        return operators_create_error("Null operand in addition");
     }
 
     /* String concatenation has highest priority */
@@ -57,15 +57,15 @@ RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
         if (!a_str || !b_str) {
             memory_free(a_str);
             memory_free(b_str);
-            return create_error("Failed to convert operand to string");
+            return operators_create_error("Failed to convert operand to string");
         }
 
-        char *result = concat_strings(a_str, b_str);
+        char *result = operators_concat_strings(a_str, b_str);
         memory_free(a_str);
         memory_free(b_str);
 
         if (!result) {
-            return create_error("String concatenation failed");
+            return operators_create_error("String concatenation failed");
         }
 
         RuntimeValue *str_val = rv_new_string(result);
@@ -75,8 +75,8 @@ RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
 
     /* Numeric addition */
     double a_num, b_num;
-    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
-        return create_error("Cannot convert operands to numbers for addition");
+    if (!operators_to_number(a, &a_num) || !operators_to_number(b, &b_num)) {
+        return operators_create_error("Cannot convert operands to numbers for addition");
     }
 
     // Check for NaN or infinity in operands
@@ -89,7 +89,7 @@ RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
 
     // Check for overflow/underflow
     if (isinf(result) && !isinf(a_num) && !isinf(b_num)) {
-        return create_error("Numeric overflow in addition");
+        return operators_create_error("Numeric overflow in addition");
     }
 
     return rv_new_number(result);
@@ -104,12 +104,12 @@ RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_subtract(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in subtraction");
+        return operators_create_error("Null operand in subtraction");
     }
 
     double a_num, b_num;
-    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
-        return create_error("Cannot convert operands to numbers for subtraction");
+    if (!operators_to_number(a, &a_num) || !operators_to_number(b, &b_num)) {
+        return operators_create_error("Cannot convert operands to numbers for subtraction");
     }
 
     return rv_new_number(a_num - b_num);
@@ -124,12 +124,12 @@ RuntimeValue *op_subtract(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_multiply(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in multiplication");
+        return operators_create_error("Null operand in multiplication");
     }
 
     double a_num, b_num;
-    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
-        return create_error("Cannot convert operands to numbers for multiplication");
+    if (!operators_to_number(a, &a_num) || !operators_to_number(b, &b_num)) {
+        return operators_create_error("Cannot convert operands to numbers for multiplication");
     }
 
     // Handle NaN cases
@@ -146,7 +146,7 @@ RuntimeValue *op_multiply(RuntimeValue *a, RuntimeValue *b)
 
     // Check for overflow
     if (isinf(result) && !isinf(a_num) && !isinf(b_num)) {
-        return create_error("Numeric overflow in multiplication");
+        return operators_create_error("Numeric overflow in multiplication");
     }
 
     return rv_new_number(result);
@@ -161,12 +161,12 @@ RuntimeValue *op_multiply(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_divide(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in division");
+        return operators_create_error("Null operand in division");
     }
 
     double a_num, b_num;
-    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
-        return create_error("Cannot convert operands to numbers for division");
+    if (!operators_to_number(a, &a_num) || !operators_to_number(b, &b_num)) {
+        return operators_create_error("Cannot convert operands to numbers for division");
     }
 
     if (b_num == 0.0) {
@@ -193,16 +193,16 @@ RuntimeValue *op_divide(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_modulo(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in modulo");
+        return operators_create_error("Null operand in modulo");
     }
 
     double a_num, b_num;
-    if (!to_number(a, &a_num) || !to_number(b, &b_num)) {
-        return create_error("Cannot convert operands to numbers for modulo");
+    if (!operators_to_number(a, &a_num) || !operators_to_number(b, &b_num)) {
+        return operators_create_error("Cannot convert operands to numbers for modulo");
     }
 
     if (b_num == 0.0) {
-        return create_error("Modulo by zero");
+        return operators_create_error("Modulo by zero");
     }
 
     return rv_new_number(fmod(a_num, b_num));
@@ -217,7 +217,7 @@ RuntimeValue *op_modulo(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_equals(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in equality comparison");
+        return operators_create_error("Null operand in equality comparison");
     }
 
     return rv_new_boolean(rv_equals(a, b));
@@ -232,7 +232,7 @@ RuntimeValue *op_equals(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_not_equals(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in inequality comparison");
+        return operators_create_error("Null operand in inequality comparison");
     }
 
     return rv_new_boolean(!rv_equals(a, b));
@@ -247,12 +247,12 @@ RuntimeValue *op_not_equals(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_less_than(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in less than comparison");
+        return operators_create_error("Null operand in less than comparison");
     }
 
-    int cmp = compare_values(a, b);
+    int cmp = operators_compare_values(a, b);
     if (cmp == INT_MIN) {
-        return create_error("Cannot compare values of incompatible types");
+        return operators_create_error("Cannot compare values of incompatible types");
     }
 
     return rv_new_boolean(cmp < 0);
@@ -267,12 +267,12 @@ RuntimeValue *op_less_than(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_greater_than(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in greater than comparison");
+        return operators_create_error("Null operand in greater than comparison");
     }
 
-    int cmp = compare_values(a, b);
+    int cmp = operators_compare_values(a, b);
     if (cmp == INT_MIN) {
-        return create_error("Cannot compare values of incompatible types");
+        return operators_create_error("Cannot compare values of incompatible types");
     }
 
     return rv_new_boolean(cmp > 0);
@@ -287,7 +287,7 @@ RuntimeValue *op_greater_than(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_logical_and(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in logical AND");
+        return operators_create_error("Null operand in logical AND");
     }
 
     /* Undecidable logic: undecidable AND anything = undecidable */
@@ -296,7 +296,7 @@ RuntimeValue *op_logical_and(RuntimeValue *a, RuntimeValue *b)
     }
 
     /* Short-circuit evaluation: if a is falsy, return a */
-    if (!is_truthy(a)) {
+    if (!operators_is_truthy(a)) {
         return rv_ref(a);
     }
 
@@ -313,7 +313,7 @@ RuntimeValue *op_logical_and(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_logical_or(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in logical OR");
+        return operators_create_error("Null operand in logical OR");
     }
 
     /* Undecidable logic: undecidable OR anything = undecidable */
@@ -322,7 +322,7 @@ RuntimeValue *op_logical_or(RuntimeValue *a, RuntimeValue *b)
     }
 
     /* Short-circuit evaluation: if a is truthy, return a */
-    if (is_truthy(a)) {
+    if (operators_is_truthy(a)) {
         return rv_ref(a);
     }
 
@@ -338,7 +338,7 @@ RuntimeValue *op_logical_or(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_logical_not(RuntimeValue *a)
 {
     if (!a) {
-        return create_error("Null operand in logical NOT");
+        return operators_create_error("Null operand in logical NOT");
     }
 
     /* Undecidable logic: NOT undecidable = undecidable */
@@ -346,7 +346,7 @@ RuntimeValue *op_logical_not(RuntimeValue *a)
         return rv_new_null();
     }
 
-    return rv_new_boolean(!is_truthy(a));
+    return rv_new_boolean(!operators_is_truthy(a));
 }
 
 /* Helper function implementations */
@@ -356,7 +356,7 @@ RuntimeValue *op_logical_not(RuntimeValue *a)
  * @param message Error message
  * @return Error value
  */
-static RuntimeValue *create_error(const char *message)
+static RuntimeValue *operators_create_error(const char *message)
 {
     RuntimeValue *error = rv_new_error(message, -1);
     // Error creation handled by rv_new_error
@@ -369,7 +369,7 @@ static RuntimeValue *create_error(const char *message)
  * @param result Pointer to store the result
  * @return true if conversion successful, false otherwise
  */
-static bool to_number(const RuntimeValue *value, double *result)
+static bool operators_to_number(const RuntimeValue *value, double *result)
 {
     if (!value || !result) {
         return false;
@@ -409,7 +409,7 @@ static bool to_number(const RuntimeValue *value, double *result)
  * @param b Second string
  * @return Concatenated string (caller must free)
  */
-static char *concat_strings(const char *a, const char *b)
+static char *operators_concat_strings(const char *a, const char *b)
 {
     if (!a || !b) {
         return NULL;
@@ -436,7 +436,7 @@ static char *concat_strings(const char *a, const char *b)
  * @param value Value to check
  * @return true if truthy, false if falsy
  */
-static bool is_truthy(const RuntimeValue *value)
+static bool operators_is_truthy(const RuntimeValue *value)
 {
     if (!value) {
         return false;
@@ -477,7 +477,7 @@ static bool is_truthy(const RuntimeValue *value)
  * @param b Second value
  * @return -1 if a < b, 0 if a == b, 1 if a > b, INT_MIN on error
  */
-static int compare_values(const RuntimeValue *a, const RuntimeValue *b)
+static int operators_compare_values(const RuntimeValue *a, const RuntimeValue *b)
 {
     if (!a || !b) {
         return INT_MIN;
@@ -518,7 +518,7 @@ static int compare_values(const RuntimeValue *a, const RuntimeValue *b)
 
     /* Different type comparisons - try to convert to numbers */
     double a_num, b_num;
-    if (to_number(a, &a_num) && to_number(b, &b_num)) {
+    if (operators_to_number(a, &a_num) && operators_to_number(b, &b_num)) {
         double diff = a_num - b_num;
         if (diff < 0)
             return -1;
@@ -550,17 +550,17 @@ static int compare_values(const RuntimeValue *a, const RuntimeValue *b)
 RuntimeValue *op_undecidable_and(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in undecidable AND");
+        return operators_create_error("Null operand in undecidable AND");
     }
 
     /* Convert to three-valued logic */
-    int a_val = value_to_three_valued(a);
-    int b_val = value_to_three_valued(b);
+    int a_val = operators_value_to_three_valued(a);
+    int b_val = operators_value_to_three_valued(b);
 
     /* Lukasiewicz AND: min(a, b) */
     int result = (a_val < b_val) ? a_val : b_val;
 
-    return three_valued_to_value(result);
+    return operators_three_valued_to_value(result);
 }
 
 /**
@@ -577,17 +577,17 @@ RuntimeValue *op_undecidable_and(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_undecidable_or(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in undecidable OR");
+        return operators_create_error("Null operand in undecidable OR");
     }
 
     /* Convert to three-valued logic */
-    int a_val = value_to_three_valued(a);
-    int b_val = value_to_three_valued(b);
+    int a_val = operators_value_to_three_valued(a);
+    int b_val = operators_value_to_three_valued(b);
 
     /* Lukasiewicz OR: max(a, b) */
     int result = (a_val > b_val) ? a_val : b_val;
 
-    return three_valued_to_value(result);
+    return operators_three_valued_to_value(result);
 }
 
 /**
@@ -601,11 +601,11 @@ RuntimeValue *op_undecidable_or(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_kleene_and(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in Kleene AND");
+        return operators_create_error("Null operand in Kleene AND");
     }
 
-    int a_val = value_to_three_valued(a);
-    int b_val = value_to_three_valued(b);
+    int a_val = operators_value_to_three_valued(a);
+    int b_val = operators_value_to_three_valued(b);
 
     /* Kleene AND: if either is false, result is false */
     if (a_val == -1 || b_val == -1)
@@ -625,11 +625,11 @@ RuntimeValue *op_kleene_and(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_kleene_or(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in Kleene OR");
+        return operators_create_error("Null operand in Kleene OR");
     }
 
-    int a_val = value_to_three_valued(a);
-    int b_val = value_to_three_valued(b);
+    int a_val = operators_value_to_three_valued(a);
+    int b_val = operators_value_to_three_valued(b);
 
     /* Kleene OR: if either is true, result is true */
     if (a_val == 1 || b_val == 1)
@@ -651,11 +651,11 @@ RuntimeValue *op_kleene_or(RuntimeValue *a, RuntimeValue *b)
 RuntimeValue *op_undecidable_implies(RuntimeValue *a, RuntimeValue *b)
 {
     if (!a || !b) {
-        return create_error("Null operand in undecidable implication");
+        return operators_create_error("Null operand in undecidable implication");
     }
 
-    int a_val = value_to_three_valued(a);
-    int b_val = value_to_three_valued(b);
+    int a_val = operators_value_to_three_valued(a);
+    int b_val = operators_value_to_three_valued(b);
 
     /* Three-valued implication: max(1-a, b) */
     int result = ((1 - a_val) > b_val) ? (1 - a_val) : b_val;
@@ -664,7 +664,7 @@ RuntimeValue *op_undecidable_implies(RuntimeValue *a, RuntimeValue *b)
     if (result < -1)
         result = -1;
 
-    return three_valued_to_value(result);
+    return operators_three_valued_to_value(result);
 }
 
 /**
@@ -681,7 +681,7 @@ RuntimeValue *
 op_probabilistic_and(RuntimeValue *a, RuntimeValue *b, double probability_a, double probability_b)
 {
     if (!a || !b) {
-        return create_error("Null operand in probabilistic AND");
+        return operators_create_error("Null operand in probabilistic AND");
     }
 
     /* If either value is undecidable, use probability */
@@ -717,7 +717,7 @@ op_probabilistic_and(RuntimeValue *a, RuntimeValue *b, double probability_a, dou
 RuntimeValue *op_consensus(RuntimeValue *votes[], size_t vote_count, double threshold)
 {
     if (!votes || vote_count == 0) {
-        return create_error("No votes provided for consensus");
+        return operators_create_error("No votes provided for consensus");
     }
 
     int true_votes = 0;
@@ -777,7 +777,7 @@ RuntimeValue *op_consensus(RuntimeValue *votes[], size_t vote_count, double thre
 RuntimeValue *op_eventually(RuntimeValue *condition, int time_horizon)
 {
     if (!condition) {
-        return create_error("Null condition in temporal eventually");
+        return operators_create_error("Null condition in temporal eventually");
     }
 
     /* If condition is currently decided, return it */
@@ -815,7 +815,7 @@ RuntimeValue *
 op_fuzzy_membership(RuntimeValue *element, RuntimeValue *set, double membership_degree)
 {
     if (!element || !set) {
-        return create_error("Null operand in fuzzy membership");
+        return operators_create_error("Null operand in fuzzy membership");
     }
 
     /* If membership degree is clearly defined */
@@ -838,7 +838,7 @@ op_fuzzy_membership(RuntimeValue *element, RuntimeValue *set, double membership_
  * @param value Input value
  * @return 1 for true, 0 for undecidable, -1 for false
  */
-static int value_to_three_valued(const RuntimeValue *value)
+static int operators_value_to_three_valued(const RuntimeValue *value)
 {
     if (!value)
         return -1;
@@ -862,7 +862,7 @@ static int value_to_three_valued(const RuntimeValue *value)
  * @param three_val 1 for true, 0 for undecidable, -1 for false
  * @return Corresponding Value object
  */
-static RuntimeValue *three_valued_to_value(int three_val)
+static RuntimeValue *operators_three_valued_to_value(int three_val)
 {
     if (three_val > 0) {
         return rv_new_boolean(true);

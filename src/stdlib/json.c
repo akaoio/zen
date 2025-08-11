@@ -32,21 +32,21 @@ typedef struct {
 } JsonParser;
 
 // Forward declarations
-static RuntimeValue *parse_value(JsonParser *parser);
-static RuntimeValue *parse_object(JsonParser *parser);
-static RuntimeValue *parse_array(JsonParser *parser);
-static RuntimeValue *parse_string(JsonParser *parser);
-static RuntimeValue *parse_number(JsonParser *parser);
-static void skip_whitespace(JsonParser *parser);
-static bool peek_char(JsonParser *parser, char expected);
-static bool consume_char(JsonParser *parser, char expected);
-static void advance(JsonParser *parser);
+static RuntimeValue *json_parse_value(JsonParser *parser);
+static RuntimeValue *json_parse_object(JsonParser *parser);
+static RuntimeValue *json_parse_array(JsonParser *parser);
+static RuntimeValue *json_parse_string(JsonParser *parser);
+static RuntimeValue *json_parse_number(JsonParser *parser);
+static void json_skip_whitespace(JsonParser *parser);
+static bool json_peek_char(JsonParser *parser, char expected);
+static bool json_consume_char(JsonParser *parser, char expected);
+static void json_advance(JsonParser *parser);
 static char *json_stringify_internal(const RuntimeValue *value, int indent_level, int indent_size);
 static char *escape_json_string(const char *str, size_t len);
 static char *unescape_json_string(const char *str, size_t len, size_t *out_len);
 
 // Parser helper functions
-static void advance(JsonParser *parser)
+static void json_advance(JsonParser *parser)
 {
     if (parser->pos < parser->length) {
         parser->pos++;
@@ -56,23 +56,23 @@ static void advance(JsonParser *parser)
     }
 }
 
-static void skip_whitespace(JsonParser *parser)
+static void json_skip_whitespace(JsonParser *parser)
 {
     while (parser->current_char && (parser->current_char == ' ' || parser->current_char == '\t' ||
                                     parser->current_char == '\n' || parser->current_char == '\r')) {
-        advance(parser);
+        json_advance(parser);
     }
 }
 
-static bool peek_char(JsonParser *parser, char expected)
+static bool json_peek_char(JsonParser *parser, char expected)
 {
     return parser->current_char == expected;
 }
 
-static bool consume_char(JsonParser *parser, char expected)
+static bool json_consume_char(JsonParser *parser, char expected)
 {
     if (parser->current_char == expected) {
-        advance(parser);
+        json_advance(parser);
         return true;
     }
     return false;
@@ -209,25 +209,25 @@ static char *escape_json_string(const char *str, size_t len)
     return buffer;
 }
 
-static RuntimeValue *parse_string(JsonParser *parser)
+static RuntimeValue *json_parse_string(JsonParser *parser)
 {
-    if (!consume_char(parser, '"')) {
+    if (!json_consume_char(parser, '"')) {
         return rv_new_error("Expected '\"' at start of string", -1);
     }
 
     size_t start = parser->pos;
     while (parser->current_char && parser->current_char != '"') {
         if (parser->current_char == '\\') {
-            advance(parser);  // Skip backslash
+            json_advance(parser);  // Skip backslash
             if (parser->current_char) {
-                advance(parser);  // Skip escaped character
+                json_advance(parser);  // Skip escaped character
             }
         } else {
-            advance(parser);
+            json_advance(parser);
         }
     }
 
-    if (!peek_char(parser, '"')) {
+    if (!json_peek_char(parser, '"')) {
         return rv_new_error("Unterminated string", -1);
     }
 
@@ -238,20 +238,20 @@ static RuntimeValue *parse_string(JsonParser *parser)
         return rv_new_error("Failed to unescape string", -1);
     }
 
-    advance(parser);  // Skip closing quote
+    json_advance(parser);  // Skip closing quote
 
     RuntimeValue *result = rv_new_string(unescaped);
     memory_free(unescaped);
     return result;
 }
 
-static RuntimeValue *parse_number(JsonParser *parser)
+static RuntimeValue *json_parse_number(JsonParser *parser)
 {
     size_t start = parser->pos;
 
     // Handle negative sign
     if (parser->current_char == '-') {
-        advance(parser);
+        json_advance(parser);
     }
 
     // Must have at least one digit
@@ -261,37 +261,37 @@ static RuntimeValue *parse_number(JsonParser *parser)
 
     // Parse integer part
     if (parser->current_char == '0') {
-        advance(parser);
+        json_advance(parser);
         // After '0', we can only have '.', 'e', 'E', or end
     } else {
         // Parse digits 1-9 followed by any digits
         while (parser->current_char && isdigit(parser->current_char)) {
-            advance(parser);
+            json_advance(parser);
         }
     }
 
     // Parse fractional part
     if (parser->current_char == '.') {
-        advance(parser);
+        json_advance(parser);
         if (!parser->current_char || !isdigit(parser->current_char)) {
             return rv_new_error("Invalid number format: expected digit after '.'", -1);
         }
         while (parser->current_char && isdigit(parser->current_char)) {
-            advance(parser);
+            json_advance(parser);
         }
     }
 
     // Parse exponent part
     if (parser->current_char == 'e' || parser->current_char == 'E') {
-        advance(parser);
+        json_advance(parser);
         if (parser->current_char == '+' || parser->current_char == '-') {
-            advance(parser);
+            json_advance(parser);
         }
         if (!parser->current_char || !isdigit(parser->current_char)) {
             return rv_new_error("Invalid number format: expected digit in exponent", -1);
         }
         while (parser->current_char && isdigit(parser->current_char)) {
-            advance(parser);
+            json_advance(parser);
         }
     }
 
@@ -320,9 +320,9 @@ static RuntimeValue *parse_number(JsonParser *parser)
     return rv_new_number(num);
 }
 
-static RuntimeValue *parse_array(JsonParser *parser)
+static RuntimeValue *json_parse_array(JsonParser *parser)
 {
-    if (!consume_char(parser, '[')) {
+    if (!json_consume_char(parser, '[')) {
         return rv_new_error("Expected '[' at start of array", -1);
     }
 
@@ -331,19 +331,19 @@ static RuntimeValue *parse_array(JsonParser *parser)
         return rv_new_error("Failed to create array", -1);
     }
 
-    skip_whitespace(parser);
+    json_skip_whitespace(parser);
 
     // Handle empty array
-    if (peek_char(parser, ']')) {
-        advance(parser);
+    if (json_peek_char(parser, ']')) {
+        json_advance(parser);
         return array;
     }
 
     // Parse array elements
     while (true) {
-        skip_whitespace(parser);
+        json_skip_whitespace(parser);
 
-        RuntimeValue *element = parse_value(parser);
+        RuntimeValue *element = json_parse_value(parser);
         if (rv_is_error(element)) {
             rv_unref(array);
             return element;
@@ -352,13 +352,13 @@ static RuntimeValue *parse_array(JsonParser *parser)
         rv_array_push(array, element);
         rv_unref(element);  // array now owns the reference
 
-        skip_whitespace(parser);
+        json_skip_whitespace(parser);
 
-        if (peek_char(parser, ']')) {
-            advance(parser);
+        if (json_peek_char(parser, ']')) {
+            json_advance(parser);
             break;
-        } else if (peek_char(parser, ',')) {
-            advance(parser);
+        } else if (json_peek_char(parser, ',')) {
+            json_advance(parser);
         } else {
             rv_unref(array);
             return rv_new_error("Expected ',' or ']' in array", -1);
@@ -368,9 +368,9 @@ static RuntimeValue *parse_array(JsonParser *parser)
     return array;
 }
 
-static RuntimeValue *parse_object(JsonParser *parser)
+static RuntimeValue *json_parse_object(JsonParser *parser)
 {
-    if (!consume_char(parser, '{')) {
+    if (!json_consume_char(parser, '{')) {
         return rv_new_error("Expected '{' at start of object", -1);
     }
 
@@ -379,25 +379,25 @@ static RuntimeValue *parse_object(JsonParser *parser)
         return rv_new_error("Failed to create object", -1);
     }
 
-    skip_whitespace(parser);
+    json_skip_whitespace(parser);
 
     // Handle empty object
-    if (peek_char(parser, '}')) {
-        advance(parser);
+    if (json_peek_char(parser, '}')) {
+        json_advance(parser);
         return object;
     }
 
     // Parse object key-value pairs
     while (true) {
-        skip_whitespace(parser);
+        json_skip_whitespace(parser);
 
         // Parse key (must be string)
-        if (!peek_char(parser, '"')) {
+        if (!json_peek_char(parser, '"')) {
             rv_unref(object);
             return rv_new_error("Expected string key in object", -1);
         }
 
-        RuntimeValue *key_rv = parse_string(parser);
+        RuntimeValue *key_rv = json_parse_string(parser);
         if (rv_is_error(key_rv)) {
             rv_unref(object);
             return key_rv;
@@ -405,17 +405,17 @@ static RuntimeValue *parse_object(JsonParser *parser)
 
         const char *key = rv_get_string(key_rv);
 
-        skip_whitespace(parser);
+        json_skip_whitespace(parser);
 
-        if (!consume_char(parser, ':')) {
+        if (!json_consume_char(parser, ':')) {
             rv_unref(key_rv);
             rv_unref(object);
             return rv_new_error("Expected ':' after object key", -1);
         }
 
-        skip_whitespace(parser);
+        json_skip_whitespace(parser);
 
-        RuntimeValue *value = parse_value(parser);
+        RuntimeValue *value = json_parse_value(parser);
         if (rv_is_error(value)) {
             rv_unref(key_rv);
             rv_unref(object);
@@ -426,13 +426,13 @@ static RuntimeValue *parse_object(JsonParser *parser)
         rv_unref(key_rv);
         rv_unref(value);  // object now owns the reference
 
-        skip_whitespace(parser);
+        json_skip_whitespace(parser);
 
-        if (peek_char(parser, '}')) {
-            advance(parser);
+        if (json_peek_char(parser, '}')) {
+            json_advance(parser);
             break;
-        } else if (peek_char(parser, ',')) {
-            advance(parser);
+        } else if (json_peek_char(parser, ',')) {
+            json_advance(parser);
         } else {
             rv_unref(object);
             return rv_new_error("Expected ',' or '}' in object", -1);
@@ -442,17 +442,17 @@ static RuntimeValue *parse_object(JsonParser *parser)
     return object;
 }
 
-static RuntimeValue *parse_value(JsonParser *parser)
+static RuntimeValue *json_parse_value(JsonParser *parser)
 {
-    skip_whitespace(parser);
+    json_skip_whitespace(parser);
 
     switch (parser->current_char) {
     case '"':
-        return parse_string(parser);
+        return json_parse_string(parser);
     case '[':
-        return parse_array(parser);
+        return json_parse_array(parser);
     case '{':
-        return parse_object(parser);
+        return json_parse_object(parser);
     case 't':
         if (parser->pos + 3 <= parser->length &&
             strncmp(parser->input + parser->pos, "true", 4) == 0) {
@@ -491,7 +491,7 @@ static RuntimeValue *parse_value(JsonParser *parser)
     case '7':
     case '8':
     case '9':
-        return parse_number(parser);
+        return json_parse_number(parser);
     }
 
     return rv_new_error("Unexpected character in JSON", -1);
@@ -513,10 +513,10 @@ RuntimeValue *json_parse(const char *json_string)
                          .length = strlen(json_string),
                          .current_char = json_string[0]};
 
-    RuntimeValue *result = parse_value(&parser);
+    RuntimeValue *result = json_parse_value(&parser);
 
     // Check for trailing content
-    skip_whitespace(&parser);
+    json_skip_whitespace(&parser);
     if (parser.current_char != '\0') {
         if (!rv_is_error(result)) {
             rv_unref(result);

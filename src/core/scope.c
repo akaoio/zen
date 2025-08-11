@@ -2,6 +2,7 @@
 
 #include "zen/core/ast.h"
 #include "zen/core/memory.h"
+#include "zen/core/runtime_value.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -23,6 +24,10 @@ scope_T *scope_new()
 
     scope->variable_definitions = NULL;
     scope->variable_definitions_size = 0;
+    
+    // Initialize new variables array
+    scope->variables = NULL;
+    scope->variables_size = 0;
 
     return scope;
 }
@@ -51,6 +56,26 @@ void scope_free(scope_T *scope)
         // Only free the array of pointers, never the nodes themselves to prevent double-free
         memory_free(scope->variable_definitions);
         scope->variable_definitions = NULL;
+    }
+    
+    // Free new variables array with proper cleanup
+    if (scope->variables != NULL) {
+        for (size_t i = 0; i < scope->variables_size; i++) {
+            if (scope->variables[i]) {
+                // Free variable name
+                if (scope->variables[i]->name) {
+                    memory_free(scope->variables[i]->name);
+                }
+                // Unref the RuntimeValue
+                if (scope->variables[i]->value) {
+                    rv_unref(scope->variables[i]->value);
+                }
+                // Free the variable struct
+                memory_free(scope->variables[i]);
+            }
+        }
+        memory_free(scope->variables);
+        scope->variables = NULL;
     }
 
     memory_free(scope);
@@ -124,8 +149,6 @@ AST_T *scope_add_variable_definition(scope_T *scope, AST_T *vdef)
         return NULL;
     }
 
-    // printf("DEBUG: SCOPE ADD - variable '%s', node=%p\n",
-    //        vdef->variable_definition_variable_name, (void*)vdef);
 
     // CRITICAL FIX: Don't create copies of AST nodes - just store references
     // The original AST tree owns the memory, scope just references it
@@ -139,16 +162,12 @@ AST_T *scope_add_variable_definition(scope_T *scope, AST_T *vdef)
                    vdef->variable_definition_variable_name) == 0) {
             // CRITICAL FIX: Always update the reference, even for same node
             // This ensures that variable values are properly updated in loops
-            // printf("DEBUG: SCOPE - updating variable '%s', old_node=%p, new_node=%p\n",
-            //        vdef->variable_definition_variable_name, (void*)existing, (void*)vdef);
 
             // IMPORTANT: When replacing a variable definition, we need to preserve
             // any runtime_value from the old definition if the new one doesn't have one yet
             // This prevents "null" values during variable updates like "set x x + 5"
             if (existing->runtime_value && !vdef->runtime_value) {
-                // Forward declaration of rv_ref
-                void *rv_ref(void *);
-                vdef->runtime_value = rv_ref(existing->runtime_value);
+                vdef->runtime_value = rv_ref((RuntimeValue *)existing->runtime_value);
             }
 
             scope->variable_definitions[i] = vdef;
@@ -190,6 +209,7 @@ AST_T *scope_get_variable_definition(scope_T *scope, const char *name)
         return NULL;
     }
 
+
     for (size_t i = 0; i < scope->variable_definitions_size; i++) {
         // Check if the array element is NULL before dereferencing
         if (scope->variable_definitions[i] == NULL) {
@@ -198,12 +218,94 @@ AST_T *scope_get_variable_definition(scope_T *scope, const char *name)
 
         AST_T *vdef = scope->variable_definitions[i];
 
+
         // Double check the pointer is valid and has a name
-        if (vdef->variable_definition_variable_name != NULL &&
-            strcmp(vdef->variable_definition_variable_name, name) == 0) {
-            return vdef;
+        if (vdef->variable_definition_variable_name != NULL) {
+            if (strcmp(vdef->variable_definition_variable_name, name) == 0) {
+                return vdef;
+            }
         }
     }
 
+    return NULL;
+}
+
+/**
+ * @brief Set variable value in scope (new proper implementation)
+ * @param scope The scope to add to
+ * @param name The variable name
+ * @param value The RuntimeValue to store (will be referenced)
+ * @return 1 on success, 0 on failure
+ */
+int scope_set_variable(scope_T *scope, const char *name, RuntimeValue *value)
+{
+    if (!scope || !name || !value) {
+        return 0;
+    }
+    
+    // Check if variable already exists
+    for (size_t i = 0; i < scope->variables_size; i++) {
+        if (scope->variables[i] && scope->variables[i]->name &&
+            strcmp(scope->variables[i]->name, name) == 0) {
+            // Update existing variable
+            if (scope->variables[i]->value) {
+                rv_unref(scope->variables[i]->value);
+            }
+            scope->variables[i]->value = rv_ref(value);
+            return 1;
+        }
+    }
+    
+    // Add new variable
+    scope_variable_T *new_var = memory_alloc(sizeof(scope_variable_T));
+    if (!new_var) {
+        return 0;
+    }
+    
+    new_var->name = memory_alloc(strlen(name) + 1);
+    if (!new_var->name) {
+        memory_free(new_var);
+        return 0;
+    }
+    strcpy(new_var->name, name);
+    new_var->value = rv_ref(value);
+    
+    // Expand variables array
+    if (scope->variables == NULL) {
+        scope->variables = memory_alloc(sizeof(scope_variable_T *));
+        scope->variables[0] = new_var;
+        scope->variables_size = 1;
+    } else {
+        scope->variables_size++;
+        scope->variables = memory_realloc(scope->variables,
+                                         scope->variables_size * sizeof(scope_variable_T *));
+        scope->variables[scope->variables_size - 1] = new_var;
+    }
+    
+    return 1;
+}
+
+/**
+ * @brief Get variable value from scope (new proper implementation)
+ * @param scope The scope to search in
+ * @param name The variable name to find
+ * @return The RuntimeValue (referenced) or NULL if not found
+ */
+RuntimeValue *scope_get_variable(scope_T *scope, const char *name)
+{
+    if (!scope || !name) {
+        return NULL;
+    }
+    
+    // Search in new variables array
+    for (size_t i = 0; i < scope->variables_size; i++) {
+        if (scope->variables[i] && scope->variables[i]->name &&
+            strcmp(scope->variables[i]->name, name) == 0) {
+            if (scope->variables[i]->value) {
+                return rv_ref(scope->variables[i]->value);
+            }
+        }
+    }
+    
     return NULL;
 }

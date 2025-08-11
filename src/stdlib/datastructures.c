@@ -21,7 +21,7 @@
  */
 
 // Helper function to convert RuntimeValue to set key string
-static void value_to_set_key(const RuntimeValue *value, char *key_str, size_t key_size)
+static void datastructures_value_to_set_key(const RuntimeValue *value, char *key_str, size_t key_size)
 {
     if (value->type == RV_STRING) {
         snprintf(key_str, key_size, "s:%s", value->data.string.data);
@@ -59,7 +59,7 @@ RuntimeValue *datastructures_set_add(RuntimeValue **args, size_t argc)
 
     // Convert value to string for use as key
     char key_str[256];
-    value_to_set_key(value, key_str, sizeof(key_str));
+    datastructures_value_to_set_key(value, key_str, sizeof(key_str));
 
     // Add value to set (key=value string, value=true)
     rv_object_set(set, key_str, rv_new_boolean(true));
@@ -81,7 +81,7 @@ RuntimeValue *datastructures_set_has(RuntimeValue **args, size_t argc)
 
     // Convert value to string key
     char key_str[256];
-    value_to_set_key(value, key_str, sizeof(key_str));
+    datastructures_value_to_set_key(value, key_str, sizeof(key_str));
 
     // Check if key exists in set
     return rv_new_boolean(rv_object_has(set, key_str));
@@ -101,7 +101,7 @@ RuntimeValue *datastructures_set_remove(RuntimeValue **args, size_t argc)
 
     // Convert value to string key
     char key_str[256];
-    value_to_set_key(value, key_str, sizeof(key_str));
+    datastructures_value_to_set_key(value, key_str, sizeof(key_str));
 
     // Check if key exists before removal
     bool existed = rv_object_has(set, key_str);

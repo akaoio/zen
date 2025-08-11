@@ -15,7 +15,8 @@
 #include "zen/core/memory.h"
 #include "zen/core/runtime_value.h"
 #include "zen/stdlib/io.h"
-// Array and object functions are in runtime_value.h
+#include "zen/types/array.h"
+#include "zen/types/object.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -31,7 +32,7 @@
 
 // Circular reference detection structure
 typedef struct {
-    const RuntimeValue **visited;
+    const Value **visited;
     size_t visited_count;
     size_t visited_capacity;
     size_t depth;
@@ -40,7 +41,7 @@ typedef struct {
 // Anchor tracking for YAML aliases
 typedef struct {
     char *name;    // Anchor name
-    RuntimeValue *value;  // The anchored value
+    Value *value;  // The anchored value
 } YamlAnchor;
 
 typedef struct {
@@ -50,54 +51,54 @@ typedef struct {
 } YamlAnchorMap;
 
 // Forward declarations
-static RuntimeValue *parse_yaml_document(yaml_parser_t *parser);
-static RuntimeValue *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors);
-static RuntimeValue *parse_yaml_sequence(yaml_parser_t *parser, YamlAnchorMap *anchors);
-static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *anchors);
-static RuntimeValue *parse_yaml_scalar(yaml_event_t *event);
+static Value *parse_yaml_document(yaml_parser_t *parser);
+static Value *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors);
+static Value *parse_yaml_sequence(yaml_parser_t *parser, YamlAnchorMap *anchors);
+static Value *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *anchors);
+static Value *parse_yaml_scalar(yaml_event_t *event);
 static bool
-emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRefTracker *tracker);
+emit_yaml_value_safe(yaml_emitter_t *emitter, const Value *value, YamlRefTracker *tracker);
 static bool
-emit_yaml_sequence_safe(yaml_emitter_t *emitter, const RuntimeValue *array, YamlRefTracker *tracker);
+emit_yaml_sequence_safe(yaml_emitter_t *emitter, const Value *array, YamlRefTracker *tracker);
 static bool
-emit_yaml_mapping_safe(yaml_emitter_t *emitter, const RuntimeValue *object, YamlRefTracker *tracker);
+emit_yaml_mapping_safe(yaml_emitter_t *emitter, const Value *object, YamlRefTracker *tracker);
 
 // Circular reference detection functions
 static YamlRefTracker *yaml_ref_tracker_new(void);
 static void yaml_ref_tracker_free(YamlRefTracker *tracker);
-static bool yaml_ref_tracker_add(YamlRefTracker *tracker, const RuntimeValue *value);
-static bool yaml_ref_tracker_contains(const YamlRefTracker *tracker, const RuntimeValue *value);
+static bool yaml_ref_tracker_add(YamlRefTracker *tracker, const Value *value);
+static bool yaml_ref_tracker_contains(const YamlRefTracker *tracker, const Value *value);
 
 // Anchor map functions for alias support
 static YamlAnchorMap *yaml_anchor_map_new(void);
 static void yaml_anchor_map_free(YamlAnchorMap *map);
-static bool yaml_anchor_map_add(YamlAnchorMap *map, const char *name, RuntimeValue *value);
-static RuntimeValue *yaml_anchor_map_find(YamlAnchorMap *map, const char *name);
+static bool yaml_anchor_map_add(YamlAnchorMap *map, const char *name, Value *value);
+static Value *yaml_anchor_map_find(YamlAnchorMap *map, const char *name);
 
 /**
  * @brief Parse YAML string to Value
  * @param yaml_string YAML string to parse
  * @return Newly allocated Value representing the YAML data, or error Value on failure
  */
-RuntimeValue *yaml_parse(const char *yaml_string)
+Value *yaml_parse(const char *yaml_string)
 {
     if (!yaml_string) {
-        return rv_new_error("YAML string is NULL", -1);
+        return error_new("YAML string is NULL");
     }
 
     size_t yaml_length = strlen(yaml_string);
 
     // Check file size limit to prevent memory exhaustion
     if (yaml_length > MAX_YAML_FILE_SIZE) {
-        return rv_new_error("YAML string exceeds maximum size limit (64MB)", -1);
+        return error_new("YAML string exceeds maximum size limit (64MB)");
     }
 
     yaml_parser_t parser;
-    RuntimeValue *result = NULL;
+    Value *result = NULL;
 
     // Initialize parser
     if (!yaml_parser_initialize(&parser)) {
-        return rv_new_error("Failed to initialize YAML parser", -1);
+        return error_new("Failed to initialize YAML parser");
     }
 
     // Set input string
@@ -110,7 +111,7 @@ RuntimeValue *yaml_parse(const char *yaml_string)
     yaml_parser_delete(&parser);
 
     if (!result) {
-        return rv_new_error("Failed to parse YAML document", -1);
+        return error_new("Failed to parse YAML document");
     }
 
     return result;
@@ -121,7 +122,7 @@ RuntimeValue *yaml_parse(const char *yaml_string)
  * @param value Value to convert to YAML
  * @return Newly allocated YAML string, or NULL on error
  */
-char *yaml_stringify(const RuntimeValue *value)
+char *yaml_stringify(const Value *value)
 {
     if (!value) {
         return memory_strdup("null");
@@ -208,34 +209,34 @@ char *yaml_stringify(const RuntimeValue *value)
  * @param filepath Path to YAML file
  * @return Newly allocated Value representing the YAML data, or error Value on failure
  */
-RuntimeValue *yaml_load_file(const char *filepath)
+Value *yaml_load_file(const char *filepath)
 {
     if (!filepath) {
-        return rv_new_error("File path is NULL", -1);
+        return error_new("File path is NULL");
     }
 
     // Check if file exists using io functions
     extern bool io_file_exists_internal(const char *filepath);
     if (!io_file_exists_internal(filepath)) {
-        return rv_new_error("File does not exist: %s", filepath);
+        return error_new_formatted("File does not exist: %s", filepath);
     }
 
     // Read file content first, then check size limit
     extern char *io_read_file_internal(const char *filepath);
     char *content = io_read_file_internal(filepath);
     if (!content) {
-        return rv_new_error("Failed to read file: %s", filepath);
+        return error_new_formatted("Failed to read file: %s", filepath);
     }
 
     // Check file size after reading to prevent memory exhaustion from huge files
     size_t content_length = strlen(content);
     if (content_length > MAX_YAML_FILE_SIZE) {
         memory_free(content);
-        return rv_new_error("File exceeds maximum size limit (64MB): %s", filepath);
+        return error_new_formatted("File exceeds maximum size limit (64MB): %s", filepath);
     }
 
     // Parse YAML content (will also check size, providing double protection)
-    RuntimeValue *result = yaml_parse(content);
+    Value *result = yaml_parse(content);
     memory_free(content);
 
     return result;
@@ -247,10 +248,10 @@ RuntimeValue *yaml_load_file(const char *filepath)
  * @param argc Number of arguments
  * @return Parsed YAML Value or error
  */
-RuntimeValue *yaml_load_file_wrapper(RuntimeValue **args, size_t argc)
+Value *yaml_load_file_wrapper(Value **args, size_t argc)
 {
-    if (argc < 1 || !args[0] || args[0]->type != RV_STRING) {
-        return rv_new_error("loadYamlFile requires a filename string", -1);
+    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
+        return error_new("loadYamlFile requires a filename string");
     }
 
     return yaml_load_file(args[0]->as.string->data);
@@ -258,21 +259,21 @@ RuntimeValue *yaml_load_file_wrapper(RuntimeValue **args, size_t argc)
 
 // Helper functions for parsing
 
-static RuntimeValue *parse_yaml_document(yaml_parser_t *parser)
+static Value *parse_yaml_document(yaml_parser_t *parser)
 {
     yaml_event_t event;
-    RuntimeValue *result = NULL;
+    Value *result = NULL;
     YamlAnchorMap *anchors = yaml_anchor_map_new();
 
     if (!anchors) {
-        return rv_new_error("Memory allocation failed", -1);
+        return error_memory_allocation();
     }
 
     // Parse through events to find document start
     while (true) {
         if (!yaml_parser_parse(parser, &event)) {
             yaml_anchor_map_free(anchors);
-            return rv_new_error("YAML parser error", -1);
+            return error_new("YAML parser error");
         }
 
         switch (event.type) {
@@ -285,7 +286,7 @@ static RuntimeValue *parse_yaml_document(yaml_parser_t *parser)
         case YAML_STREAM_END_EVENT:
             yaml_event_delete(&event);
             yaml_anchor_map_free(anchors);
-            return result ? result : rv_new_null();
+            return result ? result : value_new_null();
 
         case YAML_SCALAR_EVENT:
         case YAML_SEQUENCE_START_EVENT:
@@ -298,20 +299,20 @@ static RuntimeValue *parse_yaml_document(yaml_parser_t *parser)
         case YAML_ALIAS_EVENT: {
             // Look up the alias
             const char *alias_name = (const char *)event.data.alias.anchor;
-            RuntimeValue *aliased = yaml_anchor_map_find(anchors, alias_name);
+            Value *aliased = yaml_anchor_map_find(anchors, alias_name);
 
             if (!aliased) {
                 yaml_event_delete(&event);
                 yaml_anchor_map_free(anchors);
-                // Use simple error since rv_new_error is not working
-                RuntimeValue *error = rv_new_error("Unknown error", -1);
+                // Use simple error since error_new_formatted is not working
+                Value *error = value_new(VALUE_ERROR);
                 if (!error) {
                     return NULL;
                 }
                 return error;  // Will show "Unknown error" message
             }
 
-            result = rv_ref(aliased);  // Increment ref count
+            result = value_ref(aliased);  // Increment ref count
             yaml_event_delete(&event);
             yaml_anchor_map_free(anchors);
             return result;
@@ -324,9 +325,9 @@ static RuntimeValue *parse_yaml_document(yaml_parser_t *parser)
     }
 }
 
-static RuntimeValue *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors)
+static Value *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors)
 {
-    RuntimeValue *value = NULL;
+    Value *value = NULL;
 
     switch (event->type) {
     case YAML_SCALAR_EVENT:
@@ -342,11 +343,11 @@ static RuntimeValue *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event,
         break;
 
     default:
-        return rv_new_error("Unexpected YAML event", -1);
+        return error_new("Unexpected YAML event");
     }
 
     // If this node has an anchor, register it
-    if (value && !rv_is_error(value)) {
+    if (value && !error_is_error(value)) {
         const char *anchor = NULL;
 
         switch (event->type) {
@@ -371,19 +372,19 @@ static RuntimeValue *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event,
     return value;
 }
 
-static RuntimeValue *parse_yaml_sequence(yaml_parser_t *parser, YamlAnchorMap *anchors)
+static Value *parse_yaml_sequence(yaml_parser_t *parser, YamlAnchorMap *anchors)
 {
-    RuntimeValue *array = rv_new_array();
+    Value *array = value_new(VALUE_ARRAY);
     if (!array) {
-        return rv_new_error("Memory allocation failed", -1);
+        return error_memory_allocation();
     }
 
     yaml_event_t event;
 
     while (true) {
         if (!yaml_parser_parse(parser, &event)) {
-            rv_unref(array);
-            return rv_new_error("YAML parser error in sequence", -1);
+            value_unref(array);
+            return error_new("YAML parser error in sequence");
         }
 
         if (event.type == YAML_SEQUENCE_END_EVENT) {
@@ -391,25 +392,25 @@ static RuntimeValue *parse_yaml_sequence(yaml_parser_t *parser, YamlAnchorMap *a
             break;
         }
 
-        RuntimeValue *item = NULL;
+        Value *item = NULL;
 
         if (event.type == YAML_ALIAS_EVENT) {
             // Handle alias in sequence
             const char *alias_name = (const char *)event.data.alias.anchor;
-            RuntimeValue *aliased = yaml_anchor_map_find(anchors, alias_name);
+            Value *aliased = yaml_anchor_map_find(anchors, alias_name);
 
             if (!aliased) {
                 yaml_event_delete(&event);
-                rv_unref(array);
-                // Use simple error since rv_new_error is not working
-                RuntimeValue *error = rv_new_error("Unknown error", -1);
+                value_unref(array);
+                // Use simple error since error_new_formatted is not working
+                Value *error = value_new(VALUE_ERROR);
                 if (!error) {
                     return NULL;
                 }
                 return error;  // Will show "Unknown error" message
             }
 
-            item = rv_ref(aliased);  // Increment ref count
+            item = value_ref(aliased);  // Increment ref count
         } else {
             item = parse_yaml_node(parser, &event, anchors);
         }
@@ -417,26 +418,26 @@ static RuntimeValue *parse_yaml_sequence(yaml_parser_t *parser, YamlAnchorMap *a
         yaml_event_delete(&event);
 
         if (!item) {
-            rv_unref(array);
-            return rv_new_error("Failed to parse sequence item", -1);
+            value_unref(array);
+            return error_new("Failed to parse sequence item");
         }
 
-        if (rv_is_error(item)) {
-            rv_unref(array);
+        if (error_is_error(item)) {
+            value_unref(array);
             return item;
         }
 
-        rv_array_push(array, item);
+        array_push(array, item);
     }
 
     return array;
 }
 
-static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *anchors)
+static Value *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *anchors)
 {
-    RuntimeValue *object = rv_new_object();
+    Value *object = value_new(VALUE_OBJECT);
     if (!object) {
-        return rv_new_error("Memory allocation failed", -1);
+        return error_memory_allocation();
     }
 
     yaml_event_t event;
@@ -444,8 +445,8 @@ static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *an
     while (true) {
         // Check for mapping end
         if (!yaml_parser_parse(parser, &event)) {
-            rv_unref(object);
-            return rv_new_error("YAML parser error in mapping", -1);
+            value_unref(object);
+            return error_new("YAML parser error in mapping");
         }
 
         if (event.type == YAML_MAPPING_END_EVENT) {
@@ -456,47 +457,47 @@ static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *an
         // Parse key (must be scalar)
         if (event.type != YAML_SCALAR_EVENT) {
             yaml_event_delete(&event);
-            rv_unref(object);
-            return rv_new_error("YAML mapping key must be scalar", -1);
+            value_unref(object);
+            return error_new("YAML mapping key must be scalar");
         }
 
-        RuntimeValue *key = parse_yaml_scalar(&event);
+        Value *key = parse_yaml_scalar(&event);
         yaml_event_delete(&event);
 
-        if (!key || key->type != RV_STRING) {
+        if (!key || key->type != VALUE_STRING) {
             if (key)
-                rv_unref(key);
-            rv_unref(object);
-            return rv_new_error("Invalid YAML mapping key", -1);
+                value_unref(key);
+            value_unref(object);
+            return error_new("Invalid YAML mapping key");
         }
 
         // Parse value
         if (!yaml_parser_parse(parser, &event)) {
-            rv_unref(key);
-            rv_unref(object);
-            return rv_new_error("YAML parser error parsing mapping value", -1);
+            value_unref(key);
+            value_unref(object);
+            return error_new("YAML parser error parsing mapping value");
         }
 
-        RuntimeValue *value = NULL;
+        Value *value = NULL;
 
         if (event.type == YAML_ALIAS_EVENT) {
             // Handle alias as mapping value
             const char *alias_name = (const char *)event.data.alias.anchor;
-            RuntimeValue *aliased = yaml_anchor_map_find(anchors, alias_name);
+            Value *aliased = yaml_anchor_map_find(anchors, alias_name);
 
             if (!aliased) {
                 yaml_event_delete(&event);
-                rv_unref(key);
-                rv_unref(object);
-                // Use simple error since rv_new_error is not working
-                RuntimeValue *error = rv_new_error("Unknown error", -1);
+                value_unref(key);
+                value_unref(object);
+                // Use simple error since error_new_formatted is not working
+                Value *error = value_new(VALUE_ERROR);
                 if (!error) {
                     return NULL;
                 }
                 return error;  // Will show "Unknown error" message
             }
 
-            value = rv_ref(aliased);  // Increment ref count
+            value = value_ref(aliased);  // Increment ref count
         } else {
             value = parse_yaml_node(parser, &event, anchors);
         }
@@ -504,83 +505,83 @@ static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *an
         yaml_event_delete(&event);
 
         if (!value) {
-            rv_unref(key);
-            rv_unref(object);
-            return rv_new_error("Failed to parse mapping value", -1);
+            value_unref(key);
+            value_unref(object);
+            return error_new("Failed to parse mapping value");
         }
 
-        if (rv_is_error(value)) {
-            rv_unref(key);
-            rv_unref(object);
+        if (error_is_error(value)) {
+            value_unref(key);
+            value_unref(object);
             return value;
         }
 
         // Handle merge key (<<) specially
         if (strcmp(key->as.string->data, "<<") == 0) {
             // Merge the aliased object's properties into this object
-            if (value->type == RV_OBJECT) {
+            if (value->type == VALUE_OBJECT) {
                 // Merge all properties from the aliased object
                 for (size_t i = 0; i < value->as.object->length; i++) {
                     const char *merge_key = value->as.object->pairs[i].key;
-                    RuntimeValue *merge_value = value->as.object->pairs[i].value;
+                    Value *merge_value = value->as.object->pairs[i].value;
 
                     // Only set if key doesn't already exist (local values override merged ones)
-                    if (!rv_object_get(object, merge_key)) {
-                        rv_object_set(object, merge_key, rv_ref(merge_value));
+                    if (!object_get(object, merge_key)) {
+                        object_set(object, merge_key, value_ref(merge_value));
                     }
                 }
             }
-            rv_unref(value);  // Don't need the merge object itself
+            value_unref(value);  // Don't need the merge object itself
         } else {
             // Normal key-value pair
-            rv_object_set(object, key->as.string->data, value);
+            object_set(object, key->as.string->data, value);
         }
-        rv_unref(key);
+        value_unref(key);
     }
 
     return object;
 }
 
-static RuntimeValue *parse_yaml_scalar(yaml_event_t *event)
+static Value *parse_yaml_scalar(yaml_event_t *event)
 {
     const char *value_str = (const char *)event->data.scalar.value;
     size_t length = event->data.scalar.length;
 
     if (!value_str || length == 0) {
-        return rv_new_string("");
+        return value_new_string("");
     }
 
     // Handle null values
     if (strcmp(value_str, "null") == 0 || strcmp(value_str, "~") == 0 ||
         strcmp(value_str, "") == 0) {
-        return rv_new_null();
+        return value_new_null();
     }
 
     // Handle boolean values
     if (strcmp(value_str, "true") == 0 || strcmp(value_str, "yes") == 0 ||
         strcmp(value_str, "on") == 0) {
-        return rv_new_boolean(true);
+        return value_new_boolean(true);
     }
     if (strcmp(value_str, "false") == 0 || strcmp(value_str, "no") == 0 ||
         strcmp(value_str, "off") == 0) {
-        return rv_new_boolean(false);
+        return value_new_boolean(false);
     }
 
     // Try to parse as number
     char *endptr;
     double num_value = strtod(value_str, &endptr);
     if (*endptr == '\0') {
-        return rv_new_number(num_value);
+        return value_new_number(num_value);
     }
 
     // Default to string
-    return rv_new_string(value_str);
+    return value_new_string(value_str);
 }
 
 // Helper functions for emitting YAML
 
 static bool
-emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRefTracker *tracker)
+emit_yaml_value_safe(yaml_emitter_t *emitter, const Value *value, YamlRefTracker *tracker)
 {
     if (!value) {
         yaml_event_t event;
@@ -604,7 +605,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
     }
 
     // Check for circular references only for objects and arrays
-    if (value->type == RV_OBJECT || value->type == RV_ARRAY) {
+    if (value->type == VALUE_OBJECT || value->type == VALUE_ARRAY) {
         if (yaml_ref_tracker_contains(tracker, value)) {
             yaml_event_t event;
             yaml_scalar_event_initialize(&event,
@@ -628,7 +629,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
     bool result = false;
 
     switch (value->type) {
-    case RV_NULL: {
+    case VALUE_NULL: {
         yaml_event_t event;
         yaml_scalar_event_initialize(
             &event, NULL, NULL, (unsigned char *)"null", -1, 1, 1, YAML_PLAIN_SCALAR_STYLE);
@@ -636,7 +637,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
         break;
     }
 
-    case RV_BOOLEAN: {
+    case VALUE_BOOLEAN: {
         yaml_event_t event;
         const char *bool_str = value->as.boolean ? "true" : "false";
         yaml_scalar_event_initialize(
@@ -645,7 +646,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
         break;
     }
 
-    case RV_NUMBER: {
+    case VALUE_NUMBER: {
         yaml_event_t event;
         char num_buffer[32];
         if (value->as.number == floor(value->as.number)) {
@@ -659,7 +660,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
         break;
     }
 
-    case RV_STRING: {
+    case VALUE_STRING: {
         yaml_event_t event;
         const char *str =
             (value->as.string && value->as.string->data) ? value->as.string->data : "";
@@ -669,11 +670,11 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
         break;
     }
 
-    case RV_ARRAY:
+    case VALUE_ARRAY:
         result = emit_yaml_sequence_safe(emitter, value, tracker);
         break;
 
-    case RV_OBJECT:
+    case VALUE_OBJECT:
         result = emit_yaml_mapping_safe(emitter, value, tracker);
         break;
 
@@ -686,7 +687,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
 }
 
 static bool
-emit_yaml_sequence_safe(yaml_emitter_t *emitter, const RuntimeValue *array, YamlRefTracker *tracker)
+emit_yaml_sequence_safe(yaml_emitter_t *emitter, const Value *array, YamlRefTracker *tracker)
 {
     if (!array || !array->as.array) {
         return false;
@@ -713,7 +714,7 @@ emit_yaml_sequence_safe(yaml_emitter_t *emitter, const RuntimeValue *array, Yaml
 }
 
 static bool
-emit_yaml_mapping_safe(yaml_emitter_t *emitter, const RuntimeValue *object, YamlRefTracker *tracker)
+emit_yaml_mapping_safe(yaml_emitter_t *emitter, const Value *object, YamlRefTracker *tracker)
 {
     if (!object || !object->as.object) {
         return false;
@@ -730,7 +731,7 @@ emit_yaml_mapping_safe(yaml_emitter_t *emitter, const RuntimeValue *object, Yaml
     // Emit object pairs with circular reference protection
     for (size_t i = 0; i < object->as.object->length; i++) {
         const char *key = object->as.object->pairs[i].key;
-        const RuntimeValue *value = object->as.object->pairs[i].value;
+        const Value *value = object->as.object->pairs[i].value;
 
         // Emit key
         yaml_scalar_event_initialize(
@@ -766,7 +767,7 @@ static YamlRefTracker *yaml_ref_tracker_new(void)
     }
 
     tracker->visited_capacity = 16;  // Initial capacity
-    tracker->visited = memory_alloc(sizeof(const RuntimeValue *) * tracker->visited_capacity);
+    tracker->visited = memory_alloc(sizeof(const Value *) * tracker->visited_capacity);
     if (!tracker->visited) {
         memory_free(tracker);
         return NULL;
@@ -801,7 +802,7 @@ static void yaml_ref_tracker_free(YamlRefTracker *tracker)
  * @param value Value to add
  * @return true on success, false on failure
  */
-static bool yaml_ref_tracker_add(YamlRefTracker *tracker, const RuntimeValue *value)
+static bool yaml_ref_tracker_add(YamlRefTracker *tracker, const Value *value)
 {
     if (!tracker || !value) {
         return false;
@@ -810,8 +811,8 @@ static bool yaml_ref_tracker_add(YamlRefTracker *tracker, const RuntimeValue *va
     // Check if we need to expand capacity
     if (tracker->visited_count >= tracker->visited_capacity) {
         size_t new_capacity = tracker->visited_capacity * 2;
-        const RuntimeValue **new_visited =
-            memory_realloc(tracker->visited, sizeof(const RuntimeValue *) * new_capacity);
+        const Value **new_visited =
+            memory_realloc(tracker->visited, sizeof(const Value *) * new_capacity);
         if (!new_visited) {
             return false;
         }
@@ -830,7 +831,7 @@ static bool yaml_ref_tracker_add(YamlRefTracker *tracker, const RuntimeValue *va
  * @param value Value to check
  * @return true if value is already visited, false otherwise
  */
-static bool yaml_ref_tracker_contains(const YamlRefTracker *tracker, const RuntimeValue *value)
+static bool yaml_ref_tracker_contains(const YamlRefTracker *tracker, const Value *value)
 {
     if (!tracker || !value || !tracker->visited) {
         return false;
@@ -901,7 +902,7 @@ static void yaml_anchor_map_free(YamlAnchorMap *map)
  * @param value Value to associate with anchor
  * @return true on success, false on failure
  */
-static bool yaml_anchor_map_add(YamlAnchorMap *map, const char *name, RuntimeValue *value)
+static bool yaml_anchor_map_add(YamlAnchorMap *map, const char *name, Value *value)
 {
     if (!map || !name || !value) {
         return false;
@@ -945,7 +946,7 @@ static bool yaml_anchor_map_add(YamlAnchorMap *map, const char *name, RuntimeVal
  * @param name Anchor name to look up
  * @return Associated value or NULL if not found
  */
-static RuntimeValue *yaml_anchor_map_find(YamlAnchorMap *map, const char *name)
+static Value *yaml_anchor_map_find(YamlAnchorMap *map, const char *name)
 {
     if (!map || !name) {
         return NULL;

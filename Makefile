@@ -12,7 +12,8 @@ sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c) \
            src/stdlib/json.c src/stdlib/array.c src/stdlib/math.c \
            src/stdlib/convert.c src/stdlib/datastructures.c \
            src/stdlib/logic.c src/stdlib/module.c src/stdlib/system.c \
-           src/stdlib/datetime.c src/stdlib/logging.c
+           src/stdlib/datetime.c src/stdlib/logging.c \
+           src/stdlib/http.c src/stdlib/regex.c
 objects := $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
 
 # Directories

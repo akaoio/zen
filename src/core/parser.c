@@ -574,7 +574,6 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
     // NOTE: We do NOT add the variable to scope here anymore.
     // The visitor will do this after evaluating the expression.
     // This prevents issues with unevaluated expressions and scope corruption.
-    // scope_add_variable_definition(scope, var_def);
 
     return var_def;
 }
@@ -1027,12 +1026,15 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
     // For ZEN language: treat standalone identifiers as function calls by default
     // This allows zero-argument user-defined functions to work: "hello" -> hello()
     // The visitor will determine if it's actually a function or variable
+    // BUT: Don't do this inside function call arguments!
     bool is_standalone =
         (parser->current_token->type == TOKEN_NEWLINE || parser->current_token->type == TOKEN_EOF ||
          parser->current_token->type == TOKEN_DEDENT);
 
+
     // Treat as function call if appropriate
-    if (has_args || is_stdlib_function || is_standalone) {
+    // When inside function arguments, only treat as function call if it has arguments or is stdlib
+    if (has_args || is_stdlib_function || (is_standalone && !parser->context.in_function_call)) {
         AST_T *function_call = ast_new(AST_FUNCTION_CALL);
         function_call->function_call_name = original_name;  // Transfer ownership
         function_call->function_call_arguments = NULL;

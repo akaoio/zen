@@ -23,8 +23,7 @@
 #include "zen/core/runtime_value.h"
 #include "zen/stdlib/convert.h"
 #include "zen/stdlib/json.h"
-#include "zen/types/array.h"
-#include "zen/types/object.h"
+// Array and object functions are in runtime_value.h
 
 #include <curl/curl.h>
 #include <stdbool.h>
@@ -252,9 +251,9 @@ bool http_headers_add(HttpHeaders *headers, const char *key, const char *value)
  * @param headers_value ZEN object containing headers
  * @return Pointer to HttpHeaders structure or NULL on error
  */
-HttpHeaders *http_headers_from_value(const Value *headers_value)
+HttpHeaders *http_headers_from_value(const RuntimeValue *headers_value)
 {
-    if (!headers_value || headers_value->type != VALUE_OBJECT || !headers_value->as.object) {
+    if (!headers_value || headers_value->type != RV_OBJECT) {
         return NULL;
     }
 
@@ -263,13 +262,15 @@ HttpHeaders *http_headers_from_value(const Value *headers_value)
         return NULL;
 
     // Iterate through object properties
-    ZenObject *obj = headers_value->as.object;
-    for (size_t i = 0; i < obj->length; i++) {
-        if (obj->pairs[i].key && obj->pairs[i].value) {
+    // Iterate through object properties
+    for (size_t i = 0; i < rv_object_size((RuntimeValue *)headers_value); i++) {
+        const char *key = rv_object_get_key_at((RuntimeValue *)headers_value, i);
+        RuntimeValue *value = rv_object_get((RuntimeValue *)headers_value, key);
+        if (key && value) {
             // Convert value to string
-            char *value_str = value_to_string(obj->pairs[i].value);
+            char *value_str = rv_to_string(value);
             if (value_str) {
-                if (!http_headers_add(headers, obj->pairs[i].key, value_str)) {
+                if (!http_headers_add(headers, key, value_str)) {
                     memory_free(value_str);
                     http_headers_free(headers);
                     return NULL;
@@ -287,21 +288,21 @@ HttpHeaders *http_headers_from_value(const Value *headers_value)
  * @param headers Pointer to HttpHeaders structure
  * @return ZEN object value containing headers
  */
-Value *http_headers_to_value(const HttpHeaders *headers)
+RuntimeValue *http_headers_to_value(const HttpHeaders *headers)
 {
     if (!headers) {
-        return object_new();
+        return rv_new_object();
     }
 
-    Value *obj = object_new();
+    RuntimeValue *obj = rv_new_object();
     if (!obj)
         return NULL;
 
     for (size_t i = 0; i < headers->count; i++) {
-        Value *value = value_new_string(headers->values[i]);
+        RuntimeValue *value = rv_new_string(headers->values[i]);
         if (value) {
-            object_set(obj, headers->keys[i], value);
-            value_unref(value);  // object_set adds its own reference
+            rv_object_set(obj, headers->keys[i], value);
+            rv_unref(value);  // rv_object_set adds its own reference
         }
     }
 
@@ -334,44 +335,44 @@ void http_headers_free(HttpHeaders *headers)
  * @param headers Response headers
  * @return ZEN object value containing response data
  */
-Value *http_create_response_object(long status, const char *body, const HttpHeaders *headers)
+RuntimeValue *http_create_response_object(long status, const char *body, const HttpHeaders *headers)
 {
-    Value *response = object_new();
+    RuntimeValue *response = rv_new_object();
     if (!response)
         return NULL;
 
     // Add status
-    Value *status_val = value_new_number((double)status);
+    RuntimeValue *status_val = rv_new_number((double)status);
     if (status_val) {
-        object_set(response, "status", status_val);
-        value_unref(status_val);
+        rv_object_set(response, "status", status_val);
+        rv_unref(status_val);
     }
 
     // Add body - try to parse as JSON first
-    Value *body_val = NULL;
+    RuntimeValue *body_val = NULL;
     if (body && strlen(body) > 0) {
         // Try JSON parsing first
         body_val = json_parse(body);
-        if (!body_val || body_val->type == VALUE_ERROR) {
+        if (!body_val || body_val->type == RV_ERROR) {
             // If JSON parsing fails, use as string
             if (body_val)
-                value_unref(body_val);
-            body_val = value_new_string(body);
+                rv_unref(body_val);
+            body_val = rv_new_string(body);
         }
     } else {
-        body_val = value_new_string("");
+        body_val = rv_new_string("");
     }
 
     if (body_val) {
-        object_set(response, "body", body_val);
-        value_unref(body_val);
+        rv_object_set(response, "body", body_val);
+        rv_unref(body_val);
     }
 
     // Add headers
-    Value *headers_val = http_headers_to_value(headers);
+    RuntimeValue *headers_val = http_headers_to_value(headers);
     if (headers_val) {
-        object_set(response, "headers", headers_val);
-        value_unref(headers_val);
+        rv_object_set(response, "headers", headers_val);
+        rv_unref(headers_val);
     }
 
     return response;
@@ -383,7 +384,7 @@ Value *http_create_response_object(long status, const char *body, const HttpHead
  * @param content_type Output parameter for determined content type
  * @return Serialized string (caller must free) or NULL on error
  */
-char *http_serialize_request_data(const Value *data_value, char **content_type)
+char *http_serialize_request_data(const RuntimeValue *data_value, char **content_type)
 {
     if (!data_value || !content_type) {
         return NULL;
@@ -392,15 +393,18 @@ char *http_serialize_request_data(const Value *data_value, char **content_type)
     *content_type = NULL;
 
     switch (data_value->type) {
-    case VALUE_STRING:
-        if (data_value->as.string) {
-            *content_type = memory_strdup("text/plain");
-            return memory_strdup(data_value->as.string->data);
+    case RV_STRING:
+        {
+            const char *str = rv_get_string((RuntimeValue *)data_value);
+            if (str) {
+                *content_type = memory_strdup("text/plain");
+                return memory_strdup(str);
+            }
         }
         break;
 
-    case VALUE_OBJECT:
-    case VALUE_ARRAY: {
+    case RV_OBJECT:
+    case RV_ARRAY: {
         char *json_str = json_stringify(data_value);
         if (json_str) {
             *content_type = memory_strdup("application/json");
@@ -411,7 +415,7 @@ char *http_serialize_request_data(const Value *data_value, char **content_type)
 
     default: {
         // Convert other types to string
-        char *str = value_to_string(data_value);
+        char *str = rv_to_string((RuntimeValue *)data_value);
         if (str) {
             *content_type = memory_strdup("text/plain");
             return str;
@@ -431,24 +435,24 @@ char *http_serialize_request_data(const Value *data_value, char **content_type)
  * @param headers_value Request headers (can be NULL)
  * @return Response object or error value
  */
-static Value *http_perform_request(const char *method,
-                                   const Value *url_value,
-                                   const Value *data_value,
-                                   const Value *headers_value)
+static RuntimeValue *http_perform_request(const char *method,
+                                   const RuntimeValue *url_value,
+                                   const RuntimeValue *data_value,
+                                   const RuntimeValue *headers_value)
 {
     // Validate URL
-    if (!url_value || url_value->type != VALUE_STRING || !url_value->as.string) {
-        return error_invalid_argument("http_request", "valid URL string");
+    if (!url_value || url_value->type != RV_STRING) {
+        return rv_new_error("http_request requires valid URL string", -1);
     }
 
     // Initialize curl if needed
     if (!http_init_curl()) {
-        return error_new("Failed to initialize HTTP library");
+        return rv_new_error("Failed to initialize HTTP library", -1);
     }
 
     CURL *curl = curl_easy_init();
     if (!curl) {
-        return error_new("Failed to create HTTP request");
+        return rv_new_error("Failed to create HTTP request", -1);
     }
 
     // Initialize response structure
@@ -456,7 +460,7 @@ static Value *http_perform_request(const char *method,
     response.data = memory_alloc(1);
     if (!response.data) {
         curl_easy_cleanup(curl);
-        return error_memory_allocation();
+        return rv_new_error("Memory allocation failed", -1);
     }
     response.data[0] = '\0';
     response.capacity = 1;
@@ -465,12 +469,12 @@ static Value *http_perform_request(const char *method,
     HttpHeaders *response_headers = http_headers_new();
     struct HttpHeaderCollector header_collector = {response_headers};
 
-    Value *result = NULL;
+    RuntimeValue *result = NULL;
     struct curl_slist *curl_headers = NULL;
     char *request_body = NULL;
 
     // Configure basic curl options
-    curl_easy_setopt(curl, CURLOPT_URL, url_value->as.string->data);
+    curl_easy_setopt(curl, CURLOPT_URL, rv_get_string((RuntimeValue *)url_value));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, http_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, http_header_callback);
@@ -560,7 +564,7 @@ static Value *http_perform_request(const char *method,
                  sizeof(error_msg),
                  "HTTP request failed: %s",
                  curl_easy_strerror(curl_result));
-        result = error_new_with_code(error_msg, (int)curl_result);
+        result = rv_new_error(error_msg, (int)curl_result);
     }
 
     // Cleanup
@@ -585,7 +589,7 @@ static Value *http_perform_request(const char *method,
  * @param headers_value Object value containing headers (optional, can be null)
  * @return Object value with response data (status, body, headers) or error value
  */
-Value *http_get(const Value *url_value, const Value *headers_value)
+RuntimeValue *http_get(const RuntimeValue *url_value, const RuntimeValue *headers_value)
 {
     return http_perform_request("GET", url_value, NULL, headers_value);
 }
@@ -597,7 +601,7 @@ Value *http_get(const Value *url_value, const Value *headers_value)
  * @param headers_value Object value containing headers (optional, can be null)
  * @return Object value with response data (status, body, headers) or error value
  */
-Value *http_post(const Value *url_value, const Value *data_value, const Value *headers_value)
+RuntimeValue *http_post(const RuntimeValue *url_value, const RuntimeValue *data_value, const RuntimeValue *headers_value)
 {
     return http_perform_request("POST", url_value, data_value, headers_value);
 }
@@ -609,7 +613,7 @@ Value *http_post(const Value *url_value, const Value *data_value, const Value *h
  * @param headers_value Object value containing headers (optional, can be null)
  * @return Object value with response data (status, body, headers) or error value
  */
-Value *http_put(const Value *url_value, const Value *data_value, const Value *headers_value)
+RuntimeValue *http_put(const RuntimeValue *url_value, const RuntimeValue *data_value, const RuntimeValue *headers_value)
 {
     return http_perform_request("PUT", url_value, data_value, headers_value);
 }
@@ -620,7 +624,7 @@ Value *http_put(const Value *url_value, const Value *data_value, const Value *he
  * @param headers_value Object value containing headers (optional, can be null)
  * @return Object value with response data (status, body, headers) or error value
  */
-Value *http_delete(const Value *url_value, const Value *headers_value)
+RuntimeValue *http_delete(const RuntimeValue *url_value, const RuntimeValue *headers_value)
 {
     return http_perform_request("DELETE", url_value, NULL, headers_value);
 }
@@ -644,13 +648,13 @@ void http_configure_timeout(long timeout_seconds)
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *http_get_stdlib(Value **args, size_t argc)
+RuntimeValue *http_get_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc < 1) {
-        return error_invalid_argument("httpGet", "URL string");
+        return rv_new_error("httpGet requires URL string", -1);
     }
 
-    const Value *headers = (argc >= 2) ? args[1] : NULL;
+    const RuntimeValue *headers = (argc >= 2) ? args[1] : NULL;
     return http_get(args[0], headers);
 }
 
@@ -660,13 +664,13 @@ Value *http_get_stdlib(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *http_post_stdlib(Value **args, size_t argc)
+RuntimeValue *http_post_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc < 2) {
-        return error_invalid_argument("httpPost", "URL and data");
+        return rv_new_error("httpPost requires URL and data", -1);
     }
 
-    const Value *headers = (argc >= 3) ? args[2] : NULL;
+    const RuntimeValue *headers = (argc >= 3) ? args[2] : NULL;
     return http_post(args[0], args[1], headers);
 }
 
@@ -676,13 +680,13 @@ Value *http_post_stdlib(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *http_put_stdlib(Value **args, size_t argc)
+RuntimeValue *http_put_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc < 2) {
-        return error_invalid_argument("httpPut", "URL and data");
+        return rv_new_error("httpPut requires URL and data", -1);
     }
 
-    const Value *headers = (argc >= 3) ? args[2] : NULL;
+    const RuntimeValue *headers = (argc >= 3) ? args[2] : NULL;
     return http_put(args[0], args[1], headers);
 }
 
@@ -692,13 +696,13 @@ Value *http_put_stdlib(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return Response object or error value
  */
-Value *http_delete_stdlib(Value **args, size_t argc)
+RuntimeValue *http_delete_stdlib(RuntimeValue **args, size_t argc)
 {
     if (argc < 1) {
-        return error_invalid_argument("httpDelete", "URL string");
+        return rv_new_error("httpDelete requires URL string", -1);
     }
 
-    const Value *headers = (argc >= 2) ? args[1] : NULL;
+    const RuntimeValue *headers = (argc >= 2) ? args[1] : NULL;
     return http_delete(args[0], headers);
 }
 
@@ -708,10 +712,10 @@ Value *http_delete_stdlib(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return Null value
  */
-Value *http_timeout_stdlib(Value **args, size_t argc)
+RuntimeValue *http_timeout_stdlib(RuntimeValue **args, size_t argc)
 {
-    if (argc >= 1 && args[0]->type == VALUE_NUMBER) {
-        http_configure_timeout((long)args[0]->as.number);
+    if (argc >= 1 && args[0]->type == RV_NUMBER) {
+        http_configure_timeout((long)args[0]->data.number);
     }
-    return value_new_null();
+    return rv_new_null();
 }

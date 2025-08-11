@@ -132,7 +132,9 @@ static bool execute_line(const char *line, scope_T *global_scope)
     // Note: Do not free visitor result as it may share nodes with root AST
     // The root AST cleanup will handle all shared nodes properly
     visitor_free(visitor);
-    ast_free(root);
+    // PROPER SOLUTION: Now that variables are stored as RuntimeValues in scope,
+    // we can safely free the AST after each REPL command
+    ast_free(root);  // Safe now - variables are stored separately from AST!
 
     // CRITICAL: Prevent double-free of global_scope by clearing parser's scope reference
     // The global_scope will be freed by main() at program exit

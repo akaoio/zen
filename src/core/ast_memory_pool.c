@@ -283,7 +283,7 @@ bool ast_pool_expand(ASTMemoryPool *pool)
  * @param pool Pool to allocate from
  * @return Allocated AST node or NULL on failure
  */
-static AST_T *ast_pool_alloc_from_pool(ASTMemoryPool *pool)
+static AST_T *ast_memory_pool_alloc_from_pool(ASTMemoryPool *pool)
 {
     if (!pool || !pool->initialized) {
         return NULL;
@@ -324,7 +324,7 @@ static AST_T *ast_pool_alloc_from_pool(ASTMemoryPool *pool)
  * @param pool Pool to return to
  * @param node Node to return
  */
-static void ast_pool_return_to_pool(ASTMemoryPool *pool, AST_T *node)
+static void ast_memory_pool_return_to_pool(ASTMemoryPool *pool, AST_T *node)
 {
     if (!pool || !pool->initialized || !node) {
         return;
@@ -387,7 +387,7 @@ void *ast_pool_alloc(ASTMemoryPool *pool)
         return NULL;
     }
 
-    return (void *)ast_pool_alloc_from_pool(pool);
+    return (void *)ast_memory_pool_alloc_from_pool(pool);
 }
 
 /**
@@ -402,7 +402,7 @@ void ast_pool_free(ASTMemoryPool *pool, void *ptr)
     }
 
     AST_T *node = (AST_T *)ptr;
-    ast_pool_return_to_pool(pool, node);
+    ast_memory_pool_return_to_pool(pool, node);
 }
 
 /**
@@ -575,7 +575,7 @@ AST_T *ast_pool_alloc_global(int type)
     ASTMemoryPool *pool = g_ast_pool_manager.pools[pool_type];
 
     // Try pool allocation first
-    AST_T *node = ast_pool_alloc_from_pool(pool);
+    AST_T *node = ast_memory_pool_alloc_from_pool(pool);
 
     if (node) {
         node->type = type;
@@ -615,7 +615,7 @@ void ast_pool_free_global(AST_T *node)
     ASTPoolType pool_type = ast_pool_select_pool_for_type(node->type);
     ASTMemoryPool *pool = g_ast_pool_manager.pools[pool_type];
 
-    ast_pool_return_to_pool(pool, node);
+    ast_memory_pool_return_to_pool(pool, node);
     g_ast_pool_manager.pool_stats.free_count++;
 }
 
@@ -841,7 +841,7 @@ AST_T *ast_pool_alloc_node(int ast_type)
     ASTMemoryPool *pool = g_ast_pool_manager.pools[pool_type];
 
     // Try pool allocation first
-    AST_T *node = ast_pool_alloc_from_pool(pool);
+    AST_T *node = ast_memory_pool_alloc_from_pool(pool);
 
     if (node) {
         node->type = ast_type;
@@ -881,7 +881,7 @@ void ast_pool_free_node(AST_T *node)
     ASTPoolType pool_type = ast_pool_select_type(node->type);
     ASTMemoryPool *pool = g_ast_pool_manager.pools[pool_type];
 
-    ast_pool_return_to_pool(pool, node);
+    ast_memory_pool_return_to_pool(pool, node);
     g_ast_pool_manager.pool_stats.free_count++;
 }
 

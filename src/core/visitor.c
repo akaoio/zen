@@ -24,7 +24,6 @@
 #include "zen/stdlib/json.h"
 #include "zen/stdlib/module.h"
 #include "zen/stdlib/stdlib.h"
-#include "zen/stdlib/yaml.h"
 
 #include <math.h>
 #include <stdbool.h>
@@ -40,11 +39,7 @@
 #define HOT_FUNCTION_TIME_THRESHOLD    0.001  // 1ms
 
 // Forward declarations
-// static RuntimeValue *builtin_function_print(visitor_T *visitor, AST_T **args, int args_size);
-static RuntimeValue *ast_to_value(AST_T *node);
-// TODO: Update these to RuntimeValue
-// static RuntimeValue *visitor_visit_class_definition(visitor_T *visitor, AST_T *node);
-// static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *node);
+static RuntimeValue *visitor_ast_to_value(AST_T *node);
 
 static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node);
 static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node);
@@ -64,12 +59,9 @@ static RuntimeValue *
 visitor_execute_user_function(visitor_T *visitor, AST_T *fdef, AST_T **args, int args_size);
 static RuntimeValue *visitor_execute_user_function_ex(
     visitor_T *visitor, AST_T *fdef, AST_T **args, int args_size, bool is_method_call);
-static bool is_truthy_rv(RuntimeValue *rv);
+static bool visitor_is_truthy_rv(RuntimeValue *rv);
 
 // Database-like file operations
-// TODO: Update these to RuntimeValue
-// static RuntimeValue *visitor_visit_file_get(visitor_T *visitor, AST_T *node);
-// static RuntimeValue *visitor_visit_file_put(visitor_T *visitor, AST_T *node);
 // static RuntimeValue *visitor_visit_file_reference(visitor_T *visitor, AST_T *node);
 // static RuntimeValue *visitor_navigate_property_path(visitor_T *visitor, AST_T *root, AST_T
 // *property_path); Removed unused function declaration
@@ -225,7 +217,6 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
     clock_t start_time = clock();
     (void)start_time;  // Mark as used
 
-    // TODO: Update constant folding optimization to use RuntimeValue
     // Apply constant folding optimization if enabled
     // Constant folding optimization disabled for now
 
@@ -881,36 +872,27 @@ RuntimeValue *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
         value = rv_new_null();
     }
 
-    // Store the evaluated RuntimeValue in the variable definition
-    // We'll add a runtime_value field to the AST node to cache the evaluated value
-    if (node->runtime_value) {
-        rv_unref(node->runtime_value);
-    }
-    node->runtime_value = rv_ref(value);
-    if (value) {
-        char *value_str = rv_to_string(value);
-        LOG_VISITOR_DEBUG("Stored runtime_value for '%s': %s",
-                          node->variable_definition_variable_name,
-                          value_str);
-        memory_free(value_str);
-    } else {
-        LOG_VISITOR_DEBUG("Stored runtime_value for '%s': NULL",
-                          node->variable_definition_variable_name);
-    }
-
-    // Add variable to scope
-    AST_T *result = scope_add_variable_definition(node->scope, node);
-    if (!result) {
+    // Use the new scope_set_variable function to store RuntimeValue directly
+    // This completely separates runtime values from AST nodes
+    if (!scope_set_variable(node->scope, node->variable_definition_variable_name, value)) {
         LOG_ERROR(LOG_CAT_VISITOR,
-                  "Failed to add variable '%s' to scope",
+                  "Failed to set variable '%s' in scope",
                   node->variable_definition_variable_name);
         rv_unref(value);
         return rv_new_null();
     }
 
-    LOG_VISITOR_DEBUG("Variable '%s' set successfully in scope %p with evaluated value",
-                      node->variable_definition_variable_name,
-                      (void *)node->scope);
+    if (value) {
+        char *value_str = rv_to_string(value);
+        LOG_VISITOR_DEBUG("Stored variable '%s' with value: %s",
+                          node->variable_definition_variable_name,
+                          value_str);
+        memory_free(value_str);
+    } else {
+        LOG_VISITOR_DEBUG("Stored variable '%s' with value: NULL",
+                          node->variable_definition_variable_name);
+    }
+
 
     return value;
 }
@@ -953,15 +935,26 @@ RuntimeValue *visitor_visit_variable(visitor_T *visitor, AST_T *node)
         return rv_new_null();
     }
 
-    // Looking up variable in scope
+    // Looking up variable in scope using new RuntimeValue storage
     LOG_VISITOR_DEBUG(
         "Looking up variable '%s' in scope %p", node->variable_name, (void *)node->scope);
 
+
+    // Try the new scope_get_variable function first
+    RuntimeValue *value = scope_get_variable(node->scope, node->variable_name);
+    
+    if (value) {
+        // Variable found in new storage
+        return value;  // Already referenced by scope_get_variable
+    }
+    
+    // Fall back to old method for compatibility during migration
     AST_T *vdef = scope_get_variable_definition(node->scope, node->variable_name);
 
+
     if (vdef != NULL) {
-        // Variable found
-        LOG_VISITOR_DEBUG("Found variable '%s', type=%d", node->variable_name, vdef->type);
+        // Variable found in old storage
+        LOG_VISITOR_DEBUG("Found variable '%s' in old storage, type=%d", node->variable_name, vdef->type);
 
         // Use the cached RuntimeValue if available
         if (vdef->runtime_value) {
@@ -1133,22 +1126,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
         return result ? result : rv_new_null();
     }
 
-    // Handle built-in functions (legacy print support)
-    if (strcmp(node->function_call_name, "print") == 0) {
-        // Evaluate arguments and print them
-        for (size_t i = 0; i < node->function_call_arguments_size; i++) {
-            RuntimeValue *arg = visitor_visit(visitor, node->function_call_arguments[i]);
-            char *str = rv_to_string(arg);
-            printf("%s", str);
-            memory_free(str);
-            rv_unref(arg);
-            if (i < node->function_call_arguments_size - 1) {
-                printf(" ");
-            }
-        }
-        printf("\n");
-        return rv_new_null();
-    }
+    // Legacy print support removed - now handled via stdlib
 
     // Handle "new" constructor calls
     if (strcmp(node->function_call_name, "new") == 0) {
@@ -1225,7 +1203,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     // Check if calling a class constructor
     AST_T *class_var = scope_get_variable_definition(node->scope, node->function_call_name);
     if (class_var && class_var->variable_definition_value) {
-        RuntimeValue *potential_class = ast_to_value(class_var->variable_definition_value);
+        RuntimeValue *potential_class = visitor_ast_to_value(class_var->variable_definition_value);
         // Check if potential_class is a class object
         if (potential_class && potential_class->type == RV_OBJECT) {
             RuntimeValue *type_marker = rv_object_get(potential_class, "__type");
@@ -1398,10 +1376,10 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
  * @param node AST node to convert
  * @return Value object or NULL on failure
  */
-static RuntimeValue *ast_to_value(AST_T *node)
+static RuntimeValue *visitor_ast_to_value(AST_T *node)
 {
     if (!node) {
-        LOG_VISITOR_DEBUG("ast_to_value called with NULL node");
+        LOG_VISITOR_DEBUG("visitor_ast_to_value called with NULL node");
         return rv_new_null();
     }
 
@@ -1435,7 +1413,7 @@ static RuntimeValue *ast_to_value(AST_T *node)
 
         // Convert each element and add to array
         for (size_t i = 0; i < node->array_size; i++) {
-            RuntimeValue *element_val = ast_to_value(node->array_elements[i]);
+            RuntimeValue *element_val = visitor_ast_to_value(node->array_elements[i]);
             if (element_val) {
                 rv_array_push(array_val, element_val);
                 rv_unref(element_val);
@@ -1454,7 +1432,7 @@ static RuntimeValue *ast_to_value(AST_T *node)
         // Set each key-value pair
         for (size_t i = 0; i < node->object_size; i++) {
             if (node->object_keys[i] && node->object_values[i]) {
-                RuntimeValue *value_val = ast_to_value(node->object_values[i]);
+                RuntimeValue *value_val = visitor_ast_to_value(node->object_values[i]);
                 if (value_val) {
                     rv_object_set(object_val, node->object_keys[i], value_val);
 
@@ -1475,7 +1453,7 @@ static RuntimeValue *ast_to_value(AST_T *node)
     case AST_VARIABLE:
         // For AST_VARIABLE nodes, we need to look up the actual value from scope
         // This should not happen in normal flow as variables should be resolved first
-        LOG_VISITOR_DEBUG("AST_VARIABLE in ast_to_value - variable should be resolved first");
+        LOG_VISITOR_DEBUG("AST_VARIABLE in visitor_ast_to_value - variable should be resolved first");
         return rv_new_null();
 
     default:
@@ -1662,8 +1640,8 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
     // Convert RuntimeValue to AST then to Value objects for operators
     AST_T *left_ast = runtime_value_to_ast(left_rv);
     AST_T *right_ast = runtime_value_to_ast(right_rv);
-    RuntimeValue *left_val = ast_to_value(left_ast);
-    RuntimeValue *right_val = ast_to_value(right_ast);
+    RuntimeValue *left_val = visitor_ast_to_value(left_ast);
+    RuntimeValue *right_val = visitor_ast_to_value(right_ast);
     ast_free(left_ast);
     ast_free(right_ast);
     rv_unref(left_rv);
@@ -1832,7 +1810,7 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
 
     // Convert RuntimeValue to AST then to Value object
     AST_T *operand_ast = runtime_value_to_ast(operand_rv);
-    RuntimeValue *operand_val = ast_to_value(operand_ast);
+    RuntimeValue *operand_val = visitor_ast_to_value(operand_ast);
     ast_free(operand_ast);
     rv_unref(operand_rv);
 
@@ -2078,7 +2056,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
  * @param rv RuntimeValue to evaluate
  * @return true if truthy, false otherwise
  */
-static bool is_truthy_rv(RuntimeValue *rv)
+static bool visitor_is_truthy_rv(RuntimeValue *rv)
 {
     if (!rv) {
         return false;
@@ -2126,7 +2104,7 @@ static RuntimeValue *visitor_visit_if_statement(visitor_T *visitor, AST_T *node)
     }
 
     // Check if condition is truthy
-    bool condition_is_true = is_truthy_rv(condition_result);
+    bool condition_is_true = visitor_is_truthy_rv(condition_result);
     rv_unref(condition_result);
 
     if (condition_is_true) {
@@ -2180,7 +2158,7 @@ static RuntimeValue *visitor_visit_while_loop(visitor_T *visitor, AST_T *node)
             break;
         }
 
-        bool condition_is_true = is_truthy_rv(condition_result);
+        bool condition_is_true = visitor_is_truthy_rv(condition_result);
         rv_unref(condition_result);
 
         if (!condition_is_true) {

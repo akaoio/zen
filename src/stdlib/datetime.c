@@ -17,7 +17,7 @@
 #include <time.h>
 
 // Helper function to create datetime object from struct tm and timestamp
-static RuntimeValue *create_datetime_object(const struct tm *timeinfo, time_t timestamp)
+static RuntimeValue *datetime_create_datetime_object(const struct tm *timeinfo, time_t timestamp)
 {
     RuntimeValue *result = rv_new_object();
     if (!result || !timeinfo) {
@@ -222,7 +222,7 @@ RuntimeValue *datetime_add(RuntimeValue **args, size_t argc)
         return rv_new_error("datetime_add() failed to convert timestamp", -1);
     }
 
-    return create_datetime_object(timeinfo, timestamp);
+    return datetime_create_datetime_object(timeinfo, timestamp);
 }
 
 RuntimeValue *datetime_subtract(RuntimeValue **args, size_t argc)
@@ -276,7 +276,7 @@ RuntimeValue *datetime_subtract(RuntimeValue **args, size_t argc)
         return rv_new_error("datetime_subtract() failed to convert timestamp", -1);
     }
 
-    return create_datetime_object(timeinfo, timestamp);
+    return datetime_create_datetime_object(timeinfo, timestamp);
 }
 
 RuntimeValue *datetime_diff(RuntimeValue **args, size_t argc)
@@ -404,7 +404,7 @@ RuntimeValue *datetime_utc(RuntimeValue **args, size_t argc)
     }
 
     // Create UTC datetime object
-    RuntimeValue *result = create_datetime_object(utc_timeinfo, timestamp);
+    RuntimeValue *result = datetime_create_datetime_object(utc_timeinfo, timestamp);
     if (result) {
         rv_object_set(result, "is_utc", rv_new_boolean(true));
     }
