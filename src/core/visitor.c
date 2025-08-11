@@ -382,7 +382,13 @@ RuntimeValue *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
                           node->variable_definition_variable_name,
                           node->variable_definition_value->type);
         value = visitor_visit(visitor, node->variable_definition_value);
-        LOG_VISITOR_DEBUG("Expression evaluated to: %s", value ? rv_to_string(value) : "NULL");
+        if (value) {
+            char *value_str = rv_to_string(value);
+            LOG_VISITOR_DEBUG("Expression evaluated to: %s", value_str);
+            memory_free(value_str);
+        } else {
+            LOG_VISITOR_DEBUG("Expression evaluated to: NULL");
+        }
     } else {
         value = rv_new_null();
     }
@@ -393,9 +399,16 @@ RuntimeValue *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
         rv_unref(node->runtime_value);
     }
     node->runtime_value = rv_ref(value);
-    LOG_VISITOR_DEBUG("Stored runtime_value for '%s': %s",
-                      node->variable_definition_variable_name,
-                      value ? rv_to_string(value) : "NULL");
+    if (value) {
+        char *value_str = rv_to_string(value);
+        LOG_VISITOR_DEBUG("Stored runtime_value for '%s': %s",
+                          node->variable_definition_variable_name,
+                          value_str);
+        memory_free(value_str);
+    } else {
+        LOG_VISITOR_DEBUG("Stored runtime_value for '%s': NULL",
+                          node->variable_definition_variable_name);
+    }
 
     // Add variable to scope
     AST_T *result = scope_add_variable_definition(node->scope, node);
@@ -466,9 +479,14 @@ RuntimeValue *visitor_visit_variable(visitor_T *visitor, AST_T *node)
         if (vdef->runtime_value) {
             // Create a new reference to return
             RuntimeValue *cached = (RuntimeValue *)vdef->runtime_value;
-            LOG_VISITOR_DEBUG("Found cached value for '%s': %s",
-                              node->variable_name,
-                              cached ? rv_to_string(cached) : "NULL");
+            if (cached) {
+                char *cached_str = rv_to_string(cached);
+                LOG_VISITOR_DEBUG(
+                    "Found cached value for '%s': %s", node->variable_name, cached_str);
+                memory_free(cached_str);
+            } else {
+                LOG_VISITOR_DEBUG("Found cached value for '%s': NULL", node->variable_name);
+            }
             return rv_ref(cached);
         }
 
@@ -772,7 +790,7 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
                   (void *)node);
         return rv_new_null();
     }
-    
+
     // Allow empty compounds
     if (!node->compound_statements || node->compound_size == 0) {
         LOG_VISITOR_DEBUG("Empty compound (0 statements)");
@@ -1877,10 +1895,10 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
     if (!visitor || !node || !node->import_path) {
         return rv_new_null();
     }
-    
+
     // Read the module file
     char *module_path = node->import_path;
-    
+
     // Add .zen extension if not present
     char full_path[512];
     if (!strstr(module_path, ".zen") && !strstr(module_path, ".zn")) {
@@ -1889,34 +1907,32 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
         strncpy(full_path, module_path, sizeof(full_path) - 1);
         full_path[sizeof(full_path) - 1] = '\0';
     }
-    
-    
+
     // Read module source
     char *source = io_read_file_internal(full_path);
     if (!source) {
         LOG_ERROR(LOG_CAT_VISITOR, "Failed to read module: %s", full_path);
         return rv_new_null();
     }
-    
-    
+
     // Create a new lexer and parser for the module
     lexer_T *module_lexer = lexer_new(source);
     if (!module_lexer) {
         memory_free(source);
         return rv_new_null();
     }
-    
+
     parser_T *module_parser = parser_new(module_lexer);
     if (!module_parser) {
         lexer_free(module_lexer);
         memory_free(source);
         return rv_new_null();
     }
-    
+
     // Parse the module
     scope_T *module_scope = scope_new();
     AST_T *module_ast = parser_parse(module_parser, module_scope);
-    
+
     if (!module_ast) {
         LOG_ERROR(LOG_CAT_VISITOR, "Failed to parse module");
         parser_free(module_parser);
@@ -1924,20 +1940,19 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
         memory_free(source);
         return rv_new_null();
     }
-    
-    
+
     // Create a new visitor for the module to avoid interference
     visitor_T *module_visitor = visitor_new();
-    
+
     // Execute the module - this will populate variable runtime values
     RuntimeValue *module_result = visitor_visit(module_visitor, module_ast);
     if (module_result) {
         rv_unref(module_result);
     }
-    
+
     // Get all exported values from the module scope
     RuntimeValue *exports = rv_new_object();
-    
+
     // Add all variables from module scope to exports
     if (module_ast && module_ast->type == AST_COMPOUND && module_ast->compound_statements) {
         // Try to find variable definitions in the compound statements
@@ -1946,38 +1961,37 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
             if (stmt && stmt->type == AST_VARIABLE_DEFINITION) {
                 const char *var_name = stmt->variable_definition_variable_name;
                 RuntimeValue *value = stmt->runtime_value;
-                
+
                 if (var_name && value) {
                     rv_object_set(exports, var_name, value);
                 }
             }
         }
     }
-    
+
     // Also check scope variable definitions
     for (size_t i = 0; i < module_scope->variable_definitions_size; i++) {
         AST_T *var_def = module_scope->variable_definitions[i];
         if (var_def && var_def->variable_definition_variable_name) {
-            
             // Skip internal variables
             if (var_def->variable_definition_variable_name[0] == '_') {
                 continue;
             }
-            
+
             // Get the runtime value - first check cached, then try to convert from AST
             RuntimeValue *value = var_def->runtime_value;
             if (!value && var_def->variable_definition_value) {
                 // Evaluate the variable definition value directly
                 value = visitor_visit(module_visitor, var_def->variable_definition_value);
             }
-            
+
             if (value) {
                 rv_object_set(exports, var_def->variable_definition_variable_name, value);
-                rv_unref(value); // rv_object_set refs it
+                rv_unref(value);  // rv_object_set refs it
             }
         }
     }
-    
+
     // Add all functions from module scope to exports
     for (size_t i = 0; i < module_scope->function_definitions_size; i++) {
         AST_T *func_def = module_scope->function_definitions[i];
@@ -1986,14 +2000,14 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
             if (func_def->function_definition_name[0] == '_') {
                 continue;
             }
-            
+
             // Create function value
             RuntimeValue *func_value = rv_new_function(func_def, module_scope);
             rv_object_set(exports, func_def->function_definition_name, func_value);
             rv_unref(func_value);
         }
     }
-    
+
     // Import into current scope
     if (node->import_names_size == 0) {
         // Import all exports into current scope
@@ -2001,7 +2015,7 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
             for (size_t i = 0; i < exports->data.object.count; i++) {
                 const char *name = exports->data.object.keys[i];
                 RuntimeValue *value = exports->data.object.values[i];
-                
+
                 if (value->type == RV_FUNCTION && value->data.function.ast_node) {
                     // Import as function definition
                     AST_T *func_ast = (AST_T *)value->data.function.ast_node;
@@ -2009,10 +2023,11 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
                     AST_T *import_func = ast_new(AST_FUNCTION_DEFINITION);
                     import_func->function_definition_name = memory_strdup(name);
                     import_func->function_definition_args = func_ast->function_definition_args;
-                    import_func->function_definition_args_size = func_ast->function_definition_args_size;
+                    import_func->function_definition_args_size =
+                        func_ast->function_definition_args_size;
                     import_func->function_definition_body = func_ast->function_definition_body;
                     import_func->scope = node->scope;
-                    
+
                     scope_add_function_definition(node->scope, import_func);
                 } else {
                     // Import as variable definition
@@ -2020,13 +2035,13 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
                     import_var->variable_definition_variable_name = memory_strdup(name);
                     import_var->runtime_value = rv_ref(value);
                     import_var->scope = node->scope;
-                    
+
                     scope_add_variable_definition(node->scope, import_var);
                 }
             }
         }
     }
-    
+
     // Cleanup - Don't free module_ast and module_scope as they're referenced by functions
     visitor_free(module_visitor);
     // ast_free(module_ast);  // Keep alive - referenced by exported functions
@@ -2034,7 +2049,7 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
     parser_free(module_parser);
     lexer_free(module_lexer);
     memory_free(source);
-    
+
     return exports;
 }
 
@@ -2049,10 +2064,10 @@ RuntimeValue *visitor_visit_export(visitor_T *visitor, AST_T *node)
     if (!visitor || !node) {
         return rv_new_null();
     }
-    
+
     // For now, export is a no-op since we export all non-private symbols by default
     // In the future, we could implement specific export handling
-    
+
     // Export a named value
     if (node->export_name && node->export_value) {
         LOG_VISITOR_DEBUG("Exporting: %s", node->export_name);
@@ -2060,7 +2075,7 @@ RuntimeValue *visitor_visit_export(visitor_T *visitor, AST_T *node)
         // Could maintain an export list here
         rv_unref(value);
     }
-    
+
     return rv_new_null();
 }
 
@@ -2270,7 +2285,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
         // IMPORTANT: args[0] might already be a literal AST node (STRING, NUMBER, etc)
         // or it might be an object. We need to handle it carefully to avoid recursion.
         RuntimeValue *self_value = NULL;
-        
+
         // Check if args[0] is a simple literal that won't cause recursion
         if (args[0]->type == AST_STRING || args[0]->type == AST_NUMBER ||
             args[0]->type == AST_BOOLEAN || args[0]->type == AST_NULL ||
@@ -2287,7 +2302,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
                 self_value = visitor_visit(visitor, args[0]);
             }
         }
-        
+
         if (!self_value) {
             self_value = rv_new_null();
         }
@@ -2297,12 +2312,17 @@ static RuntimeValue *visitor_execute_user_function_ex(
         AST_T *self_def = ast_new(AST_VARIABLE_DEFINITION);
         self_def->variable_definition_variable_name = memory_strdup("self");
         self_def->variable_definition_value = NULL;  // Don't store AST value
-        self_def->runtime_value = self_value;  // Store RuntimeValue directly
+        self_def->runtime_value = self_value;        // Store RuntimeValue directly
         self_def->scope = function_scope;
 
         scope_add_variable_definition(function_scope, self_def);
-        LOG_VISITOR_DEBUG("Added 'self' to function scope with value: %s", 
-                          self_value ? rv_to_string(self_value) : "NULL");
+        if (self_value) {
+            char *self_str = rv_to_string(self_value);
+            LOG_VISITOR_DEBUG("Added 'self' to function scope with value: %s", self_str);
+            memory_free(self_str);
+        } else {
+            LOG_VISITOR_DEBUG("Added 'self' to function scope with value: NULL");
+        }
 
         param_offset = 1;  // Skip self in args array for remaining parameters
     }
@@ -3024,7 +3044,6 @@ static RuntimeValue *visitor_visit_compound_assignment(visitor_T *visitor, AST_T
  */
 static RuntimeValue *visitor_visit_assignment(visitor_T *visitor, AST_T *node)
 {
-    
     if (!visitor || !node || !node->left || !node->right) {
         LOG_ERROR(LOG_CAT_VISITOR, "Invalid assignment node");
         return rv_new_null();

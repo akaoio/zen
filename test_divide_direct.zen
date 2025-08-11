@@ -1,0 +1,8 @@
+class TestCalc
+    function divide x y
+        if y = 0
+            throw "Division by zero"
+        return x / y
+
+set c new TestCalc
+print c.divide 10 2

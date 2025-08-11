@@ -122,15 +122,15 @@ bool io_write_file_internal(const char *filepath, const char *content)
     if (!filepath || !content) {
         return false;
     }
-    
+
     FILE *f = fopen(filepath, "w");
     if (!f) {
         return false;
     }
-    
+
     size_t len = strlen(content);
     size_t written = fwrite(content, 1, len, f);
     fclose(f);
-    
+
     return written == len;
 }
