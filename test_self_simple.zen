@@ -1,6 +1,0 @@
-class Test
-    function check
-        return self
-
-set t new Test
-set result t.check

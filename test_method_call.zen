@@ -1,6 +1,0 @@
-class Test
-    function greet name
-        return "Hello, " + name
-
-set obj new Test
-print obj.greet "World"

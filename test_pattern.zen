@@ -1,6 +1,0 @@
-# Comment 1
-
-import "test_module.zen"
-
-# Comment 2
-print greet "World"

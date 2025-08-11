@@ -32,6 +32,9 @@ RuntimeValue *rv_new_number(double value)
 
 RuntimeValue *rv_new_string(const char *value)
 {
+    if (!value)
+        return NULL;
+
     RuntimeValue *rv = memory_alloc(sizeof(RuntimeValue));
     if (!rv)
         return NULL;
@@ -39,16 +42,11 @@ RuntimeValue *rv_new_string(const char *value)
     rv->type = RV_STRING;
     rv->ref_count = 1;
 
-    if (value) {
-        rv->data.string.length = strlen(value);
-        rv->data.string.data = memory_strdup(value);
-        if (!rv->data.string.data) {
-            memory_free(rv);
-            return NULL;
-        }
-    } else {
-        rv->data.string.data = NULL;
-        rv->data.string.length = 0;
+    rv->data.string.length = strlen(value);
+    rv->data.string.data = memory_strdup(value);
+    if (!rv->data.string.data) {
+        memory_free(rv);
+        return NULL;
     }
 
     return rv;
@@ -311,6 +309,20 @@ void rv_object_delete(RuntimeValue *object, const char *key)
             return;
         }
     }
+}
+
+size_t rv_object_size(RuntimeValue *object)
+{
+    if (!object || object->type != RV_OBJECT)
+        return 0;
+    return object->data.object.count;
+}
+
+char *rv_object_get_key_at(RuntimeValue *object, size_t index)
+{
+    if (!object || object->type != RV_OBJECT || index >= object->data.object.count)
+        return NULL;
+    return object->data.object.keys[index];
 }
 
 // Type checking

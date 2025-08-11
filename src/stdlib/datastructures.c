@@ -1,357 +1,295 @@
+/*
+ * datastructures.c
+ * Advanced data structures for ZEN stdlib
+ *
+ * This file follows MANIFEST.json specification
+ * Function signatures must match manifest exactly
+ */
+
 #include "zen/core/error.h"
+#include "zen/core/memory.h"
 #include "zen/core/runtime_value.h"
-#include "zen/types/priority_queue.h"
-#include "zen/types/set.h"
+
+#include <stdio.h>
 
 /**
- * @file data_structures.c
+ * @file datastructures.c
  * @brief ZEN stdlib wrapper functions for advanced data structures
  *
  * Provides the ZEN language stdlib interface for sets and priority queues.
  * These functions follow the exact signatures specified in MANIFEST.json.
  */
 
-// Set stdlib wrapper functions
-
-/**
- * @brief Create new set data structure
- * @return New set Value or error Value on failure
- */
-Value *datastructures_set_new(void) { return value_new(VALUE_SET); }
-
-/**
- * @brief Add item to set
- * @param set_value The set to add to
- * @param item_value The item to add
- * @return Boolean value indicating success, or error value
- */
-Value *datastructures_set_add(Value *set_value, const Value *item_value)
+// Set stdlib wrapper functions - TODO: Implement properly
+RuntimeValue *datastructures_set_new(RuntimeValue **args, size_t argc)
 {
-    if (!set_value || !item_value) {
-        return error_invalid_argument(
-            "datastructures_set_add",
-            "datastructures_set_add requires both set and item arguments");
+    (void)args;  // Unused parameter
+    if (argc != 0) {
+        return rv_new_error("set_new() requires no arguments", -1);
     }
-
-    if (set_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "First argument must be a set");
-    }
-
-    return set_add(set_value, item_value);
+    // For now, return an empty object to represent a set
+    return rv_new_object();
 }
 
-/**
- * @brief Check if set contains item
- * @param set_value The set to check
- * @param item_value The item to look for
- * @return Boolean value indicating whether item exists in set, or error value
- */
-Value *datastructures_set_contains(Value *set_value, const Value *item_value)
+RuntimeValue *datastructures_set_add(RuntimeValue **args, size_t argc)
 {
-    if (!set_value || !item_value) {
-        return error_invalid_argument(
-            "datastructures_set_contains",
-            "datastructures_set_contains requires both set and item arguments");
+    if (argc != 2) {
+        return rv_new_error("set_add() requires exactly 2 arguments", -1);
+    }
+    if (!args[0] || args[0]->type != RV_OBJECT) {
+        return rv_new_error("set_add() requires a set as first argument", -1);
     }
 
-    if (set_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "First argument must be a set");
+    RuntimeValue *set = args[0];
+    RuntimeValue *value = args[1];
+
+    // Convert value to string for use as key
+    char key_str[256];
+    if (value->type == RV_STRING) {
+        snprintf(key_str, sizeof(key_str), "s:%s", value->data.string.data);
+    } else if (value->type == RV_NUMBER) {
+        snprintf(key_str, sizeof(key_str), "n:%g", value->data.number);
+    } else if (value->type == RV_BOOLEAN) {
+        snprintf(key_str, sizeof(key_str), "b:%s", value->data.boolean ? "true" : "false");
+    } else {
+        snprintf(key_str, sizeof(key_str), "o:%p", (void *)value);
     }
 
-    return set_contains(set_value, item_value);
+    // Add value to set (key=value string, value=true)
+    rv_object_set(set, key_str, rv_new_boolean(true));
+
+    return rv_new_boolean(true);
 }
 
-/**
- * @brief Remove item from set
- * @param set_value The set to remove from
- * @param item_value The item to remove
- * @return Boolean value indicating success, or error value
- */
-Value *datastructures_set_remove(Value *set_value, const Value *item_value)
+RuntimeValue *datastructures_set_has(RuntimeValue **args, size_t argc)
 {
-    if (!set_value || !item_value) {
-        return error_invalid_argument(
-            "datastructures_set_remove",
-            "datastructures_set_remove requires both set and item arguments");
+    if (argc != 2) {
+        return rv_new_error("set_has() requires exactly 2 arguments", -1);
+    }
+    if (!args[0] || args[0]->type != RV_OBJECT) {
+        return rv_new_error("set_has() requires a set as first argument", -1);
     }
 
-    if (set_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "First argument must be a set");
+    RuntimeValue *set = args[0];
+    RuntimeValue *value = args[1];
+
+    // Convert value to string key (same logic as set_add)
+    char key_str[256];
+    if (value->type == RV_STRING) {
+        snprintf(key_str, sizeof(key_str), "s:%s", value->data.string.data);
+    } else if (value->type == RV_NUMBER) {
+        snprintf(key_str, sizeof(key_str), "n:%g", value->data.number);
+    } else if (value->type == RV_BOOLEAN) {
+        snprintf(key_str, sizeof(key_str), "b:%s", value->data.boolean ? "true" : "false");
+    } else {
+        snprintf(key_str, sizeof(key_str), "o:%p", (void *)value);
     }
 
-    return set_remove(set_value, item_value);
+    // Check if key exists in set
+    return rv_new_boolean(rv_object_has(set, key_str));
 }
 
-/**
- * @brief Get size of set
- * @param set_value The set to get size of
- * @return Number value containing the size, or error value
- */
-Value *datastructures_set_size(Value *set_value)
+RuntimeValue *datastructures_set_remove(RuntimeValue **args, size_t argc)
 {
-    if (!set_value) {
-        return error_invalid_argument("datastructures_set_size",
-                                      "datastructures_set_size requires a set argument");
+    if (argc != 2) {
+        return rv_new_error("set_remove() requires exactly 2 arguments", -1);
+    }
+    if (!args[0] || args[0]->type != RV_OBJECT) {
+        return rv_new_error("set_remove() requires a set as first argument", -1);
     }
 
-    if (set_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "Argument must be a set");
+    RuntimeValue *set = args[0];
+    RuntimeValue *value = args[1];
+
+    // Convert value to string key (same logic as set_add)
+    char key_str[256];
+    if (value->type == RV_STRING) {
+        snprintf(key_str, sizeof(key_str), "s:%s", value->data.string.data);
+    } else if (value->type == RV_NUMBER) {
+        snprintf(key_str, sizeof(key_str), "n:%g", value->data.number);
+    } else if (value->type == RV_BOOLEAN) {
+        snprintf(key_str, sizeof(key_str), "b:%s", value->data.boolean ? "true" : "false");
+    } else {
+        snprintf(key_str, sizeof(key_str), "o:%p", (void *)value);
     }
 
-    return set_size(set_value);
+    // Check if key exists before removal
+    bool existed = rv_object_has(set, key_str);
+    if (existed) {
+        rv_object_delete(set, key_str);
+    }
+
+    return rv_new_boolean(existed);
 }
 
-/**
- * @brief Convert set to array
- * @param set_value The set to convert
- * @return Array value containing all set elements, or error value
- */
-Value *datastructures_set_to_array(Value *set_value)
+RuntimeValue *datastructures_set_size(RuntimeValue **args, size_t argc)
 {
-    if (!set_value) {
-        return error_invalid_argument("datastructures_set_to_array",
-                                      "datastructures_set_to_array requires a set argument");
+    if (argc != 1) {
+        return rv_new_error("set_size() requires exactly 1 argument", -1);
+    }
+    if (!args[0] || args[0]->type != RV_OBJECT) {
+        return rv_new_error("set_size() requires a set argument", -1);
     }
 
-    if (set_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "Argument must be a set");
-    }
+    RuntimeValue *set = args[0];
+    size_t size = rv_object_size(set);
 
-    return set_to_array(set_value);
+    return rv_new_number((double)size);
 }
 
-/**
- * @brief Create union of two sets
- * @param set1_value First set for union
- * @param set2_value Second set for union
- * @return New set containing all unique elements, or error value
- */
-Value *datastructures_set_union(Value *set1_value, Value *set2_value)
+// Priority Queue stdlib wrapper functions - TODO: Implement properly
+RuntimeValue *datastructures_pqueue_new(RuntimeValue **args, size_t argc)
 {
-    if (!set1_value || !set2_value) {
-        return error_invalid_argument("datastructures_set_union",
-                                      "datastructures_set_union requires two set arguments");
+    (void)args;  // Unused parameter
+    if (argc != 0) {
+        return rv_new_error("pqueue_new() requires no arguments", -1);
     }
-
-    if (set1_value->type != VALUE_SET || set2_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "Both arguments must be sets");
-    }
-
-    return set_union(set1_value, set2_value);
+    // For now, return an empty array to represent a priority queue
+    return rv_new_array();
 }
 
-/**
- * @brief Create intersection of two sets
- * @param set1_value First set for intersection
- * @param set2_value Second set for intersection
- * @return New set containing common elements, or error value
- */
-Value *datastructures_set_intersection(Value *set1_value, Value *set2_value)
+RuntimeValue *datastructures_pqueue_push(RuntimeValue **args, size_t argc)
 {
-    if (!set1_value || !set2_value) {
-        return error_invalid_argument("datastructures_set_intersection",
-                                      "datastructures_set_intersection requires two set arguments");
+    if (argc != 3) {
+        return rv_new_error("pqueue_push() requires exactly 3 arguments: queue, value, priority",
+                            -1);
+    }
+    if (!args[0] || args[0]->type != RV_ARRAY) {
+        return rv_new_error("pqueue_push() requires a priority queue as first argument", -1);
+    }
+    if (!args[2] || args[2]->type != RV_NUMBER) {
+        return rv_new_error("pqueue_push() requires numeric priority as third argument", -1);
     }
 
-    if (set1_value->type != VALUE_SET || set2_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "Both arguments must be sets");
+    RuntimeValue *queue = args[0];
+    RuntimeValue *value = args[1];
+    double priority = args[2]->data.number;
+
+    // Create item object with value and priority
+    RuntimeValue *item = rv_new_object();
+    rv_object_set(item, "value", rv_ref(value));
+    rv_object_set(item, "priority", rv_new_number(priority));
+
+    // Insert in sorted order (higher priority first)
+    size_t insert_pos = queue->data.array.count;
+    for (size_t i = 0; i < queue->data.array.count; i++) {
+        RuntimeValue *existing_item = queue->data.array.elements[i];
+        if (existing_item && existing_item->type == RV_OBJECT) {
+            RuntimeValue *existing_priority = rv_object_get(existing_item, "priority");
+            if (existing_priority && existing_priority->type == RV_NUMBER) {
+                if (priority > existing_priority->data.number) {
+                    insert_pos = i;
+                    break;
+                }
+            }
+        }
     }
 
-    return set_intersection(set1_value, set2_value);
+    // Expand array if needed
+    if (queue->data.array.count >= queue->data.array.capacity) {
+        size_t new_capacity = queue->data.array.capacity == 0 ? 4 : queue->data.array.capacity * 2;
+        RuntimeValue **new_elements =
+            memory_realloc(queue->data.array.elements, new_capacity * sizeof(RuntimeValue *));
+        if (!new_elements) {
+            rv_unref(item);
+            return rv_new_error("pqueue_push() failed to allocate memory", -1);
+        }
+        queue->data.array.elements = new_elements;
+        queue->data.array.capacity = new_capacity;
+    }
+
+    // Shift elements to make space
+    for (size_t i = queue->data.array.count; i > insert_pos; i--) {
+        queue->data.array.elements[i] = queue->data.array.elements[i - 1];
+    }
+
+    // Insert the item
+    queue->data.array.elements[insert_pos] = item;
+    queue->data.array.count++;
+
+    return rv_new_null();
 }
 
-/**
- * @brief Create difference of two sets
- * @param set1_value First set (elements to keep)
- * @param set2_value Second set (elements to exclude)
- * @return New set containing elements in first but not second, or error value
- */
-Value *datastructures_set_difference(Value *set1_value, Value *set2_value)
+RuntimeValue *datastructures_pqueue_pop(RuntimeValue **args, size_t argc)
 {
-    if (!set1_value || !set2_value) {
-        return error_invalid_argument("datastructures_set_difference",
-                                      "datastructures_set_difference requires two set arguments");
+    if (argc != 1) {
+        return rv_new_error("pqueue_pop() requires exactly 1 argument", -1);
+    }
+    if (!args[0] || args[0]->type != RV_ARRAY) {
+        return rv_new_error("pqueue_pop() requires a priority queue argument", -1);
+    }
+    RuntimeValue *queue = args[0];
+
+    if (queue->data.array.count == 0) {
+        return rv_new_null();
     }
 
-    if (set1_value->type != VALUE_SET || set2_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "Both arguments must be sets");
+    // Get highest priority item (first item in sorted array)
+    RuntimeValue *item = queue->data.array.elements[0];
+    RuntimeValue *result = rv_new_null();
+
+    if (item && item->type == RV_OBJECT) {
+        RuntimeValue *value = rv_object_get(item, "value");
+        if (value) {
+            result = rv_ref(value);
+        }
     }
 
-    return set_difference(set1_value, set2_value);
+    // Remove first item and shift remaining elements
+    rv_unref(queue->data.array.elements[0]);
+    for (size_t i = 0; i < queue->data.array.count - 1; i++) {
+        queue->data.array.elements[i] = queue->data.array.elements[i + 1];
+    }
+    queue->data.array.count--;
+
+    return result;
 }
 
-/**
- * @brief Check if first set is subset of second
- * @param subset_value The potential subset
- * @param superset_value The potential superset
- * @return Boolean value indicating subset relationship, or error value
- */
-Value *datastructures_set_is_subset(Value *subset_value, Value *superset_value)
+RuntimeValue *datastructures_pqueue_peek(RuntimeValue **args, size_t argc)
 {
-    if (!subset_value || !superset_value) {
-        return error_invalid_argument("datastructures_set_is_subset",
-                                      "datastructures_set_is_subset requires two set arguments");
+    if (argc != 1) {
+        return rv_new_error("pqueue_peek() requires exactly 1 argument", -1);
+    }
+    if (!args[0] || args[0]->type != RV_ARRAY) {
+        return rv_new_error("pqueue_peek() requires a priority queue argument", -1);
+    }
+    RuntimeValue *queue = args[0];
+
+    if (queue->data.array.count == 0) {
+        return rv_new_null();
     }
 
-    if (subset_value->type != VALUE_SET || superset_value->type != VALUE_SET) {
-        return error_type_mismatch("expected", "Both arguments must be sets");
+    // Peek at highest priority item (first item in sorted array)
+    RuntimeValue *item = queue->data.array.elements[0];
+
+    if (item && item->type == RV_OBJECT) {
+        RuntimeValue *value = rv_object_get(item, "value");
+        if (value) {
+            return rv_ref(value);
+        }
     }
 
-    return set_is_subset(subset_value, superset_value);
+    return rv_new_null();
 }
 
-// Priority queue stdlib wrapper functions
-
-/**
- * @brief Create new priority queue
- * @return New priority queue Value or error Value on failure
- */
-Value *datastructures_priority_queue_new(void) { return value_new(VALUE_PRIORITY_QUEUE); }
-
-/**
- * @brief Add item with priority to queue
- * @param queue_value The priority queue to add to
- * @param item_value The item to add
- * @param priority_value The priority value
- * @return Boolean value indicating success, or error value
- */
-Value *datastructures_priority_queue_push(Value *queue_value,
-                                          const Value *item_value,
-                                          const Value *priority_value)
+RuntimeValue *datastructures_pqueue_size(RuntimeValue **args, size_t argc)
 {
-    if (!queue_value || !item_value || !priority_value) {
-        return error_invalid_argument(
-            "datastructures_priority_queue_push",
-            "datastructures_priority_queue_push requires queue, item, and priority arguments");
+    if (argc != 1) {
+        return rv_new_error("pqueue_size() requires exactly 1 argument", -1);
     }
-
-    if (queue_value->type != VALUE_PRIORITY_QUEUE) {
-        return error_type_mismatch("expected", "First argument must be a priority queue");
+    if (!args[0] || args[0]->type != RV_ARRAY) {
+        return rv_new_error("pqueue_size() requires a priority queue argument", -1);
     }
-
-    if (priority_value->type != VALUE_NUMBER) {
-        return error_type_mismatch("expected", "Priority must be a number");
-    }
-
-    return priority_queue_push(queue_value, item_value, priority_value);
+    return rv_new_number((double)args[0]->data.array.count);
 }
 
-/**
- * @brief Remove and return highest priority item
- * @param queue_value The priority queue to pop from
- * @return The highest priority item, or error value
- */
-Value *datastructures_priority_queue_pop(Value *queue_value)
+RuntimeValue *datastructures_pqueue_is_empty(RuntimeValue **args, size_t argc)
 {
-    if (!queue_value) {
-        return error_invalid_argument(
-            "datastructures_priority_queue_pop",
-            "datastructures_priority_queue_pop requires a queue argument");
+    if (argc != 1) {
+        return rv_new_error("pqueue_is_empty() requires exactly 1 argument", -1);
     }
-
-    if (queue_value->type != VALUE_PRIORITY_QUEUE) {
-        return error_type_mismatch("expected", "Argument must be a priority queue");
+    if (!args[0] || args[0]->type != RV_ARRAY) {
+        return rv_new_error("pqueue_is_empty() requires a priority queue argument", -1);
     }
-
-    return priority_queue_pop(queue_value);
-}
-
-/**
- * @brief Peek at highest priority item without removing
- * @param queue_value The priority queue to peek at
- * @return Copy of highest priority item, or error value
- */
-Value *datastructures_priority_queue_peek(Value *queue_value)
-{
-    if (!queue_value) {
-        return error_invalid_argument(
-            "datastructures_priority_queue_peek",
-            "datastructures_priority_queue_peek requires a queue argument");
-    }
-
-    if (queue_value->type != VALUE_PRIORITY_QUEUE) {
-        return error_type_mismatch("expected", "Argument must be a priority queue");
-    }
-
-    return priority_queue_peek(queue_value);
-}
-
-/**
- * @brief Get size of priority queue
- * @param queue_value The priority queue to get size of
- * @return Number value containing the size, or error value
- */
-Value *datastructures_priority_queue_size(Value *queue_value)
-{
-    if (!queue_value) {
-        return error_invalid_argument(
-            "datastructures_priority_queue_size",
-            "datastructures_priority_queue_size requires a queue argument");
-    }
-
-    if (queue_value->type != VALUE_PRIORITY_QUEUE) {
-        return error_type_mismatch("expected", "Argument must be a priority queue");
-    }
-
-    return priority_queue_size(queue_value);
-}
-
-/**
- * @brief Check if priority queue is empty
- * @param queue_value The priority queue to check
- * @return Boolean value indicating whether queue is empty, or error value
- */
-Value *datastructures_priority_queue_is_empty(Value *queue_value)
-{
-    if (!queue_value) {
-        return error_invalid_argument(
-            "datastructures_priority_queue_is_empty",
-            "datastructures_priority_queue_is_empty requires a queue argument");
-    }
-
-    if (queue_value->type != VALUE_PRIORITY_QUEUE) {
-        return error_type_mismatch("expected", "Argument must be a priority queue");
-    }
-
-    return priority_queue_is_empty(queue_value);
-}
-
-/**
- * @brief Clear all items from priority queue
- * @param queue_value The priority queue to clear
- * @return Boolean value indicating success, or error value
- */
-Value *datastructures_priority_queue_clear(Value *queue_value)
-{
-    if (!queue_value) {
-        return error_invalid_argument(
-            "datastructures_priority_queue_clear",
-            "datastructures_priority_queue_clear requires a queue argument");
-    }
-
-    if (queue_value->type != VALUE_PRIORITY_QUEUE) {
-        return error_type_mismatch("expected", "Argument must be a priority queue");
-    }
-
-    return priority_queue_clear(queue_value);
-}
-
-/**
- * @brief Convert priority queue to array
- * @param queue_value The priority queue to convert
- * @return Array value containing all elements in priority order, or error value
- */
-Value *datastructures_priority_queue_to_array(Value *queue_value)
-{
-    if (!queue_value) {
-        return error_invalid_argument(
-            "datastructures_priority_queue_to_array",
-            "datastructures_priority_queue_to_array requires a queue argument");
-    }
-
-    if (queue_value->type != VALUE_PRIORITY_QUEUE) {
-        return error_type_mismatch("expected", "Argument must be a priority queue");
-    }
-
-    return priority_queue_to_array(queue_value);
+    return rv_new_boolean(args[0]->data.array.count == 0);
 }

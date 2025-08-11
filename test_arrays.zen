@@ -1,3 +1,0 @@
-set arr [1, 2, 3]
-print "Array:" arr
-print "First:" arr[0]

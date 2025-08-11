@@ -1,2 +1,0 @@
-file.put "test.txt" content "Hello, World!"
-set data file.get "test.txt" content

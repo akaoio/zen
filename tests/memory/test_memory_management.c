@@ -5,7 +5,7 @@
 
 #include "../framework/test.h"
 #include "zen/core/memory.h"
-#include "zen/types/value.h"
+#include "zen/core/runtime_value.h"
 #include "zen/core/lexer.h"
 #include "zen/core/parser.h"
 #include "zen/core/visitor.h"

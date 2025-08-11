@@ -1,3 +1,0 @@
-# Test importing a module with correct syntax
-
-import "test_module.zen"

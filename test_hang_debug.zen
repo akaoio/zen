@@ -1,4 +1,0 @@
-# Comment line
-print "Before import"
-import "test_module.zen"
-print "After import"

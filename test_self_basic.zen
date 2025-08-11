@@ -1,6 +1,0 @@
-class Test
-    function set_prop value
-        set self.data value
-
-set t new Test
-t.set_prop "Hello"

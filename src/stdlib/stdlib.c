@@ -22,60 +22,80 @@
 #include "zen/stdlib/regex.h"
 #include "zen/stdlib/string.h"
 #include "zen/stdlib/yaml.h"
-#include "zen/types/array.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 // Forward declarations for functions not in headers yet
-extern Value *array_push_stdlib(Value **args, size_t argc);
-extern Value *array_pop_stdlib(Value **args, size_t argc);
-extern Value *system_exec(Value **args, size_t argc);
-extern Value *datetime_now(Value **args, size_t argc);
+extern RuntimeValue *array_push_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *array_pop_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *array_length_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *array_get_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *array_set_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *array_slice_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *system_exec(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datetime_now(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datetime_add(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datetime_subtract(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datetime_diff(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datetime_timezone(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datetime_utc(RuntimeValue **args, size_t argc);
+
+// Datastructures functions
+extern RuntimeValue *datastructures_set_new(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_set_add(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_set_has(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_set_remove(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_set_size(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_pqueue_new(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_pqueue_push(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_pqueue_pop(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_pqueue_peek(RuntimeValue **args, size_t argc);
+extern RuntimeValue *datastructures_pqueue_size(RuntimeValue **args, size_t argc);
 
 // Wrapper functions for file I/O that need stdlib interface
-extern Value *json_load_file(Value **args, size_t argc);
-extern Value *yaml_load_file_wrapper(Value **args, size_t argc);
+extern RuntimeValue *json_load_file(RuntimeValue **args, size_t argc);
+extern RuntimeValue *yaml_load_file_wrapper(RuntimeValue **args, size_t argc);
 
 // Forward declarations for module system functions
-extern Value *module_import_stdlib(Value **args, size_t argc);
-extern Value *module_require_stdlib(Value **args, size_t argc);
+extern RuntimeValue *module_import_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *module_require_stdlib(RuntimeValue **args, size_t argc);
 
 // Forward declarations for logging functions
-extern Value *logging_debug(Value **args, size_t argc);
-extern Value *logging_info(Value **args, size_t argc);
-extern Value *logging_warn(Value **args, size_t argc);
-extern Value *logging_error(Value **args, size_t argc);
-extern Value *logging_debugf(Value **args, size_t argc);
-extern Value *logging_infof(Value **args, size_t argc);
-extern Value *logging_warnf(Value **args, size_t argc);
-extern Value *logging_errorf(Value **args, size_t argc);
-extern Value *logging_debug_if(Value **args, size_t argc);
-extern Value *logging_set_level(Value **args, size_t argc);
-extern Value *logging_with_context(Value **args, size_t argc);
-extern Value *logging_get_level(Value **args, size_t argc);
+extern RuntimeValue *logging_debug(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_info(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_warn(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_error(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_debugf(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_infof(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_warnf(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_errorf(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_debug_if(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_set_level(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_with_context(RuntimeValue **args, size_t argc);
+extern RuntimeValue *logging_get_level(RuntimeValue **args, size_t argc);
 
 // Forward declarations for HTTP wrapper functions
-extern Value *http_get_stdlib(Value **args, size_t argc);
-extern Value *http_post_stdlib(Value **args, size_t argc);
-extern Value *http_put_stdlib(Value **args, size_t argc);
-extern Value *http_delete_stdlib(Value **args, size_t argc);
-extern Value *http_timeout_stdlib(Value **args, size_t argc);
+extern RuntimeValue *http_get_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_post_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_put_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_delete_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_timeout_stdlib(RuntimeValue **args, size_t argc);
 
 // Forward declarations for regex wrapper functions
-extern Value *regex_match_stdlib(Value **args, size_t argc);
-extern Value *regex_replace_stdlib(Value **args, size_t argc);
-extern Value *regex_split_stdlib(Value **args, size_t argc);
-extern Value *regex_compile_stdlib(Value **args, size_t argc);
+extern RuntimeValue *regex_match_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *regex_replace_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *regex_split_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *regex_compile_stdlib(RuntimeValue **args, size_t argc);
 
 // Forward declarations for stdlib functions
-extern Value *json_stringify_pretty_stdlib(Value **args, size_t argc);
-extern Value *json_parse_file_stdlib(Value **args, size_t argc);
-extern Value *json_parse_stdlib(Value **args, size_t argc);
-extern Value *json_stringify_stdlib(Value **args, size_t argc);
+extern RuntimeValue *json_stringify_pretty_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *json_parse_file_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *json_parse_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *json_stringify_stdlib(RuntimeValue **args, size_t argc);
 
 // Native function typedef for runtime integration
-typedef Value *(*ZenNativeFunc)(Value **args, size_t argc);
+typedef RuntimeValue *(*ZenNativeFunc)(RuntimeValue **args, size_t argc);
 
 // Global registry of stdlib functions
 static ZenStdlibFunction stdlib_functions[] = {
@@ -95,6 +115,13 @@ static ZenStdlibFunction stdlib_functions[] = {
     {"split", string_split, "Split string by delimiter"},
     {"contains", string_contains, "Check if string contains substring"},
     {"replace", string_replace, "Replace substring in string"},
+    {"substring", string_substring, "Extract substring from string"},
+    {"indexOf", string_index_of, "Find index of substring in string"},
+    {"concat", string_concat, "Concatenate multiple strings"},
+    {"startsWith", string_starts_with, "Check if string starts with prefix"},
+    {"endsWith", string_ends_with, "Check if string ends with suffix"},
+    {"toUpper", string_to_upper, "Convert string to uppercase (alias)"},
+    {"toLower", string_to_lower, "Convert string to lowercase (alias)"},
 
     // Math Functions
     {"abs", math_abs, "Absolute value"},
@@ -134,13 +161,47 @@ static ZenStdlibFunction stdlib_functions[] = {
     // Array Functions
     {"push", array_push_stdlib, "Add element to end of array"},
     {"pop", array_pop_stdlib, "Remove and return last element"},
+    {"arrayLength", array_length_stdlib, "Get length of array"},
+    {"arrayGet", array_get_stdlib, "Get element at index"},
+    {"arraySet", array_set_stdlib, "Set element at index"},
+    {"slice", array_slice_stdlib, "Get slice of array"},
+
+    // Set Functions
+    {"setNew", datastructures_set_new, "Create new set"},
+    {"setAdd", datastructures_set_add, "Add element to set"},
+    {"setHas", datastructures_set_has, "Check if set contains element"},
+    {"setRemove", datastructures_set_remove, "Remove element from set"},
+    {"setSize", datastructures_set_size, "Get size of set"},
+
+    // Priority Queue Functions
+    {"pqueueNew", datastructures_pqueue_new, "Create new priority queue"},
+    {"pqueuePush", datastructures_pqueue_push, "Add element with priority to queue"},
+    {"pqueuePop", datastructures_pqueue_pop, "Remove and return highest priority element"},
+    {"pqueuePeek", datastructures_pqueue_peek, "Get highest priority element without removing"},
+    {"pqueueSize", datastructures_pqueue_size, "Get size of priority queue"},
 
     // Datetime Functions - Phase 2B
     {"now", datetime_now, "Get current date/time as object"},
     {"dateNow", datetime_now, "Get current date/time as object (alias)"},
+    {"formatDate", datetime_format, "Format timestamp as string"},
+    {"parseDate", datetime_parse, "Parse date string to timestamp"},
+    {"dateAdd", datetime_add, "Add time to datetime object"},
+    {"dateSubtract", datetime_subtract, "Subtract time from datetime object"},
+    {"dateDiff", datetime_diff, "Calculate difference between datetime objects"},
+    {"dateTimezone", datetime_timezone, "Get timezone info for datetime object"},
+    {"dateUtc", datetime_utc, "Convert datetime to UTC"},
 
     // System/OS Functions - Phase 2B
     {"exec", system_exec, "Execute system command"},
+    {"envGet", system_env_get, "Get environment variable"},
+    {"envSet", system_env_set, "Set environment variable"},
+    {"envList", system_env_list, "List all environment variables"},
+    {"processList", system_process_list, "List running processes"},
+    {"processKill", system_process_kill, "Kill a process by PID"},
+    {"filesystemList", system_filesystem_list, "List files in directory"},
+    {"filesystemInfo", system_filesystem_info, "Get file/directory information"},
+    {"hardwareCpu", system_hardware_cpu, "Get CPU hardware information"},
+    {"hardwareMemory", system_hardware_memory, "Get memory hardware information"},
 
     // HTTP Functions - Phase 2B
     {"httpGet", http_get_stdlib, "Perform HTTP GET request"},

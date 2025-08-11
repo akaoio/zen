@@ -1,4 +1,0 @@
-import "test_func_module.zen"
-
-# As a statement
-greet "World"

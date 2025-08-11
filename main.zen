@@ -1,5 +1,0 @@
-import module
-
-set r 5
-set a area r
-print "Area of circle with radius " + r + " is " + a

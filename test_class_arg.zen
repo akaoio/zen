@@ -1,6 +1,0 @@
-class Test
-    function greet name
-        print "Hello, " + name
-
-set t new Test
-t.greet "Alice"

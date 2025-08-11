@@ -1,6 +1,0 @@
-# Test importing
-
-import "test_module.zen"
-
-# Test function
-print greet "World"

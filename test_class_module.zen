@@ -1,5 +1,0 @@
-class SimpleClass
-    function test
-        return "Test from class"
-
-set version "1.0"

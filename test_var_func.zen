@@ -1,6 +1,0 @@
-function add a b
-    return a + b
-
-set x 5
-set y 10
-print add x y

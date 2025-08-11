@@ -1,6 +1,0 @@
-set text "apple,banana,orange"  
-set delim ","
-print "Text: " + text
-print "Delimiter: " + delim
-set result split text delim
-print "Result: " + result

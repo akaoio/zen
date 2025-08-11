@@ -1,3 +1,0 @@
-set obj name "initial", age 25
-set obj.name "changed"  
-set obj.age 30

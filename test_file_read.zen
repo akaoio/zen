@@ -1,2 +1,0 @@
-set content file_read "test.txt"
-print "Content:" content

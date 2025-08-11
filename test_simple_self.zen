@@ -1,9 +1,0 @@
-# Simple test for self property access
-class Simple
-    set name "test"
-    
-    function getName
-        return self.name
-
-set obj new Simple
-print obj.getName

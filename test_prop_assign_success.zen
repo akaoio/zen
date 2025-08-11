@@ -1,6 +1,0 @@
-# Simple property assignment test
-set obj name "initial", count 0
-
-# Property assignment
-set obj.name "updated"
-set obj.count 42

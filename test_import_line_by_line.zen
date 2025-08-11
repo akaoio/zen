@@ -1,4 +1,0 @@
-import "test_module.zen"
-print greet "World"
-print "2 + 3 =" add 2 3
-print "PI =" PI

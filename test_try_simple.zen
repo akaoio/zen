@@ -1,4 +1,0 @@
-try
-    print "In try block"
-catch error
-    print "In catch block"

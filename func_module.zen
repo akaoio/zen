@@ -1,4 +1,0 @@
-# Module with function
-function greet name
-    return "Hello, " + name
-set x 10

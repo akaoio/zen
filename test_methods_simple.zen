@@ -1,6 +1,0 @@
-class Person
-    function greet
-        print "Hello!"
-
-set p new Person
-p.greet

@@ -1,6 +1,0 @@
-class Test
-    function hello  
-        print "Hello called"
-
-set t new Test
-t.hello

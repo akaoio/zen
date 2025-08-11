@@ -1,3 +1,0 @@
-# Test comment
-import "test_module.zen"
-print greet "World"

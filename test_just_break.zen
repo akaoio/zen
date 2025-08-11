@@ -1,3 +1,0 @@
-print "Before break"
-break
-print "After break"

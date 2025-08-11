@@ -1,6 +1,0 @@
-# Test basic class without self
-class Simple
-    set name "test"
-
-set obj new Simple
-print obj.name

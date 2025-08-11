@@ -1,9 +1,0 @@
-print "Testing range in for loop:"
-for i in 1..5
-    print "i = " + i
-
-print "\nTesting range variable:"
-set r 3..1
-print "Range 3..1:"
-for j in r
-    print "j = " + j

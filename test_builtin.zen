@@ -1,7 +1,0 @@
-set text "HELLO"
-set result lower text
-print "Lower result: " + result
-
-set text2 "world"  
-set result2 upper text2
-print "Upper result: " + result2

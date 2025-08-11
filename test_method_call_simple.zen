@@ -1,6 +1,0 @@
-class Test
-    function hello
-        print "Hello from method"
-
-set t new Test
-t.hello

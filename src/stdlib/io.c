@@ -70,17 +70,17 @@ char *io_read_file_internal(const char *filepath)
 }
 
 /**
- * @brief Print Value to stdout with newline
- * @param value Value to print
+ * @brief Print RuntimeValue to stdout with newline
+ * @param value RuntimeValue to print
  */
-void io_print_internal(const Value *value)
+void io_print_internal(const RuntimeValue *value)
 {
     if (!value) {
         printf("null\n");
         return;
     }
 
-    char *str = value_to_string(value);
+    char *str = rv_to_string((RuntimeValue *)value);
     if (str) {
         printf("%s\n", str);
         memory_free(str);
@@ -90,17 +90,17 @@ void io_print_internal(const Value *value)
 }
 
 /**
- * @brief Print Value to stdout without newline
- * @param value Value to print
+ * @brief Print RuntimeValue to stdout without newline
+ * @param value RuntimeValue to print
  */
-void io_print_no_newline_internal(const Value *value)
+void io_print_no_newline_internal(const RuntimeValue *value)
 {
     if (!value) {
         printf("null");
         return;
     }
 
-    char *str = value_to_string(value);
+    char *str = rv_to_string((RuntimeValue *)value);
     if (str) {
         printf("%s", str);
         memory_free(str);
@@ -216,11 +216,11 @@ bool io_file_exists_internal(const char *filepath)
 }
 
 /**
- * @brief Load JSON file as Value object
+ * @brief Load JSON file as RuntimeValue object
  * @param filepath Path to JSON file
- * @return Value object representing the JSON data, or NULL on error
+ * @return RuntimeValue object representing the JSON data, or NULL on error
  */
-Value *io_load_json_file_internal(const char *filepath)
+RuntimeValue *io_load_json_file_internal(const char *filepath)
 {
     if (!filepath || !io_file_exists_internal(filepath)) {
         return NULL;
@@ -231,7 +231,7 @@ Value *io_load_json_file_internal(const char *filepath)
         return NULL;
     }
 
-    Value *result = json_parse(content);
+    RuntimeValue *result = json_parse(content);
     memory_free(content);
 
     return result;
@@ -281,11 +281,11 @@ char *io_resolve_module_path_internal(const char *module_path)
 
 /**
  * @brief Print function for stdlib integration
- * @param args Array of Value arguments
+ * @param args Array of RuntimeValue arguments
  * @param argc Number of arguments
- * @return Always returns null Value
+ * @return Always returns null RuntimeValue
  */
-Value *io_print(Value **args, size_t argc)
+RuntimeValue *io_print(RuntimeValue **args, size_t argc)
 {
     for (size_t i = 0; i < argc; i++) {
         if (i > 0)
@@ -293,113 +293,102 @@ Value *io_print(Value **args, size_t argc)
         io_print_no_newline_internal(args[i]);
     }
     printf("\n");
-    return value_new_null();
+    return rv_new_null();
 }
 
 /**
  * @brief Input function for stdlib integration
- * @param args Array of Value arguments (optional prompt)
+ * @param args Array of RuntimeValue arguments (optional prompt)
  * @param argc Number of arguments
- * @return String Value containing user input
+ * @return String RuntimeValue containing user input
  */
-Value *io_input(Value **args, size_t argc)
+RuntimeValue *io_input(RuntimeValue **args, size_t argc)
 {
     char *input_str = NULL;
 
-    if (argc > 0 && args[0] && args[0]->type == VALUE_STRING) {
-        input_str = io_input_prompt_internal(args[0]->as.string->data);
+    if (argc > 0 && args[0] && args[0]->type == RV_STRING) {
+        input_str = io_input_prompt_internal(args[0]->data.string.data);
     } else {
         input_str = io_input_internal();
     }
 
     if (!input_str) {
-        return value_new_string("");
+        return rv_new_string("");
     }
 
-    Value *result = value_new_string(input_str);
+    RuntimeValue *result = rv_new_string(input_str);
     memory_free(input_str);
     return result;
 }
 
 /**
  * @brief Read file function for stdlib integration
- * @param args Array of Value arguments (filepath)
+ * @param args Array of RuntimeValue arguments (filepath)
  * @param argc Number of arguments
- * @return String Value containing file contents or error
+ * @return String RuntimeValue containing file contents or error
  */
-Value *io_read_file(Value **args, size_t argc)
+RuntimeValue *io_read_file(RuntimeValue **args, size_t argc)
 {
-    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        Value *error = value_new(VALUE_ERROR);
-        if (error && error->as.error) {
-            error->as.error->message =
-                memory_strdup("readFile requires a string filepath argument");
-            error->as.error->code = -1;
-        }
-        return error;
+    if (argc < 1 || !args[0] || args[0]->type != RV_STRING) {
+        return rv_new_error("readFile requires a string filepath argument", -1);
     }
 
-    char *content = io_read_file_internal(args[0]->as.string->data);
+    char *content = io_read_file_internal(args[0]->data.string.data);
     if (!content) {
-        Value *error = value_new(VALUE_ERROR);
-        if (error && error->as.error) {
-            error->as.error->message = memory_strdup("Failed to read file");
-            error->as.error->code = -1;
-        }
-        return error;
+        return rv_new_error("Failed to read file", -1);
     }
 
-    Value *result = value_new_string(content);
+    RuntimeValue *result = rv_new_string(content);
     memory_free(content);
     return result;
 }
 
 /**
  * @brief Write file function for stdlib integration
- * @param args Array of Value arguments (filepath, content)
+ * @param args Array of RuntimeValue arguments (filepath, content)
  * @param argc Number of arguments
- * @return Boolean Value indicating success
+ * @return Boolean RuntimeValue indicating success
  */
-Value *io_write_file(Value **args, size_t argc)
+RuntimeValue *io_write_file(RuntimeValue **args, size_t argc)
 {
-    if (argc < 2 || !args[0] || !args[1] || args[0]->type != VALUE_STRING ||
-        args[1]->type != VALUE_STRING) {
-        return value_new_boolean(false);
+    if (argc < 2 || !args[0] || !args[1] || args[0]->type != RV_STRING ||
+        args[1]->type != RV_STRING) {
+        return rv_new_boolean(false);
     }
 
-    bool success = io_write_file_internal(args[0]->as.string->data, args[1]->as.string->data);
-    return value_new_boolean(success);
+    bool success = io_write_file_internal(args[0]->data.string.data, args[1]->data.string.data);
+    return rv_new_boolean(success);
 }
 
 /**
  * @brief Append to file function for stdlib integration
- * @param args Array of Value arguments (filepath, content)
+ * @param args Array of RuntimeValue arguments (filepath, content)
  * @param argc Number of arguments
- * @return Boolean Value indicating success
+ * @return Boolean RuntimeValue indicating success
  */
-Value *io_append_file(Value **args, size_t argc)
+RuntimeValue *io_append_file(RuntimeValue **args, size_t argc)
 {
-    if (argc < 2 || !args[0] || !args[1] || args[0]->type != VALUE_STRING ||
-        args[1]->type != VALUE_STRING) {
-        return value_new_boolean(false);
+    if (argc < 2 || !args[0] || !args[1] || args[0]->type != RV_STRING ||
+        args[1]->type != RV_STRING) {
+        return rv_new_boolean(false);
     }
 
-    bool success = io_append_file_internal(args[0]->as.string->data, args[1]->as.string->data);
-    return value_new_boolean(success);
+    bool success = io_append_file_internal(args[0]->data.string.data, args[1]->data.string.data);
+    return rv_new_boolean(success);
 }
 
 /**
  * @brief Check file exists function for stdlib integration
- * @param args Array of Value arguments (filepath)
+ * @param args Array of RuntimeValue arguments (filepath)
  * @param argc Number of arguments
- * @return Boolean Value indicating if file exists
+ * @return Boolean RuntimeValue indicating if file exists
  */
-Value *io_file_exists(Value **args, size_t argc)
+RuntimeValue *io_file_exists(RuntimeValue **args, size_t argc)
 {
-    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_boolean(false);
+    if (argc < 1 || !args[0] || args[0]->type != RV_STRING) {
+        return rv_new_boolean(false);
     }
 
-    bool exists = io_file_exists_internal(args[0]->as.string->data);
-    return value_new_boolean(exists);
+    bool exists = io_file_exists_internal(args[0]->data.string.data);
+    return rv_new_boolean(exists);
 }

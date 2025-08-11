@@ -75,6 +75,8 @@ void rv_object_set(RuntimeValue *object, const char *key, RuntimeValue *value);
 RuntimeValue *rv_object_get(RuntimeValue *object, const char *key);
 bool rv_object_has(RuntimeValue *object, const char *key);
 void rv_object_delete(RuntimeValue *object, const char *key);
+size_t rv_object_size(RuntimeValue *object);
+char *rv_object_get_key_at(RuntimeValue *object, size_t index);
 
 // Type checking
 bool rv_is_null(RuntimeValue *value);

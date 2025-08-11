@@ -1,8 +1,0 @@
-class Person
-    function constructor name
-        print "In constructor, name = " + name
-        set self.name name
-
-set p new Person "Alice"
-print "Created person"
-print p

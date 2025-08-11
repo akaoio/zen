@@ -1,5 +1,0 @@
-class Person
-    function constructor name
-        print "In constructor"
-
-print "After class"

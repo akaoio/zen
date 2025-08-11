@@ -294,31 +294,518 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         return rv_new_null();
 
     // Database-like file operations
-    case AST_FILE_GET:
-    case AST_FILE_PUT:
-    case AST_FILE_REFERENCE:
-        // TODO: Implement these with RuntimeValue
-        return rv_new_null();
+    case AST_FILE_GET: {
+        if (!node->file_get_path) {
+            return rv_new_error("FILE_GET missing file path", -1);
+        }
 
-    // Formal Logic AST nodes - placeholder implementations
-    case AST_LOGICAL_QUANTIFIER:
-    case AST_LOGICAL_PREDICATE:
-    case AST_LOGICAL_CONNECTIVE:
-    case AST_LOGICAL_VARIABLE:
-    case AST_LOGICAL_PROPOSITION:
-    case AST_LOGICAL_THEOREM:
-    case AST_LOGICAL_AXIOM:
-    case AST_LOGICAL_PROOF_STEP:
+        // Evaluate file path expression
+        RuntimeValue *path_val = visitor_visit(visitor, node->file_get_path);
+        if (!path_val || path_val->type != RV_STRING) {
+            if (path_val)
+                rv_unref(path_val);
+            return rv_new_error("FILE_GET requires string file path", -1);
+        }
+
+        // Use readFile to get the file content
+        RuntimeValue *content = io_read_file(&path_val, 1);
+        rv_unref(path_val);
+
+        // If property specified, extract that property
+        if (node->file_get_property && content && content->type == RV_STRING) {
+            // Try to parse as JSON and extract property
+            RuntimeValue *json_args[1] = {content};
+            RuntimeValue *parsed = json_parse(json_args, 1);
+            rv_unref(content);
+
+            if (parsed && parsed->type == RV_OBJECT) {
+                RuntimeValue *prop_val = visitor_visit(visitor, node->file_get_property);
+                if (prop_val && prop_val->type == RV_STRING) {
+                    RuntimeValue *result = rv_object_get(parsed, prop_val->data.string.data);
+                    rv_unref(prop_val);
+                    rv_unref(parsed);
+                    return result ? rv_ref(result) : rv_new_null();
+                }
+                if (prop_val)
+                    rv_unref(prop_val);
+            }
+            if (parsed)
+                rv_unref(parsed);
+        }
+
+        return content ? content : rv_new_null();
+    }
+
+    case AST_FILE_PUT: {
+        if (!node->file_put_path || !node->file_put_value) {
+            return rv_new_error("FILE_PUT missing required parameters", -1);
+        }
+
+        // Evaluate file path and value
+        RuntimeValue *path_val = visitor_visit(visitor, node->file_put_path);
+        RuntimeValue *value_val = visitor_visit(visitor, node->file_put_value);
+
+        if (!path_val || path_val->type != RV_STRING || !value_val) {
+            if (path_val)
+                rv_unref(path_val);
+            if (value_val)
+                rv_unref(value_val);
+            return rv_new_error("FILE_PUT requires valid path and value", -1);
+        }
+
+        // Convert value to JSON string for storage
+        RuntimeValue *json_args[1] = {value_val};
+        RuntimeValue *json_str = json_stringify(json_args, 1);
+        rv_unref(value_val);
+
+        if (!json_str) {
+            rv_unref(path_val);
+            return rv_new_error("Failed to serialize value for FILE_PUT", -1);
+        }
+
+        // Write to file
+        RuntimeValue *write_args[2] = {path_val, json_str};
+        RuntimeValue *result = io_write_file(write_args, 2);
+
+        rv_unref(path_val);
+        rv_unref(json_str);
+
+        return result;
+    }
+
+    case AST_FILE_REFERENCE: {
+        if (!node->file_ref_target_file || !node->file_ref_property_path) {
+            return rv_new_error("FILE_REFERENCE missing target file or property path", -1);
+        }
+
+        // Load target file
+        RuntimeValue *target_path = rv_new_string(node->file_ref_target_file);
+        RuntimeValue *file_content = io_read_file(&target_path, 1);
+        rv_unref(target_path);
+
+        if (!file_content || file_content->type != RV_STRING) {
+            if (file_content)
+                rv_unref(file_content);
+            return rv_new_error("Failed to load referenced file", -1);
+        }
+
+        // Parse as JSON
+        RuntimeValue *json_args[1] = {file_content};
+        RuntimeValue *parsed = json_parse(json_args, 1);
+        rv_unref(file_content);
+
+        if (!parsed || parsed->type != RV_OBJECT) {
+            if (parsed)
+                rv_unref(parsed);
+            return rv_new_error("Referenced file is not valid JSON", -1);
+        }
+
+        // Navigate property path (e.g., "office.alice")
+        RuntimeValue *current = parsed;
+        char *path_copy = memory_strdup(node->file_ref_property_path);
+        char *token = strtok(path_copy, ".");
+
+        while (token && current && current->type == RV_OBJECT) {
+            RuntimeValue *next = rv_object_get(current, token);
+            if (next) {
+                if (current != parsed)
+                    rv_unref(current);
+                current = rv_ref(next);
+            } else {
+                current = NULL;
+                break;
+            }
+            token = strtok(NULL, ".");
+        }
+
+        memory_free(path_copy);
+        rv_unref(parsed);
+
+        return current ? current : rv_new_null();
+    }
+
+    // Formal Logic AST nodes - full implementations
+    case AST_LOGICAL_QUANTIFIER: {
+        // Create quantifier object representation
+        RuntimeValue *quantifier = rv_new_object();
+
+        const char *type_str =
+            (node->quantifier_type == QUANTIFIER_UNIVERSAL) ? "universal" : "existential";
+        rv_object_set(quantifier, "type", rv_new_string(type_str));
+
+        if (node->quantified_variable) {
+            rv_object_set(quantifier, "variable", rv_new_string(node->quantified_variable));
+        }
+
+        if (node->quantified_domain) {
+            RuntimeValue *domain = visitor_visit(visitor, node->quantified_domain);
+            rv_object_set(quantifier, "domain", domain);
+            if (domain)
+                rv_unref(domain);
+        }
+
+        if (node->quantified_body) {
+            RuntimeValue *body = visitor_visit(visitor, node->quantified_body);
+            rv_object_set(quantifier, "body", body);
+            if (body)
+                rv_unref(body);
+        }
+
+        return quantifier;
+    }
+
+    case AST_LOGICAL_PREDICATE: {
+        // Create predicate object
+        RuntimeValue *predicate = rv_new_object();
+
+        if (node->predicate_name) {
+            rv_object_set(predicate, "name", rv_new_string(node->predicate_name));
+        }
+
+        // Process predicate arguments
+        if (node->predicate_args && node->predicate_args_size > 0) {
+            RuntimeValue *args = rv_new_array();
+            for (size_t i = 0; i < node->predicate_args_size; i++) {
+                RuntimeValue *arg = visitor_visit(visitor, node->predicate_args[i]);
+                if (arg) {
+                    rv_array_push(args, arg);
+                    rv_unref(arg);
+                }
+            }
+            rv_object_set(predicate, "arguments", args);
+            rv_unref(args);
+        }
+
+        rv_object_set(predicate, "type", rv_new_string("predicate"));
+        return predicate;
+    }
+
+    case AST_LOGICAL_CONNECTIVE: {
+        // Create logical connective object
+        RuntimeValue *connective = rv_new_object();
+
+        const char *op_str;
+        switch (node->connective_type) {
+        case CONNECTIVE_AND:
+            op_str = "and";
+            break;
+        case CONNECTIVE_OR:
+            op_str = "or";
+            break;
+        case CONNECTIVE_IMPLIES:
+            op_str = "implies";
+            break;
+        case CONNECTIVE_IFF:
+            op_str = "iff";
+            break;
+        case CONNECTIVE_NOT:
+            op_str = "not";
+            break;
+        default:
+            op_str = "unknown";
+            break;
+        }
+
+        rv_object_set(connective, "operator", rv_new_string(op_str));
+
+        if (node->connective_left) {
+            RuntimeValue *left = visitor_visit(visitor, node->connective_left);
+            rv_object_set(connective, "left", left);
+            if (left)
+                rv_unref(left);
+        }
+
+        if (node->connective_right) {
+            RuntimeValue *right = visitor_visit(visitor, node->connective_right);
+            rv_object_set(connective, "right", right);
+            if (right)
+                rv_unref(right);
+        }
+
+        return connective;
+    }
+
+    case AST_LOGICAL_VARIABLE: {
+        RuntimeValue *logical_var = rv_new_object();
+
+        if (node->logical_var_name) {
+            rv_object_set(logical_var, "name", rv_new_string(node->logical_var_name));
+        }
+
+        rv_object_set(logical_var, "bound", rv_new_boolean(node->is_bound));
+        rv_object_set(logical_var, "type", rv_new_string("logical_variable"));
+
+        return logical_var;
+    }
+
+    case AST_LOGICAL_PROPOSITION: {
+        RuntimeValue *proposition = rv_new_object();
+
+        if (node->proposition_name) {
+            rv_object_set(proposition, "name", rv_new_string(node->proposition_name));
+        }
+
+        rv_object_set(proposition, "value", rv_new_boolean(node->proposition_value));
+        rv_object_set(proposition, "type", rv_new_string("proposition"));
+
+        return proposition;
+    }
+
+    case AST_LOGICAL_THEOREM: {
+        RuntimeValue *theorem = rv_new_object();
+
+        if (node->theorem_name) {
+            rv_object_set(theorem, "name", rv_new_string(node->theorem_name));
+        }
+
+        // Process hypotheses
+        if (node->theorem_hypotheses && node->theorem_hypotheses_size > 0) {
+            RuntimeValue *hypotheses = rv_new_array();
+            for (size_t i = 0; i < node->theorem_hypotheses_size; i++) {
+                RuntimeValue *hypothesis = visitor_visit(visitor, node->theorem_hypotheses[i]);
+                if (hypothesis) {
+                    rv_array_push(hypotheses, hypothesis);
+                    rv_unref(hypothesis);
+                }
+            }
+            rv_object_set(theorem, "hypotheses", hypotheses);
+            rv_unref(hypotheses);
+        }
+
+        if (node->theorem_conclusion) {
+            RuntimeValue *conclusion = visitor_visit(visitor, node->theorem_conclusion);
+            rv_object_set(theorem, "conclusion", conclusion);
+            if (conclusion)
+                rv_unref(conclusion);
+        }
+
+        if (node->theorem_proof) {
+            RuntimeValue *proof = visitor_visit(visitor, node->theorem_proof);
+            rv_object_set(theorem, "proof", proof);
+            if (proof)
+                rv_unref(proof);
+        }
+
+        rv_object_set(theorem, "type", rv_new_string("theorem"));
+        return theorem;
+    }
+
+    case AST_LOGICAL_AXIOM: {
+        RuntimeValue *axiom = rv_new_object();
+
+        if (node->axiom_name) {
+            rv_object_set(axiom, "name", rv_new_string(node->axiom_name));
+        }
+
+        if (node->axiom_statement) {
+            RuntimeValue *statement = visitor_visit(visitor, node->axiom_statement);
+            rv_object_set(axiom, "statement", statement);
+            if (statement)
+                rv_unref(statement);
+        }
+
+        rv_object_set(axiom, "consistent", rv_new_boolean(node->axiom_is_consistent));
+        rv_object_set(axiom, "type", rv_new_string("axiom"));
+
+        return axiom;
+    }
+
+    case AST_LOGICAL_PROOF_STEP: {
+        RuntimeValue *step = rv_new_object();
+
+        if (node->step_statement) {
+            RuntimeValue *statement = visitor_visit(visitor, node->step_statement);
+            rv_object_set(step, "statement", statement);
+            if (statement)
+                rv_unref(statement);
+        }
+
+        if (node->step_justification) {
+            RuntimeValue *justification = visitor_visit(visitor, node->step_justification);
+            rv_object_set(step, "justification", justification);
+            if (justification)
+                rv_unref(justification);
+        }
+
+        // Process premises
+        if (node->step_premises && node->step_premises_size > 0) {
+            RuntimeValue *premises = rv_new_array();
+            for (size_t i = 0; i < node->step_premises_size; i++) {
+                RuntimeValue *premise = visitor_visit(visitor, node->step_premises[i]);
+                if (premise) {
+                    rv_array_push(premises, premise);
+                    rv_unref(premise);
+                }
+            }
+            rv_object_set(step, "premises", premises);
+            rv_unref(premises);
+        }
+
+        rv_object_set(step, "type", rv_new_string("proof_step"));
+        return step;
+    }
+
     case AST_LOGICAL_PREMISE:
+        // Logical premise is just a statement node
+        result = rv_new_object();
+        rv_object_set(result, "type", rv_new_string("premise"));
+        return result;
+
     case AST_LOGICAL_CONCLUSION:
-    case AST_LOGICAL_INFERENCE:
+        // Logical conclusion is just a statement node
+        result = rv_new_object();
+        rv_object_set(result, "type", rv_new_string("conclusion"));
+        return result;
+
+    case AST_LOGICAL_INFERENCE: {
+        RuntimeValue *inference = rv_new_object();
+
+        const char *rule_str;
+        switch (node->inference_rule) {
+        case INFERENCE_MODUS_PONENS:
+            rule_str = "modus_ponens";
+            break;
+        case INFERENCE_MODUS_TOLLENS:
+            rule_str = "modus_tollens";
+            break;
+        case INFERENCE_UNIVERSAL_INST:
+            rule_str = "universal_instantiation";
+            break;
+        case INFERENCE_EXISTENTIAL_GEN:
+            rule_str = "existential_generalization";
+            break;
+        case INFERENCE_ASSUMPTION:
+            rule_str = "assumption";
+            break;
+        case INFERENCE_AXIOM:
+            rule_str = "axiom";
+            break;
+        default:
+            rule_str = "unknown";
+            break;
+        }
+
+        rv_object_set(inference, "rule", rv_new_string(rule_str));
+
+        // Process premises
+        if (node->inference_premises && node->inference_premises_size > 0) {
+            RuntimeValue *premises = rv_new_array();
+            for (size_t i = 0; i < node->inference_premises_size; i++) {
+                RuntimeValue *premise = visitor_visit(visitor, node->inference_premises[i]);
+                if (premise) {
+                    rv_array_push(premises, premise);
+                    rv_unref(premise);
+                }
+            }
+            rv_object_set(inference, "premises", premises);
+            rv_unref(premises);
+        }
+
+        if (node->inference_conclusion) {
+            RuntimeValue *conclusion = visitor_visit(visitor, node->inference_conclusion);
+            rv_object_set(inference, "conclusion", conclusion);
+            if (conclusion)
+                rv_unref(conclusion);
+        }
+
+        return inference;
+    }
+
     case AST_LOGICAL_SUBSTITUTION:
-    case AST_MATHEMATICAL_EQUATION:
-    case AST_MATHEMATICAL_INEQUALITY:
-    case AST_MATHEMATICAL_FUNCTION:
-        // For logical AST nodes, return null for now
-        result = rv_new_null();
-        break;
+        // Basic substitution representation
+        result = rv_new_object();
+        rv_object_set(result, "type", rv_new_string("substitution"));
+        return result;
+
+    case AST_MATHEMATICAL_EQUATION: {
+        RuntimeValue *equation = rv_new_object();
+
+        if (node->equation_left) {
+            RuntimeValue *left = visitor_visit(visitor, node->equation_left);
+            rv_object_set(equation, "left", left);
+            if (left)
+                rv_unref(left);
+        }
+
+        if (node->equation_right) {
+            RuntimeValue *right = visitor_visit(visitor, node->equation_right);
+            rv_object_set(equation, "right", right);
+            if (right)
+                rv_unref(right);
+        }
+
+        rv_object_set(equation, "type", rv_new_string("equation"));
+        rv_object_set(equation, "operator", rv_new_string("equals"));
+
+        return equation;
+    }
+
+    case AST_MATHEMATICAL_INEQUALITY: {
+        RuntimeValue *inequality = rv_new_object();
+
+        const char *op_str;
+        switch (node->inequality_type) {
+        case INEQUALITY_LT:
+            op_str = "<";
+            break;
+        case INEQUALITY_LE:
+            op_str = "<=";
+            break;
+        case INEQUALITY_GT:
+            op_str = ">";
+            break;
+        case INEQUALITY_GE:
+            op_str = ">=";
+            break;
+        default:
+            op_str = "unknown";
+            break;
+        }
+
+        rv_object_set(inequality, "operator", rv_new_string(op_str));
+
+        if (node->inequality_left) {
+            RuntimeValue *left = visitor_visit(visitor, node->inequality_left);
+            rv_object_set(inequality, "left", left);
+            if (left)
+                rv_unref(left);
+        }
+
+        if (node->inequality_right) {
+            RuntimeValue *right = visitor_visit(visitor, node->inequality_right);
+            rv_object_set(inequality, "right", right);
+            if (right)
+                rv_unref(right);
+        }
+
+        rv_object_set(inequality, "type", rv_new_string("inequality"));
+        return inequality;
+    }
+
+    case AST_MATHEMATICAL_FUNCTION: {
+        RuntimeValue *math_func = rv_new_object();
+
+        if (node->math_function_name) {
+            rv_object_set(math_func, "name", rv_new_string(node->math_function_name));
+        }
+
+        // Process function arguments
+        if (node->math_function_args && node->math_function_args_size > 0) {
+            RuntimeValue *args = rv_new_array();
+            for (size_t i = 0; i < node->math_function_args_size; i++) {
+                RuntimeValue *arg = visitor_visit(visitor, node->math_function_args[i]);
+                if (arg) {
+                    rv_array_push(args, arg);
+                    rv_unref(arg);
+                }
+            }
+            rv_object_set(math_func, "arguments", args);
+            rv_unref(args);
+        }
+
+        rv_object_set(math_func, "type", rv_new_string("mathematical_function"));
+        return math_func;
+    }
 
     case AST_IMPORT:
         return visitor_visit_import(visitor, node);
@@ -606,7 +1093,9 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     LOG_VISITOR_DEBUG("Looking up stdlib function '%s'", node->function_call_name);
     const ZenStdlibFunction *stdlib_func = stdlib_get(node->function_call_name);
     if (stdlib_func != NULL) {
-        LOG_VISITOR_DEBUG("Found stdlib function '%s'", node->function_call_name);
+        LOG_VISITOR_DEBUG("Found stdlib function '%s' with %zu arguments",
+                          node->function_call_name,
+                          (size_t)node->function_call_arguments_size);
         // Convert AST arguments to Value arguments
         RuntimeValue **value_args = NULL;
         size_t argc = (size_t)node->function_call_arguments_size;
@@ -681,15 +1170,35 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
             AST_T *class_def = class_var->variable_definition_value;
             if (class_def->type == AST_CLASS_DEFINITION) {
                 // Create a new instance
-                // TODO: Class system not yet implemented in RuntimeValue
-                RuntimeValue *class_val = rv_new_null();  // value_new_class(class_def->class_name,
-                                                          // class_def->parent_class);
+                // Create class object (representing class definition)
+                RuntimeValue *class_val = rv_new_object();
+                rv_object_set(class_val, "__type", rv_new_string("class"));
+                rv_object_set(class_val, "name", rv_new_string(class_def->class_name));
+                rv_object_set(class_val,
+                              "parent",
+                              class_def->parent_class ? rv_new_string(class_def->parent_class)
+                                                      : rv_new_null());
+
+                // Store class methods and properties if they exist
+                if (class_def->class_body) {
+                    RuntimeValue *methods = rv_new_object();
+                    rv_object_set(class_val, "methods", methods);
+                    rv_unref(methods);
+                }
                 if (!class_val) {
                     return rv_new_null();
                 }
 
-                // TODO: Instance system not yet implemented in RuntimeValue
-                RuntimeValue *instance = rv_new_null();  // value_new_instance(class_val);
+                // Create instance object from class
+                RuntimeValue *instance = rv_new_object();
+                rv_object_set(instance, "__type", rv_new_string("instance"));
+                rv_object_set(instance, "__class", rv_ref(class_val));
+
+                // Copy class name for quick access
+                RuntimeValue *class_name = rv_object_get(class_val, "name");
+                if (class_name) {
+                    rv_object_set(instance, "__class_name", rv_ref(class_name));
+                }
                 rv_unref(class_val);
 
                 if (instance) {
@@ -715,10 +1224,13 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     AST_T *class_var = scope_get_variable_definition(node->scope, node->function_call_name);
     if (class_var && class_var->variable_definition_value) {
         RuntimeValue *potential_class = ast_to_value(class_var->variable_definition_value);
-        // TODO: Class system not yet implemented in RuntimeValue
-        if (false && potential_class) {  // potential_class->type == VALUE_CLASS
-            // This is a class constructor call - create new instance
-            RuntimeValue *instance = rv_new_null();  // value_new_instance(potential_class);
+        // Check if potential_class is a class object
+        if (potential_class && potential_class->type == RV_OBJECT) {
+            RuntimeValue *type_marker = rv_object_get(potential_class, "__type");
+            if (type_marker && type_marker->type == RV_STRING &&
+                strcmp(type_marker->data.string.data, "class") == 0)
+                // This is a class constructor call - create new instance
+                RuntimeValue *instance = rv_new_null();  // value_new_instance(potential_class);
             if (instance) {
                 // Constructor method calling can be implemented when needed
                 // Return the new instance as RuntimeValue
@@ -1452,6 +1964,26 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
         return rv_new_null();
     }
 
+    // Determine the property name - could be dynamic if using bracket notation
+    char *property_name = node->property_name;
+    char *dynamic_property = NULL;
+
+    // If there's a left node (index expression), evaluate it for dynamic property access
+    if (node->left) {
+        RuntimeValue *index_rv = visitor_visit(visitor, node->left);
+        if (index_rv) {
+            if (index_rv->type == RV_STRING) {
+                dynamic_property = memory_strdup(index_rv->data.string.data);
+                property_name = dynamic_property;
+            } else if (index_rv->type == RV_NUMBER) {
+                dynamic_property = memory_alloc(32);
+                snprintf(dynamic_property, 32, "%g", index_rv->data.number);
+                property_name = dynamic_property;
+            }
+            rv_unref(index_rv);
+        }
+    }
+
     RuntimeValue *result = NULL;
 
     // Handle different types using RuntimeValue directly
@@ -1462,7 +1994,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
             // Look for method in class instance
             // This is a class instance - look for method in the class
             char method_key[256];
-            snprintf(method_key, sizeof(method_key), "__method_%s", node->property_name);
+            snprintf(method_key, sizeof(method_key), "__method_%s", property_name);
 
             // Look for method in class
             // Search for method key
@@ -1478,7 +2010,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
                 rv_ref(result);
             } else {
                 // Try to get instance property
-                result = rv_object_get(object_rv, node->property_name);
+                result = rv_object_get(object_rv, property_name);
                 if (result) {
                     rv_ref(result);
                 } else {
@@ -1488,7 +2020,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
         } else {
             // Regular object property access
             // Regular object property access
-            result = rv_object_get(object_rv, node->property_name);
+            result = rv_object_get(object_rv, property_name);
             if (result) {
                 // rv_object_get returns a borrowed reference, need to increase refcount
                 rv_ref(result);
@@ -1498,13 +2030,13 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
         }
     } else if (rv_is_array(object_rv)) {
         // Handle special array property: length
-        if (strcmp(node->property_name, "length") == 0) {
+        if (strcmp(property_name, "length") == 0) {
             size_t length = rv_array_length(object_rv);
             result = rv_new_number((double)length);
         } else {
             // Handle array indexing: arr[0] becomes arr.0 in property access
             char *endptr;
-            long index = strtol(node->property_name, &endptr, 10);
+            long index = strtol(property_name, &endptr, 10);
 
             if (*endptr == '\0' && index >= 0) {
                 // Valid numeric index
@@ -1517,20 +2049,22 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
                     result = rv_new_null();
                 }
             } else {
-                LOG_ERROR(
-                    LOG_CAT_VISITOR, "Invalid array property/index '%s'", node->property_name);
+                LOG_ERROR(LOG_CAT_VISITOR, "Invalid array property/index '%s'", property_name);
                 result = rv_new_null();
             }
         }
     } else {
         LOG_ERROR(LOG_CAT_VISITOR,
                   "Cannot access property '%s' on type %s",
-                  node->property_name,
+                  property_name,
                   rv_type_name(object_rv));
         result = rv_new_null();
     }
 
     // Clean up
+    if (dynamic_property) {
+        memory_free(dynamic_property);
+    }
     rv_unref(object_rv);
 
     return result;
@@ -1785,16 +2319,7 @@ static RuntimeValue *visitor_visit_for_loop(visitor_T *visitor, AST_T *node)
             }
         }
     } else if (iterable_result->type == RV_OBJECT) {
-        // Get object keys - need to iterate over object properties
-        // For now, just skip object iteration since we don't have a direct API
-        LOG_ERROR(LOG_CAT_VISITOR, "Object iteration not yet implemented for RuntimeValue");
-        rv_unref(iterable_result);
-        rv_unref(last_result);
-        memory_free(iterator_def->variable_definition_variable_name);
-        ast_free(iterator_def);
-        return rv_new_null();
-
-        /* TODO: Implement object iteration when we have object key iteration API
+        // Iterate over object keys
         for (size_t i = 0; i < rv_object_size(iterable_result); i++) {
             char *key = rv_object_get_key_at(iterable_result, i);
             if (!key)
@@ -1849,7 +2374,6 @@ static RuntimeValue *visitor_visit_for_loop(visitor_T *visitor, AST_T *node)
                 last_result = body_result;
             }
         }
-        */
     } else {
         LOG_ERROR(LOG_CAT_VISITOR,
                   "For loop iterable is not an array or object (type: %d)",
@@ -3117,11 +3641,35 @@ void visitor_throw_exception(visitor_T *visitor,
                              const char *message,
                              const char *context)
 {
-    (void)visitor;  // Mark as used
-    (void)node;
-    (void)message;
-    (void)context;
-    // No exception handling for now - just ignore
+    if (!visitor || !message) {
+        return;
+    }
+
+    // Create error information
+    char error_buffer[512];
+    if (context) {
+        snprintf(error_buffer, sizeof(error_buffer), "[%s] %s", context, message);
+    } else {
+        snprintf(error_buffer, sizeof(error_buffer), "%s", message);
+    }
+
+    // Store exception in visitor's exception state
+    if (visitor->exception_state.exception_message) {
+        memory_free(visitor->exception_state.exception_message);
+    }
+    visitor->exception_state.exception_message = memory_strdup(error_buffer);
+    visitor->exception_state.is_active = true;
+
+    // Store exception AST node
+    visitor->exception_state.exception_value = node;
+
+    // Set generic source location info if we have a node
+    if (node) {
+        if (visitor->exception_state.source_location) {
+            memory_free(visitor->exception_state.source_location);
+        }
+        visitor->exception_state.source_location = memory_strdup("runtime");
+    }
 }
 
 /**
@@ -3132,8 +3680,39 @@ void visitor_throw_exception(visitor_T *visitor,
  */
 bool visitor_optimize_hot_function(visitor_T *visitor, const char *function_name)
 {
-    (void)visitor;  // Mark as used
-    (void)function_name;
-    // No optimization for now - just ignore
+    if (!visitor || !function_name) {
+        return false;
+    }
+
+    // Look for existing profile for this function
+    FunctionProfile *profile = NULL;
+    for (size_t i = 0; i < visitor->profile_count; i++) {
+        if (visitor->function_profiles[i].function_name &&
+            strcmp(visitor->function_profiles[i].function_name, function_name) == 0) {
+            profile = &visitor->function_profiles[i];
+            break;
+        }
+    }
+
+    // If no profile exists and we have space, create one
+    if (!profile && visitor->profile_count < visitor->profile_capacity) {
+        profile = &visitor->function_profiles[visitor->profile_count++];
+        profile->function_name = memory_strdup(function_name);
+        profile->execution_count = 0;
+        profile->total_execution_time = 0.0;
+        profile->is_hot_function = false;
+        profile->average_time_per_call = 0.0;
+        profile->optimized_ast = NULL;
+    }
+
+    if (profile) {
+        profile->execution_count++;
+        // Mark as hot if called more than 10 times
+        if (profile->execution_count > 10) {
+            profile->is_hot_function = true;
+            return true;
+        }
+    }
+
     return false;
 }

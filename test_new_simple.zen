@@ -1,3 +1,0 @@
-print "Before new"
-set x new Foo
-print "After new"

@@ -1,5 +1,0 @@
-class Foo
-    function bar
-        print "Bar method"
-
-print "After class definition"

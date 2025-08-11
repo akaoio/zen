@@ -1,2 +1,0 @@
-set t name "Test"
-print t.name

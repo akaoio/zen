@@ -1,5 +1,0 @@
-print "Before class"
-class Foo
-    function bar
-        print "In bar"
-print "After class"

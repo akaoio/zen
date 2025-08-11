@@ -1,3 +1,0 @@
-print "Test 1"
-print max 5 10
-print split "hello world" " "

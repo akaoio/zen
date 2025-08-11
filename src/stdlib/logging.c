@@ -1,439 +1,355 @@
 /*
  * logging.c
- * ZEN Logging System - Structured logging for ZEN programs
+ * ZEN Logging System for ZEN stdlib
  *
- * Provides clean, structured logging functions that replace debug printf statements
- * and offer formatted output with timestamps and log levels.
+ * This is a stub implementation to allow compilation.
+ * Full logging features will be implemented in a later phase.
  */
 
-#include "zen/stdlib/logging.h"
-
-#include "zen/config.h"
+#include "zen/core/error.h"
 #include "zen/core/memory.h"
 #include "zen/core/runtime_value.h"
 
-#include <stdarg.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-// Global log level (defaults to INFO)
-static ZenLogLevel current_log_level = ZEN_LOG_INFO;
+// Logging levels
+typedef enum {
+    LOG_DEBUG = 0,
+    LOG_INFO = 1,
+    LOG_WARN = 2,
+    LOG_ERROR = 3
+} LogLevel;
 
-// Maximum formatted message size
-// Use configuration system for message size limit
-#define MAX_TIMESTAMP_SIZE 32
+// Global logging level (default to INFO)
+static LogLevel current_log_level = LOG_INFO;
 
-/**
- * @brief Get current timestamp string for logging
- * @return Dynamically allocated timestamp string (must be freed)
- */
-char *logging_get_timestamp(void)
+// Helper function to get timestamp
+static const char *get_timestamp(void)
 {
-    char *timestamp = memory_alloc(MAX_TIMESTAMP_SIZE);
-    if (!timestamp) {
-        return NULL;
-    }
+    static char buffer[32];
+    time_t rawtime;
+    struct tm *timeinfo;
 
-    time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
 
-    if (strftime(timestamp, MAX_TIMESTAMP_SIZE, "%Y-%m-%d %H:%M:%S", tm_info) == 0) {
-        memory_free(timestamp);
-        return NULL;
-    }
-
-    return timestamp;
-}
-
-/**
- * @brief Get level string for given log level
- * @param level Log level
- * @return Static string representation of level
- */
-const char *logging_level_string(ZenLogLevel level)
-{
-    switch (level) {
-    case ZEN_LOG_DEBUG:
-        return "DEBUG";
-    case ZEN_LOG_INFO:
-        return "INFO ";
-    case ZEN_LOG_WARN:
-        return "WARN ";
-    case ZEN_LOG_ERROR:
-        return "ERROR";
-    default:
-        return "UNKN ";
-    }
-}
-
-/**
- * @brief Parse log level from string
- * @param level_str String representation of level
- * @return Log level enum value, or -1 if invalid
- */
-int logging_parse_level(const char *level_str)
-{
-    if (!level_str)
-        return -1;
-
-    if (strcmp(level_str, "DEBUG") == 0 || strcmp(level_str, "debug") == 0) {
-        return ZEN_LOG_DEBUG;
-    } else if (strcmp(level_str, "INFO") == 0 || strcmp(level_str, "info") == 0) {
-        return ZEN_LOG_INFO;
-    } else if (strcmp(level_str, "WARN") == 0 || strcmp(level_str, "warn") == 0) {
-        return ZEN_LOG_WARN;
-    } else if (strcmp(level_str, "ERROR") == 0 || strcmp(level_str, "error") == 0) {
-        return ZEN_LOG_ERROR;
-    }
-
-    return -1;
-}
-
-/**
- * @brief Check if given level should be logged
- * @param level Level to check
- * @return true if should log, false otherwise
- */
-bool logging_should_log(ZenLogLevel level) { return level >= current_log_level; }
-
-/**
- * @brief Internal function to format and output log message
- * @param level Log level
- * @param context Optional context string (can be NULL)
- * @param message Message to log
- */
-static void log_output(ZenLogLevel level, const char *context, const char *message)
-{
-    if (!logging_should_log(level)) {
-        return;
-    }
-
-    char *timestamp = logging_get_timestamp();
-    if (!timestamp) {
-        // Fallback without timestamp
-        if (context) {
-            fprintf(stderr, "[%s] [%s] %s\n", logging_level_string(level), context, message);
-        } else {
-            fprintf(stderr, "[%s] %s\n", logging_level_string(level), message);
-        }
-        return;
-    }
-
-    if (context) {
-        fprintf(stderr,
-                "[%s] [%s] [%s] %s\n",
-                timestamp,
-                logging_level_string(level),
-                context,
-                message);
-    } else {
-        fprintf(stderr, "[%s] [%s] %s\n", timestamp, logging_level_string(level), message);
-    }
-
-    memory_free(timestamp);
-}
-
-/**
- * @brief Log a debug message
- * @param args Arguments array (message string)
- * @param argc Number of arguments (should be 1)
- * @return Null value
- */
-Value *logging_debug(Value **args, size_t argc)
-{
-    if (argc != 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logDebug expects one string argument", 1);
-    }
-
-    log_output(ZEN_LOG_DEBUG, NULL, args[0]->as.string->data);
-    return value_new_null();
-}
-
-/**
- * @brief Log an info message
- * @param args Arguments array (message string)
- * @param argc Number of arguments (should be 1)
- * @return Null value
- */
-Value *logging_info(Value **args, size_t argc)
-{
-    if (argc != 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logInfo expects one string argument", 1);
-    }
-
-    log_output(ZEN_LOG_INFO, NULL, args[0]->as.string->data);
-    return value_new_null();
-}
-
-/**
- * @brief Log a warning message
- * @param args Arguments array (message string)
- * @param argc Number of arguments (should be 1)
- * @return Null value
- */
-Value *logging_warn(Value **args, size_t argc)
-{
-    if (argc != 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logWarn expects one string argument", 1);
-    }
-
-    log_output(ZEN_LOG_WARN, NULL, args[0]->as.string->data);
-    return value_new_null();
-}
-
-/**
- * @brief Log an error message
- * @param args Arguments array (message string)
- * @param argc Number of arguments (should be 1)
- * @return Null value
- */
-Value *logging_error(Value **args, size_t argc)
-{
-    if (argc != 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logError expects one string argument", 1);
-    }
-
-    log_output(ZEN_LOG_ERROR, NULL, args[0]->as.string->data);
-    return value_new_null();
-}
-
-/**
- * @brief Internal helper to format message with arguments
- * @param format_str Format string
- * @param args Arguments for formatting
- * @param argc Number of arguments
- * @return Formatted message string (must be freed), or NULL on error
- */
-static char *log_format_message(const char *format_str, Value **args, size_t argc)
-{
-    char *buffer = memory_alloc(ZEN_MAX_LOG_MESSAGE_SIZE);
-    if (!buffer) {
-        return NULL;
-    }
-
-    // Simple implementation - just concatenate args as strings
-    // For a full printf implementation, we'd need more complex parsing
-    int offset = snprintf(buffer, ZEN_MAX_LOG_MESSAGE_SIZE, "%s", format_str);
-
-    for (size_t i = 1; i < argc && offset < ZEN_MAX_LOG_MESSAGE_SIZE - 1; i++) {
-        if (args[i]) {
-            const char *str_repr = NULL;
-            char number_buf[32];
-
-            switch (args[i]->type) {
-            case VALUE_STRING:
-                str_repr = args[i]->as.string->data;
-                break;
-            case VALUE_NUMBER:
-                snprintf(number_buf, sizeof(number_buf), "%.15g", args[i]->as.number);
-                str_repr = number_buf;
-                break;
-            case VALUE_BOOLEAN:
-                str_repr = args[i]->as.boolean ? "true" : "false";
-                break;
-            case VALUE_NULL:
-                str_repr = "null";
-                break;
-            default:
-                str_repr = "<object>";
-                break;
-            }
-
-            offset +=
-                snprintf(buffer + offset, ZEN_MAX_LOG_MESSAGE_SIZE - offset - 1, " %s", str_repr);
-        }
-    }
-
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
     return buffer;
 }
 
-/**
- * @brief Log a formatted debug message (printf-style)
- * @param args Arguments array (format string, values...)
- * @param argc Number of arguments (format + values)
- * @return Null value
- */
-Value *logging_debugf(Value **args, size_t argc)
+// Helper function to convert value to string for logging
+static const char *value_to_log_string(RuntimeValue *value)
 {
-    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logDebugf expects format string as first argument", 1);
-    }
+    if (!value)
+        return "(null)";
 
-    char *formatted = log_format_message(args[0]->as.string->data, args, argc);
-    if (formatted) {
-        log_output(ZEN_LOG_DEBUG, NULL, formatted);
-        memory_free(formatted);
+    switch (value->type) {
+    case RV_NULL:
+        return "null";
+    case RV_BOOLEAN:
+        return value->data.boolean ? "true" : "false";
+    case RV_NUMBER: {
+        static char buffer[64];
+        double num = value->data.number;
+        if (num == (long)num) {
+            snprintf(buffer, sizeof(buffer), "%ld", (long)num);
+        } else {
+            snprintf(buffer, sizeof(buffer), "%g", num);
+        }
+        return buffer;
     }
-
-    return value_new_null();
+    case RV_STRING:
+        return value->data.string.data;
+    case RV_ARRAY:
+        return "[Array]";
+    case RV_OBJECT:
+        return "{Object}";
+    case RV_FUNCTION:
+        return "[Function]";
+    case RV_ERROR:
+        return value->data.error.message;
+    default:
+        return "(unknown)";
+    }
 }
 
-/**
- * @brief Log a formatted info message (printf-style)
- * @param args Arguments array (format string, values...)
- * @param argc Number of arguments (format + values)
- * @return Null value
- */
-Value *logging_infof(Value **args, size_t argc)
+// Log a message at a given level
+static void log_message(LogLevel level, const char *level_str, RuntimeValue **args, size_t argc)
 {
-    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logInfof expects format string as first argument", 1);
+    if (level < current_log_level) {
+        return;  // Skip if below current log level
     }
 
-    char *formatted = log_format_message(args[0]->as.string->data, args, argc);
-    if (formatted) {
-        log_output(ZEN_LOG_INFO, NULL, formatted);
-        memory_free(formatted);
+    fprintf(stderr, "[%s] %s ", get_timestamp(), level_str);
+
+    // Print all arguments
+    for (size_t i = 0; i < argc; i++) {
+        if (i > 0)
+            fprintf(stderr, " ");
+        fprintf(stderr, "%s", value_to_log_string(args[i]));
     }
 
-    return value_new_null();
+    fprintf(stderr, "\n");
+    fflush(stderr);
 }
 
-/**
- * @brief Log a formatted warning message (printf-style)
- * @param args Arguments array (format string, values...)
- * @param argc Number of arguments (format + values)
- * @return Null value
- */
-Value *logging_warnf(Value **args, size_t argc)
+// Stub implementations for logging functions
+// These return appropriate error messages indicating future implementation
+
+RuntimeValue *logging_debug(RuntimeValue **args, size_t argc)
 {
-    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logWarnf expects format string as first argument", 1);
-    }
-
-    char *formatted = log_format_message(args[0]->as.string->data, args, argc);
-    if (formatted) {
-        log_output(ZEN_LOG_WARN, NULL, formatted);
-        memory_free(formatted);
-    }
-
-    return value_new_null();
+    log_message(LOG_DEBUG, "DEBUG", args, argc);
+    return rv_new_null();
 }
 
-/**
- * @brief Log a formatted error message (printf-style)
- * @param args Arguments array (format string, values...)
- * @param argc Number of arguments (format + values)
- * @return Null value
- */
-Value *logging_errorf(Value **args, size_t argc)
+RuntimeValue *logging_info(RuntimeValue **args, size_t argc)
 {
-    if (argc < 1 || !args[0] || args[0]->type != VALUE_STRING) {
-        return value_new_error("logErrorf expects format string as first argument", 1);
-    }
-
-    char *formatted = log_format_message(args[0]->as.string->data, args, argc);
-    if (formatted) {
-        log_output(ZEN_LOG_ERROR, NULL, formatted);
-        memory_free(formatted);
-    }
-
-    return value_new_null();
+    log_message(LOG_INFO, "INFO", args, argc);
+    return rv_new_null();
 }
 
-/**
- * @brief Log a debug message only if condition is true
- * @param args Arguments array (condition boolean, message string)
- * @param argc Number of arguments (should be 2)
- * @return Null value
- */
-Value *logging_debug_if(Value **args, size_t argc)
+RuntimeValue *logging_warn(RuntimeValue **args, size_t argc)
 {
-    if (argc != 2 || !args[0] || !args[1]) {
-        return value_new_error("logDebugIf expects condition and message arguments", 1);
+    log_message(LOG_WARN, "WARN", args, argc);
+    return rv_new_null();
+}
+
+RuntimeValue *logging_error(RuntimeValue **args, size_t argc)
+{
+    log_message(LOG_ERROR, "ERROR", args, argc);
+    return rv_new_null();
+}
+
+RuntimeValue *logging_debugf(RuntimeValue **args, size_t argc)
+{
+    if (argc < 1) {
+        return rv_new_error("logDebugf requires at least 1 argument (format string)", -1);
     }
 
-    if (args[1]->type != VALUE_STRING) {
-        return value_new_error("logDebugIf second argument must be a string", 1);
+    if (!args[0] || args[0]->type != RV_STRING) {
+        return rv_new_error("logDebugf requires a string format", -1);
+    }
+
+    if (LOG_DEBUG < current_log_level) {
+        return rv_new_null();  // Skip if below current log level
+    }
+
+    // For now, just print the format string and arguments separately
+    // A full printf-style formatter would require more complex parsing
+    fprintf(stderr, "[%s] DEBUG %s", get_timestamp(), args[0]->data.string.data);
+
+    // Print additional arguments
+    for (size_t i = 1; i < argc; i++) {
+        fprintf(stderr, " %s", value_to_log_string(args[i]));
+    }
+
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
+    return rv_new_null();
+}
+
+RuntimeValue *logging_infof(RuntimeValue **args, size_t argc)
+{
+    if (argc < 1) {
+        return rv_new_error("logInfof requires at least 1 argument (format string)", -1);
+    }
+
+    if (!args[0] || args[0]->type != RV_STRING) {
+        return rv_new_error("logInfof requires a string format", -1);
+    }
+
+    if (LOG_INFO < current_log_level) {
+        return rv_new_null();  // Skip if below current log level
+    }
+
+    // For now, just print the format string and arguments separately
+    fprintf(stderr, "[%s] INFO %s", get_timestamp(), args[0]->data.string.data);
+
+    // Print additional arguments
+    for (size_t i = 1; i < argc; i++) {
+        fprintf(stderr, " %s", value_to_log_string(args[i]));
+    }
+
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
+    return rv_new_null();
+}
+
+RuntimeValue *logging_warnf(RuntimeValue **args, size_t argc)
+{
+    if (argc < 1) {
+        return rv_new_error("logWarnf requires at least 1 argument (format string)", -1);
+    }
+
+    if (!args[0] || args[0]->type != RV_STRING) {
+        return rv_new_error("logWarnf requires a string format", -1);
+    }
+
+    if (LOG_WARN < current_log_level) {
+        return rv_new_null();  // Skip if below current log level
+    }
+
+    // For now, just print the format string and arguments separately
+    fprintf(stderr, "[%s] WARN %s", get_timestamp(), args[0]->data.string.data);
+
+    // Print additional arguments
+    for (size_t i = 1; i < argc; i++) {
+        fprintf(stderr, " %s", value_to_log_string(args[i]));
+    }
+
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
+    return rv_new_null();
+}
+
+RuntimeValue *logging_errorf(RuntimeValue **args, size_t argc)
+{
+    if (argc < 1) {
+        return rv_new_error("logErrorf requires at least 1 argument (format string)", -1);
+    }
+
+    if (!args[0] || args[0]->type != RV_STRING) {
+        return rv_new_error("logErrorf requires a string format", -1);
+    }
+
+    if (LOG_ERROR < current_log_level) {
+        return rv_new_null();  // Skip if below current log level
+    }
+
+    // For now, just print the format string and arguments separately
+    fprintf(stderr, "[%s] ERROR %s", get_timestamp(), args[0]->data.string.data);
+
+    // Print additional arguments
+    for (size_t i = 1; i < argc; i++) {
+        fprintf(stderr, " %s", value_to_log_string(args[i]));
+    }
+
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
+    return rv_new_null();
+}
+
+RuntimeValue *logging_debug_if(RuntimeValue **args, size_t argc)
+{
+    if (argc < 2) {
+        return rv_new_error("logDebugIf requires at least 2 arguments (condition, message)", -1);
+    }
+
+    if (!args[0] || !args[1] || args[1]->type != RV_STRING) {
+        return rv_new_error("logDebugIf requires (condition, string message)", -1);
     }
 
     // Check if condition is truthy
     bool condition = false;
     switch (args[0]->type) {
-    case VALUE_BOOLEAN:
-        condition = args[0]->as.boolean;
+    case RV_BOOLEAN:
+        condition = args[0]->data.boolean;
         break;
-    case VALUE_NUMBER:
-        condition = args[0]->as.number != 0.0;
+    case RV_NUMBER:
+        condition = args[0]->data.number != 0.0;
         break;
-    case VALUE_STRING:
-        condition = args[0]->as.string->length > 0;
+    case RV_STRING:
+        condition = args[0]->data.string.length > 0;
         break;
-    case VALUE_NULL:
+    case RV_NULL:
         condition = false;
         break;
     default:
-        condition = true;  // Objects are truthy
-        break;
+        condition = true;
     }
 
+    // Only log if condition is true
     if (condition) {
-        log_output(ZEN_LOG_DEBUG, NULL, args[1]->as.string->data);
+        log_message(LOG_DEBUG, "DEBUG", &args[1], argc - 1);
     }
 
-    return value_new_null();
+    return rv_new_null();
 }
 
-/**
- * @brief Set minimum logging level (0=DEBUG, 1=INFO, 2=WARN, 3=ERROR)
- * @param args Arguments array (level number)
- * @param argc Number of arguments (should be 1)
- * @return Null value
- */
-Value *logging_set_level(Value **args, size_t argc)
+RuntimeValue *logging_set_level(RuntimeValue **args, size_t argc)
 {
-    if (argc != 1 || !args[0] || args[0]->type != VALUE_NUMBER) {
-        return value_new_error("logSetLevel expects one number argument", 1);
+    if (argc != 1) {
+        return rv_new_error("setLogLevel requires exactly 1 argument (level)", -1);
     }
 
-    int level = (int)args[0]->as.number;
-    if (level < ZEN_LOG_DEBUG || level > ZEN_LOG_ERROR) {
-        return value_new_error("logSetLevel level must be 0-3 (DEBUG, INFO, WARN, ERROR)", 1);
+    if (!args[0] || args[0]->type != RV_STRING) {
+        return rv_new_error("setLogLevel requires a string level (DEBUG, INFO, WARN, ERROR)", -1);
     }
 
-    current_log_level = (ZenLogLevel)level;
-    return value_new_null();
+    const char *level_str = args[0]->data.string.data;
+
+    if (strcmp(level_str, "DEBUG") == 0) {
+        current_log_level = LOG_DEBUG;
+    } else if (strcmp(level_str, "INFO") == 0) {
+        current_log_level = LOG_INFO;
+    } else if (strcmp(level_str, "WARN") == 0) {
+        current_log_level = LOG_WARN;
+    } else if (strcmp(level_str, "ERROR") == 0) {
+        current_log_level = LOG_ERROR;
+    } else {
+        return rv_new_error("Invalid log level. Use: DEBUG, INFO, WARN, ERROR", -1);
+    }
+
+    return rv_new_null();
 }
 
-/**
- * @brief Log a message with context information
- * @param args Arguments array (context string, level string, message)
- * @param argc Number of arguments (should be 3)
- * @return Null value
- */
-Value *logging_with_context(Value **args, size_t argc)
+RuntimeValue *logging_with_context(RuntimeValue **args, size_t argc)
 {
-    if (argc != 3 || !args[0] || !args[1] || !args[2]) {
-        return value_new_error("logWithContext expects context, level, and message arguments", 1);
+    if (argc < 2) {
+        return rv_new_error("logWithContext requires at least 2 arguments (context, message)", -1);
     }
 
-    if (args[0]->type != VALUE_STRING || args[1]->type != VALUE_STRING ||
-        args[2]->type != VALUE_STRING) {
-        return value_new_error("logWithContext all arguments must be strings", 1);
+    if (!args[0] || args[0]->type != RV_STRING || !args[1] || args[1]->type != RV_STRING) {
+        return rv_new_error("logWithContext requires (string context, string message)", -1);
     }
 
-    int level = logging_parse_level(args[1]->as.string->data);
-    if (level < 0) {
-        return value_new_error("logWithContext invalid level (use DEBUG, INFO, WARN, ERROR)", 1);
+    const char *context = args[0]->data.string.data;
+    const char *message = args[1]->data.string.data;
+
+    // Log with context prefix
+    fprintf(stderr, "[%s] INFO [%s] %s", get_timestamp(), context, message);
+
+    // Print additional arguments if any
+    for (size_t i = 2; i < argc; i++) {
+        fprintf(stderr, " %s", value_to_log_string(args[i]));
     }
 
-    log_output((ZenLogLevel)level, args[0]->as.string->data, args[2]->as.string->data);
-    return value_new_null();
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
+    return rv_new_null();
 }
 
-/**
- * @brief Get current logging level
- * @param args Arguments array (unused)
- * @param argc Number of arguments (unused)
- * @return Number value representing current log level
- */
-Value *logging_get_level(Value **args, size_t argc)
+RuntimeValue *logging_get_level(RuntimeValue **args, size_t argc)
 {
-    (void)args;  // Suppress unused parameter warning
+    (void)args;
     (void)argc;
 
-    return value_new_number((double)current_log_level);
+    // Return the current log level as a string
+    const char *level_str;
+    switch (current_log_level) {
+    case LOG_DEBUG:
+        level_str = "DEBUG";
+        break;
+    case LOG_INFO:
+        level_str = "INFO";
+        break;
+    case LOG_WARN:
+        level_str = "WARN";
+        break;
+    case LOG_ERROR:
+        level_str = "ERROR";
+        break;
+    default:
+        level_str = "UNKNOWN";
+    }
+
+    return rv_new_string(level_str);
 }

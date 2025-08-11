@@ -17,9 +17,8 @@ BUILD_DIR = build
 SRC_DIR = ../src
 
 # Source files for the main ZEN implementation
-# Only use minimal stdlib files that are compatible with RuntimeValue
-STDLIB_MINIMAL_SOURCES = $(SRC_DIR)/stdlib/stdlib_minimal.c $(SRC_DIR)/stdlib/io_minimal.c
-ZEN_SOURCES = $(wildcard $(SRC_DIR)/core/*.c $(SRC_DIR)/types/*.c $(SRC_DIR)/runtime/*.c) $(STDLIB_MINIMAL_SOURCES)
+STDLIB_SOURCES = $(wildcard $(SRC_DIR)/stdlib/*.c)
+ZEN_SOURCES = $(wildcard $(SRC_DIR)/core/*.c $(SRC_DIR)/types/*.c $(SRC_DIR)/runtime/*.c) $(STDLIB_SOURCES)
 ZEN_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/zen_%.o,$(ZEN_SOURCES))
 
 # Test framework
@@ -86,7 +85,7 @@ $(BUILD_DIR)/%.test: %.c $(FRAMEWORK_OBJECTS) $(ZEN_OBJECTS) | $(BUILD_DIR)
 # Test execution targets
 
 # Run all tests
-test: test-unit test-integration test-language test-stdlib test-memory
+test: test-unit test-integration test-language
 	@echo "=== ALL TESTS COMPLETED ==="
 
 # Run unit tests

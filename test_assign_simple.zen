@@ -1,4 +1,0 @@
-set obj name "before"
-print obj.name
-set obj.name "after"
-print obj.name

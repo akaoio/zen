@@ -1,2 +1,0 @@
-set p name "Alice"
-print p.name

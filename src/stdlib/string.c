@@ -13,32 +13,38 @@
 #include "zen/core/runtime_value.h"
 
 #include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 /**
- * @brief Get the length of a string value
- * @param args Arguments array containing string value
+ * @brief Get the length of a string or array value
+ * @param args Arguments array containing string or array value
  * @param argc Number of arguments
  * @return Length as a number value, or error on invalid input
  */
-Value *string_length(Value **args, size_t argc)
+RuntimeValue *string_length(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
         return error_new("length() requires exactly 1 argument");
     }
 
-    const Value *str_value = args[0];
-    if (!str_value || str_value->type != VALUE_STRING) {
-        return error_new("length() requires a string argument");
+    const RuntimeValue *value = args[0];
+    if (!value) {
+        return error_new("length() requires a non-null argument");
     }
 
-    if (!str_value->as.string || !str_value->as.string->data) {
-        return value_new_number(0);
+    if (value->type == RV_STRING) {
+        if (!value->data.string.data) {
+            return rv_new_number(0);
+        }
+        return rv_new_number((double)value->data.string.length);
+    } else if (value->type == RV_ARRAY) {
+        return rv_new_number((double)value->data.array.count);
+    } else {
+        return error_new("length() requires a string or array argument");
     }
-
-    return value_new_number((double)str_value->as.string->length);
 }
 
 /**
@@ -47,27 +53,27 @@ Value *string_length(Value **args, size_t argc)
  * @param argc Number of arguments
  * @return New string value in uppercase
  */
-Value *string_upper(Value **args, size_t argc)
+RuntimeValue *string_upper(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
         return error_new("upper() requires exactly 1 argument");
     }
 
-    const Value *str_value = args[0];
-    if (!str_value || str_value->type != VALUE_STRING) {
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
         return error_new("upper() requires a string argument");
     }
 
-    if (!str_value->as.string || !str_value->as.string->data) {
-        return value_new_string("");
+    if (!str_value->data.string.data) {
+        return rv_new_string("");
     }
 
-    char *original = str_value->as.string->data;
-    size_t len = str_value->as.string->length;
+    char *original = str_value->data.string.data;
+    size_t len = str_value->data.string.length;
     char *upper_str = memory_alloc(len + 1);
 
     if (!upper_str) {
-        return value_new_string("");
+        return rv_new_string("");
     }
 
     for (size_t i = 0; i < len; i++) {
@@ -75,7 +81,7 @@ Value *string_upper(Value **args, size_t argc)
     }
     upper_str[len] = '\0';
 
-    Value *result = value_new_string(upper_str);
+    RuntimeValue *result = rv_new_string(upper_str);
     memory_free(upper_str);
     return result;
 }
@@ -85,27 +91,27 @@ Value *string_upper(Value **args, size_t argc)
  * @param str_value String value to convert
  * @return New string value in lowercase
  */
-Value *string_lower(Value **args, size_t argc)
+RuntimeValue *string_lower(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
         return error_new("lower() requires exactly 1 argument");
     }
 
-    const Value *str_value = args[0];
-    if (!str_value || str_value->type != VALUE_STRING) {
-        return value_new_string("");
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
+        return rv_new_string("");
     }
 
-    if (!str_value->as.string || !str_value->as.string->data) {
-        return value_new_string("");
+    if (!str_value->data.string.data) {
+        return rv_new_string("");
     }
 
-    char *original = str_value->as.string->data;
-    size_t len = str_value->as.string->length;
+    char *original = str_value->data.string.data;
+    size_t len = str_value->data.string.length;
     char *lower_str = memory_alloc(len + 1);
 
     if (!lower_str) {
-        return value_new_string("");
+        return rv_new_string("");
     }
 
     for (size_t i = 0; i < len; i++) {
@@ -113,7 +119,7 @@ Value *string_lower(Value **args, size_t argc)
     }
     lower_str[len] = '\0';
 
-    Value *result = value_new_string(lower_str);
+    RuntimeValue *result = rv_new_string(lower_str);
     memory_free(lower_str);
     return result;
 }
@@ -123,23 +129,23 @@ Value *string_lower(Value **args, size_t argc)
  * @param str_value String value to trim
  * @return New trimmed string value
  */
-Value *string_trim(Value **args, size_t argc)
+RuntimeValue *string_trim(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
         return error_new("trim() requires exactly 1 argument");
     }
 
-    const Value *str_value = args[0];
-    if (!str_value || str_value->type != VALUE_STRING) {
-        return value_new_string("");
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
+        return rv_new_string("");
     }
 
-    if (!str_value->as.string || !str_value->as.string->data) {
-        return value_new_string("");
+    if (!str_value->data.string.data) {
+        return rv_new_string("");
     }
 
-    char *original = str_value->as.string->data;
-    size_t len = str_value->as.string->length;
+    char *original = str_value->data.string.data;
+    size_t len = str_value->data.string.length;
 
     // Find start of non-whitespace
     size_t start = 0;
@@ -157,13 +163,13 @@ Value *string_trim(Value **args, size_t argc)
     size_t trimmed_len = end - start;
     char *trimmed = memory_alloc(trimmed_len + 1);
     if (!trimmed) {
-        return value_new_string("");
+        return rv_new_string("");
     }
 
     memcpy(trimmed, original + start, trimmed_len);
     trimmed[trimmed_len] = '\0';
 
-    Value *result = value_new_string(trimmed);
+    RuntimeValue *result = rv_new_string(trimmed);
     memory_free(trimmed);
     return result;
 }
@@ -174,67 +180,50 @@ Value *string_trim(Value **args, size_t argc)
  * @param delimiter Delimiter string
  * @return Array value containing split parts
  */
-Value *string_split(Value **args, size_t argc)
+RuntimeValue *string_split(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
         return error_new("split() requires exactly 2 arguments");
     }
 
-    const Value *str_value = args[0];
-    if (!str_value || str_value->type != VALUE_STRING) {
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
         return error_new("split() requires a string as first argument");
     }
 
-    const Value *delim_value = args[1];
-    if (!delim_value || delim_value->type != VALUE_STRING) {
+    const RuntimeValue *delim_value = args[1];
+    if (!delim_value || delim_value->type != RV_STRING) {
         return error_new("split() requires a string delimiter as second argument");
     }
 
-    const char *delimiter = delim_value->as.string->data;
-    Value *result = value_new(VALUE_ARRAY);
-    if (!result || !result->as.array) {
+    const char *delimiter = delim_value->data.string.data;
+    RuntimeValue *result = rv_new_array();
+    if (!result) {
         return result;
     }
 
-    if (!str_value || str_value->type != VALUE_STRING || !delimiter) {
+    if (!str_value || str_value->type != RV_STRING || !delimiter) {
         return result;  // Empty array
     }
 
-    if (!str_value->as.string || !str_value->as.string->data) {
+    if (!str_value->data.string.data) {
         return result;  // Empty array
     }
 
-    char *original = str_value->as.string->data;
+    char *original = str_value->data.string.data;
     size_t delim_len = strlen(delimiter);
 
     if (delim_len == 0) {
         // Split into individual characters
-        size_t len = str_value->as.string->length;
-        result->as.array->items = memory_alloc(sizeof(Value *) * len);
-        if (result->as.array->items) {
-            result->as.array->capacity = len;
-            for (size_t i = 0; i < len; i++) {
-                char single_char[2] = {original[i], '\0'};
-                result->as.array->items[i] = value_new_string(single_char);
-                result->as.array->length++;
-            }
+        size_t len = str_value->data.string.length;
+        for (size_t i = 0; i < len; i++) {
+            char single_char[2] = {original[i], '\0'};
+            RuntimeValue *char_val = rv_new_string(single_char);
+            rv_array_push(result, char_val);
+            rv_unref(char_val);
         }
         return result;
     }
-
-    // Count occurrences to pre-allocate
-    size_t count = 1;
-    char *pos = original;
-    while ((pos = strstr(pos, delimiter)) != NULL) {
-        count++;
-        pos += delim_len;
-    }
-
-    result->as.array->items = memory_alloc(sizeof(Value *) * count);
-    if (!result->as.array->items) {
-        return result;
-    }
-    result->as.array->capacity = count;
 
     // Split the string
     char *str_copy = memory_strdup(original);
@@ -243,9 +232,10 @@ Value *string_split(Value **args, size_t argc)
     }
 
     char *token = strtok(str_copy, delimiter);
-    while (token != NULL && result->as.array->length < count) {
-        result->as.array->items[result->as.array->length] = value_new_string(token);
-        result->as.array->length++;
+    while (token != NULL) {
+        RuntimeValue *token_val = rv_new_string(token);
+        rv_array_push(result, token_val);
+        rv_unref(token_val);
         token = strtok(NULL, delimiter);
     }
 
@@ -259,33 +249,33 @@ Value *string_split(Value **args, size_t argc)
  * @param substring Substring to find
  * @return Boolean value indicating if substring was found
  */
-Value *string_contains(Value **args, size_t argc)
+RuntimeValue *string_contains(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
         return error_new("contains() requires exactly 2 arguments");
     }
 
-    const Value *str_value = args[0];
-    if (!str_value || str_value->type != VALUE_STRING) {
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
         return error_new("contains() requires a string as first argument");
     }
 
-    const Value *substr_value = args[1];
-    if (!substr_value || substr_value->type != VALUE_STRING) {
+    const RuntimeValue *substr_value = args[1];
+    if (!substr_value || substr_value->type != RV_STRING) {
         return error_new("contains() requires a string as second argument");
     }
 
-    const char *substring = substr_value->as.string->data;
-    if (!str_value || str_value->type != VALUE_STRING || !substring) {
-        return value_new_boolean(false);
+    const char *substring = substr_value->data.string.data;
+    if (!str_value || str_value->type != RV_STRING || !substring) {
+        return rv_new_boolean(false);
     }
 
-    if (!str_value->as.string || !str_value->as.string->data) {
-        return value_new_boolean(false);
+    if (!str_value->data.string.data) {
+        return rv_new_boolean(false);
     }
 
-    char *found = strstr(str_value->as.string->data, substring);
-    return value_new_boolean(found != NULL);
+    char *found = strstr(str_value->data.string.data, substring);
+    return rv_new_boolean(found != NULL);
 }
 
 /**
@@ -295,43 +285,43 @@ Value *string_contains(Value **args, size_t argc)
  * @param replace Replacement string
  * @return New string value with replacements made
  */
-Value *string_replace(Value **args, size_t argc)
+RuntimeValue *string_replace(RuntimeValue **args, size_t argc)
 {
     if (argc != 3) {
         return error_new("replace() requires exactly 3 arguments");
     }
 
-    const Value *str_value = args[0];
-    if (!str_value || str_value->type != VALUE_STRING) {
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
         return error_new("replace() requires a string as first argument");
     }
 
-    const Value *search_value = args[1];
-    if (!search_value || search_value->type != VALUE_STRING) {
+    const RuntimeValue *search_value = args[1];
+    if (!search_value || search_value->type != RV_STRING) {
         return error_new("replace() requires a string as second argument");
     }
 
-    const Value *replace_value = args[2];
-    if (!replace_value || replace_value->type != VALUE_STRING) {
+    const RuntimeValue *replace_value = args[2];
+    if (!replace_value || replace_value->type != RV_STRING) {
         return error_new("replace() requires a string as third argument");
     }
 
-    const char *search = search_value->as.string->data;
-    const char *replace = replace_value->as.string->data;
-    if (!str_value || str_value->type != VALUE_STRING || !search || !replace) {
-        return value_copy(str_value);
+    const char *search = search_value->data.string.data;
+    const char *replace = replace_value->data.string.data;
+    if (!str_value || str_value->type != RV_STRING || !search || !replace) {
+        return rv_copy((RuntimeValue *)str_value);
     }
 
-    if (!str_value->as.string || !str_value->as.string->data) {
-        return value_new_string("");
+    if (!str_value->data.string.data) {
+        return rv_new_string("");
     }
 
-    char *original = str_value->as.string->data;
+    char *original = str_value->data.string.data;
     size_t search_len = strlen(search);
     size_t replace_len = strlen(replace);
 
     if (search_len == 0) {
-        return value_copy(str_value);
+        return rv_copy((RuntimeValue *)str_value);
     }
 
     // Count occurrences
@@ -343,16 +333,16 @@ Value *string_replace(Value **args, size_t argc)
     }
 
     if (count == 0) {
-        return value_copy(str_value);
+        return rv_copy((RuntimeValue *)str_value);
     }
 
     // Calculate new length
-    size_t original_len = str_value->as.string->length;
+    size_t original_len = str_value->data.string.length;
     size_t new_len = original_len - (count * search_len) + (count * replace_len);
 
     char *result_str = memory_alloc(new_len + 1);
     if (!result_str) {
-        return value_new_string("");
+        return rv_new_string("");
     }
 
     // Perform replacements
@@ -376,7 +366,255 @@ Value *string_replace(Value **args, size_t argc)
     // Copy remaining part
     strcpy(dst, src);
 
-    Value *result = value_new_string(result_str);
+    RuntimeValue *result = rv_new_string(result_str);
     memory_free(result_str);
     return result;
 }
+
+/**
+ * @brief Extract substring from string
+ * @param args Arguments array containing string, start index, and optional length
+ * @param argc Number of arguments (2 or 3)
+ * @return New string value containing the substring
+ */
+RuntimeValue *string_substring(RuntimeValue **args, size_t argc)
+{
+    if (argc < 2 || argc > 3) {
+        return error_new("substring() requires 2 or 3 arguments (string, start [, length])");
+    }
+
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
+        return error_new("substring() requires a string as first argument");
+    }
+
+    const RuntimeValue *start_value = args[1];
+    if (!start_value || start_value->type != RV_NUMBER) {
+        return error_new("substring() requires a number as second argument (start index)");
+    }
+
+    size_t length = SIZE_MAX;  // Default to end of string
+    if (argc == 3) {
+        const RuntimeValue *length_value = args[2];
+        if (!length_value || length_value->type != RV_NUMBER) {
+            return error_new("substring() requires a number as third argument (length)");
+        }
+        if (length_value->data.number < 0) {
+            return error_new("substring() length cannot be negative");
+        }
+        length = (size_t)length_value->data.number;
+    }
+
+    if (!str_value->data.string.data) {
+        return rv_new_string("");
+    }
+
+    const char *original = str_value->data.string.data;
+    size_t str_len = str_value->data.string.length;
+    int start_idx = (int)start_value->data.number;
+
+    // Handle negative start index (count from end)
+    if (start_idx < 0) {
+        start_idx = (int)str_len + start_idx;
+        if (start_idx < 0) {
+            start_idx = 0;  // Clamp to start of string
+        }
+    }
+
+    // Bounds checking
+    if ((size_t)start_idx >= str_len) {
+        return rv_new_string("");
+    }
+
+    size_t start_pos = (size_t)start_idx;
+    size_t remaining = str_len - start_pos;
+    size_t actual_length = (length == SIZE_MAX || length > remaining) ? remaining : length;
+
+    char *substring = memory_alloc(actual_length + 1);
+    if (!substring) {
+        return rv_new_string("");
+    }
+
+    memcpy(substring, original + start_pos, actual_length);
+    substring[actual_length] = '\0';
+
+    RuntimeValue *result = rv_new_string(substring);
+    memory_free(substring);
+    return result;
+}
+
+/**
+ * @brief Find index of substring in string
+ * @param args Arguments array containing string and substring
+ * @param argc Number of arguments
+ * @return Number value with index of substring, or -1 if not found
+ */
+RuntimeValue *string_index_of(RuntimeValue **args, size_t argc)
+{
+    if (argc != 2) {
+        return error_new("index_of() requires exactly 2 arguments");
+    }
+
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
+        return error_new("index_of() requires a string as first argument");
+    }
+
+    const RuntimeValue *substr_value = args[1];
+    if (!substr_value || substr_value->type != RV_STRING) {
+        return error_new("index_of() requires a string as second argument");
+    }
+
+    if (!str_value->data.string.data || !substr_value->data.string.data) {
+        return rv_new_number(-1);
+    }
+
+    const char *haystack = str_value->data.string.data;
+    const char *needle = substr_value->data.string.data;
+
+    char *found = strstr(haystack, needle);
+    if (!found) {
+        return rv_new_number(-1);
+    }
+
+    return rv_new_number((double)(found - haystack));
+}
+
+/**
+ * @brief Concatenate two or more strings
+ * @param args Arguments array containing strings to concatenate
+ * @param argc Number of arguments
+ * @return New string value containing concatenated result
+ */
+RuntimeValue *string_concat(RuntimeValue **args, size_t argc)
+{
+    if (argc == 0) {
+        return rv_new_string("");
+    }
+
+    // Calculate total length needed
+    size_t total_length = 0;
+    for (size_t i = 0; i < argc; i++) {
+        if (!args[i] || args[i]->type != RV_STRING) {
+            return error_new("concat() requires all arguments to be strings");
+        }
+        if (args[i]->data.string.data) {
+            total_length += args[i]->data.string.length;
+        }
+    }
+
+    char *result_str = memory_alloc(total_length + 1);
+    if (!result_str) {
+        return rv_new_string("");
+    }
+
+    // Concatenate all strings
+    char *pos = result_str;
+    for (size_t i = 0; i < argc; i++) {
+        if (args[i]->data.string.data) {
+            size_t len = args[i]->data.string.length;
+            memcpy(pos, args[i]->data.string.data, len);
+            pos += len;
+        }
+    }
+    *pos = '\0';
+
+    RuntimeValue *result = rv_new_string(result_str);
+    memory_free(result_str);
+    return result;
+}
+
+/**
+ * @brief Check if string starts with prefix
+ * @param args Arguments array containing string and prefix
+ * @param argc Number of arguments
+ * @return Boolean value indicating if string starts with prefix
+ */
+RuntimeValue *string_starts_with(RuntimeValue **args, size_t argc)
+{
+    if (argc != 2) {
+        return error_new("starts_with() requires exactly 2 arguments");
+    }
+
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
+        return error_new("starts_with() requires a string as first argument");
+    }
+
+    const RuntimeValue *prefix_value = args[1];
+    if (!prefix_value || prefix_value->type != RV_STRING) {
+        return error_new("starts_with() requires a string as second argument");
+    }
+
+    if (!str_value->data.string.data || !prefix_value->data.string.data) {
+        return rv_new_boolean(false);
+    }
+
+    const char *string = str_value->data.string.data;
+    const char *prefix = prefix_value->data.string.data;
+    size_t prefix_len = prefix_value->data.string.length;
+    size_t str_len = str_value->data.string.length;
+
+    if (prefix_len > str_len) {
+        return rv_new_boolean(false);
+    }
+
+    bool matches = memcmp(string, prefix, prefix_len) == 0;
+    return rv_new_boolean(matches);
+}
+
+/**
+ * @brief Check if string ends with suffix
+ * @param args Arguments array containing string and suffix
+ * @param argc Number of arguments
+ * @return Boolean value indicating if string ends with suffix
+ */
+RuntimeValue *string_ends_with(RuntimeValue **args, size_t argc)
+{
+    if (argc != 2) {
+        return error_new("ends_with() requires exactly 2 arguments");
+    }
+
+    const RuntimeValue *str_value = args[0];
+    if (!str_value || str_value->type != RV_STRING) {
+        return error_new("ends_with() requires a string as first argument");
+    }
+
+    const RuntimeValue *suffix_value = args[1];
+    if (!suffix_value || suffix_value->type != RV_STRING) {
+        return error_new("ends_with() requires a string as second argument");
+    }
+
+    if (!str_value->data.string.data || !suffix_value->data.string.data) {
+        return rv_new_boolean(false);
+    }
+
+    const char *string = str_value->data.string.data;
+    const char *suffix = suffix_value->data.string.data;
+    size_t suffix_len = suffix_value->data.string.length;
+    size_t str_len = str_value->data.string.length;
+
+    if (suffix_len > str_len) {
+        return rv_new_boolean(false);
+    }
+
+    const char *start_pos = string + str_len - suffix_len;
+    bool matches = memcmp(start_pos, suffix, suffix_len) == 0;
+    return rv_new_boolean(matches);
+}
+
+/**
+ * @brief Convert string to uppercase (alias for string_upper)
+ * @param args Arguments array containing string value
+ * @param argc Number of arguments
+ * @return New string value in uppercase
+ */
+RuntimeValue *string_to_upper(RuntimeValue **args, size_t argc) { return string_upper(args, argc); }
+
+/**
+ * @brief Convert string to lowercase (alias for string_lower)
+ * @param args Arguments array containing string value
+ * @param argc Number of arguments
+ * @return New string value in lowercase
+ */
+RuntimeValue *string_to_lower(RuntimeValue **args, size_t argc) { return string_lower(args, argc); }

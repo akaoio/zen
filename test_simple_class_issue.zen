@@ -1,5 +1,0 @@
-class Foo
-    function bar
-        print "bar"
-
-set x 123

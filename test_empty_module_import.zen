@@ -1,3 +1,0 @@
-print "Before import"
-import "empty_module.zen"
-print "After import"

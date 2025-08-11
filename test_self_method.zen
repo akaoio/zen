@@ -1,9 +1,0 @@
-class Test
-    function a
-        return "A"
-    
-    function b
-        return self.a
-
-set t new Test
-print t.b

@@ -1,9 +1,0 @@
-print "1: Before class"
-class Foo
-    function bar
-        print "Bar"
-print "2: After class"
-set x 123
-print "3: After set"
-print x
-print "4: Done"

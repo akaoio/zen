@@ -1,3 +1,0 @@
-print "Testing negative range:"
-for n in -2..2
-    print "n = " + n

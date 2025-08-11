@@ -2,531 +2,324 @@
  * math.c
  * Mathematical functions for ZEN stdlib
  *
- * These are internal stdlib functions that extend the core functionality
+ * This file follows MANIFEST.json specification
+ * Function signatures must match manifest exactly
  */
 
-#define _GNU_SOURCE  // For strdup
 #include "zen/stdlib/math.h"
 
 #include "zen/core/error.h"
+#include "zen/core/memory.h"
 #include "zen/core/runtime_value.h"
 
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
 // Initialize random seed once
-static bool random_initialized = false;
+static bool rand_initialized = false;
 
-/**
- * @brief Initialize random number generator
- * @return void (no return value)
- */
-static void init_random()
+static void ensure_random_initialized()
 {
-    if (!random_initialized) {
+    if (!rand_initialized) {
         srand((unsigned int)time(NULL));
-        random_initialized = true;
+        rand_initialized = true;
     }
 }
 
-/**
- * @brief Absolute value function
- * @param num_value Number value to get absolute value of
- * @return Absolute value as new number value
- */
-Value *math_abs_internal(const Value *num_value)
+// Internal math functions
+RuntimeValue *math_abs_internal(const RuntimeValue *num_value)
 {
     if (!num_value) {
-        return error_new("abs() requires a non-null argument");
+        return rv_new_error("abs() requires a non-null argument", -1);
     }
-
-    if (num_value->type != VALUE_NUMBER) {
-        return error_new("abs() requires a numeric argument");
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("abs() requires a numeric argument", -1);
     }
-
-    return value_new_number(fabs(num_value->as.number));
+    return rv_new_number(fabs(num_value->data.number));
 }
 
-/**
- * @brief Floor function
- * @param num_value Number value to floor
- * @return Floor value as new number value
- */
-Value *math_floor_internal(const Value *num_value)
+RuntimeValue *math_floor_internal(const RuntimeValue *num_value)
 {
     if (!num_value) {
-        return error_new("floor() requires a non-null argument");
+        return rv_new_error("floor() requires a non-null argument", -1);
     }
-
-    if (num_value->type != VALUE_NUMBER) {
-        return error_new("floor() requires a numeric argument");
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("floor() requires a numeric argument", -1);
     }
-
-    return value_new_number(floor(num_value->as.number));
+    return rv_new_number(floor(num_value->data.number));
 }
 
-/**
- * @brief Ceiling function
- * @param num_value Number value to ceiling
- * @return Ceiling value as new number value
- */
-Value *math_ceil_internal(const Value *num_value)
-{
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
-    }
-
-    return value_new_number(ceil(num_value->as.number));
-}
-
-/**
- * @brief Round function
- * @param num_value Number value to round
- * @return Rounded value as new number value
- */
-Value *math_round_internal(const Value *num_value)
-{
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
-    }
-
-    return value_new_number(round(num_value->as.number));
-}
-
-/**
- * @brief Square root function
- * @param num_value Number value to get square root of
- * @return Square root as new number value, or error for negative numbers
- */
-Value *math_sqrt_internal(const Value *num_value)
+RuntimeValue *math_ceil_internal(const RuntimeValue *num_value)
 {
     if (!num_value) {
-        return error_new("sqrt() requires a non-null argument");
+        return rv_new_error("ceil() requires a non-null argument", -1);
     }
-
-    if (num_value->type != VALUE_NUMBER) {
-        return error_new("sqrt() requires a numeric argument");
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("ceil() requires a numeric argument", -1);
     }
-
-    double val = num_value->as.number;
-    if (val < 0) {
-        return error_new("sqrt() cannot compute square root of negative number");
-    }
-
-    return value_new_number(sqrt(val));
+    return rv_new_number(ceil(num_value->data.number));
 }
 
-/**
- * @brief Power function
- * @param base_value Base value
- * @param exp_value Exponent value
- * @return Result of base^exponent as new number value
- */
-Value *math_pow_internal(const Value *base_value, const Value *exp_value)
+RuntimeValue *math_round_internal(const RuntimeValue *num_value)
 {
-    if (!base_value || base_value->type != VALUE_NUMBER || !exp_value ||
-        exp_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!num_value) {
+        return rv_new_error("round() requires a non-null argument", -1);
     }
-
-    double base = base_value->as.number;
-    double exp = exp_value->as.number;
-
-    return value_new_number(pow(base, exp));
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("round() requires a numeric argument", -1);
+    }
+    return rv_new_number(round(num_value->data.number));
 }
 
-/**
- * @brief Sine function
- * @param num_value Number value (in radians)
- * @return Sine value as new number value
- */
-Value *math_sin_internal(const Value *num_value)
+RuntimeValue *math_sqrt_internal(const RuntimeValue *num_value)
 {
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!num_value) {
+        return rv_new_error("sqrt() requires a non-null argument", -1);
     }
-
-    return value_new_number(sin(num_value->as.number));
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("sqrt() requires a numeric argument", -1);
+    }
+    if (num_value->data.number < 0) {
+        return rv_new_error("sqrt() requires a non-negative number", -1);
+    }
+    return rv_new_number(sqrt(num_value->data.number));
 }
 
-/**
- * @brief Cosine function
- * @param num_value Number value (in radians)
- * @return Cosine value as new number value
- */
-Value *math_cos_internal(const Value *num_value)
+RuntimeValue *math_pow_internal(const RuntimeValue *base_value, const RuntimeValue *exp_value)
 {
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!base_value || !exp_value) {
+        return rv_new_error("pow() requires two non-null arguments", -1);
     }
-
-    return value_new_number(cos(num_value->as.number));
+    if (base_value->type != RV_NUMBER || exp_value->type != RV_NUMBER) {
+        return rv_new_error("pow() requires numeric arguments", -1);
+    }
+    return rv_new_number(pow(base_value->data.number, exp_value->data.number));
 }
 
-/**
- * @brief Tangent function
- * @param num_value Number value (in radians)
- * @return Tangent value as new number value
- */
-Value *math_tan_internal(const Value *num_value)
+RuntimeValue *math_sin_internal(const RuntimeValue *num_value)
 {
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!num_value) {
+        return rv_new_error("sin() requires a non-null argument", -1);
     }
-
-    return value_new_number(tan(num_value->as.number));
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("sin() requires a numeric argument", -1);
+    }
+    return rv_new_number(sin(num_value->data.number));
 }
 
-/**
- * @brief Natural logarithm function
- * @param num_value Number value
- * @return Natural log as new number value, or error for non-positive numbers
- */
-Value *math_log_internal(const Value *num_value)
+RuntimeValue *math_cos_internal(const RuntimeValue *num_value)
 {
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!num_value) {
+        return rv_new_error("cos() requires a non-null argument", -1);
     }
-
-    double val = num_value->as.number;
-    if (val <= 0) {
-        return value_new_number(0.0);  // Return 0 for non-positive numbers instead of error
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("cos() requires a numeric argument", -1);
     }
-
-    return value_new_number(log(val));
+    return rv_new_number(cos(num_value->data.number));
 }
 
-/**
- * @brief Generate random number between 0 and 1
- * @return Random number as new number value
- */
-Value *math_random_internal(void)
+RuntimeValue *math_tan_internal(const RuntimeValue *num_value)
 {
-    init_random();
-    double random_val = (double)rand() / RAND_MAX;
-    return value_new_number(random_val);
+    if (!num_value) {
+        return rv_new_error("tan() requires a non-null argument", -1);
+    }
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("tan() requires a numeric argument", -1);
+    }
+    return rv_new_number(tan(num_value->data.number));
 }
 
-/**
- * @brief Generate random integer between min and max (inclusive)
- * @param min_value Minimum value
- * @param max_value Maximum value
- * @return Random integer as new number value
- */
-Value *math_random_int_internal(const Value *min_value, const Value *max_value)
+RuntimeValue *math_log_internal(const RuntimeValue *num_value)
 {
-    if (!min_value || min_value->type != VALUE_NUMBER || !max_value ||
-        max_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!num_value) {
+        return rv_new_error("log() requires a non-null argument", -1);
     }
-
-    init_random();
-
-    int min = (int)min_value->as.number;
-    int max = (int)max_value->as.number;
-
-    if (min > max) {
-        int temp = min;
-        min = max;
-        max = temp;
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_error("log() requires a numeric argument", -1);
     }
-
-    int range = max - min + 1;
-    int random_int = min + (rand() % range);
-
-    return value_new_number((double)random_int);
+    if (num_value->data.number <= 0) {
+        return rv_new_error("log() requires a positive number", -1);
+    }
+    return rv_new_number(log(num_value->data.number));
 }
 
-/**
- * @brief Find minimum of two numbers
- * @param a_value First number value
- * @param b_value Second number value
- * @return Minimum value as new number value
- */
-Value *math_min_internal(const Value *a_value, const Value *b_value)
+RuntimeValue *math_is_nan_internal(const RuntimeValue *num_value)
 {
-    if (!a_value || a_value->type != VALUE_NUMBER || !b_value || b_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!num_value) {
+        return rv_new_error("isNaN() requires a non-null argument", -1);
     }
-
-    double a = a_value->as.number;
-    double b = b_value->as.number;
-
-    return value_new_number(a < b ? a : b);
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_boolean(false);  // Non-numbers are not NaN
+    }
+    return rv_new_boolean(isnan(num_value->data.number));
 }
 
-/**
- * @brief Find maximum of two numbers
- * @param a_value First number value
- * @param b_value Second number value
- * @return Maximum value as new number value
- */
-Value *math_max_internal(const Value *a_value, const Value *b_value)
+RuntimeValue *math_is_infinite_internal(const RuntimeValue *num_value)
 {
-    if (!a_value || a_value->type != VALUE_NUMBER || !b_value || b_value->type != VALUE_NUMBER) {
-        return value_new_number(0.0);
+    if (!num_value) {
+        return rv_new_error("isInfinite() requires a non-null argument", -1);
     }
-
-    double a = a_value->as.number;
-    double b = b_value->as.number;
-
-    return value_new_number(a > b ? a : b);
+    if (num_value->type != RV_NUMBER) {
+        return rv_new_boolean(false);  // Non-numbers are not infinite
+    }
+    return rv_new_boolean(isinf(num_value->data.number));
 }
 
-/**
- * @brief Check if number is NaN
- * @param num_value Number value to check
- * @return Boolean value indicating if number is NaN
- */
-Value *math_is_nan_internal(const Value *num_value)
-{
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_boolean(false);
-    }
-
-    return value_new_boolean(isnan(num_value->as.number));
-}
-
-/**
- * @brief Check if number is infinite
- * @param num_value Number value to check
- * @return Boolean value indicating if number is infinite
- */
-Value *math_is_infinite_internal(const Value *num_value)
-{
-    if (!num_value || num_value->type != VALUE_NUMBER) {
-        return value_new_boolean(false);
-    }
-
-    return value_new_boolean(isinf(num_value->as.number));
-}
-
-// Stdlib wrapper functions (MANIFEST.json stdlib signatures)
-
-/**
- * @brief Absolute value wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Absolute value as new number value
- */
-Value *math_abs(Value **args, size_t argc)
+// Stdlib wrapper functions
+RuntimeValue *math_abs(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("abs() requires exactly 1 argument");
+        return rv_new_error("abs() requires exactly 1 argument", -1);
     }
     return math_abs_internal(args[0]);
 }
 
-/**
- * @brief Floor wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Floor value as new number value
- */
-Value *math_floor(Value **args, size_t argc)
+RuntimeValue *math_floor(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("floor() requires exactly 1 argument");
+        return rv_new_error("floor() requires exactly 1 argument", -1);
     }
     return math_floor_internal(args[0]);
 }
 
-/**
- * @brief Ceiling wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Ceiling value as new number value
- */
-Value *math_ceil(Value **args, size_t argc)
+RuntimeValue *math_ceil(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("ceil() requires exactly 1 argument");
+        return rv_new_error("ceil() requires exactly 1 argument", -1);
     }
     return math_ceil_internal(args[0]);
 }
 
-/**
- * @brief Round wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Rounded value as new number value
- */
-Value *math_round(Value **args, size_t argc)
+RuntimeValue *math_round(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("round() requires exactly 1 argument");
+        return rv_new_error("round() requires exactly 1 argument", -1);
     }
     return math_round_internal(args[0]);
 }
 
-/**
- * @brief Square root wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Square root as new number value, or error for negative numbers
- */
-Value *math_sqrt(Value **args, size_t argc)
+RuntimeValue *math_sqrt(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("sqrt() requires exactly 1 argument");
+        return rv_new_error("sqrt() requires exactly 1 argument", -1);
     }
     return math_sqrt_internal(args[0]);
 }
 
-/**
- * @brief Power wrapper for stdlib
- * @param args Arguments array containing base and exponent values
- * @param argc Number of arguments
- * @return Result of base^exponent as new number value
- */
-Value *math_pow(Value **args, size_t argc)
+RuntimeValue *math_pow(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
-        return error_new("pow() requires exactly 2 arguments");
+        return rv_new_error("pow() requires exactly 2 arguments", -1);
     }
     return math_pow_internal(args[0], args[1]);
 }
 
-/**
- * @brief Sine wrapper for stdlib
- * @param args Arguments array containing number value (in radians)
- * @param argc Number of arguments
- * @return Sine value as new number value
- */
-Value *math_sin(Value **args, size_t argc)
+RuntimeValue *math_sin(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("sin() requires exactly 1 argument");
+        return rv_new_error("sin() requires exactly 1 argument", -1);
     }
     return math_sin_internal(args[0]);
 }
 
-/**
- * @brief Cosine wrapper for stdlib
- * @param args Arguments array containing number value (in radians)
- * @param argc Number of arguments
- * @return Cosine value as new number value
- */
-Value *math_cos(Value **args, size_t argc)
+RuntimeValue *math_cos(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("cos() requires exactly 1 argument");
+        return rv_new_error("cos() requires exactly 1 argument", -1);
     }
     return math_cos_internal(args[0]);
 }
 
-/**
- * @brief Tangent wrapper for stdlib
- * @param args Arguments array containing number value (in radians)
- * @param argc Number of arguments
- * @return Tangent value as new number value
- */
-Value *math_tan(Value **args, size_t argc)
+RuntimeValue *math_tan(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("tan() requires exactly 1 argument");
+        return rv_new_error("tan() requires exactly 1 argument", -1);
     }
     return math_tan_internal(args[0]);
 }
 
-/**
- * @brief Natural logarithm wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Natural log as new number value, or error for non-positive numbers
- */
-Value *math_log(Value **args, size_t argc)
+RuntimeValue *math_log(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("log() requires exactly 1 argument");
+        return rv_new_error("log() requires exactly 1 argument", -1);
     }
     return math_log_internal(args[0]);
 }
 
-/**
- * @brief Random number wrapper for stdlib
- * @param args Arguments array (should be empty)
- * @param argc Number of arguments (should be 0)
- * @return Random number as new number value
- */
-Value *math_random(Value **args, size_t argc)
+RuntimeValue *math_random(RuntimeValue **args, size_t argc)
 {
-    (void)args;  // Suppress unused parameter warning
+    (void)args;  // Unused parameter
     if (argc != 0) {
-        return error_new("random() takes no arguments");
+        return rv_new_error("random() requires no arguments", -1);
     }
-    return math_random_internal();
+    ensure_random_initialized();
+    return rv_new_number((double)rand() / RAND_MAX);
 }
 
-/**
- * @brief Random integer wrapper for stdlib
- * @param args Arguments array containing min and max values
- * @param argc Number of arguments
- * @return Random integer as new number value
- */
-Value *math_random_int(Value **args, size_t argc)
+RuntimeValue *math_random_int(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
-        return error_new("randomInt() requires exactly 2 arguments");
+        return rv_new_error("randomInt() requires exactly 2 arguments", -1);
     }
-    return math_random_int_internal(args[0], args[1]);
+    if (!args[0] || !args[1] || args[0]->type != RV_NUMBER || args[1]->type != RV_NUMBER) {
+        return rv_new_error("randomInt() requires two numeric arguments", -1);
+    }
+
+    ensure_random_initialized();
+    int min_val = (int)args[0]->data.number;
+    int max_val = (int)args[1]->data.number;
+
+    if (min_val > max_val) {
+        return rv_new_error("randomInt() min value cannot be greater than max", -1);
+    }
+
+    int range = max_val - min_val + 1;
+    int result = min_val + (rand() % range);
+    return rv_new_number((double)result);
 }
 
-/**
- * @brief Minimum wrapper for stdlib
- * @param args Arguments array containing two number values
- * @param argc Number of arguments
- * @return Minimum value as new number value
- */
-Value *math_min(Value **args, size_t argc)
+RuntimeValue *math_min(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
-        return error_new("min() requires exactly 2 arguments");
+        return rv_new_error("min() requires exactly 2 arguments", -1);
     }
-    return math_min_internal(args[0], args[1]);
+    if (!args[0] || !args[1] || args[0]->type != RV_NUMBER || args[1]->type != RV_NUMBER) {
+        return rv_new_error("min() requires two numeric arguments", -1);
+    }
+
+    double a = args[0]->data.number;
+    double b = args[1]->data.number;
+    return rv_new_number(a < b ? a : b);
 }
 
-/**
- * @brief Maximum wrapper for stdlib
- * @param args Arguments array containing two number values
- * @param argc Number of arguments
- * @return Maximum value as new number value
- */
-Value *math_max(Value **args, size_t argc)
+RuntimeValue *math_max(RuntimeValue **args, size_t argc)
 {
     if (argc != 2) {
-        return error_new("max() requires exactly 2 arguments");
+        return rv_new_error("max() requires exactly 2 arguments", -1);
     }
-    return math_max_internal(args[0], args[1]);
+    if (!args[0] || !args[1] || args[0]->type != RV_NUMBER || args[1]->type != RV_NUMBER) {
+        return rv_new_error("max() requires two numeric arguments", -1);
+    }
+
+    double a = args[0]->data.number;
+    double b = args[1]->data.number;
+    return rv_new_number(a > b ? a : b);
 }
 
-/**
- * @brief NaN check wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Boolean value indicating if number is NaN
- */
-Value *math_is_nan(Value **args, size_t argc)
+RuntimeValue *math_is_nan(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("isNaN() requires exactly 1 argument");
+        return rv_new_error("isNaN() requires exactly 1 argument", -1);
     }
     return math_is_nan_internal(args[0]);
 }
 
-/**
- * @brief Infinite check wrapper for stdlib
- * @param args Arguments array containing number value
- * @param argc Number of arguments
- * @return Boolean value indicating if number is infinite
- */
-Value *math_is_infinite(Value **args, size_t argc)
+RuntimeValue *math_is_infinite(RuntimeValue **args, size_t argc)
 {
     if (argc != 1) {
-        return error_new("isInfinite() requires exactly 1 argument");
+        return rv_new_error("isInfinite() requires exactly 1 argument", -1);
     }
     return math_is_infinite_internal(args[0]);
 }

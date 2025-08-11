@@ -1,5 +1,0 @@
-set a 5
-set b 10
-set c 15
-set result max a (max b c)
-print result

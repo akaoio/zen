@@ -1,3 +1,0 @@
-file_write "test.txt" "Hello World"
-set content file_read "test.txt"
-print content

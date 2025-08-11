@@ -1,7 +1,0 @@
-class Test
-    function hello
-        print "Hello"
-
-print "Creating instance"
-set t new Test
-print "Done"

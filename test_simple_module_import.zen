@@ -1,4 +1,0 @@
-print "Before import"
-import "simple_module.zen"
-print "After import"
-print test_var

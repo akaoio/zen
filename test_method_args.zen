@@ -1,6 +1,0 @@
-class Calculator
-    function add a b
-        print a + b
-
-set calc new Calculator
-calc.add 5 3

@@ -1,7 +1,0 @@
-class Test
-    function get_name  
-        return "Bob"
-
-set t new Test
-set n t.get_name
-print n

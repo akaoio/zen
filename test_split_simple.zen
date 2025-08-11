@@ -1,7 +1,0 @@
-print "Testing split function..."
-set result split "a,b,c" ","
-print "Result of split: " + result
-if result
-    print "Split succeeded"
-else
-    print "Split returned null"

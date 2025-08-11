@@ -408,6 +408,72 @@ RuntimeValue *array_pop_stdlib(RuntimeValue **args, size_t argc);
  */
 RuntimeValue *system_exec(RuntimeValue **args, size_t argc);
 
+/**
+ * @brief Get environment variable
+ * @param args Arguments array (variable name)
+ * @param argc Number of arguments
+ * @return Environment variable value or null
+ */
+RuntimeValue *system_env_get(RuntimeValue **args, size_t argc);
+
+/**
+ * @brief Set environment variable
+ * @param args Arguments array (variable name, value)
+ * @param argc Number of arguments
+ * @return Boolean indicating success
+ */
+RuntimeValue *system_env_set(RuntimeValue **args, size_t argc);
+
+/**
+ * @brief List all environment variables
+ * @param args Arguments array (unused)
+ * @param argc Number of arguments (unused)
+ * @return Array of environment variable names
+ */
+RuntimeValue *system_env_list(RuntimeValue **args, size_t argc);
+/**
+ * @brief List running processes
+ * @param args Arguments array (unused)
+ * @param argc Number of arguments (unused)
+ * @return Array of process objects with pid, ppid, user, command
+ */
+RuntimeValue *system_process_list(RuntimeValue **args, size_t argc);
+/**
+ * @brief Kill a process by PID
+ * @param args Arguments array (pid, optional signal)
+ * @param argc Number of arguments
+ * @return Boolean indicating success
+ */
+RuntimeValue *system_process_kill(RuntimeValue **args, size_t argc);
+/**
+ * @brief List files in directory
+ * @param args Arguments array (optional path, defaults to current directory)
+ * @param argc Number of arguments
+ * @return Array of file objects with name, size, isDirectory, etc.
+ */
+RuntimeValue *system_filesystem_list(RuntimeValue **args, size_t argc);
+/**
+ * @brief Get file/directory information
+ * @param args Arguments array (path)
+ * @param argc Number of arguments
+ * @return Object with file information
+ */
+RuntimeValue *system_filesystem_info(RuntimeValue **args, size_t argc);
+/**
+ * @brief Get CPU hardware information
+ * @param args Arguments array (unused)
+ * @param argc Number of arguments (unused)
+ * @return Object with CPU information
+ */
+RuntimeValue *system_hardware_cpu(RuntimeValue **args, size_t argc);
+/**
+ * @brief Get memory hardware information
+ * @param args Arguments array (unused)
+ * @param argc Number of arguments (unused)
+ * @return Object with memory information
+ */
+RuntimeValue *system_hardware_memory(RuntimeValue **args, size_t argc);
+
 // DateTime Functions
 /**
  * @brief Get current date and time
@@ -416,6 +482,22 @@ RuntimeValue *system_exec(RuntimeValue **args, size_t argc);
  * @return Current date/time value
  */
 RuntimeValue *datetime_now(RuntimeValue **args, size_t argc);
+
+/**
+ * @brief Format timestamp as string
+ * @param args Arguments array (timestamp, optional format)
+ * @param argc Number of arguments (1 or 2)
+ * @return Formatted date string
+ */
+RuntimeValue *datetime_format(RuntimeValue **args, size_t argc);
+
+/**
+ * @brief Parse date string to timestamp
+ * @param args Arguments array (date_string, optional format)
+ * @param argc Number of arguments (1 or 2)
+ * @return Timestamp number
+ */
+RuntimeValue *datetime_parse(RuntimeValue **args, size_t argc);
 
 // Logging Functions
 /**

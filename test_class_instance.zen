@@ -1,7 +1,0 @@
-print "Creating class"
-class Person
-    function greet name
-        print "Hello, " + name
-print "Class created"
-set p new Person
-print "Instance created"
