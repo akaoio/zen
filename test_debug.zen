@@ -1,0 +1,2 @@
+# Test minimal import
+import "test_module.zen"

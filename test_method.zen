@@ -1,0 +1,6 @@
+class Test
+    function greet
+        return "Hello"
+
+set obj new Test
+print obj.greet

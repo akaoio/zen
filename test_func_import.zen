@@ -1,4 +1,1 @@
-import "test_func_module.zen"
-
-print "Version:" version
-print greet "World"
+import "func_module.zen"

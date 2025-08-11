@@ -1,4 +1,1 @@
-print "Before import"
-import test_module_minimal
-print "After import"
-print hello
+import "simple_module.zen"

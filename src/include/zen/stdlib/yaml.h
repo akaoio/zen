@@ -3,7 +3,7 @@
 
 #include "zen/core/runtime_value.h"
 
-#include <yaml.h>
+// #include <yaml.h>  // TODO: Requires libyaml-dev
 
 /**
  * @brief Parse YAML string to Value

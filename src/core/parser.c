@@ -14,6 +14,8 @@
 // Forward declarations
 AST_T *parser_parse_try_catch(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_throw(parser_T *parser, scope_T *scope);
+AST_T *parser_parse_import_statement(parser_T *parser, scope_T *scope);
+AST_T *parser_parse_export_statement(parser_T *parser, scope_T *scope);
 
 /**
  * @brief Create parser instance
@@ -36,6 +38,9 @@ parser_T *parser_new(lexer_T *lexer)
     parser->context.in_method_body = false;
     parser->context.in_function_call = false;
     parser->context.in_print_statement = false;
+    
+    // Initialize recursion depth for proper DEDENT handling
+    parser->recursion_depth = 0;
 
     parser->scope = scope_new();
     if (!parser->scope) {
@@ -142,6 +147,10 @@ AST_T *parser_parse(parser_T *parser, scope_T *scope)
         return NULL;
     }
 
+    // Reset recursion tracking for new parse context
+    // This is critical for import statements which create new parse contexts
+    parser->recursion_depth = 0;
+    
     AST_T *result = parser_parse_statements(parser, scope);
 
     // If parsing encountered errors, return an error AST node instead of crashing
@@ -247,13 +256,12 @@ AST_T *parser_parse_statements(parser_T *parser, scope_T *scope)
     compound->compound_statements = NULL;
     compound->compound_size = 0;
 
-    static int recursion_level = 0;
-    recursion_level++;
+    parser->recursion_depth++;
 
     while (parser->current_token->type != TOKEN_EOF) {
         // Handle DEDENT tokens
         if (parser->current_token->type == TOKEN_DEDENT) {
-            if (recursion_level > 1) {
+            if (parser->recursion_depth > 1) {
                 // Inside a nested block - DEDENT ends this block
                 break;
             } else {
@@ -276,7 +284,7 @@ AST_T *parser_parse_statements(parser_T *parser, scope_T *scope)
             break;
         }
         if (parser->current_token->type == TOKEN_DEDENT) {
-            if (recursion_level > 1) {
+            if (parser->recursion_depth > 1) {
                 break;
             } else {
                 // At top level - skip DEDENT
@@ -303,7 +311,7 @@ AST_T *parser_parse_statements(parser_T *parser, scope_T *scope)
         }
     }
 
-    recursion_level--;
+    parser->recursion_depth--;
     return compound;
 }
 

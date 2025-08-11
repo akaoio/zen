@@ -1,0 +1,6 @@
+class Test
+    function init
+        set this.value 10
+        
+for i in range 0 10
+    set obj new Test

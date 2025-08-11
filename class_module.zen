@@ -1,0 +1,4 @@
+# Module with class
+class Calculator
+    function add x y
+        return x + y

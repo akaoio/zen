@@ -1,6 +1,6 @@
-class Person
+class Test
     function greet name
-        print "Hello, " + name
+        return "Hello, " + name
 
-set p new Person
-p.greet "World"
+set obj new Test
+print obj.greet "World"

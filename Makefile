@@ -1,15 +1,14 @@
 # ZEN Language Makefile
 CC = gcc
 CFLAGS = -g -Wall -Wextra -Werror -std=c11 -Isrc/include
-LDFLAGS = -lm -lcurl -lpcre2-8 -lyaml
+LDFLAGS = -lm -lcurl -lpcre2-8
 PREFIX ?= /usr/local
 BUILD_DIR ?= .
 
 # Main executable
 exec = $(BUILD_DIR)/zen
-sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c) src/stdlib/io_minimal.c src/stdlib/stdlib_minimal.c
-# Temporarily disabled stdlib during Value->RuntimeValue migration:
-# src/stdlib/*.c
+sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c) \
+           src/stdlib/io_minimal.c src/stdlib/stdlib_minimal.c
 objects := $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
 
 # Directories
