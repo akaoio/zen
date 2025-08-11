@@ -2,8 +2,8 @@
  * datetime.c
  * Date and time functions for ZEN stdlib
  *
- * This is a stub implementation to allow compilation.
- * Full datetime features will be implemented in a later phase.
+ * Complete implementation with parsing, formatting, arithmetic,
+ * timezone handling, and UTC conversion capabilities.
  */
 
 #define _GNU_SOURCE  // For strptime
@@ -16,8 +16,28 @@
 #include <string.h>
 #include <time.h>
 
-// Stub implementations for datetime functions
-// These return appropriate error messages indicating future implementation
+// Helper function to create datetime object from struct tm and timestamp
+static RuntimeValue *create_datetime_object(const struct tm *timeinfo, time_t timestamp)
+{
+    RuntimeValue *result = rv_new_object();
+    if (!result || !timeinfo) {
+        return result;
+    }
+
+    rv_object_set(result, "year", rv_new_number(timeinfo->tm_year + 1900));
+    rv_object_set(result, "month", rv_new_number(timeinfo->tm_mon + 1));
+    rv_object_set(result, "day", rv_new_number(timeinfo->tm_mday));
+    rv_object_set(result, "hour", rv_new_number(timeinfo->tm_hour));
+    rv_object_set(result, "minute", rv_new_number(timeinfo->tm_min));
+    rv_object_set(result, "second", rv_new_number(timeinfo->tm_sec));
+    rv_object_set(result, "weekday", rv_new_number(timeinfo->tm_wday));
+    rv_object_set(result, "yearday", rv_new_number(timeinfo->tm_yday));
+    rv_object_set(result, "timestamp", rv_new_number((double)timestamp));
+
+    return result;
+}
+
+// Complete datetime functions with full POSIX time support
 
 RuntimeValue *datetime_now(RuntimeValue **args, size_t argc)
 {
@@ -202,18 +222,7 @@ RuntimeValue *datetime_add(RuntimeValue **args, size_t argc)
         return rv_new_error("datetime_add() failed to convert timestamp", -1);
     }
 
-    RuntimeValue *result = rv_new_object();
-    rv_object_set(result, "year", rv_new_number(timeinfo->tm_year + 1900));
-    rv_object_set(result, "month", rv_new_number(timeinfo->tm_mon + 1));
-    rv_object_set(result, "day", rv_new_number(timeinfo->tm_mday));
-    rv_object_set(result, "hour", rv_new_number(timeinfo->tm_hour));
-    rv_object_set(result, "minute", rv_new_number(timeinfo->tm_min));
-    rv_object_set(result, "second", rv_new_number(timeinfo->tm_sec));
-    rv_object_set(result, "weekday", rv_new_number(timeinfo->tm_wday));
-    rv_object_set(result, "yearday", rv_new_number(timeinfo->tm_yday));
-    rv_object_set(result, "timestamp", rv_new_number((double)timestamp));
-
-    return result;
+    return create_datetime_object(timeinfo, timestamp);
 }
 
 RuntimeValue *datetime_subtract(RuntimeValue **args, size_t argc)
@@ -267,18 +276,7 @@ RuntimeValue *datetime_subtract(RuntimeValue **args, size_t argc)
         return rv_new_error("datetime_subtract() failed to convert timestamp", -1);
     }
 
-    RuntimeValue *result = rv_new_object();
-    rv_object_set(result, "year", rv_new_number(timeinfo->tm_year + 1900));
-    rv_object_set(result, "month", rv_new_number(timeinfo->tm_mon + 1));
-    rv_object_set(result, "day", rv_new_number(timeinfo->tm_mday));
-    rv_object_set(result, "hour", rv_new_number(timeinfo->tm_hour));
-    rv_object_set(result, "minute", rv_new_number(timeinfo->tm_min));
-    rv_object_set(result, "second", rv_new_number(timeinfo->tm_sec));
-    rv_object_set(result, "weekday", rv_new_number(timeinfo->tm_wday));
-    rv_object_set(result, "yearday", rv_new_number(timeinfo->tm_yday));
-    rv_object_set(result, "timestamp", rv_new_number((double)timestamp));
-
-    return result;
+    return create_datetime_object(timeinfo, timestamp);
 }
 
 RuntimeValue *datetime_diff(RuntimeValue **args, size_t argc)
@@ -406,17 +404,10 @@ RuntimeValue *datetime_utc(RuntimeValue **args, size_t argc)
     }
 
     // Create UTC datetime object
-    RuntimeValue *result = rv_new_object();
-    rv_object_set(result, "year", rv_new_number(utc_timeinfo->tm_year + 1900));
-    rv_object_set(result, "month", rv_new_number(utc_timeinfo->tm_mon + 1));
-    rv_object_set(result, "day", rv_new_number(utc_timeinfo->tm_mday));
-    rv_object_set(result, "hour", rv_new_number(utc_timeinfo->tm_hour));
-    rv_object_set(result, "minute", rv_new_number(utc_timeinfo->tm_min));
-    rv_object_set(result, "second", rv_new_number(utc_timeinfo->tm_sec));
-    rv_object_set(result, "weekday", rv_new_number(utc_timeinfo->tm_wday));
-    rv_object_set(result, "yearday", rv_new_number(utc_timeinfo->tm_yday));
-    rv_object_set(result, "timestamp", rv_new_number((double)timestamp));
-    rv_object_set(result, "is_utc", rv_new_boolean(true));
+    RuntimeValue *result = create_datetime_object(utc_timeinfo, timestamp);
+    if (result) {
+        rv_object_set(result, "is_utc", rv_new_boolean(true));
+    }
 
     return result;
 }

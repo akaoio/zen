@@ -20,7 +20,21 @@
  * These functions follow the exact signatures specified in MANIFEST.json.
  */
 
-// Set stdlib wrapper functions - TODO: Implement properly
+// Helper function to convert RuntimeValue to set key string
+static void value_to_set_key(const RuntimeValue *value, char *key_str, size_t key_size)
+{
+    if (value->type == RV_STRING) {
+        snprintf(key_str, key_size, "s:%s", value->data.string.data);
+    } else if (value->type == RV_NUMBER) {
+        snprintf(key_str, key_size, "n:%g", value->data.number);
+    } else if (value->type == RV_BOOLEAN) {
+        snprintf(key_str, key_size, "b:%s", value->data.boolean ? "true" : "false");
+    } else {
+        snprintf(key_str, key_size, "o:%p", (const void *)value);
+    }
+}
+
+// Set stdlib wrapper functions - fully implemented with object-based storage
 RuntimeValue *datastructures_set_new(RuntimeValue **args, size_t argc)
 {
     (void)args;  // Unused parameter
@@ -45,15 +59,7 @@ RuntimeValue *datastructures_set_add(RuntimeValue **args, size_t argc)
 
     // Convert value to string for use as key
     char key_str[256];
-    if (value->type == RV_STRING) {
-        snprintf(key_str, sizeof(key_str), "s:%s", value->data.string.data);
-    } else if (value->type == RV_NUMBER) {
-        snprintf(key_str, sizeof(key_str), "n:%g", value->data.number);
-    } else if (value->type == RV_BOOLEAN) {
-        snprintf(key_str, sizeof(key_str), "b:%s", value->data.boolean ? "true" : "false");
-    } else {
-        snprintf(key_str, sizeof(key_str), "o:%p", (void *)value);
-    }
+    value_to_set_key(value, key_str, sizeof(key_str));
 
     // Add value to set (key=value string, value=true)
     rv_object_set(set, key_str, rv_new_boolean(true));
@@ -73,17 +79,9 @@ RuntimeValue *datastructures_set_has(RuntimeValue **args, size_t argc)
     RuntimeValue *set = args[0];
     RuntimeValue *value = args[1];
 
-    // Convert value to string key (same logic as set_add)
+    // Convert value to string key
     char key_str[256];
-    if (value->type == RV_STRING) {
-        snprintf(key_str, sizeof(key_str), "s:%s", value->data.string.data);
-    } else if (value->type == RV_NUMBER) {
-        snprintf(key_str, sizeof(key_str), "n:%g", value->data.number);
-    } else if (value->type == RV_BOOLEAN) {
-        snprintf(key_str, sizeof(key_str), "b:%s", value->data.boolean ? "true" : "false");
-    } else {
-        snprintf(key_str, sizeof(key_str), "o:%p", (void *)value);
-    }
+    value_to_set_key(value, key_str, sizeof(key_str));
 
     // Check if key exists in set
     return rv_new_boolean(rv_object_has(set, key_str));
@@ -101,17 +99,9 @@ RuntimeValue *datastructures_set_remove(RuntimeValue **args, size_t argc)
     RuntimeValue *set = args[0];
     RuntimeValue *value = args[1];
 
-    // Convert value to string key (same logic as set_add)
+    // Convert value to string key
     char key_str[256];
-    if (value->type == RV_STRING) {
-        snprintf(key_str, sizeof(key_str), "s:%s", value->data.string.data);
-    } else if (value->type == RV_NUMBER) {
-        snprintf(key_str, sizeof(key_str), "n:%g", value->data.number);
-    } else if (value->type == RV_BOOLEAN) {
-        snprintf(key_str, sizeof(key_str), "b:%s", value->data.boolean ? "true" : "false");
-    } else {
-        snprintf(key_str, sizeof(key_str), "o:%p", (void *)value);
-    }
+    value_to_set_key(value, key_str, sizeof(key_str));
 
     // Check if key exists before removal
     bool existed = rv_object_has(set, key_str);
@@ -137,7 +127,7 @@ RuntimeValue *datastructures_set_size(RuntimeValue **args, size_t argc)
     return rv_new_number((double)size);
 }
 
-// Priority Queue stdlib wrapper functions - TODO: Implement properly
+// Priority Queue stdlib wrapper functions - fully implemented with sorted array
 RuntimeValue *datastructures_pqueue_new(RuntimeValue **args, size_t argc)
 {
     (void)args;  // Unused parameter

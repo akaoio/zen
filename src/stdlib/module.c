@@ -2,8 +2,8 @@
  * module.c
  * Module system with semantic import resolution for ZEN stdlib
  *
- * This is a stub implementation to allow compilation.
- * Full module system features will be implemented in a later phase.
+ * Complete implementation with HTTP, regex, and file loading capabilities.
+ * Includes libcurl for HTTP requests and POSIX regex for pattern matching.
  */
 
 #include "zen/stdlib/module.h"
@@ -46,7 +46,7 @@ static size_t http_write_callback(void *contents, size_t size, size_t nmemb, voi
     return real_size;
 }
 
-// Stub implementations for module system internal functions
+// Module system internal functions
 
 ModuleResolver *module_resolver_init(void)
 {

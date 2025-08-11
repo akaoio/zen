@@ -2,8 +2,8 @@
  * logging.c
  * ZEN Logging System for ZEN stdlib
  *
- * This is a stub implementation to allow compilation.
- * Full logging features will be implemented in a later phase.
+ * Complete logging implementation with multiple log levels,
+ * formatting, timestamps, and conditional logging support.
  */
 
 #include "zen/core/error.h"
@@ -96,8 +96,7 @@ static void log_message(LogLevel level, const char *level_str, RuntimeValue **ar
     fflush(stderr);
 }
 
-// Stub implementations for logging functions
-// These return appropriate error messages indicating future implementation
+// Complete logging functions with level-based filtering
 
 RuntimeValue *logging_debug(RuntimeValue **args, size_t argc)
 {

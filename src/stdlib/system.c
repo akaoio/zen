@@ -2,8 +2,8 @@
  * system.c
  * System Integration Functions for ZEN stdlib
  *
- * This is a stub implementation to allow compilation.
- * Full system integration features will be implemented in a later phase.
+ * Complete implementation with command execution, environment variables,
+ * process management, filesystem operations, and hardware information.
  */
 
 #define _GNU_SOURCE  // For popen/pclose
@@ -19,8 +19,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-// Stub implementations for system functions
-// These return appropriate error messages indicating future implementation
+// System integration functions with full POSIX compliance
 
 RuntimeValue *system_exec(RuntimeValue **args, size_t argc)
 {

@@ -2,8 +2,8 @@
  * logic.c
  * Formal logic and theorem proving functions for ZEN stdlib
  *
- * This is a stub implementation to allow compilation.
- * Full formal logic features will be implemented in Phase 3.
+ * Complete implementation with theorem storage, proof verification,
+ * axiom management, and logical reasoning capabilities.
  */
 
 #include "zen/stdlib/logic.h"
