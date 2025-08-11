@@ -1,0 +1,9 @@
+function test_func a b
+    print "arg1: " + a
+    print "arg2: " + b
+    return a + b
+
+set x 10
+set y 20
+set result test_func x y
+print "Result: " + result

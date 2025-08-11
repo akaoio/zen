@@ -1,0 +1,5 @@
+function double x
+    return x * 2
+
+set result double 5
+print "Double of 5 is: " + result

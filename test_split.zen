@@ -1,0 +1,4 @@
+set text "apple,banana,orange"
+set parts split text ","
+print "Split result: " + parts
+print "Type: " + parts

@@ -38,7 +38,7 @@ parser_T *parser_new(lexer_T *lexer)
     parser->context.in_method_body = false;
     parser->context.in_function_call = false;
     parser->context.in_print_statement = false;
-    
+
     // Initialize recursion depth for proper DEDENT handling
     parser->recursion_depth = 0;
 
@@ -150,7 +150,7 @@ AST_T *parser_parse(parser_T *parser, scope_T *scope)
     // Reset recursion tracking for new parse context
     // This is critical for import statements which create new parse contexts
     parser->recursion_depth = 0;
-    
+
     AST_T *result = parser_parse_statements(parser, scope);
 
     // If parsing encountered errors, return an error AST node instead of crashing

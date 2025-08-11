@@ -1,0 +1,15 @@
+set num 42
+set str "hello"
+set bool true
+set arr 1, 2, 3
+set obj name "test"
+
+print "isNumber(42): " + isNumber num
+print "isString('hello'): " + isString str
+print "isBoolean(true): " + isBoolean bool
+print "isArray([1,2,3]): " + isArray arr
+print "isObject({name:'test'}): " + isObject obj
+
+print "typeof num: " + typeOf num
+print "typeof str: " + typeOf str
+print "typeof arr: " + typeOf arr

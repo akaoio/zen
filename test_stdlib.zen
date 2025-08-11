@@ -1,0 +1,24 @@
+# Test string functions
+set text "  Hello World  "
+print "Original: '" + text + "'"
+print "Trimmed: '" + trim text + "'"
+print "Upper: " + upper text
+print "Lower: " + lower text
+
+# Test string split
+set csv "apple,banana,orange"
+set fruits split csv ","
+print "Fruits: " + fruits
+
+# Test array operations
+set nums 1, 2, 3
+push nums 4
+print "After push: " + nums
+set last pop nums
+print "Popped: " + last
+print "Array now: " + nums
+
+# Test JSON
+set person name "Alice", age 30, skills "coding", "design"
+set json_str json_stringify person
+print "JSON: " + json_str

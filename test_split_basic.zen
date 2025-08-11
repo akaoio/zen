@@ -1,0 +1,4 @@
+set text "hello,world"
+set delim ","
+set parts split text delim
+print parts

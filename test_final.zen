@@ -1,0 +1,32 @@
+# Test comprehensive functionality after cleanup
+set x 10
+set y 20
+print "Math: " + (x + y)
+
+# Test functions
+function greet name
+    return "Hello, " + name
+
+print greet "World"
+
+# Test arrays
+set nums 1, 2, 3
+push nums 4
+print "Array after push: " + nums
+
+# Test string functions
+set text "  ZEN Language  "
+print "Trimmed: '" + trim text + "'"
+print "Uppercase: " + upper text
+
+# Test JSON
+set data name "Test", value 42
+print "JSON: " + json_stringify data
+
+# Test loops
+set i 0
+while i < 3
+    print "Loop iteration: " + i
+    set i i + 1
+
+print "All tests completed successfully\!"

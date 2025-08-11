@@ -1,0 +1,11 @@
+set text "hello world"
+set pattern "l+"
+
+set result regexMatch text pattern
+print result
+
+set replaced regexReplace text pattern "X"
+print replaced
+
+set parts regexSplit "one,two,three" ","
+print parts

@@ -1,0 +1,6 @@
+set text "apple,banana"
+print "Text: " + text
+set delim ","
+print "Delimiter: " + delim
+set result split text delim
+print "Result: " + result

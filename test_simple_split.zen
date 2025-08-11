@@ -1,0 +1,4 @@
+set s "a,b"
+set d ","
+set r split s d
+print r

@@ -1,0 +1,4 @@
+set text "Hello World"
+print upper text
+print lower text
+print length text

@@ -48,7 +48,7 @@ typedef struct PARSER_STRUCT {
         clock_t parse_start_time;
         clock_t total_parse_time;
     } analytics;
-    
+
     // Recursion tracking for proper DEDENT handling
     int recursion_depth;
 } parser_T;
