@@ -1,5 +1,0 @@
-function test x
-    return x * 2
-
-set a 5
-print test a

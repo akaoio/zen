@@ -1,6 +1,0 @@
-function countdown n
-    print "Count: " + n
-    if n > 0
-        countdown n - 1
-
-countdown 3

@@ -2939,9 +2939,13 @@ static RuntimeValue *visitor_execute_user_function_ex(
         return rv_new_null();
     }
 
-    // CRITICAL FIX: Evaluate arguments BEFORE creating function scope
-    // This ensures arguments are evaluated in the caller's scope, not the callee's
-    // This is essential for proper recursive function calls
+    // CRITICAL: Save current scope BEFORE evaluating arguments
+    // This is essential because evaluating arguments may involve recursive calls
+    // which will change visitor->current_scope
+    scope_T *caller_scope = visitor->current_scope;
+
+    // Evaluate arguments in the caller's scope
+    // Arguments may contain recursive function calls
     RuntimeValue **evaluated_args = NULL;
     if (args_size > 0) {
         evaluated_args = memory_alloc(sizeof(RuntimeValue*) * args_size);
@@ -2951,6 +2955,9 @@ static RuntimeValue *visitor_execute_user_function_ex(
                 evaluated_args[i] = rv_new_null();
             }
         }
+        // CRITICAL: Restore current scope after evaluating arguments
+        // Recursive calls in arguments will have changed visitor->current_scope
+        visitor->current_scope = caller_scope;
     }
 
     // Push call frame for profiling and stack management
@@ -2972,9 +2979,9 @@ static RuntimeValue *visitor_execute_user_function_ex(
         return rv_new_null();
     }
     
-    // Set parent scope to enable proper scope chain traversal
-    // Use visitor's current scope as parent to access global functions
-    function_scope->parent = visitor->current_scope;
+    // Set parent scope to the SAVED caller scope, not current scope
+    // which may have been modified during argument evaluation
+    function_scope->parent = caller_scope;
 
     // Copy global variables AND functions into function scope so functions can access them
     // For methods, skip this as they should only access instance variables through self
@@ -3004,8 +3011,8 @@ static RuntimeValue *visitor_execute_user_function_ex(
     // SIMPLIFIED PARAMETER BINDING - Use straightforward value-based approach
     // This eliminates complex AST copying that causes double-free issues
 
-    // Save the visitor's current scope BEFORE any error paths
-    scope_T *previous_scope = visitor->current_scope;
+    // Use the saved caller scope for restoration in error paths
+    scope_T *previous_scope = caller_scope;
 
     // For method calls, we need to bind 'self' as the first parameter
     size_t param_offset = 0;
