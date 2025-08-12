@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+🔴 **CRITICAL REMINDER - ALWAYS USE TIMEOUT**: 
+- **NEVER run `./zen` without timeout** - it can hang forever!
+- **ALWAYS use: `timeout 2 ./zen file.zen`** (2 seconds max)
+- **For longer operations: `timeout 5 ./zen file.zen`**
+- **This is MANDATORY - the interpreter WILL hang on certain inputs**
+
 ⚠️ **CRITICAL**: This project enforces strict compliance through `MANIFEST.json`. You MUST follow the manifest exactly or your code will be rejected by git hooks.
 
 ## Project Overview
@@ -24,8 +30,9 @@ make setup-dev           # Setup git hooks (one-time)
 
 # Build & Run
 make clean && make       # Build the interpreter
-./zen                    # Run REPL
-./zen filename.zen       # Run a ZEN file
+timeout 2 ./zen          # Run REPL (WITH TIMEOUT!)
+timeout 2 ./zen file.zen # Run a ZEN file (ALWAYS USE TIMEOUT!)
+# ⚠️ NEVER run ./zen without timeout - it WILL hang!
 
 # Development
 make format              # Format code
