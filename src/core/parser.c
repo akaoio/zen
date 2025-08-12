@@ -1013,26 +1013,8 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
     }
 
     // Check if this identifier has arguments (function call with args)
-    // CRITICAL: When inside a function call, don't treat ID ID as nested function call
-    // unless we're sure the first ID is actually a function
-    bool has_args = false;
-    if (parser->context.in_function_call) {
-        // Inside function arguments: be more conservative about what counts as "has args"
-        // Only treat it as having args if it's NOT another ID (to avoid ID ID confusion)
-        has_args =
-            (parser->current_token->type != TOKEN_NEWLINE &&
-             parser->current_token->type != TOKEN_EOF &&
-             parser->current_token->type != TOKEN_DEDENT &&
-             parser->current_token->type != TOKEN_RPAREN &&
-             parser->current_token->type != TOKEN_RBRACKET &&
-             parser->current_token->type != TOKEN_COMMA &&
-             parser->current_token->type != TOKEN_DOT &&
-             parser->current_token->type != TOKEN_LBRACKET &&
-             parser->current_token->type != TOKEN_ID &&  // Don't treat ID ID as function call
-             !parser_is_binary_operator(parser->current_token->type));
-    } else {
-        // Outside function arguments: normal behavior
-        has_args = (parser->current_token->type != TOKEN_NEWLINE &&
+    // We check if the next token could be an argument to this function
+    bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
                     parser->current_token->type != TOKEN_EOF &&
                     parser->current_token->type != TOKEN_DEDENT &&
                     parser->current_token->type != TOKEN_RPAREN &&
@@ -1041,7 +1023,6 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                     parser->current_token->type != TOKEN_DOT &&
                     parser->current_token->type != TOKEN_LBRACKET &&
                     !parser_is_binary_operator(parser->current_token->type));
-    }
 
     // Check if this identifier is a stdlib function (for zero-arg calls)
     bool is_stdlib_function = (stdlib_get(original_name) != NULL);

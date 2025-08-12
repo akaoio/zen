@@ -1,0 +1,10 @@
+function fib n
+    if n <= 1
+        return n
+    set a n - 1
+    set b n - 2
+    set fa fib a
+    set fb fib b
+    return fa + fb
+
+print fib 2

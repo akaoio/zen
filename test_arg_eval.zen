@@ -1,0 +1,7 @@
+function test x
+    print "test(" + x + ")"
+    return x
+
+set n 3
+print test(n - 1)
+print test(n - 2)

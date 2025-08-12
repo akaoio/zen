@@ -1,0 +1,7 @@
+function test n
+    print "n = " + n
+    print "n - 1 = " + (n - 1)
+    if n > 0
+        test(n - 1)
+
+test 3
