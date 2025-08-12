@@ -1,8 +1,0 @@
-class Calculator
-    method add a b
-        return a + b
-
-set calc new Calculator
-print "Calling method..."
-set result calc.add 5 3
-print "Result: " + result

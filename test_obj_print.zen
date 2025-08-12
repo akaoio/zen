@@ -1,2 +1,0 @@
-set obj x "hello"
-print obj.x

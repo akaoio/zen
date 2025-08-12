@@ -1,3 +1,0 @@
-set obj x 5
-set val obj.x
-print val

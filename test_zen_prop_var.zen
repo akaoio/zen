@@ -1,3 +1,0 @@
-set person name "Alice", age 30
-set n person.name
-print n

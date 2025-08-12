@@ -1,9 +1,0 @@
-class Test
-    method test
-        return "hello"
-
-set t new Test
-print "Getting method..."
-set m t.test
-print "Got method"
-print m

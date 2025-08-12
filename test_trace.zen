@@ -1,5 +1,0 @@
-function test n
-    print n
-
-test 5
-test 10

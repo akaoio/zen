@@ -1,3 +1,0 @@
-print "Before object"
-set obj {x: 5}
-print "After object"

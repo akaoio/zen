@@ -1,6 +1,0 @@
-print "Start"
-set arr 1, 2, 3
-print "Array created"
-set len arr.length
-print "Length:"
-print len

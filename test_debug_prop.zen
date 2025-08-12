@@ -1,4 +1,0 @@
-set obj x "hello"
-set y obj.x
-print "y is:"
-print y
