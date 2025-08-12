@@ -1032,8 +1032,8 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
          parser->current_token->type == TOKEN_DEDENT);
 
     // Treat as function call if appropriate
-    // When inside function arguments, only treat as function call if it's explicitly a stdlib function
-    // This prevents variables from being misinterpreted as function calls
+    // When inside function arguments, only treat as function call if it's explicitly a stdlib
+    // function This prevents variables from being misinterpreted as function calls
     bool should_be_function_call = false;
     if (parser->context.in_function_call) {
         // Inside function arguments: be conservative
@@ -1043,7 +1043,7 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
         // Outside function arguments: normal behavior
         should_be_function_call = has_args || is_stdlib_function || is_standalone;
     }
-    
+
     if (should_be_function_call) {
         AST_T *function_call = ast_new(AST_FUNCTION_CALL);
         function_call->function_call_name = original_name;  // Transfer ownership

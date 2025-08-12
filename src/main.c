@@ -120,8 +120,8 @@ static bool execute_line(const char *line, scope_T *global_scope)
         // Special handling for control flow markers
         if (result->type == RV_STRING) {
             const char *str_val = rv_get_string(result);
-            if (str_val && (strcmp(str_val, "__BREAK__") == 0 ||
-                            strcmp(str_val, "__CONTINUE__") == 0)) {
+            if (str_val &&
+                (strcmp(str_val, "__BREAK__") == 0 || strcmp(str_val, "__CONTINUE__") == 0)) {
                 // Don't print control flow markers
             } else {
                 char *str = rv_to_string(result);

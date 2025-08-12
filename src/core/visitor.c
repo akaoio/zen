@@ -25,10 +25,10 @@
 #include "zen/stdlib/module.h"
 #include "zen/stdlib/stdlib.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -267,13 +267,13 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         if (!node->ternary_condition || !node->ternary_true_expr || !node->ternary_false_expr) {
             return rv_new_null();
         }
-        
+
         // Evaluate the condition
         RuntimeValue *condition = visitor_visit(visitor, node->ternary_condition);
         if (!condition) {
             return rv_new_null();
         }
-        
+
         // Check if condition is truthy
         bool is_truthy = false;
         if (condition->type == RV_BOOLEAN) {
@@ -285,11 +285,11 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         } else if (condition->type == RV_STRING) {
             is_truthy = (strlen(rv_get_string(condition)) > 0);
         } else {
-            is_truthy = true; // Objects, arrays, functions are truthy
+            is_truthy = true;  // Objects, arrays, functions are truthy
         }
-        
+
         rv_unref(condition);
-        
+
         // Evaluate and return the appropriate branch
         if (is_truthy) {
             return visitor_visit(visitor, node->ternary_true_expr);
@@ -297,7 +297,7 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
             return visitor_visit(visitor, node->ternary_false_expr);
         }
     }
-    
+
     // Control flow
     case AST_IF_STATEMENT:
         return visitor_visit_if_statement(visitor, node);
@@ -1045,7 +1045,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     if (node->function_call_expression) {
         // Evaluate the expression to get the function
         RuntimeValue *func_rv = visitor_visit(visitor, node->function_call_expression);
-        
+
         // Check if this is a stdlib function marker from property access
         if (func_rv && func_rv->type == RV_OBJECT) {
             RuntimeValue *stdlib_marker = rv_object_get(func_rv, "__stdlib_func");
@@ -1053,31 +1053,32 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
                 // This is a stdlib function accessed via dot notation
                 const char *func_name = rv_get_string(stdlib_marker);
                 const ZenStdlibFunction *stdlib_func = stdlib_get(func_name);
-                
+
                 if (stdlib_func) {
                     // Call the stdlib function
                     RuntimeValue **value_args = NULL;
                     size_t argc = (size_t)node->function_call_arguments_size;
-                    
+
                     if (argc > 0) {
                         value_args = memory_alloc(sizeof(RuntimeValue *) * argc);
                         if (!value_args) {
                             rv_unref(func_rv);
                             return rv_new_null();
                         }
-                        
+
                         // Evaluate each argument
                         for (size_t i = 0; i < argc; i++) {
-                            value_args[i] = visitor_visit(visitor, node->function_call_arguments[i]);
+                            value_args[i] =
+                                visitor_visit(visitor, node->function_call_arguments[i]);
                             if (!value_args[i]) {
                                 value_args[i] = rv_new_null();
                             }
                         }
                     }
-                    
+
                     // Call the stdlib function
                     RuntimeValue *result = stdlib_func->func(value_args, argc);
-                    
+
                     // Clean up arguments
                     if (value_args) {
                         for (size_t i = 0; i < argc; i++) {
@@ -1087,13 +1088,13 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
                         }
                         memory_free(value_args);
                     }
-                    
+
                     rv_unref(func_rv);
                     return result ? result : rv_new_null();
                 }
             }
         }
-        
+
         if (!func_rv || func_rv->type != RV_FUNCTION) {
             if (func_rv)
                 rv_unref(func_rv);
@@ -1322,20 +1323,22 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
         // Function not found - check if it's a variable reference instead
         // This handles ZEN's design where standalone identifiers default to function calls
         // but should fallback to variable lookup if no function exists
-        
+
         // First try the new RuntimeValue storage
         RuntimeValue *var_value = scope_get_variable(node->scope, node->function_call_name);
         if (var_value) {
-            LOG_VISITOR_DEBUG("Function '%s' not found, treating as variable reference (new storage)",
-                              node->function_call_name);
+            LOG_VISITOR_DEBUG(
+                "Function '%s' not found, treating as variable reference (new storage)",
+                node->function_call_name);
             return var_value;  // Already referenced by scope_get_variable
         }
-        
+
         // Then try the old AST storage
         AST_T *vdef = scope_get_variable_definition(node->scope, node->function_call_name);
         if (vdef) {
-            LOG_VISITOR_DEBUG("Function '%s' not found, treating as variable reference (old storage)",
-                              node->function_call_name);
+            LOG_VISITOR_DEBUG(
+                "Function '%s' not found, treating as variable reference (old storage)",
+                node->function_call_name);
             // Use the cached runtime value if available
             if (vdef->runtime_value) {
                 return rv_ref((RuntimeValue *)vdef->runtime_value);
@@ -2033,7 +2036,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
     if (node->object->type == AST_VARIABLE) {
         const char *namespace = node->object->variable_name;
         const char *method = node->property_name;
-        
+
         // Map namespace.method to camelCase function name
         char mapped_name[256];
         if (strcmp(namespace, "json") == 0) {
@@ -2044,8 +2047,8 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
             } else if (strcmp(method, "pretty") == 0) {
                 strcpy(mapped_name, "jsonPretty");
             } else {
-                snprintf(mapped_name, sizeof(mapped_name), "json%c%s", 
-                        toupper(method[0]), method + 1);
+                snprintf(
+                    mapped_name, sizeof(mapped_name), "json%c%s", toupper(method[0]), method + 1);
             }
         } else if (strcmp(namespace, "yaml") == 0) {
             if (strcmp(method, "parse") == 0) {
@@ -2053,20 +2056,18 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
             } else if (strcmp(method, "stringify") == 0) {
                 strcpy(mapped_name, "yamlStringify");
             } else {
-                snprintf(mapped_name, sizeof(mapped_name), "yaml%c%s",
-                        toupper(method[0]), method + 1);
+                snprintf(
+                    mapped_name, sizeof(mapped_name), "yaml%c%s", toupper(method[0]), method + 1);
             }
         } else if (strcmp(namespace, "regex") == 0) {
-            snprintf(mapped_name, sizeof(mapped_name), "regex%c%s",
-                    toupper(method[0]), method + 1);
+            snprintf(mapped_name, sizeof(mapped_name), "regex%c%s", toupper(method[0]), method + 1);
         } else if (strcmp(namespace, "http") == 0) {
-            snprintf(mapped_name, sizeof(mapped_name), "http%c%s",
-                    toupper(method[0]), method + 1);
+            snprintf(mapped_name, sizeof(mapped_name), "http%c%s", toupper(method[0]), method + 1);
         } else {
             // Not a known namespace, proceed with normal property access
             goto normal_property_access;
         }
-        
+
         // Look up the mapped function in stdlib
         const ZenStdlibFunction *func = stdlib_get(mapped_name);
         if (func) {
@@ -2078,8 +2079,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
         }
     }
 
-normal_property_access:
-    {
+normal_property_access: {
     // Evaluate the object expression
     RuntimeValue *object_rv = visitor_visit(visitor, node->object);
     if (!object_rv) {
@@ -2190,7 +2190,7 @@ normal_property_access:
     rv_unref(object_rv);
 
     return result;
-    }  // Close brace for normal_property_access label block
+}  // Close brace for normal_property_access label block
 }
 
 /**

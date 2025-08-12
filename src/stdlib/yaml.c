@@ -30,23 +30,29 @@
 #define MAX_YAML_FILE_SIZE (64 * 1024 * 1024)
 
 // Helper functions for RuntimeValue access
-static inline double rv_get_number(const RuntimeValue *value) {
+static inline double rv_get_number(const RuntimeValue *value)
+{
     return value ? value->data.number : 0.0;
 }
 
-static inline bool rv_get_boolean(const RuntimeValue *value) {
+static inline bool rv_get_boolean(const RuntimeValue *value)
+{
     return value ? value->data.boolean : false;
 }
 
-static inline size_t rv_object_count(const RuntimeValue *object) {
-    if (!object || object->type != RV_OBJECT) return 0;
+static inline size_t rv_object_count(const RuntimeValue *object)
+{
+    if (!object || object->type != RV_OBJECT)
+        return 0;
     return object->data.object.count;
 }
 
-static inline const char **rv_object_keys(const RuntimeValue *object) {
-    if (!object || object->type != RV_OBJECT) return NULL;
+static inline const char **rv_object_keys(const RuntimeValue *object)
+{
+    if (!object || object->type != RV_OBJECT)
+        return NULL;
     size_t count = object->data.object.count;
-    const char **keys = memory_alloc(sizeof(char*) * count);
+    const char **keys = memory_alloc(sizeof(char *) * count);
     for (size_t i = 0; i < count; i++) {
         keys[i] = object->data.object.keys[i];
     }
@@ -263,7 +269,8 @@ RuntimeValue *yaml_load_file(const char *filepath)
     if (content_length > MAX_YAML_FILE_SIZE) {
         memory_free(content);
         char error_msg[512];
-        snprintf(error_msg, sizeof(error_msg), "File exceeds maximum size limit (64MB): %s", filepath);
+        snprintf(
+            error_msg, sizeof(error_msg), "File exceeds maximum size limit (64MB): %s", filepath);
         return rv_new_error(error_msg, -1);
     }
 
@@ -736,7 +743,8 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
     case RV_STRING: {
         yaml_event_t event;
         const char *str = rv_get_string((RuntimeValue *)value);
-        if (!str) str = "";
+        if (!str)
+            str = "";
         yaml_scalar_event_initialize(
             &event, NULL, NULL, (unsigned char *)str, -1, 1, 1, YAML_DOUBLE_QUOTED_SCALAR_STYLE);
         result = yaml_emitter_emit(emitter, &event);

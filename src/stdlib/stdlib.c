@@ -156,7 +156,7 @@ static ZenStdlibFunction stdlib_functions[] = {
      json_stringify_pretty_stdlib,
      "Convert value to formatted JSON with indentation"},
     {"jsonLoadFile", json_load_file, "Load and parse JSON from file"},
-    
+
     // YAML Functions
     {"yamlParse", yaml_parse_wrapper, "Parse YAML string to value"},
     {"yamlStringify", yaml_stringify_wrapper, "Convert value to YAML string"},
