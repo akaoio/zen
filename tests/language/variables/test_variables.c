@@ -50,12 +50,20 @@ static RuntimeValue* execute_code_safe(const char* code) {
     
     // Clean up resources
     visitor_free(visitor);
+    
+    // CRITICAL FIX: Don't free scope here - parser_free will free parser->scope
+    // The scope we created is used by AST nodes but not owned by them
+    // We need to free it after AST is freed to avoid use-after-free
+    
+    // Free AST first (it might reference the scope but doesn't own it)
+    ast_free(ast);
+    
+    // Now free the scope we created (not owned by parser)
     scope_free(scope);
+    
+    // Free parser (this frees parser->scope which is different from our scope)
     parser_free(parser);
     lexer_free(lexer);
-    
-    // Always free the AST - it's not related to the RuntimeValue result
-    ast_free(ast);
     
     return result;
 }
