@@ -1,0 +1,33 @@
+// Test various ternary operator cases
+print "=== Ternary Operator Tests ==="
+
+// Basic cases
+set result1 true ? "yes" : "no"
+print "true ? 'yes' : 'no' = " + result1
+
+set result2 false ? "yes" : "no" 
+print "false ? 'yes' : 'no' = " + result2
+
+// Numeric conditions
+set result3 5 > 3 ? "greater" : "less"
+print "5 > 3 ? 'greater' : 'less' = " + result3
+
+set result4 2 > 10 ? "impossible" : "correct"
+print "2 > 10 ? 'impossible' : 'correct' = " + result4
+
+// Null and string conditions
+set result5 null ? "has value" : "is null"
+print "null ? 'has value' : 'is null' = " + result5
+
+set result6 "" ? "not empty" : "empty"  
+print "\"\" ? 'not empty' : 'empty' = " + result6
+
+set result7 "hello" ? "not empty" : "empty"
+print "\"hello\" ? 'not empty' : 'empty' = " + result7
+
+// Nested ternary
+set x 10
+set result8 x > 15 ? "big" : x > 5 ? "medium" : "small"
+print "Nested ternary for x=10: " + result8
+
+print "=== All ternary tests completed ==="

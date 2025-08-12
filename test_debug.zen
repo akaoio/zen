@@ -1,0 +1,4 @@
+set text "hello"
+set pattern "ello"
+set result regex.match text pattern
+print result

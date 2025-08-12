@@ -24,7 +24,7 @@ scope_T *scope_new()
 
     scope->variable_definitions = NULL;
     scope->variable_definitions_size = 0;
-    
+
     // Initialize new variables array
     scope->variables = NULL;
     scope->variables_size = 0;
@@ -57,7 +57,7 @@ void scope_free(scope_T *scope)
         memory_free(scope->variable_definitions);
         scope->variable_definitions = NULL;
     }
-    
+
     // Free new variables array with proper cleanup
     if (scope->variables != NULL) {
         for (size_t i = 0; i < scope->variables_size; i++) {
@@ -149,7 +149,6 @@ AST_T *scope_add_variable_definition(scope_T *scope, AST_T *vdef)
         return NULL;
     }
 
-
     // CRITICAL FIX: Don't create copies of AST nodes - just store references
     // The original AST tree owns the memory, scope just references it
     // This prevents double-free issues entirely
@@ -209,7 +208,6 @@ AST_T *scope_get_variable_definition(scope_T *scope, const char *name)
         return NULL;
     }
 
-
     for (size_t i = 0; i < scope->variable_definitions_size; i++) {
         // Check if the array element is NULL before dereferencing
         if (scope->variable_definitions[i] == NULL) {
@@ -217,7 +215,6 @@ AST_T *scope_get_variable_definition(scope_T *scope, const char *name)
         }
 
         AST_T *vdef = scope->variable_definitions[i];
-
 
         // Double check the pointer is valid and has a name
         if (vdef->variable_definition_variable_name != NULL) {
@@ -242,7 +239,7 @@ int scope_set_variable(scope_T *scope, const char *name, RuntimeValue *value)
     if (!scope || !name || !value) {
         return 0;
     }
-    
+
     // Check if variable already exists
     for (size_t i = 0; i < scope->variables_size; i++) {
         if (scope->variables[i] && scope->variables[i]->name &&
@@ -255,13 +252,13 @@ int scope_set_variable(scope_T *scope, const char *name, RuntimeValue *value)
             return 1;
         }
     }
-    
+
     // Add new variable
     scope_variable_T *new_var = memory_alloc(sizeof(scope_variable_T));
     if (!new_var) {
         return 0;
     }
-    
+
     new_var->name = memory_alloc(strlen(name) + 1);
     if (!new_var->name) {
         memory_free(new_var);
@@ -269,7 +266,7 @@ int scope_set_variable(scope_T *scope, const char *name, RuntimeValue *value)
     }
     strcpy(new_var->name, name);
     new_var->value = rv_ref(value);
-    
+
     // Expand variables array
     if (scope->variables == NULL) {
         scope->variables = memory_alloc(sizeof(scope_variable_T *));
@@ -277,11 +274,11 @@ int scope_set_variable(scope_T *scope, const char *name, RuntimeValue *value)
         scope->variables_size = 1;
     } else {
         scope->variables_size++;
-        scope->variables = memory_realloc(scope->variables,
-                                         scope->variables_size * sizeof(scope_variable_T *));
+        scope->variables =
+            memory_realloc(scope->variables, scope->variables_size * sizeof(scope_variable_T *));
         scope->variables[scope->variables_size - 1] = new_var;
     }
-    
+
     return 1;
 }
 
@@ -296,7 +293,7 @@ RuntimeValue *scope_get_variable(scope_T *scope, const char *name)
     if (!scope || !name) {
         return NULL;
     }
-    
+
     // Search in new variables array
     for (size_t i = 0; i < scope->variables_size; i++) {
         if (scope->variables[i] && scope->variables[i]->name &&
@@ -306,6 +303,6 @@ RuntimeValue *scope_get_variable(scope_T *scope, const char *name)
             }
         }
     }
-    
+
     return NULL;
 }

@@ -1,0 +1,11 @@
+// In script mode, these should NOT display
+set x 5
+x
+set arr [1, 2, 3]
+arr
+
+// Only print should display
+print "X is:"
+print x
+print "Array is:"
+print arr

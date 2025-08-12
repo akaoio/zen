@@ -29,6 +29,30 @@
 // Maximum file size for YAML parsing (64MB) to prevent memory exhaustion
 #define MAX_YAML_FILE_SIZE (64 * 1024 * 1024)
 
+// Helper functions for RuntimeValue access
+static inline double rv_get_number(const RuntimeValue *value) {
+    return value ? value->data.number : 0.0;
+}
+
+static inline bool rv_get_boolean(const RuntimeValue *value) {
+    return value ? value->data.boolean : false;
+}
+
+static inline size_t rv_object_count(const RuntimeValue *object) {
+    if (!object || object->type != RV_OBJECT) return 0;
+    return object->data.object.count;
+}
+
+static inline const char **rv_object_keys(const RuntimeValue *object) {
+    if (!object || object->type != RV_OBJECT) return NULL;
+    size_t count = object->data.object.count;
+    const char **keys = memory_alloc(sizeof(char*) * count);
+    for (size_t i = 0; i < count; i++) {
+        keys[i] = object->data.object.keys[i];
+    }
+    return keys;
+}
+
 // Circular reference detection structure
 typedef struct {
     const RuntimeValue **visited;
@@ -39,7 +63,7 @@ typedef struct {
 
 // Anchor tracking for YAML aliases
 typedef struct {
-    char *name;    // Anchor name
+    char *name;           // Anchor name
     RuntimeValue *value;  // The anchored value
 } YamlAnchor;
 
@@ -51,16 +75,19 @@ typedef struct {
 
 // Forward declarations
 static RuntimeValue *parse_yaml_document(yaml_parser_t *parser);
-static RuntimeValue *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors);
+static RuntimeValue *
+parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors);
 static RuntimeValue *parse_yaml_sequence(yaml_parser_t *parser, YamlAnchorMap *anchors);
 static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *anchors);
 static RuntimeValue *parse_yaml_scalar(yaml_event_t *event);
 static bool
 emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRefTracker *tracker);
-static bool
-emit_yaml_sequence_safe(yaml_emitter_t *emitter, const RuntimeValue *array, YamlRefTracker *tracker);
-static bool
-emit_yaml_mapping_safe(yaml_emitter_t *emitter, const RuntimeValue *object, YamlRefTracker *tracker);
+static bool emit_yaml_sequence_safe(yaml_emitter_t *emitter,
+                                    const RuntimeValue *array,
+                                    YamlRefTracker *tracker);
+static bool emit_yaml_mapping_safe(yaml_emitter_t *emitter,
+                                   const RuntimeValue *object,
+                                   YamlRefTracker *tracker);
 
 // Circular reference detection functions
 static YamlRefTracker *yaml_ref_tracker_new(void);
@@ -217,21 +244,27 @@ RuntimeValue *yaml_load_file(const char *filepath)
     // Check if file exists using io functions
     extern bool io_file_exists_internal(const char *filepath);
     if (!io_file_exists_internal(filepath)) {
-        return rv_new_error("File does not exist: %s", filepath);
+        char error_msg[512];
+        snprintf(error_msg, sizeof(error_msg), "File does not exist: %s", filepath);
+        return rv_new_error(error_msg, -1);
     }
 
     // Read file content first, then check size limit
     extern char *io_read_file_internal(const char *filepath);
     char *content = io_read_file_internal(filepath);
     if (!content) {
-        return rv_new_error("Failed to read file: %s", filepath);
+        char error_msg[512];
+        snprintf(error_msg, sizeof(error_msg), "Failed to read file: %s", filepath);
+        return rv_new_error(error_msg, -1);
     }
 
     // Check file size after reading to prevent memory exhaustion from huge files
     size_t content_length = strlen(content);
     if (content_length > MAX_YAML_FILE_SIZE) {
         memory_free(content);
-        return rv_new_error("File exceeds maximum size limit (64MB): %s", filepath);
+        char error_msg[512];
+        snprintf(error_msg, sizeof(error_msg), "File exceeds maximum size limit (64MB): %s", filepath);
+        return rv_new_error(error_msg, -1);
     }
 
     // Parse YAML content (will also check size, providing double protection)
@@ -253,7 +286,44 @@ RuntimeValue *yaml_load_file_wrapper(RuntimeValue **args, size_t argc)
         return rv_new_error("loadYamlFile requires a filename string", -1);
     }
 
-    return yaml_load_file(args[0]->as.string->data);
+    return yaml_load_file(rv_get_string(args[0]));
+}
+
+/**
+ * @brief Parse YAML string wrapper function for stdlib
+ * @param args Array of Value arguments (yaml string)
+ * @param argc Number of arguments
+ * @return Parsed YAML Value or error
+ */
+RuntimeValue *yaml_parse_wrapper(RuntimeValue **args, size_t argc)
+{
+    if (argc < 1 || !args[0] || args[0]->type != RV_STRING) {
+        return rv_new_error("yamlParse requires a YAML string", -1);
+    }
+
+    return yaml_parse(rv_get_string(args[0]));
+}
+
+/**
+ * @brief Stringify value to YAML wrapper function for stdlib
+ * @param args Array of Value arguments (value to stringify)
+ * @param argc Number of arguments
+ * @return YAML string as RuntimeValue or error
+ */
+RuntimeValue *yaml_stringify_wrapper(RuntimeValue **args, size_t argc)
+{
+    if (argc < 1 || !args[0]) {
+        return rv_new_error("yamlStringify requires a value", -1);
+    }
+
+    char *yaml_str = yaml_stringify(args[0]);
+    if (!yaml_str) {
+        return rv_new_error("Failed to stringify value to YAML", -1);
+    }
+
+    RuntimeValue *result = rv_new_string(yaml_str);
+    memory_free(yaml_str);
+    return result;
 }
 
 // Helper functions for parsing
@@ -324,7 +394,8 @@ static RuntimeValue *parse_yaml_document(yaml_parser_t *parser)
     }
 }
 
-static RuntimeValue *parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors)
+static RuntimeValue *
+parse_yaml_node(yaml_parser_t *parser, yaml_event_t *event, YamlAnchorMap *anchors)
 {
     RuntimeValue *value = NULL;
 
@@ -516,13 +587,15 @@ static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *an
         }
 
         // Handle merge key (<<) specially
-        if (strcmp(key->as.string->data, "<<") == 0) {
+        if (strcmp(rv_get_string(key), "<<") == 0) {
             // Merge the aliased object's properties into this object
             if (value->type == RV_OBJECT) {
                 // Merge all properties from the aliased object
-                for (size_t i = 0; i < value->as.object->length; i++) {
-                    const char *merge_key = value->as.object->pairs[i].key;
-                    RuntimeValue *merge_value = value->as.object->pairs[i].value;
+                size_t merge_count = rv_object_count(value);
+                const char **merge_keys = rv_object_keys(value);
+                for (size_t i = 0; i < merge_count; i++) {
+                    const char *merge_key = merge_keys[i];
+                    RuntimeValue *merge_value = rv_object_get(value, merge_key);
 
                     // Only set if key doesn't already exist (local values override merged ones)
                     if (!rv_object_get(object, merge_key)) {
@@ -533,7 +606,7 @@ static RuntimeValue *parse_yaml_mapping(yaml_parser_t *parser, YamlAnchorMap *an
             rv_unref(value);  // Don't need the merge object itself
         } else {
             // Normal key-value pair
-            rv_object_set(object, key->as.string->data, value);
+            rv_object_set(object, rv_get_string(key), value);
         }
         rv_unref(key);
     }
@@ -638,7 +711,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
 
     case RV_BOOLEAN: {
         yaml_event_t event;
-        const char *bool_str = value->as.boolean ? "true" : "false";
+        const char *bool_str = rv_get_boolean(value) ? "true" : "false";
         yaml_scalar_event_initialize(
             &event, NULL, NULL, (unsigned char *)bool_str, -1, 1, 1, YAML_PLAIN_SCALAR_STYLE);
         result = yaml_emitter_emit(emitter, &event);
@@ -648,10 +721,11 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
     case RV_NUMBER: {
         yaml_event_t event;
         char num_buffer[32];
-        if (value->as.number == floor(value->as.number)) {
-            snprintf(num_buffer, sizeof(num_buffer), "%.0f", value->as.number);
+        double num = rv_get_number(value);
+        if (num == floor(num)) {
+            snprintf(num_buffer, sizeof(num_buffer), "%.0f", num);
         } else {
-            snprintf(num_buffer, sizeof(num_buffer), "%g", value->as.number);
+            snprintf(num_buffer, sizeof(num_buffer), "%g", num);
         }
         yaml_scalar_event_initialize(
             &event, NULL, NULL, (unsigned char *)num_buffer, -1, 1, 1, YAML_PLAIN_SCALAR_STYLE);
@@ -661,8 +735,8 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
 
     case RV_STRING: {
         yaml_event_t event;
-        const char *str =
-            (value->as.string && value->as.string->data) ? value->as.string->data : "";
+        const char *str = rv_get_string((RuntimeValue *)value);
+        if (!str) str = "";
         yaml_scalar_event_initialize(
             &event, NULL, NULL, (unsigned char *)str, -1, 1, 1, YAML_DOUBLE_QUOTED_SCALAR_STYLE);
         result = yaml_emitter_emit(emitter, &event);
@@ -688,7 +762,7 @@ emit_yaml_value_safe(yaml_emitter_t *emitter, const RuntimeValue *value, YamlRef
 static bool
 emit_yaml_sequence_safe(yaml_emitter_t *emitter, const RuntimeValue *array, YamlRefTracker *tracker)
 {
-    if (!array || !array->as.array) {
+    if (!array || array->type != RV_ARRAY) {
         return false;
     }
 
@@ -701,8 +775,10 @@ emit_yaml_sequence_safe(yaml_emitter_t *emitter, const RuntimeValue *array, Yaml
     }
 
     // Emit array items with circular reference protection
-    for (size_t i = 0; i < array->as.array->length; i++) {
-        if (!emit_yaml_value_safe(emitter, array->as.array->items[i], tracker)) {
+    size_t array_len = rv_array_length((RuntimeValue *)array);
+    for (size_t i = 0; i < array_len; i++) {
+        RuntimeValue *item = rv_array_get((RuntimeValue *)array, i);
+        if (!emit_yaml_value_safe(emitter, item, tracker)) {
             return false;
         }
     }
@@ -715,7 +791,7 @@ emit_yaml_sequence_safe(yaml_emitter_t *emitter, const RuntimeValue *array, Yaml
 static bool
 emit_yaml_mapping_safe(yaml_emitter_t *emitter, const RuntimeValue *object, YamlRefTracker *tracker)
 {
-    if (!object || !object->as.object) {
+    if (!object || object->type != RV_OBJECT) {
         return false;
     }
 
@@ -728,9 +804,11 @@ emit_yaml_mapping_safe(yaml_emitter_t *emitter, const RuntimeValue *object, Yaml
     }
 
     // Emit object pairs with circular reference protection
-    for (size_t i = 0; i < object->as.object->length; i++) {
-        const char *key = object->as.object->pairs[i].key;
-        const RuntimeValue *value = object->as.object->pairs[i].value;
+    size_t obj_count = rv_object_count(object);
+    const char **obj_keys = rv_object_keys(object);
+    for (size_t i = 0; i < obj_count; i++) {
+        const char *key = obj_keys[i];
+        const RuntimeValue *value = rv_object_get((RuntimeValue *)object, key);
 
         // Emit key
         yaml_scalar_event_initialize(

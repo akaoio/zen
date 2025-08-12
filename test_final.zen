@@ -1,0 +1,33 @@
+// Final verification of all fixes
+set data name "Alice", age 30, skills ["Python", "JavaScript"]
+
+// Test dot notation with variables
+print "JSON dot notation:"
+set j json.stringify data
+print j
+set parsed json.parse j
+print parsed
+
+print "\nYAML dot notation:"
+set y yaml.stringify data
+print y
+
+print "\nRegex dot notation with variables:"
+set text "hello world"
+set pattern "world"
+set m regex.match text pattern
+print m
+
+// Test camelCase with variables
+print "\nCamelCase functions with variables:"
+set a 5
+set b 10
+print max a b
+print min a b
+
+// Test space-separated arguments
+print "\nDirect function calls:"
+print regexMatch "test" "est"
+print max 15 8
+
+print "\nAll tests completed successfully\!"

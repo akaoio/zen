@@ -1,0 +1,10 @@
+// In script mode, these should NOT display
+null
+true
+[1, 2, 3]
+
+// Only print should show
+print "Script mode: only print statements show output"
+print "Null value: " + toString null
+print "Boolean value: " + toString true
+print "Array value: " + toString [1, 2, 3]

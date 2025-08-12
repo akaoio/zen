@@ -1,0 +1,18 @@
+// This is a script file - nothing should auto-display
+null
+true  
+false
+5
+"hello"
+[1, 2, 3]
+{x: 10}
+
+// Only print statements should show output
+print "=== Testing display of all types with print ==="
+print "Null: " + toString null
+print "True: " + toString true  
+print "False: " + toString false
+print "Number: " + toString 5
+print "String: hello"
+print "Array: " + toString [1, 2, 3]
+print "Object: " + toString {x: 10}

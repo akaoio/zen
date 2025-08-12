@@ -206,7 +206,8 @@ static RegexCache *compile_pattern_cached(const char *pattern)
  * @param pattern Original pattern string
  * @return Error message Value
  */
-static RuntimeValue *get_pcre2_error_message(int error_code, PCRE2_SIZE error_offset, const char *pattern)
+static RuntimeValue *
+get_pcre2_error_message(int error_code, PCRE2_SIZE error_offset, const char *pattern)
 {
     PCRE2_UCHAR8 error_buffer[ZEN_MAX_ERROR_BUFFER_SIZE];
     pcre2_get_error_message_8(error_code, error_buffer, sizeof(error_buffer));
@@ -356,8 +357,9 @@ RuntimeValue *regex_match(const RuntimeValue *text_value, const RuntimeValue *pa
  * @param replacement_value String value containing replacement text
  * @return New string with replacements or error Value
  */
-RuntimeValue *
-regex_replace(const RuntimeValue *text_value, const RuntimeValue *pattern_value, const RuntimeValue *replacement_value)
+RuntimeValue *regex_replace(const RuntimeValue *text_value,
+                            const RuntimeValue *pattern_value,
+                            const RuntimeValue *replacement_value)
 {
     // Validate inputs
     RuntimeValue *error = validate_string_input(text_value, "text");

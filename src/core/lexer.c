@@ -474,6 +474,10 @@ token_T *lexer_collect_string(lexer_T *lexer)
             case '0':
                 ch_to_add = '\0';
                 break;
+            case '!':
+                // Treat \! as just ! (for bash compatibility)
+                ch_to_add = '!';
+                break;
             default:
                 APPEND_CHAR('\\');
                 APPEND_CHAR(lexer->c);

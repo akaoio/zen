@@ -15,7 +15,7 @@ typedef struct SCOPE_STRUCT {
     // DEPRECATED: Direct AST storage causes memory issues
     AST_T **variable_definitions;
     size_t variable_definitions_size;
-    
+
     // NEW: Proper variable storage with RuntimeValues
     scope_variable_T **variables;
     size_t variables_size;

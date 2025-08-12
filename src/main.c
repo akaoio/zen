@@ -114,12 +114,40 @@ static bool execute_line(const char *line, scope_T *global_scope)
     // Execute the parsed code
     RuntimeValue *result = visitor_visit(visitor, root);
 
-    // Print result if it's not null
-    // In REPL mode, we show RV_NULL as "null" since user might have explicitly typed null
-    if (result && result->type != RV_NULL) {
-        char *str = rv_to_string(result);
-        printf("%s\n", str);
-        memory_free(str);
+    // In REPL mode, display ALL types of values including null
+    // This allows users to see the result of any expression they type
+    if (result) {
+        // Special handling for control flow markers
+        if (result->type == RV_STRING) {
+            const char *str_val = rv_get_string(result);
+            if (str_val && (strcmp(str_val, "__BREAK__") == 0 ||
+                            strcmp(str_val, "__CONTINUE__") == 0)) {
+                // Don't print control flow markers
+            } else {
+                char *str = rv_to_string(result);
+                printf("%s\n", str);
+                memory_free(str);
+            }
+        } else if (result->type == RV_OBJECT) {
+            // Check for internal markers like __RETURN__
+            RuntimeValue *return_marker = rv_object_get(result, "__RETURN__");
+            if (return_marker) {
+                // This is a return marker, display the return value
+                char *str = rv_to_string(return_marker);
+                printf("%s\n", str);
+                memory_free(str);
+            } else {
+                // Normal object, display it
+                char *str = rv_to_string(result);
+                printf("%s\n", str);
+                memory_free(str);
+            }
+        } else {
+            // All other types including RV_NULL, RV_FUNCTION, RV_ERROR
+            char *str = rv_to_string(result);
+            printf("%s\n", str);
+            memory_free(str);
+        }
     }
 
     // Clean up RuntimeValue
@@ -245,27 +273,9 @@ int main(int argc, char *argv[])
                 // assignments, etc.)
                 RuntimeValue *result = visitor_visit(visitor, root);
 
-                // Handle any meaningful return value from execution
-                // Don't print RV_NULL as it represents "no output" rather than literal values
-                // Also don't print control flow markers
-                if (result && result->type != RV_NULL) {
-                    // Check if it's a control flow marker string
-                    if (result->type == RV_STRING) {
-                        const char *str_val = rv_get_string(result);
-                        if (str_val && (strcmp(str_val, "__BREAK__") == 0 ||
-                                        strcmp(str_val, "__CONTINUE__") == 0)) {
-                            // Don't print control flow markers
-                        } else {
-                            char *str = rv_to_string(result);
-                            printf("%s\n", str);
-                            memory_free(str);
-                        }
-                    } else {
-                        char *str = rv_to_string(result);
-                        printf("%s\n", str);
-                        memory_free(str);
-                    }
-                }
+                // In file/script mode, we do NOT print expression results
+                // Only explicit print statements should produce output
+                // This is different from interactive REPL mode where expressions are displayed
 
                 // Clean up RuntimeValue
                 if (result) {

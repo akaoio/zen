@@ -1,0 +1,24 @@
+// Test JSON functionality
+set user name "Alice", age 30
+set json_str jsonStringify user
+print "JSON: "
+print json_str
+
+// Test parsing JSON back
+set parsed jsonParse json_str
+print "Parsed name: "
+print parsed.name
+
+// Test File I/O
+set content "Hello from ZEN!"
+writeFile "test_output.txt" content
+set read_back readFile "test_output.txt"
+print "File content: "
+print read_back
+
+// Test regex (if available)
+set pattern "world"
+set text "hello world"
+set matches regexMatch text pattern
+print "Regex result: "
+print matches

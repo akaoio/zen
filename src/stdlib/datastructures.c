@@ -21,7 +21,8 @@
  */
 
 // Helper function to convert RuntimeValue to set key string
-static void datastructures_value_to_set_key(const RuntimeValue *value, char *key_str, size_t key_size)
+static void
+datastructures_value_to_set_key(const RuntimeValue *value, char *key_str, size_t key_size)
 {
     if (value->type == RV_STRING) {
         snprintf(key_str, key_size, "s:%s", value->data.string.data);

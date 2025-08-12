@@ -1,0 +1,11 @@
+// Test regex functions with camelCase
+set text "hello world, hello universe"
+set pattern "hello"
+
+print "Testing regexMatch:"
+set matches regexMatch text pattern
+print matches
+
+print "Testing regexSplit:"
+set parts regexSplit text ", "
+print parts

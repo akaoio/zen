@@ -1,0 +1,10 @@
+// Test YAML functions
+set data name "Bob", age 25, skills ["python", "javascript"]
+
+print "Testing yaml.stringify:"
+set y yaml.stringify data
+print y
+
+print "Testing yaml.parse:"
+set parsed yaml.parse y  
+print parsed

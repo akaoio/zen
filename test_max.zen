@@ -1,0 +1,4 @@
+set a 5
+set b 10
+set result max a b
+print result

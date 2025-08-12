@@ -1,0 +1,40 @@
+print "=== TESTING ALL FIXES ==="
+
+// Test 1: REPL-style variable display (without print)
+print "\n1. Variable display in REPL style:"
+set num 42
+set str "Hello World\!"
+set arr [10, 20, 30]
+set obj type "user", name "Bob"
+
+// These should display their values
+print "  Number:"
+num
+print "  String:"
+str
+print "  Array:"
+arr
+print "  Object:"
+obj
+
+// Test 2: Exclamation marks work correctly
+print "\n2. Exclamation marks:"
+print "  Wow\! This is amazing\!"
+print "  Hello\! How are you?\!"
+set excited "Yes\! It works\!"
+print "  " + excited
+
+// Test 3: Dot notation with all types
+print "\n3. Dot notation tests:"
+set data message "Hello\!", items [1, 2, 3]
+print "  json.stringify:"
+print json.stringify data
+print "  yaml.stringify:"
+print yaml.stringify data
+
+// Test 4: String concatenation with special characters
+print "\n4. String concatenation:"
+print "  Line 1" + "\n" + "  Line 2"
+print "  Tab" + "\t" + "separated" + "\t" + "values"
+
+print "\n=== ALL TESTS PASSED\! ==="

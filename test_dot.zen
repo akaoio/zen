@@ -1,0 +1,12 @@
+// Test dot notation
+set user name "Alice", age 30
+print "User object:"
+print user
+
+print "Testing json.stringify:"
+set j json.stringify user
+print j
+
+print "Testing json.parse:"
+set parsed json.parse j
+print parsed

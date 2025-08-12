@@ -1,0 +1,13 @@
+null
+true
+false
+5
+"hello"
+[1, 2, 3]
+set x 100
+x
+set f function y
+  return y * 2
+f
+print "Test print"
+exit

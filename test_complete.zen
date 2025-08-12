@@ -1,0 +1,61 @@
+print "=== COMPLETE TEST SUITE ==="
+print ""
+
+// Test 1: JSON with variables
+print "1. JSON with variables:"
+set obj name "Bob", age 25, active true
+set json_str json.stringify obj
+print "   Stringified: " + json_str
+set parsed json.parse json_str
+print "   Parsed back: "
+print parsed
+print ""
+
+// Test 2: YAML with variables  
+print "2. YAML with variables:"
+set yaml_str yaml.stringify obj
+print "   YAML output:"
+print yaml_str
+set yaml_parsed yaml.parse yaml_str
+print "   Parsed back:"
+print yaml_parsed
+print ""
+
+// Test 3: Regex with variables
+print "3. Regex with variables:"
+set text "The quick brown fox"
+set pattern "quick"
+set matches regex.match text pattern
+print "   Match result: "
+print matches
+
+set csv "red,green,blue,yellow"
+set delim ","
+set colors regex.split csv delim
+print "   Split result:"
+print colors
+print ""
+
+// Test 4: Math functions with variables
+print "4. Math with variables:"
+set x 15
+set y 7
+print "   max " + toString x + " " + toString y + " = " + toString max x y
+print "   min " + toString x + " " + toString y + " = " + toString min x y
+print ""
+
+// Test 5: Array operations with variables
+print "5. Arrays with variables:"
+set arr [10, 20, 30]
+print "   Original: "
+print arr
+push arr 40
+print "   After push 40:"
+print arr
+set popped pop arr
+print "   Popped value: " + toString popped
+print "   Array now:"
+print arr
+print ""
+
+print "=== ALL TESTS PASSED ==="

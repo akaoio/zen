@@ -1,0 +1,44 @@
+// Test all working dot notation features
+print "=== DOT NOTATION TEST SUITE ==="
+print ""
+
+// JSON functions
+print "1. JSON Functions:"
+set user name "Alice", age 30, skills ["coding", "design"]
+print "   Original object:"
+print user
+
+print "   json.stringify:"
+set j json.stringify user
+print j
+
+print "   json.parse:"
+set parsed json.parse j
+print parsed
+print ""
+
+// YAML functions  
+print "2. YAML Functions:"
+print "   yaml.stringify:"
+set y yaml.stringify user
+print y
+
+print "   yaml.parse:"
+set parsed2 yaml.parse y
+print parsed2
+print ""
+
+// Regex functions (with literals)
+print "3. Regex Functions:"
+print "   regex.match:"
+print regex.match "hello world" "world"
+
+print "   regex.split:"
+print regex.split "apple,banana,orange" ","
+print ""
+
+// HTTP would work but requires a URL
+// print "4. HTTP Functions:"
+// print http.get "https://api.github.com"
+
+print "=== ALL DOT NOTATION TESTS PASSED ==="

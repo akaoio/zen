@@ -52,11 +52,26 @@ extern RuntimeValue *datastructures_pqueue_size(RuntimeValue **args, size_t argc
 
 // Wrapper functions for file I/O that need stdlib interface
 extern RuntimeValue *json_load_file(RuntimeValue **args, size_t argc);
+extern RuntimeValue *yaml_parse_wrapper(RuntimeValue **args, size_t argc);
+extern RuntimeValue *yaml_stringify_wrapper(RuntimeValue **args, size_t argc);
 extern RuntimeValue *yaml_load_file_wrapper(RuntimeValue **args, size_t argc);
 
 // Forward declarations for module system functions
 extern RuntimeValue *module_import_stdlib(RuntimeValue **args, size_t argc);
 extern RuntimeValue *module_require_stdlib(RuntimeValue **args, size_t argc);
+
+// Forward declarations for HTTP functions
+extern RuntimeValue *http_get_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_post_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_put_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_delete_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *http_timeout_stdlib(RuntimeValue **args, size_t argc);
+
+// Forward declarations for Regex functions
+extern RuntimeValue *regex_match_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *regex_replace_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *regex_split_stdlib(RuntimeValue **args, size_t argc);
+extern RuntimeValue *regex_compile_stdlib(RuntimeValue **args, size_t argc);
 
 // Forward declarations for logging functions
 extern RuntimeValue *logging_debug(RuntimeValue **args, size_t argc);
@@ -71,7 +86,6 @@ extern RuntimeValue *logging_debug_if(RuntimeValue **args, size_t argc);
 extern RuntimeValue *logging_set_level(RuntimeValue **args, size_t argc);
 extern RuntimeValue *logging_with_context(RuntimeValue **args, size_t argc);
 extern RuntimeValue *logging_get_level(RuntimeValue **args, size_t argc);
-
 
 // Forward declarations for stdlib functions
 extern RuntimeValue *json_stringify_pretty_stdlib(RuntimeValue **args, size_t argc);
@@ -142,6 +156,11 @@ static ZenStdlibFunction stdlib_functions[] = {
      json_stringify_pretty_stdlib,
      "Convert value to formatted JSON with indentation"},
     {"jsonLoadFile", json_load_file, "Load and parse JSON from file"},
+    
+    // YAML Functions
+    {"yamlParse", yaml_parse_wrapper, "Parse YAML string to value"},
+    {"yamlStringify", yaml_stringify_wrapper, "Convert value to YAML string"},
+    {"yamlLoadFile", yaml_load_file_wrapper, "Load and parse YAML from file"},
 
     // Array Functions
     {"push", array_push_stdlib, "Add element to end of array"},
@@ -188,18 +207,18 @@ static ZenStdlibFunction stdlib_functions[] = {
     {"hardwareCpu", system_hardware_cpu, "Get CPU hardware information"},
     {"hardwareMemory", system_hardware_memory, "Get memory hardware information"},
 
-    // HTTP Functions - Phase 2B (commented out - requires http.c to be compiled)
-    // {"httpGet", http_get_stdlib, "Perform HTTP GET request"},
-    // {"httpPost", http_post_stdlib, "Perform HTTP POST request"},
-    // {"httpPut", http_put_stdlib, "Perform HTTP PUT request"},
-    // {"httpDelete", http_delete_stdlib, "Perform HTTP DELETE request"},
-    // {"httpTimeout", http_timeout_stdlib, "Set HTTP timeout configuration"},
+    // HTTP Functions - Phase 2B
+    {"httpGet", http_get_stdlib, "Perform HTTP GET request"},
+    {"httpPost", http_post_stdlib, "Perform HTTP POST request"},
+    {"httpPut", http_put_stdlib, "Perform HTTP PUT request"},
+    {"httpDelete", http_delete_stdlib, "Perform HTTP DELETE request"},
+    {"httpTimeout", http_timeout_stdlib, "Set HTTP timeout configuration"},
 
-    // Regex Functions - Phase 2B (commented out - requires regex.c to be compiled)
-    // {"regexMatch", regex_match_stdlib, "Match text against regex pattern"},
-    // {"regexReplace", regex_replace_stdlib, "Replace pattern matches with replacement"},
-    // {"regexSplit", regex_split_stdlib, "Split text by regex pattern"},
-    // {"regexCompile", regex_compile_stdlib, "Compile regex pattern for reuse"},
+    // Regex Functions - Phase 2B
+    {"regexMatch", regex_match_stdlib, "Match text against regex pattern"},
+    {"regexReplace", regex_replace_stdlib, "Replace pattern matches with replacement"},
+    {"regexSplit", regex_split_stdlib, "Split text by regex pattern"},
+    {"regexCompile", regex_compile_stdlib, "Compile regex pattern for reuse"},
 
     // Logic and Formal Reasoning Functions - Phase 3
     {"theoremDefine", logic_theorem_define, "Define a new theorem with natural language statement"},

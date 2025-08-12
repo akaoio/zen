@@ -1,0 +1,16 @@
+// Test that script mode doesn't auto-display values
+// These expressions should NOT print anything
+5 + 5
+"Hello World"
+[1, 2, 3]
+max 10 20
+
+// Only explicit print should show output
+print "=== Script Mode Test ==="
+print "Only print statements produce output\!"
+print "5 + 5 = " + toString (5 + 5)
+print "Max of 10 and 20: " + toString max 10 20
+
+// Test exclamation marks work
+print "Wow\! This works great\!"
+print "Amazing\! No more backslash issues\!"

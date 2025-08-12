@@ -393,15 +393,13 @@ char *http_serialize_request_data(const RuntimeValue *data_value, char **content
     *content_type = NULL;
 
     switch (data_value->type) {
-    case RV_STRING:
-        {
-            const char *str = rv_get_string((RuntimeValue *)data_value);
-            if (str) {
-                *content_type = memory_strdup("text/plain");
-                return memory_strdup(str);
-            }
+    case RV_STRING: {
+        const char *str = rv_get_string((RuntimeValue *)data_value);
+        if (str) {
+            *content_type = memory_strdup("text/plain");
+            return memory_strdup(str);
         }
-        break;
+    } break;
 
     case RV_OBJECT:
     case RV_ARRAY: {
@@ -436,9 +434,9 @@ char *http_serialize_request_data(const RuntimeValue *data_value, char **content
  * @return Response object or error value
  */
 static RuntimeValue *http_perform_request(const char *method,
-                                   const RuntimeValue *url_value,
-                                   const RuntimeValue *data_value,
-                                   const RuntimeValue *headers_value)
+                                          const RuntimeValue *url_value,
+                                          const RuntimeValue *data_value,
+                                          const RuntimeValue *headers_value)
 {
     // Validate URL
     if (!url_value || url_value->type != RV_STRING) {
@@ -601,7 +599,9 @@ RuntimeValue *http_get(const RuntimeValue *url_value, const RuntimeValue *header
  * @param headers_value Object value containing headers (optional, can be null)
  * @return Object value with response data (status, body, headers) or error value
  */
-RuntimeValue *http_post(const RuntimeValue *url_value, const RuntimeValue *data_value, const RuntimeValue *headers_value)
+RuntimeValue *http_post(const RuntimeValue *url_value,
+                        const RuntimeValue *data_value,
+                        const RuntimeValue *headers_value)
 {
     return http_perform_request("POST", url_value, data_value, headers_value);
 }
@@ -613,7 +613,9 @@ RuntimeValue *http_post(const RuntimeValue *url_value, const RuntimeValue *data_
  * @param headers_value Object value containing headers (optional, can be null)
  * @return Object value with response data (status, body, headers) or error value
  */
-RuntimeValue *http_put(const RuntimeValue *url_value, const RuntimeValue *data_value, const RuntimeValue *headers_value)
+RuntimeValue *http_put(const RuntimeValue *url_value,
+                       const RuntimeValue *data_value,
+                       const RuntimeValue *headers_value)
 {
     return http_perform_request("PUT", url_value, data_value, headers_value);
 }

@@ -1,0 +1,19 @@
+// Test with camelCase names (current working syntax)
+set user name "Alice", age 30
+print "User object:"
+print user
+
+print "Testing jsonStringify:"
+set j jsonStringify user
+print j
+
+print "Testing jsonParse:"
+set parsed jsonParse j
+print parsed
+
+// Test regex
+print "Testing regex:"
+set text "hello world"
+set pattern "world"
+set matches regexMatch text pattern
+print matches

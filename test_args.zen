@@ -1,0 +1,8 @@
+set text "hello"
+set pattern "ello"
+print "Arguments:"
+print text
+print pattern
+print "Testing camelCase:"
+set result regexMatch text pattern  
+print result

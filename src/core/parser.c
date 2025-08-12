@@ -1031,10 +1031,20 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
         (parser->current_token->type == TOKEN_NEWLINE || parser->current_token->type == TOKEN_EOF ||
          parser->current_token->type == TOKEN_DEDENT);
 
-
     // Treat as function call if appropriate
-    // When inside function arguments, only treat as function call if it has arguments or is stdlib
-    if (has_args || is_stdlib_function || (is_standalone && !parser->context.in_function_call)) {
+    // When inside function arguments, only treat as function call if it's explicitly a stdlib function
+    // This prevents variables from being misinterpreted as function calls
+    bool should_be_function_call = false;
+    if (parser->context.in_function_call) {
+        // Inside function arguments: be conservative
+        // Only treat as function if it's a known stdlib function AND (has args or is standalone)
+        should_be_function_call = is_stdlib_function && (has_args || is_standalone);
+    } else {
+        // Outside function arguments: normal behavior
+        should_be_function_call = has_args || is_stdlib_function || is_standalone;
+    }
+    
+    if (should_be_function_call) {
         AST_T *function_call = ast_new(AST_FUNCTION_CALL);
         function_call->function_call_name = original_name;  // Transfer ownership
         function_call->function_call_arguments = NULL;
@@ -1077,8 +1087,9 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                     break;
                 }
 
-                // Parse as primary expression to avoid consuming too much
-                AST_T *arg = parser_parse_primary_expr(parser, scope);
+                // Parse as ternary expression to handle operators correctly
+                // This allows arguments like "a + b", "x > y", etc.
+                AST_T *arg = parser_parse_ternary_expr(parser, scope);
                 if (!arg)
                     break;
 
@@ -1967,7 +1978,8 @@ AST_T *parser_parse_object_literal(parser_T *parser, scope_T *scope)
  */
 AST_T *parser_parse_ternary_expr(parser_T *parser, scope_T *scope)
 {
-    return parser_parse_null_coalescing_expr(parser, scope);
+    // Actually parse ternary expressions (condition ? true_expr : false_expr)
+    return parser_parse_ternary(parser, scope);
 }
 
 /**

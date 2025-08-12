@@ -1,0 +1,11 @@
+// Test regex functions
+set text "hello world, hello universe"
+set pattern "hello"
+
+print "Testing regex.match:"
+set matches regex.match text pattern
+print matches
+
+print "Testing regex.split:"
+set parts regex.split text ", "
+print parts

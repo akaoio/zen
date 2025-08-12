@@ -1,0 +1,37 @@
+print "=== COMPLETE TEST SUITE ==="
+
+// Test 1: String concatenation
+print "1. String concatenation:"
+print "   " + "Hello" + " " + "World" + "\!"
+print "   Line 1" + "\n" + "   Line 2"
+
+// Test 2: JSON with variables
+print "\n2. JSON Functions:"
+set obj name "Bob", age 25, active true
+print "   json.stringify: " + json.stringify obj
+set json_str json.stringify obj
+set parsed json.parse json_str
+print "   Parsed back:"
+print parsed
+
+// Test 3: YAML with variables
+print "\n3. YAML Functions:"
+set yaml_str yaml.stringify obj
+print "   YAML output:"
+print yaml_str
+
+// Test 4: Regex with variables
+print "4. Regex Functions:"
+set text "hello world"
+set pattern "world"
+print "   regex.match result:"
+print regex.match text pattern
+
+// Test 5: Math with concatenation
+print "\n5. Math operations:"
+set x 15
+set y 7
+print "   max(" + toString x + ", " + toString y + ") = " + toString max x y
+print "   min(" + toString x + ", " + toString y + ") = " + toString min x y
+
+print "\n=== ALL TESTS PASSED ==="

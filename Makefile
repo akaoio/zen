@@ -1,9 +1,24 @@
 # ZEN Language Makefile
 CC = gcc
 CFLAGS = -g -Wall -Wextra -Werror -std=c11 -Isrc/include
-LDFLAGS = -lm -lcurl -lpcre2-8
 PREFIX ?= /usr/local
 BUILD_DIR ?= .
+
+# Conditional YAML support detection
+HAVE_YAML := $(shell ./check_yaml.sh 2>/dev/null || echo no)
+
+# YAML source selection
+ifeq ($(HAVE_YAML),yes)
+    YAML_SRC = src/stdlib/yaml.c
+    YAML_LIB = -lyaml
+    $(info YAML support: Enabled (using libyaml))
+else
+    YAML_SRC = src/stdlib/yaml_stub.c
+    YAML_LIB =
+    $(info YAML support: Disabled (using stub, install libyaml-dev for full support))
+endif
+
+LDFLAGS = -lm -lcurl -lpcre2-8 $(YAML_LIB)
 
 # Main executable
 exec = $(BUILD_DIR)/zen
@@ -13,7 +28,7 @@ sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c) \
            src/stdlib/convert.c src/stdlib/datastructures.c \
            src/stdlib/logic.c src/stdlib/module.c src/stdlib/system.c \
            src/stdlib/datetime.c src/stdlib/logging.c \
-           src/stdlib/http.c src/stdlib/regex.c
+           src/stdlib/http.c src/stdlib/regex.c $(YAML_SRC)
 objects := $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
 
 # Directories
