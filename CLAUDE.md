@@ -11,7 +11,7 @@ ZEN is a lightweight, mobile-friendly, markdown-compatible scripting language wi
 **Key Resources:**
 - Language Specification: `docs/idea.md` (complete 564-line spec)
 - **Manifest**: `MANIFEST.json` (🔒 ENFORCED specification of ALL files/functions)
-- Current Implementation: Full interpreter with multi-swarm AI development
+- Current Implementation: Full interpreter in development
 
 ## Development Commands
 
@@ -35,31 +35,11 @@ make test-integration   # Run integration tests
 make test-valgrind      # Check for memory leaks
 make lint              # Static analysis (cppcheck)
 
-# Project Visualization
-make vision            # See real-time project status and agent activity
 
 # Installation
 sudo make install PREFIX=/usr/local
 ```
 
-## Multi-Swarm Architecture
-
-This project uses a unique **Multi-Swarm Agentic Development System** with 32 AI agents working in parallel:
-
-- **4 Swarms** (swarm-1, swarm-2, swarm-3, swarm-4) 
-- **8 Agents per swarm**: 1 Queen, 1 Architect, 6 Specialized Workers
-- **Specialized roles**: lexer, parser, types, runtime, memory, stdlib workers
-
-### Swarm Commands
-```bash
-# Activate specific swarms
-swarm-1 work            # Activate swarm-1 coordination
-swarm-2 continue        # Continue swarm-2 tasks
-make vision            # Monitor all 32 agents in real-time
-
-# Task management
-node task.js list --active    # See active tasks across all swarms
-```
 
 ## Architectural Overview
 
@@ -100,7 +80,8 @@ Input → Lexer → Parser → AST → Visitor → Output
 ## ZEN Language Key Points
 
 Critical language features to remember:
-- `=` is comparison (not `==`)
+- **`=` is comparison** (not assignment) - use `set` for assignment
+- No `==` operator - just use `=` for equality checks
 - No semicolons (newline-terminated)
 - No parentheses in function calls  
 - Indentation-based blocks
@@ -133,7 +114,6 @@ if average student.scores >= 80
 - Memory management with leak detection and debugging capabilities
 - Error handling with location tracking and source context display
 - I/O operations and standard library functions
-- Multi-swarm coordination system with 32 AI agents
 
 ✅ **Working Programs:**
 ```zen
@@ -226,11 +206,6 @@ Test files are organized by component in `tests/` with framework in `tests/frame
 - Use comprehensive error system with location tracking
 - Provide clear error messages with line/column info
 
-### Integration with Multi-Swarm System
-- When making changes, check `make vision` to see active agent work
-- Coordinate with swarm queens using `swarm-N work` commands
-- Create task files using `node task.js create` for visibility
-- Follow file ownership tracking to avoid conflicts
 
 ## Performance Considerations
 
@@ -252,19 +227,9 @@ Test files are organized by component in `tests/` with framework in `tests/frame
 # Check memory leaks with comprehensive tracking
 make test-valgrind
 
-# Monitor all 32 AI agents working on the project
-make vision
-
 # Check manifest compliance before committing
 make enforce
 ```
 
-## Multi-Swarm Coordination
 
-This project uniquely employs 32 specialized AI agents. When contributing:
-1. Check `make vision` to see current agent activity
-2. Use `swarm-N work` to coordinate with specific swarms
-3. Follow manifest compliance strictly - agents enforce this automatically
-4. All work is tracked through task management system for full visibility
-
-The multi-swarm system has achieved 100% implementation of the core ZEN interpreter, making this a fully functional programming language ready for real-world use.
+- In zen, for var in string, we use {{var}} instead of ${var}

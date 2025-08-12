@@ -1,3 +1,0 @@
-set text "hello"
-set pattern "ello"
-print regexMatch(text, pattern)

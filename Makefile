@@ -4,19 +4,10 @@ CFLAGS = -g -Wall -Wextra -Werror -std=c11 -Isrc/include
 PREFIX ?= /usr/local
 BUILD_DIR ?= .
 
-# Conditional YAML support detection
-HAVE_YAML := $(shell ./check_yaml.sh 2>/dev/null || echo no)
-
-# YAML source selection
-ifeq ($(HAVE_YAML),yes)
-    YAML_SRC = src/stdlib/yaml.c
-    YAML_LIB = -lyaml
-    $(info YAML support: Enabled (using libyaml))
-else
-    YAML_SRC = src/stdlib/yaml_stub.c
-    YAML_LIB =
-    $(info YAML support: Disabled (using stub, install libyaml-dev for full support))
-endif
+# YAML support enabled with libyaml
+YAML_SRC = src/stdlib/yaml.c
+YAML_LIB = -lyaml
+$(info YAML support: Enabled (using libyaml))
 
 LDFLAGS = -lm -lcurl -lpcre2-8 $(YAML_LIB)
 

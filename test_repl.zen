@@ -1,2 +1,0 @@
-set x 5
-x ./zen --debug-ast test_repl.zen 2

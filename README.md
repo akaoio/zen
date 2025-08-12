@@ -6,6 +6,10 @@
 
 ZEN is an experimental programming language concept that aims to provide natural syntax with minimal punctuation. However, the current implementation is severely limited and unstable.
 
+### Key Syntax Difference
+- **`=` is for comparison** (not assignment) - use `set` for assignment
+- Example: `if x = 5` checks if x equals 5, while `set x 5` assigns 5 to x
+
 ### Current State
 
 - **Partially implemented** - Only basic features work
@@ -55,8 +59,12 @@ echo 'print 2 + 3' | ./path/to/zen
 ```zen
 # This works
 print "Hello World"
-set x 42
+set x 42        # Assignment uses 'set'
 print x
+
+# Comparison uses '='
+if x = 42
+    print "x is 42"
 
 # This also works
 function greet name
@@ -79,16 +87,9 @@ for i in 1..5
     print i
 ```
 
-## Development Methodology
+## Development Status
 
-This project was developed using an experimental AI-assisted approach with multiple AI agents. However, the implementation is incomplete and the claims of "100% completion" by the AI system are demonstrably false.
-
-### The Reality
-
-- The `make vision` tool shows "100% complete" but this is incorrect
-- Actual implementation is maybe 20% of specified features
-- Even implemented features have serious bugs
-- No comprehensive testing was done
+The current implementation is incomplete with many features still in development. This is an ongoing experimental project exploring natural syntax programming language design.
 
 ## Building
 

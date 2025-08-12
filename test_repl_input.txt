@@ -1,9 +1,0 @@
-set x 5
-x
-set arr [1, 2, 3]
-arr
-set obj name "Alice"
-obj
-set s "hello"
-s
-exit

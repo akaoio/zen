@@ -16,6 +16,7 @@ AST_T *parser_parse_try_catch(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_throw(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_import_statement(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_export_statement(parser_T *parser, scope_T *scope);
+AST_T *parser_parse_indented_object(parser_T *parser, scope_T *scope);
 
 /**
  * @brief Create parser instance
@@ -418,8 +419,9 @@ AST_T *parser_parse_function_call(parser_T *parser, scope_T *scope)
             break;
         }
 
-        // Parse the argument as a primary expression to avoid consuming too much
-        AST_T *arg = parser_parse_primary_expr(parser, scope);
+        // Parse the argument as a ternary expression to handle all expression types
+        // including parenthesized expressions and function calls
+        AST_T *arg = parser_parse_ternary_expr(parser, scope);
         if (!arg) {
             LOG_PARSER_DEBUG("No argument parsed, breaking");
             break;
@@ -543,8 +545,8 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
         parser_eat(parser, TOKEN_NEWLINE);
         if (parser->current_token->type == TOKEN_INDENT) {
             parser_eat(parser, TOKEN_INDENT);
-            // Parse the indented content as an expression
-            value = parser_parse_expr(parser, scope);
+            // Parse the indented content as an object literal
+            value = parser_parse_indented_object(parser, scope);
             // Consume the DEDENT if present
             if (parser->current_token->type == TOKEN_DEDENT) {
                 parser_eat(parser, TOKEN_DEDENT);
@@ -1032,13 +1034,11 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
          parser->current_token->type == TOKEN_DEDENT);
 
     // Treat as function call if appropriate
-    // When inside function arguments, only treat as function call if it's explicitly a stdlib
-    // function This prevents variables from being misinterpreted as function calls
     bool should_be_function_call = false;
     if (parser->context.in_function_call) {
-        // Inside function arguments: be conservative
-        // Only treat as function if it's a known stdlib function AND (has args or is standalone)
-        should_be_function_call = is_stdlib_function && (has_args || is_standalone);
+        // Inside function arguments: if it has arguments, it's likely a function call
+        // This allows "print greet 'World'" to work correctly
+        should_be_function_call = has_args || is_stdlib_function;
     } else {
         // Outside function arguments: normal behavior
         should_be_function_call = has_args || is_stdlib_function || is_standalone;
@@ -1850,6 +1850,126 @@ int parser_peek_for_object_literal_strict(parser_T *parser)
     }
 
     return is_strict_object_literal;
+}
+
+/**
+ * @brief Parse indented object block
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* Object AST node
+ */
+AST_T *parser_parse_indented_object(parser_T *parser, scope_T *scope)
+{
+    char **keys = NULL;
+    AST_T **values = NULL;
+    size_t pair_count = 0;
+
+    // Parse indented key-value pairs
+    while (parser->current_token->type == TOKEN_ID) {
+        char *key = memory_strdup(parser->current_token->value);
+        parser_eat(parser, TOKEN_ID);
+
+        AST_T *value = NULL;
+
+        // Check what comes after the key
+        if (parser->current_token->type == TOKEN_NEWLINE) {
+            // Nested object case: key followed by newline and indent
+            parser_eat(parser, TOKEN_NEWLINE);
+            if (parser->current_token->type == TOKEN_INDENT) {
+                parser_eat(parser, TOKEN_INDENT);
+                // Recursively parse nested object
+                value = parser_parse_indented_object(parser, scope);
+                // Consume DEDENT
+                if (parser->current_token->type == TOKEN_DEDENT) {
+                    parser_eat(parser, TOKEN_DEDENT);
+                }
+            } else {
+                // Key with no value - use key as variable reference
+                value = ast_new_variable(key);
+            }
+        } else if (parser->current_token->type == TOKEN_COMMA ||
+                   parser->current_token->type == TOKEN_DEDENT ||
+                   parser->current_token->type == TOKEN_EOF) {
+            // Key with no value - use key as variable reference
+            value = ast_new_variable(key);
+        } else {
+            // Key with value on same line
+            // Parse the value (string, number, etc.)
+            switch (parser->current_token->type) {
+            case TOKEN_STRING:
+                value = parser_parse_string(parser, scope);
+                break;
+            case TOKEN_NUMBER:
+                value = parser_parse_number(parser, scope);
+                break;
+            case TOKEN_TRUE:
+            case TOKEN_FALSE:
+                value = parser_parse_boolean(parser, scope);
+                break;
+            case TOKEN_NULL:
+                value = parser_parse_null(parser, scope);
+                break;
+            case TOKEN_LBRACKET:
+                value = parser_parse_array(parser, scope);
+                break;
+            case TOKEN_ID:
+                // Another identifier - could be variable reference or start of nested object
+                // For now, treat as variable reference
+                value = parser_parse_variable(parser, scope);
+                break;
+            default:
+                value = ast_new(AST_NOOP);
+                break;
+            }
+        }
+
+        // Add key-value pair
+        pair_count++;
+        keys = memory_realloc(keys, pair_count * sizeof(char *));
+        values = memory_realloc(values, pair_count * sizeof(AST_T *));
+        keys[pair_count - 1] = key;
+        values[pair_count - 1] = value;
+
+        // Check for continuation
+        if (parser->current_token->type == TOKEN_COMMA) {
+            parser_eat(parser, TOKEN_COMMA);
+            // Skip optional newline after comma
+            if (parser->current_token->type == TOKEN_NEWLINE) {
+                parser_eat(parser, TOKEN_NEWLINE);
+            }
+        } else if (parser->current_token->type == TOKEN_NEWLINE) {
+            parser_eat(parser, TOKEN_NEWLINE);
+            // If no more content at this indentation level, we're done
+            if (parser->current_token->type == TOKEN_DEDENT ||
+                parser->current_token->type == TOKEN_EOF) {
+                break;
+            }
+        } else {
+            // No comma or newline, we're done
+            break;
+        }
+    }
+
+    // Create object AST node
+    AST_T *object = ast_new_object(keys, values, pair_count);
+    if (object) {
+        object->scope = scope;
+    }
+
+    // Clean up keys (ast_new_object copies them)
+    if (keys) {
+        for (size_t i = 0; i < pair_count; i++) {
+            if (keys[i]) {
+                memory_free(keys[i]);
+            }
+        }
+        memory_free(keys);
+    }
+    if (values) {
+        memory_free(values);
+    }
+
+    return object;
 }
 
 /**

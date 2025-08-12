@@ -1,8 +1,0 @@
-// Test regex with print statements
-print "Testing regex.match with literals:"
-set m regex.match "hello world" "world"
-print m
-
-print "Testing regex.split with literals:"
-set s regex.split "apple,banana,orange" ","
-print s
