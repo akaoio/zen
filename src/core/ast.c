@@ -13,13 +13,18 @@
  */
 AST_T *ast_new(int type)
 {
-    // Temporarily disable pool due to corruption issues
-    AST_T *ast = memory_alloc(sizeof(AST_T));
+    // Try to allocate from memory pool first for better performance
+    AST_T *ast = ast_pool_alloc_node(type);
     if (!ast) {
-        return NULL;  // Allocation failed
+        // Fallback to direct allocation if pool fails
+        ast = memory_alloc(sizeof(AST_T));
+        if (!ast) {
+            return NULL;  // Allocation failed
+        }
+        memset(ast, 0, sizeof(AST_T));
+        ast->type = type;
+        ast->pooled = false;  // Mark as not pooled
     }
-    memset(ast, 0, sizeof(AST_T));
-    ast->type = type;
 
     ast->scope = (void *)0;
 
@@ -314,10 +319,9 @@ void ast_free(AST_T *ast)
     if (!ast)
         return;
 
-    // Check for use-after-free protection: if the node's type field has been corrupted,
-    // it likely means the memory was already freed. This prevents double-free crashes.
-    if (ast->type < 0 || ast->type > AST_MATHEMATICAL_FUNCTION) {
-        return;  // Node appears to be already freed or corrupted
+    // Prevent double-free by checking if already freed
+    if (ast->type < 0) {
+        return;  // Already freed
     }
 
     // Free string values
@@ -478,11 +482,15 @@ void ast_free(AST_T *ast)
         rv_unref(ast->runtime_value);
     }
 
-    // Mark as freed to prevent double-free (set type to invalid value)
+    // Mark as freed to help detect use-after-free
     ast->type = -1;
 
-    // Free the AST node itself
-    memory_free(ast);
+    // Free the AST node itself (use pool if it was pool-allocated)
+    if (ast->pooled) {
+        ast_pool_free_node(ast);
+    } else {
+        memory_free(ast);
+    }
 }
 
 /* ============================================================================

@@ -125,10 +125,17 @@ AST_T *scope_add_function_definition(scope_T *scope, AST_T *fdef)
  */
 AST_T *scope_get_function_definition(scope_T *scope, const char *fname)
 {
+    // Add NULL checks to prevent segfault
+    if (!scope || !fname || !scope->function_definitions) {
+        return NULL;
+    }
+
     for (size_t i = 0; i < scope->function_definitions_size; i++) {
         AST_T *fdef = scope->function_definitions[i];
 
-        if (strcmp(fdef->function_definition_name, fname) == 0) {
+        // Check that fdef and its name are valid before comparing
+        if (fdef && fdef->function_definition_name &&
+            strcmp(fdef->function_definition_name, fname) == 0) {
             return fdef;
         }
     }

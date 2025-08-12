@@ -259,3 +259,6 @@ make enforce
 - Invest time to understand the fundamental problem
 - Proper root cause fixes prevent future issues and save time long-term
 - Workarounds create technical debt and compound problems
+- When a bug/error/issue happen -> find and fix the root cause, do not use workaround.
+- All functions must follow this naming format: <filename>_<functionname>
+- Do not stub, mock, todos etc... We'd rather go slowly but precisely functional, than go fast but not functional.

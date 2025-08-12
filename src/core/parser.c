@@ -52,8 +52,8 @@ parser_T *parser_new(lexer_T *lexer)
         return NULL;
     }
 
-    // AST memory pools are not currently in use - AST uses direct memory allocation
-    // ast_pool_global_init();  // Disabled to prevent memory management conflicts
+    // Initialize AST memory pools for better performance
+    ast_pool_global_init();
 
     return parser;
 }
@@ -80,8 +80,8 @@ void parser_free(parser_T *parser)
         scope_free(parser->scope);
     }
 
-    // AST memory pools are not currently in use - cleanup not needed
-    // ast_pool_global_cleanup();  // Disabled to prevent memory management conflicts
+    // Cleanup AST memory pools
+    ast_pool_global_cleanup();
 
     memory_free(parser);
 }
@@ -1013,14 +1013,35 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
     }
 
     // Check if this identifier has arguments (function call with args)
-    bool has_args =
-        (parser->current_token->type != TOKEN_NEWLINE && parser->current_token->type != TOKEN_EOF &&
-         parser->current_token->type != TOKEN_DEDENT &&
-         parser->current_token->type != TOKEN_RPAREN &&
-         parser->current_token->type != TOKEN_RBRACKET &&
-         parser->current_token->type != TOKEN_COMMA && parser->current_token->type != TOKEN_DOT &&
-         parser->current_token->type != TOKEN_LBRACKET &&
-         !parser_is_binary_operator(parser->current_token->type));
+    // CRITICAL: When inside a function call, don't treat ID ID as nested function call
+    // unless we're sure the first ID is actually a function
+    bool has_args = false;
+    if (parser->context.in_function_call) {
+        // Inside function arguments: be more conservative about what counts as "has args"
+        // Only treat it as having args if it's NOT another ID (to avoid ID ID confusion)
+        has_args =
+            (parser->current_token->type != TOKEN_NEWLINE &&
+             parser->current_token->type != TOKEN_EOF &&
+             parser->current_token->type != TOKEN_DEDENT &&
+             parser->current_token->type != TOKEN_RPAREN &&
+             parser->current_token->type != TOKEN_RBRACKET &&
+             parser->current_token->type != TOKEN_COMMA &&
+             parser->current_token->type != TOKEN_DOT &&
+             parser->current_token->type != TOKEN_LBRACKET &&
+             parser->current_token->type != TOKEN_ID &&  // Don't treat ID ID as function call
+             !parser_is_binary_operator(parser->current_token->type));
+    } else {
+        // Outside function arguments: normal behavior
+        has_args = (parser->current_token->type != TOKEN_NEWLINE &&
+                    parser->current_token->type != TOKEN_EOF &&
+                    parser->current_token->type != TOKEN_DEDENT &&
+                    parser->current_token->type != TOKEN_RPAREN &&
+                    parser->current_token->type != TOKEN_RBRACKET &&
+                    parser->current_token->type != TOKEN_COMMA &&
+                    parser->current_token->type != TOKEN_DOT &&
+                    parser->current_token->type != TOKEN_LBRACKET &&
+                    !parser_is_binary_operator(parser->current_token->type));
+    }
 
     // Check if this identifier is a stdlib function (for zero-arg calls)
     bool is_stdlib_function = (stdlib_get(original_name) != NULL);
@@ -1036,9 +1057,12 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
     // Treat as function call if appropriate
     bool should_be_function_call = false;
     if (parser->context.in_function_call) {
-        // Inside function arguments: if it has arguments, it's likely a function call
-        // This allows "print greet 'World'" to work correctly
-        should_be_function_call = has_args || is_stdlib_function;
+        // Inside function arguments: treat as function call if it has arguments OR is stdlib
+        // CRITICAL FIX: Also check if it's a user-defined function to allow zero-arg calls
+        // This allows both "print greet 'World'" and "print get_value" to work
+        AST_T *fdef = scope_get_function_definition(scope, original_name);
+        bool is_user_function = (fdef != NULL);
+        should_be_function_call = has_args || is_stdlib_function || is_user_function;
     } else {
         // Outside function arguments: normal behavior
         should_be_function_call = has_args || is_stdlib_function || is_standalone;
@@ -1266,9 +1290,20 @@ AST_T *parser_parse_object(parser_T *parser, scope_T *scope)
     char **keys = NULL;
     AST_T **values = NULL;
     size_t pair_count = 0;
-    size_t max_pairs = 100;  // Safety limit to prevent infinite loops
+    size_t capacity = 16;  // Initial capacity, will grow as needed
 
-    while (parser->current_token->type == TOKEN_ID && pair_count < max_pairs) {
+    while (parser->current_token->type == TOKEN_ID) {
+        // Grow arrays if needed
+        if (pair_count >= capacity) {
+            capacity *= 2;
+            keys = memory_realloc(keys, capacity * sizeof(char *));
+            values = memory_realloc(values, capacity * sizeof(AST_T *));
+            if (!keys || !values) {
+                // Memory allocation failed - stop parsing
+                LOG_ERROR(LOG_CAT_PARSER, "Memory allocation failed for object pairs");
+                break;
+            }
+        }
         char *key = memory_strdup(parser->current_token->value);
         parser_eat(parser, TOKEN_ID);
 
@@ -1692,12 +1727,14 @@ int parser_detect_object_literal(parser_T *parser)
             // CRITICAL FIX: Also check user-defined functions in scope
             if (parser->scope && scope_get_function_definition(parser->scope, tokens[0]->value)) {
                 // This is a user-defined function - not an object literal
+                is_object_literal = 0;
                 goto cleanup_and_return;
             }
 
             // Check stdlib functions
             if (stdlib_get(tokens[0]->value) != NULL) {
                 // This is a stdlib function - not an object literal
+                is_object_literal = 0;
                 goto cleanup_and_return;
             }
         }
@@ -1740,13 +1777,20 @@ int parser_detect_object_literal(parser_T *parser)
                     }
                 }
             } else if (tokens[1]->type == TOKEN_ID) {
-                // ID ID pattern - could be object literal with identifier value
-                // Check for function call indicators
-                if (token_count < 3 ||
-                    (tokens[2]->type != TOKEN_LPAREN &&
-                     !parser_is_binary_operator(tokens[2]->type) && tokens[2]->type != TOKEN_DOT &&
-                     tokens[2]->type != TOKEN_LBRACKET)) {
+                // ID ID pattern - ambiguous, could be function call OR object literal
+                // BE CONSERVATIVE: Only treat as object literal if we have strong evidence
+                // Require a comma or additional pairs to disambiguate
+                if (token_count >= 3 && tokens[2]->type == TOKEN_COMMA) {
+                    // ID ID, pattern - likely object literal
                     is_object_literal = 1;
+                } else if (token_count >= 4 && tokens[2]->type == TOKEN_ID) {
+                    // ID ID ID pattern - could be multi-arg function call
+                    // Don't treat as object literal
+                    is_object_literal = 0;
+                } else {
+                    // ID ID alone is ambiguous - assume it's a function call
+                    // This is the safer default for ZEN's syntax
+                    is_object_literal = 0;
                 }
             } else if (tokens[1]->type == TOKEN_COMMA) {
                 // ID, pattern - comma-separated keys without values
@@ -1983,9 +2027,20 @@ AST_T *parser_parse_object_literal(parser_T *parser, scope_T *scope)
     char **keys = NULL;
     AST_T **values = NULL;
     size_t pair_count = 0;
-    size_t max_pairs = 100;  // Safety limit to prevent infinite loops
+    size_t capacity = 16;  // Initial capacity, will grow as needed
 
-    while (parser->current_token->type == TOKEN_ID && pair_count < max_pairs) {
+    while (parser->current_token->type == TOKEN_ID) {
+        // Grow arrays if needed
+        if (pair_count >= capacity) {
+            capacity *= 2;
+            keys = memory_realloc(keys, capacity * sizeof(char *));
+            values = memory_realloc(values, capacity * sizeof(AST_T *));
+            if (!keys || !values) {
+                // Memory allocation failed - stop parsing
+                LOG_ERROR(LOG_CAT_PARSER, "Memory allocation failed for object pairs");
+                break;
+            }
+        }
         char *key = memory_strdup(parser->current_token->value);
         parser_eat(parser, TOKEN_ID);
 

@@ -76,6 +76,9 @@ typedef struct VISITOR_STRUCT {
 
     // Hot function detection
     size_t hot_function_threshold;
+
+    // Current execution scope for proper variable resolution
+    struct SCOPE_STRUCT *current_scope;
 } visitor_T;
 
 /**

@@ -4,6 +4,7 @@
 #include "zen/core/memory.h"
 
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -161,10 +162,10 @@ ASTPoolType ast_pool_select_pool_for_type(int ast_type)
     // we'll distribute across pools to balance load.
     (void)ast_type;  // Suppress unused parameter warning
 
-    // Simple round-robin distribution
-    static int pool_counter = 0;
-    ASTPoolType selected = (ASTPoolType)(pool_counter % AST_POOL_COUNT);
-    pool_counter++;
+    // Thread-safe round-robin distribution
+    static _Atomic int pool_counter = 0;
+    int counter_val = atomic_fetch_add(&pool_counter, 1);
+    ASTPoolType selected = (ASTPoolType)(counter_val % AST_POOL_COUNT);
 
     return selected;
 }
@@ -331,6 +332,24 @@ static void ast_memory_pool_return_to_pool(ASTMemoryPool *pool, AST_T *node)
     }
 
     pthread_mutex_lock(&pool->mutex);
+
+    // Critical fix: Check for double-free by verifying node isn't already in free list
+    AST_T *current = pool->free_list;
+    while (current) {
+        if (current == node) {
+            // Double-free detected - node is already in free list
+            pthread_mutex_unlock(&pool->mutex);
+            AST_POOL_DEBUG("Double-free prevented for node %p", (void *)node);
+            return;
+        }
+        current = current->next;
+    }
+
+    // Clear the pooled flag to prevent use-after-free
+    node->pooled = false;
+
+    // Clear type to mark as freed (helps detect use-after-free)
+    node->type = -1;
 
     // Add to free list
     node->next = pool->free_list;

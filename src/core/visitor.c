@@ -35,9 +35,15 @@
 
 // Advanced runtime optimization constants
 #define DEFAULT_HOT_FUNCTION_THRESHOLD 100
-#define MAX_CALL_STACK_DEPTH           10000
-#define PROFILE_CAPACITY_INCREMENT     50
-#define HOT_FUNCTION_TIME_THRESHOLD    0.001  // 1ms
+// Get max call stack depth from environment or use default
+static int get_max_call_stack_depth()
+{
+    const char *env = getenv("ZEN_MAX_CALL_DEPTH");
+    return env ? atoi(env) : 10000;
+}
+#define MAX_CALL_STACK_DEPTH        get_max_call_stack_depth()
+#define PROFILE_CAPACITY_INCREMENT  50
+#define HOT_FUNCTION_TIME_THRESHOLD 0.001  // 1ms
 
 // Forward declarations
 static RuntimeValue *visitor_ast_to_value(AST_T *node);
@@ -134,6 +140,9 @@ visitor_T *visitor_new()
 
     // Set hot function threshold
     visitor->hot_function_threshold = DEFAULT_HOT_FUNCTION_THRESHOLD;
+
+    // Initialize current execution scope
+    visitor->current_scope = NULL;
 
     if (!visitor->function_profiles) {
         memory_free(visitor);
@@ -911,7 +920,9 @@ RuntimeValue *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
 
     // Use the new scope_set_variable function to store RuntimeValue directly
     // This completely separates runtime values from AST nodes
-    if (!scope_set_variable(node->scope, node->variable_definition_variable_name, value)) {
+    // Use visitor's current scope if available, otherwise use node's scope
+    scope_T *target_scope = visitor->current_scope ? visitor->current_scope : node->scope;
+    if (!scope_set_variable(target_scope, node->variable_definition_variable_name, value)) {
         LOG_ERROR(LOG_CAT_VISITOR,
                   "Failed to set variable '%s' in scope",
                   node->variable_definition_variable_name);
@@ -941,16 +952,22 @@ RuntimeValue *visitor_visit_variable_definition(visitor_T *visitor, AST_T *node)
  */
 RuntimeValue *visitor_visit_function_definition(visitor_T *visitor, AST_T *node)
 {
-    if (!visitor || !node || !node->scope) {
+    if (!visitor || !node) {
+        return rv_new_null();
+    }
+
+    // Use visitor's current scope if available, otherwise use node's scope
+    scope_T *target_scope = visitor->current_scope ? visitor->current_scope : node->scope;
+    if (!target_scope) {
         return rv_new_null();
     }
 
     LOG_VISITOR_DEBUG(
-        "Defining function '%s' in scope %p", node->function_definition_name, (void *)node->scope);
-    scope_add_function_definition(node->scope, node);
+        "Defining function '%s' in scope %p", node->function_definition_name, (void *)target_scope);
+    scope_add_function_definition(target_scope, node);
 
     // Return function as runtime value
-    return rv_new_function(node, node->scope);
+    return rv_new_function(node, target_scope);
 }
 
 /**
@@ -961,22 +978,29 @@ RuntimeValue *visitor_visit_function_definition(visitor_T *visitor, AST_T *node)
  */
 RuntimeValue *visitor_visit_variable(visitor_T *visitor, AST_T *node)
 {
-    if (!visitor || !node || !node->variable_name || !node->scope) {
+    if (!visitor || !node || !node->variable_name) {
         LOG_ERROR(LOG_CAT_VISITOR,
-                  "Invalid variable access (visitor=%p, node=%p, name=%s, scope=%p)",
+                  "Invalid variable access (visitor=%p, node=%p, name=%s)",
                   (void *)visitor,
                   (void *)node,
-                  node && node->variable_name ? node->variable_name : "NULL",
-                  node ? (void *)node->scope : NULL);
+                  node && node->variable_name ? node->variable_name : "NULL");
+        return rv_new_null();
+    }
+
+    // Use the visitor's current scope if available, otherwise fall back to node's scope
+    scope_T *lookup_scope = visitor->current_scope ? visitor->current_scope : node->scope;
+
+    if (!lookup_scope) {
+        LOG_ERROR(LOG_CAT_VISITOR, "No scope available for variable '%s'", node->variable_name);
         return rv_new_null();
     }
 
     // Looking up variable in scope using new RuntimeValue storage
     LOG_VISITOR_DEBUG(
-        "Looking up variable '%s' in scope %p", node->variable_name, (void *)node->scope);
+        "Looking up variable '%s' in scope %p", node->variable_name, (void *)lookup_scope);
 
     // Try the new scope_get_variable function first
-    RuntimeValue *value = scope_get_variable(node->scope, node->variable_name);
+    RuntimeValue *value = scope_get_variable(lookup_scope, node->variable_name);
 
     if (value) {
         // Variable found in new storage
@@ -984,7 +1008,7 @@ RuntimeValue *visitor_visit_variable(visitor_T *visitor, AST_T *node)
     }
 
     // Fall back to old method for compatibility during migration
-    AST_T *vdef = scope_get_variable_definition(node->scope, node->variable_name);
+    AST_T *vdef = scope_get_variable_definition(lookup_scope, node->variable_name);
 
     if (vdef != NULL) {
         // Variable found in old storage
@@ -1317,7 +1341,17 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     }
 
     // Look up user-defined function
-    AST_T *fdef = scope_get_function_definition(node->scope, node->function_call_name);
+    // Use the visitor's current scope if available, otherwise fall back to node's scope
+    scope_T *lookup_scope = visitor->current_scope ? visitor->current_scope : node->scope;
+
+    if (!lookup_scope) {
+        LOG_ERROR(LOG_CAT_VISITOR,
+                  "No scope available for function lookup of '%s'",
+                  node->function_call_name);
+        return rv_new_null();
+    }
+
+    AST_T *fdef = scope_get_function_definition(lookup_scope, node->function_call_name);
 
     if (fdef == NULL) {
         // Function not found - check if it's a variable reference instead
@@ -1325,7 +1359,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
         // but should fallback to variable lookup if no function exists
 
         // First try the new RuntimeValue storage
-        RuntimeValue *var_value = scope_get_variable(node->scope, node->function_call_name);
+        RuntimeValue *var_value = scope_get_variable(lookup_scope, node->function_call_name);
         if (var_value) {
             LOG_VISITOR_DEBUG(
                 "Function '%s' not found, treating as variable reference (new storage)",
@@ -1334,7 +1368,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
         }
 
         // Then try the old AST storage
-        AST_T *vdef = scope_get_variable_definition(node->scope, node->function_call_name);
+        AST_T *vdef = scope_get_variable_definition(lookup_scope, node->function_call_name);
         if (vdef) {
             LOG_VISITOR_DEBUG(
                 "Function '%s' not found, treating as variable reference (old storage)",
@@ -2079,7 +2113,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
         }
     }
 
-normal_property_access: {
+normal_property_access : {
     // Evaluate the object expression
     RuntimeValue *object_rv = visitor_visit(visitor, node->object);
     if (!object_rv) {
@@ -2910,14 +2944,27 @@ static RuntimeValue *visitor_execute_user_function_ex(
         return rv_new_null();
     }
 
-    // Copy global variables into function scope so functions can access them
+    // Copy global variables AND functions into function scope so functions can access them
     // For methods, skip this as they should only access instance variables through self
-    if (!is_method_call && fdef->scope && fdef->scope->variable_definitions) {
-        for (size_t i = 0; i < fdef->scope->variable_definitions_size; i++) {
-            AST_T *global_var = fdef->scope->variable_definitions[i];
-            // Only add if it's actually a variable definition
-            if (global_var && global_var->type == AST_VARIABLE_DEFINITION) {
-                scope_add_variable_definition(function_scope, global_var);
+    if (!is_method_call && fdef->scope) {
+        // Copy variable definitions
+        if (fdef->scope->variable_definitions) {
+            for (size_t i = 0; i < fdef->scope->variable_definitions_size; i++) {
+                AST_T *global_var = fdef->scope->variable_definitions[i];
+                // Only add if it's actually a variable definition
+                if (global_var && global_var->type == AST_VARIABLE_DEFINITION) {
+                    scope_add_variable_definition(function_scope, global_var);
+                }
+            }
+        }
+
+        // CRITICAL FIX: Also copy function definitions so functions can call each other
+        if (fdef->scope->function_definitions) {
+            for (size_t i = 0; i < fdef->scope->function_definitions_size; i++) {
+                AST_T *func_def = fdef->scope->function_definitions[i];
+                if (func_def && func_def->type == AST_FUNCTION_DEFINITION) {
+                    scope_add_function_definition(function_scope, func_def);
+                }
             }
         }
     }
@@ -3032,8 +3079,14 @@ static RuntimeValue *visitor_execute_user_function_ex(
     // This causes corruption when functions are called multiple times
     // Only use visitor_update_ast_scope which is temporary
 
-    // Execute function body with proper scope management
-    visitor_update_ast_scope(fdef->function_definition_body, function_scope);
+    // CRITICAL FIX: Use visitor's current_scope instead of modifying AST nodes
+    // This prevents corruption in recursive calls since AST nodes are shared
+
+    // Save the visitor's current scope
+    scope_T *previous_scope = visitor->current_scope;
+
+    // Set the function scope as the current execution scope
+    visitor->current_scope = function_scope;
 
     RuntimeValue *result = NULL;
     if (!visitor_has_exception(visitor)) {
@@ -3080,12 +3133,17 @@ static RuntimeValue *visitor_execute_user_function_ex(
                 // Free the value AST we created with runtime_value_to_ast
                 if (param_def->variable_definition_value) {
                     ast_free(param_def->variable_definition_value);
+                    param_def->variable_definition_value = NULL;  // Prevent double-free
                 }
                 // Free the parameter definition node
                 ast_free(param_def);
             }
         }
     }
+
+    // CRITICAL FIX: Restore the visitor's previous scope
+    // This is essential for proper scope management in recursive calls
+    visitor->current_scope = previous_scope;
 
     // Free the function scope (now safe - no AST nodes to double-free)
     scope_free(function_scope);
@@ -3290,30 +3348,7 @@ static void visitor_update_function_profile(visitor_T *visitor,
  * @return Optimized AST node
  */
 
-/**
- * @brief Apply tail call optimization if applicable
- * @param visitor Visitor instance
- * @param node AST node to optimize
- * @return Optimized AST node
- */
-/* TODO: Update to RuntimeValue
-static AST_T *visitor_apply_tail_call_optimization(visitor_T *visitor, AST_T *node)
-{
-    if (!visitor || !node || !visitor->tail_call_optimization) {
-        return node;
-    }
-
-    // Basic tail call detection - function call as last statement in function
-    if (node->type == AST_FUNCTION_CALL && visitor->call_stack &&
-        visitor->call_stack->function_def) {
-        LOG_VISITOR_DEBUG("Tail call optimization candidate detected");
-        // In a complete implementation, we would replace the recursive call
-        // with a loop to avoid stack growth
-    }
-
-    return node;
-}
-*/
+// Tail call optimization removed - not currently implemented
 
 // =============================================================================
 // Database-like file operations implementation
