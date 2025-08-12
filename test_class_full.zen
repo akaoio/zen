@@ -1,14 +1,14 @@
 class Person
     method constructor name age
-        set this.name name
-        set this.age age
+        set self.name name
+        set self.age age
         print "Person created: " + name
     
     method greet
-        return "Hello, I'm " + this.name
+        return "Hello, I'm " + self.name
     
     method getAge
-        return this.age
+        return self.age
 
 set p new Person "Alice" 30
 print p.greet

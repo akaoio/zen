@@ -2055,7 +2055,6 @@ static RuntimeValue *visitor_visit_array(visitor_T *visitor, AST_T *node)
  */
 static RuntimeValue *visitor_visit_object(visitor_T *visitor, AST_T *node)
 {
-    fprintf(stderr, "ENTER visitor_visit_object, size=%zu\n", node ? node->object_size : 0);
     if (!visitor || !node) {
         return rv_new_null();
     }
@@ -2096,7 +2095,6 @@ static RuntimeValue *visitor_visit_object(visitor_T *visitor, AST_T *node)
  */
 static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *node)
 {
-    fprintf(stderr, "ENTER visitor_visit_property_access\n");
     if (!visitor || !node) {
         LOG_ERROR(LOG_CAT_VISITOR, "visitor_visit_property_access: visitor or node is NULL");
         return rv_new_null();
@@ -2112,7 +2110,6 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
         return rv_new_null();
     }
     
-    fprintf(stderr, "Property: %s\n", node->property_name);
     LOG_VISITOR_DEBUG("visitor_visit_property_access: accessing property '%s'", node->property_name);
 
     // Special handling for namespace functions (e.g., json.stringify)
@@ -2166,11 +2163,6 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
 normal_property_access: {
     // Evaluate the object expression
     LOG_VISITOR_DEBUG("About to evaluate object expression of type %d", node->object->type);
-    
-    // Check for infinite recursion
-    if (node->object->type == AST_PROPERTY_ACCESS) {
-        LOG_ERROR(LOG_CAT_VISITOR, "RECURSION: Property access inside property access!");
-    }
     
     RuntimeValue *object_rv = visitor_visit(visitor, node->object);
     LOG_VISITOR_DEBUG("Object evaluated, got type %d", object_rv ? (int)object_rv->type : -1);
@@ -3105,16 +3097,14 @@ static RuntimeValue *visitor_execute_user_function_ex(
 
         scope_add_variable_definition(function_scope, self_def);
         
-        // Also bind 'this' for ZEN compatibility (ZEN uses 'this', not 'self')
-        // Use scope_set_variable to ensure 'this' references the actual instance
-        scope_set_variable(function_scope, "this", self_value);
+        // ZEN uses 'self' not 'this' - already bound above
         
         if (self_value) {
             char *self_str = rv_to_string(self_value);
-            LOG_VISITOR_DEBUG("Added 'self' and 'this' to function scope with value: %s", self_str);
+            LOG_VISITOR_DEBUG("Added 'self' to function scope with value: %s", self_str);
             memory_free(self_str);
         } else {
-            LOG_VISITOR_DEBUG("Added 'self' and 'this' to function scope with value: NULL");
+            LOG_VISITOR_DEBUG("Added 'self' to function scope with value: NULL");
         }
 
         param_offset = 1;  // Skip self in args array for remaining parameters

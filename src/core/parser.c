@@ -554,7 +554,6 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
 
     // Set variable assignment context
     parser->context.in_variable_assignment = true;
-    LOG_PARSER_DEBUG("Setting in_variable_assignment = true for variable %s", var_name);
 
     // Check if this is an object literal before parsing as a general expression
     AST_T *value = NULL;
@@ -585,7 +584,6 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
     }
 
     // Clear variable assignment context
-    LOG_PARSER_DEBUG("Clearing in_variable_assignment for variable %s", var_name);
     parser->context.in_variable_assignment = false;
 
     AST_T *var_def = ast_new_variable_definition(var_name, value);
@@ -866,8 +864,6 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
     // Check if this property access should become a method call
     // In ZEN syntax, obj.method arg1 arg2 is a method call
     // BUT: Don't do this if we're in a variable assignment context
-    LOG_PARSER_DEBUG("Property access check: type=%d, in_assignment=%d", 
-                     expr ? (int)expr->type : -1, parser->context.in_variable_assignment);
     if (expr && expr->type == AST_PROPERTY_ACCESS && !parser->context.in_variable_assignment) {
         // Check if there are arguments following the property access
         bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&

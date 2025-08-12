@@ -1,0 +1,11 @@
+class Test
+    method constructor
+        print "In constructor, self = "
+        print self
+        set self.name "TestName"
+        print "After setting, self = "
+        print self
+
+set t new Test
+print "Instance after constructor:"
+print t
