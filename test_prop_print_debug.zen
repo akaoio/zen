@@ -1,0 +1,7 @@
+set person name "Alice", age 30
+print "Person:"
+print person
+print "Getting name..."
+set n person.name
+print "Name:"
+print n

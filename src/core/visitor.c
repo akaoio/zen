@@ -2233,7 +2233,6 @@ normal_property_access: {
             }
         } else {
             // Regular object property access
-            // Regular object property access
             result = rv_object_get(object_rv, property_name);
             if (result) {
                 // rv_object_get returns a borrowed reference, need to increase refcount

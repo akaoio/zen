@@ -1,0 +1,2 @@
+set person name "Alice", age 30
+person.name

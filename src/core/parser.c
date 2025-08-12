@@ -863,8 +863,8 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
 
     // Check if this property access should become a method call
     // In ZEN syntax, obj.method arg1 arg2 is a method call
-    // BUT: Don't do this if we're in a variable assignment context
-    if (expr && expr->type == AST_PROPERTY_ACCESS && !parser->context.in_variable_assignment) {
+    // BUT: For now, disable automatic conversion to fix property access
+    if (false && expr && expr->type == AST_PROPERTY_ACCESS) {
         // Check if there are arguments following the property access
         bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
                          parser->current_token->type != TOKEN_EOF &&
