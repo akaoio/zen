@@ -1,0 +1,14 @@
+class Calculator
+    method add a b
+        return a + b
+    
+    method multiply x y
+        return x * y
+
+set calc new Calculator
+print "Instance created: "
+print calc
+
+# This will cause segfault
+# set result calc.add 5 3
+# print "Result: " + result

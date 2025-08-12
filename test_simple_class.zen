@@ -1,0 +1,7 @@
+class Calculator
+    method add a b
+        return a + b
+
+print "About to create instance"
+set calc new Calculator
+print "Instance created"

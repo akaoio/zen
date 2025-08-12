@@ -460,10 +460,15 @@ void ast_free(AST_T *ast)
     }
 
     if (ast->class_methods) {
+        // CRITICAL: Don't free method AST nodes - they may be referenced by RuntimeValues
+        // This is a temporary fix until proper AST lifecycle management is implemented
+        // TODO: Implement reference counting or deep copying for AST nodes used in functions
+        /*
         for (size_t i = 0; i < ast->class_methods_size; i++) {
             if (ast->class_methods[i])
                 ast_free(ast->class_methods[i]);
         }
+        */
         memory_free(ast->class_methods);
     }
 

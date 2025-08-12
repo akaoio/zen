@@ -554,6 +554,7 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
 
     // Set variable assignment context
     parser->context.in_variable_assignment = true;
+    LOG_PARSER_DEBUG("Setting in_variable_assignment = true for variable %s", var_name);
 
     // Check if this is an object literal before parsing as a general expression
     AST_T *value = NULL;
@@ -584,6 +585,7 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
     }
 
     // Clear variable assignment context
+    LOG_PARSER_DEBUG("Clearing in_variable_assignment for variable %s", var_name);
     parser->context.in_variable_assignment = false;
 
     AST_T *var_def = ast_new_variable_definition(var_name, value);
@@ -863,7 +865,10 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
 
     // Check if this property access should become a method call
     // In ZEN syntax, obj.method arg1 arg2 is a method call
-    if (expr && expr->type == AST_PROPERTY_ACCESS) {
+    // BUT: Don't do this if we're in a variable assignment context
+    LOG_PARSER_DEBUG("Property access check: type=%d, in_assignment=%d", 
+                     expr ? (int)expr->type : -1, parser->context.in_variable_assignment);
+    if (expr && expr->type == AST_PROPERTY_ACCESS && !parser->context.in_variable_assignment) {
         // Check if there are arguments following the property access
         bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
                          parser->current_token->type != TOKEN_EOF &&
@@ -882,12 +887,15 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
 
         // If this is a direct statement (e.g., "obj.method" on its own line)
         // and the next token suggests end of statement, treat as zero-arg call
+        // BUT: Don't do this when we're in an assignment context or other expression
         if (!has_args && expr->object &&
             (parser->current_token->type == TOKEN_NEWLINE ||
              parser->current_token->type == TOKEN_EOF ||
              parser->current_token->type == TOKEN_DEDENT)) {
-            // This looks like a standalone method call
-            is_standalone = true;
+            // Only treat as standalone method call if we're not in an assignment
+            // Check if we're on the right-hand side of assignment
+            // For now, disable standalone method calls to fix property access
+            is_standalone = false;
         }
 
         if (has_args || is_standalone) {

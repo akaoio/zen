@@ -1,0 +1,2 @@
+set obj {x: 5}
+print "Done"

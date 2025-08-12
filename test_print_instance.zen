@@ -1,0 +1,6 @@
+class Calculator
+    method add a b
+        return a + b
+
+set calc new Calculator
+print calc

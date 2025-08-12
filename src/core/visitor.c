@@ -1194,8 +1194,9 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
             result =
                 visitor_execute_user_function_ex(visitor, func_def, ast_args, total_ast_args, true);
 
-            // Clean up the self AST we created
-            ast_free(ast_args[0]);
+            // CRITICAL: Don't free the self AST - it might be referenced by the function scope
+            // This is a temporary fix - proper solution is to track AST lifecycle
+            // ast_free(ast_args[0]);
 
             // Clean up
             for (size_t i = 0; i < total_args; i++) {
@@ -2054,6 +2055,7 @@ static RuntimeValue *visitor_visit_array(visitor_T *visitor, AST_T *node)
  */
 static RuntimeValue *visitor_visit_object(visitor_T *visitor, AST_T *node)
 {
+    fprintf(stderr, "ENTER visitor_visit_object, size=%zu\n", node ? node->object_size : 0);
     if (!visitor || !node) {
         return rv_new_null();
     }
@@ -2094,9 +2096,24 @@ static RuntimeValue *visitor_visit_object(visitor_T *visitor, AST_T *node)
  */
 static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *node)
 {
-    if (!visitor || !node || !node->object || !node->property_name) {
+    fprintf(stderr, "ENTER visitor_visit_property_access\n");
+    if (!visitor || !node) {
+        LOG_ERROR(LOG_CAT_VISITOR, "visitor_visit_property_access: visitor or node is NULL");
         return rv_new_null();
     }
+    
+    if (!node->object) {
+        LOG_ERROR(LOG_CAT_VISITOR, "visitor_visit_property_access: node->object is NULL");
+        return rv_new_null();
+    }
+    
+    if (!node->property_name) {
+        LOG_ERROR(LOG_CAT_VISITOR, "visitor_visit_property_access: node->property_name is NULL");
+        return rv_new_null();
+    }
+    
+    fprintf(stderr, "Property: %s\n", node->property_name);
+    LOG_VISITOR_DEBUG("visitor_visit_property_access: accessing property '%s'", node->property_name);
 
     // Special handling for namespace functions (e.g., json.stringify)
     // Check if object is a variable that maps to a namespace
@@ -2148,7 +2165,15 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
 
 normal_property_access: {
     // Evaluate the object expression
+    LOG_VISITOR_DEBUG("About to evaluate object expression of type %d", node->object->type);
+    
+    // Check for infinite recursion
+    if (node->object->type == AST_PROPERTY_ACCESS) {
+        LOG_ERROR(LOG_CAT_VISITOR, "RECURSION: Property access inside property access!");
+    }
+    
     RuntimeValue *object_rv = visitor_visit(visitor, node->object);
+    LOG_VISITOR_DEBUG("Object evaluated, got type %d", object_rv ? (int)object_rv->type : -1);
     if (!object_rv) {
         return rv_new_null();
     }
@@ -2185,10 +2210,18 @@ normal_property_access: {
             char method_key[256];
             snprintf(method_key, sizeof(method_key), "__method_%s", property_name);
 
+            LOG_VISITOR_DEBUG("Looking for method: %s", method_key);
+
             // Look for method in class
             // Search for method key
 
             RuntimeValue *method = rv_object_get(class_obj, method_key);
+            
+            if (method) {
+                LOG_VISITOR_DEBUG("Found method %s, type: %d", method_key, method->type);
+            } else {
+                LOG_VISITOR_DEBUG("Method %s not found", method_key);
+            }
 
             // Method lookup in class object
 
@@ -2980,9 +3013,15 @@ static RuntimeValue *visitor_execute_user_function_ex(
     if (args_size > 0) {
         evaluated_args = memory_alloc(sizeof(RuntimeValue *) * args_size);
         for (int i = 0; i < args_size; i++) {
-            evaluated_args[i] = visitor_visit(visitor, args[i]);
-            if (!evaluated_args[i]) {
-                evaluated_args[i] = rv_new_null();
+            // Special handling for wrapper nodes that contain runtime_value directly
+            if (args[i] && args[i]->type == AST_VARIABLE_DEFINITION && args[i]->runtime_value) {
+                // This is a wrapper node - use the runtime_value directly
+                evaluated_args[i] = rv_ref((RuntimeValue *)args[i]->runtime_value);
+            } else {
+                evaluated_args[i] = visitor_visit(visitor, args[i]);
+                if (!evaluated_args[i]) {
+                    evaluated_args[i] = rv_new_null();
+                }
             }
         }
         // CRITICAL: Restore current scope after evaluating arguments
@@ -3065,12 +3104,17 @@ static RuntimeValue *visitor_execute_user_function_ex(
         self_def->scope = function_scope;
 
         scope_add_variable_definition(function_scope, self_def);
+        
+        // Also bind 'this' for ZEN compatibility (ZEN uses 'this', not 'self')
+        // Use scope_set_variable to ensure 'this' references the actual instance
+        scope_set_variable(function_scope, "this", self_value);
+        
         if (self_value) {
             char *self_str = rv_to_string(self_value);
-            LOG_VISITOR_DEBUG("Added 'self' to function scope with value: %s", self_str);
+            LOG_VISITOR_DEBUG("Added 'self' and 'this' to function scope with value: %s", self_str);
             memory_free(self_str);
         } else {
-            LOG_VISITOR_DEBUG("Added 'self' to function scope with value: NULL");
+            LOG_VISITOR_DEBUG("Added 'self' and 'this' to function scope with value: NULL");
         }
 
         param_offset = 1;  // Skip self in args array for remaining parameters
@@ -3548,23 +3592,32 @@ static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *nod
     // Look for constructor method
     RuntimeValue *constructor = rv_object_get(class_obj, "__method_constructor");
     if (constructor && constructor->type == RV_FUNCTION) {
-        // Create scope for constructor with 'this' binding
-        scope_T *constructor_scope = scope_new();
-        constructor_scope->parent = visitor->current_scope;
-
-        // Add 'this' to constructor scope - this allows constructor to set properties
-        scope_set_variable(constructor_scope, "this", instance);
-
-        // Execute constructor with user arguments (NOT including self)
-        scope_T *saved_scope = visitor->current_scope;
-        visitor->current_scope = constructor_scope;
-
+        // Create a special AST node that wraps the RuntimeValue directly
+        // This avoids copying the instance
+        AST_T *instance_wrapper = ast_new(AST_VARIABLE_DEFINITION);
+        instance_wrapper->runtime_value = instance;  // Direct reference, no copy
+        
+        // Prepare arguments with instance wrapper as first (for 'this' binding)
+        size_t total_args = 1 + node->new_arguments_size;
+        AST_T **args_with_this = memory_alloc(sizeof(AST_T *) * total_args);
+        
+        // First argument is the instance wrapper
+        args_with_this[0] = instance_wrapper;
+        
+        // Copy user arguments
+        for (size_t i = 0; i < node->new_arguments_size; i++) {
+            args_with_this[i + 1] = node->new_arguments[i];
+        }
+        
+        // Execute constructor as a method (with 'this' as first arg)
         AST_T *constructor_def = (AST_T *)constructor->data.function.ast_node;
-        RuntimeValue *constructor_result = visitor_execute_user_function(
-            visitor, constructor_def, node->new_arguments, node->new_arguments_size);
-
-        visitor->current_scope = saved_scope;
-        scope_free(constructor_scope);
+        RuntimeValue *constructor_result = visitor_execute_user_function_ex(
+            visitor, constructor_def, args_with_this, total_args, true);
+        
+        // Clean up wrapper but not the runtime_value it references
+        instance_wrapper->runtime_value = NULL;  // Prevent double-free
+        ast_free(instance_wrapper);
+        memory_free(args_with_this);
 
         if (constructor_result) {
             rv_unref(constructor_result);
