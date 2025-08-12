@@ -1,0 +1,3 @@
+set obj x "hello"
+set prop obj.x
+print prop

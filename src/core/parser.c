@@ -427,7 +427,11 @@ AST_T *parser_parse_function_call(parser_T *parser, scope_T *scope)
         AST_T *arg = NULL;
         if (stdlib_get(function_call->function_call_name)) {
             // Stdlib function: parse full expression (e.g., "print 5 + 3")
+            LOG_PARSER_DEBUG("Parsing stdlib function argument as full expression");
             arg = parser_parse_ternary_expr(parser, scope);
+            if (arg) {
+                LOG_PARSER_DEBUG("Parsed stdlib arg with type %d", arg->type);
+            }
         } else {
             // User function: stop at binary operators
             // This ensures "f 2 + f 3" is parsed as "(f 2) + (f 3)"
@@ -999,7 +1003,8 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
     char *original_name = memory_strdup(parser->current_token->value);
 
     // Peek at the next token to decide what to do
-    int next_token_type = parser_peek_token_type(parser, 1);
+    // Use offset 0 to peek at the token after current_token
+    int next_token_type = parser_peek_token_type(parser, 0);
 
     // Check if this is property access (should be handled by primary expr)
     bool is_property_access = (next_token_type == TOKEN_DOT || next_token_type == TOKEN_LBRACKET);
