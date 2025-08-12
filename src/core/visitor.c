@@ -2162,10 +2162,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
 
 normal_property_access: {
     // Evaluate the object expression
-    LOG_VISITOR_DEBUG("About to evaluate object expression of type %d", node->object->type);
-    
     RuntimeValue *object_rv = visitor_visit(visitor, node->object);
-    LOG_VISITOR_DEBUG("Object evaluated, got type %d", object_rv ? (int)object_rv->type : -1);
     if (!object_rv) {
         return rv_new_null();
     }

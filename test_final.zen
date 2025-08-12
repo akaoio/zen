@@ -1,0 +1,4 @@
+set obj x "hello"
+print "About to print obj.x"
+print obj.x
+print "Done"
