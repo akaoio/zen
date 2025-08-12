@@ -1140,10 +1140,10 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                     // Stdlib function: parse full expression
                     arg = parser_parse_ternary_expr(parser, scope);
                 } else {
-                    // User function: parse unary expression for each argument
-                    // This allows "calculate x 10" to parse both arguments
-                    // while "f 2 + f 3" correctly stops at the binary operator
-                    arg = parser_parse_unary_expr(parser, scope);
+                    // User function: parse full expression like stdlib functions
+                    // This is needed for recursive calls like "countdown n - 1"
+                    // The old behavior of stopping at binary operators broke recursion
+                    arg = parser_parse_ternary_expr(parser, scope);
                 }
                 if (!arg)
                     break;

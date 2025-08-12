@@ -1,0 +1,8 @@
+function test n
+    print "n = " + toString(n)
+    if n > 0
+        print "Calling test with " + toString(n - 1)
+        test n - 1
+    print "Done with n = " + toString(n)
+
+test 3

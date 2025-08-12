@@ -1,0 +1,7 @@
+function test x
+    print x
+    set y x + 1
+    print y
+
+test 5
+test 10

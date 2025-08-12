@@ -1,0 +1,13 @@
+function fib n
+    print "fib called with "
+    print n
+    if n <= 1
+        print "returning n = "
+        print n
+        return n
+    print "computing fib recursively"
+    set a fib(n - 1)
+    set b fib(n - 2)
+    return a + b
+
+print fib 3

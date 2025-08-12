@@ -1,0 +1,14 @@
+function fib n
+    if n <= 1
+        return n
+    set a fib(n - 1)
+    print "fib(" + toString(n - 1) + ") = "
+    print a
+    set b fib(n - 2)
+    print "fib(" + toString(n - 2) + ") = "
+    print b
+    set result a + b
+    print "returning " + toString(result)
+    return result
+
+print fib 3

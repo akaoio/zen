@@ -1,0 +1,6 @@
+function test n
+    print n
+    if n > 0
+        test 2
+
+test 3

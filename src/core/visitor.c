@@ -3037,9 +3037,9 @@ static RuntimeValue *visitor_execute_user_function_ex(
         return rv_new_null();
     }
 
-    // Set parent scope to the SAVED caller scope, not current scope
-    // which may have been modified during argument evaluation
-    function_scope->parent = caller_scope;
+    // Set parent scope to NULL for now to isolate function execution
+    // This prevents variable leakage between recursive calls
+    function_scope->parent = NULL;
 
     // Copy global variables AND functions into function scope so functions can access them
     // For methods, skip this as they should only access instance variables through self
@@ -3065,6 +3065,10 @@ static RuntimeValue *visitor_execute_user_function_ex(
             }
         }
     }
+    
+    // CRITICAL: Add the function itself to its execution scope for recursion
+    // This allows functions to call themselves
+    scope_add_function_definition(function_scope, fdef);
 
     // SIMPLIFIED PARAMETER BINDING - Use straightforward value-based approach
     // This eliminates complex AST copying that causes double-free issues
@@ -3150,32 +3154,30 @@ static RuntimeValue *visitor_execute_user_function_ex(
         if (!arg_value) {
             arg_value = rv_new_null();
         } else {
-            rv_ref(arg_value);  // Keep a reference for conversion
+            rv_ref(arg_value);  // Keep a reference for the scope
         }
 
-        // Convert RuntimeValue to AST for scope storage
-        AST_T *param_value = runtime_value_to_ast(arg_value);
-        rv_unref(arg_value);
-
-        // Create variable definition for the parameter
-        AST_T *param_def = ast_new(AST_VARIABLE_DEFINITION);
-        if (!param_def || !param_value) {
-            if (param_value)
-                ast_free(param_value);
-            if (param_def)
-                ast_free(param_def);
+        // Use the new RuntimeValue-based scope storage directly
+        // This avoids AST conversion issues in recursive functions
+        if (!scope_set_variable(function_scope, param_ast->variable_name, arg_value)) {
+            LOG_ERROR(LOG_CAT_VISITOR, "Failed to set parameter '%s' in function scope", 
+                      param_ast->variable_name);
+            rv_unref(arg_value);
             visitor->current_scope = previous_scope;  // Restore previous scope
             scope_free(function_scope);
             visitor_pop_call_frame(visitor);
+            // Clean up evaluated args
+            if (evaluated_args) {
+                for (int j = 0; j < args_size; j++) {
+                    if (evaluated_args[j])
+                        rv_unref(evaluated_args[j]);
+                }
+                memory_free(evaluated_args);
+            }
             return rv_new_null();
         }
 
-        param_def->variable_definition_variable_name = memory_strdup(param_ast->variable_name);
-        param_def->variable_definition_value = param_value;
-        param_def->scope = function_scope;
-
-        // Add to scope using the standard function
-        scope_add_variable_definition(function_scope, param_def);
+        // arg_value is now owned by the scope (scope_set_variable refs it)
 
         // Debug: Verify parameter binding
         LOG_VISITOR_DEBUG("Bound parameter %s", param_ast->variable_name);

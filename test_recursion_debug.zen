@@ -1,0 +1,9 @@
+function test n
+    print n
+    if n > 0
+        set m n - 1
+        print "m = "
+        print m
+        test m
+
+test 3

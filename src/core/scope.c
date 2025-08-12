@@ -242,6 +242,11 @@ AST_T *scope_get_variable_definition(scope_T *scope, const char *name)
         }
     }
 
+    // If not found in current scope, check parent scope recursively
+    if (scope->parent) {
+        return scope_get_variable_definition(scope->parent, name);
+    }
+
     return NULL;
 }
 
@@ -320,6 +325,11 @@ RuntimeValue *scope_get_variable(scope_T *scope, const char *name)
                 return rv_ref(scope->variables[i]->value);
             }
         }
+    }
+
+    // If not found in current scope, check parent scope recursively
+    if (scope->parent) {
+        return scope_get_variable(scope->parent, name);
     }
 
     return NULL;
