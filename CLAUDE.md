@@ -262,3 +262,4 @@ make enforce
 - When a bug/error/issue happen -> find and fix the root cause, do not use workaround.
 - All functions must follow this naming format: <filename>_<functionname>
 - Do not stub, mock, todos etc... We'd rather go slowly but precisely functional, than go fast but not functional.
+- When working without any specific objectives, try to use `gh` to look for open issues and try to fix the open issues -> update/close them when fixed.
