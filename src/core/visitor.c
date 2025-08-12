@@ -238,53 +238,70 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
     switch (node->type) {
     case AST_VARIABLE_DEFINITION:
-        return visitor_visit_variable_definition(visitor, node);
+        result = visitor_visit_variable_definition(visitor, node);
+        break;
     case AST_FUNCTION_DEFINITION:
-        return visitor_visit_function_definition(visitor, node);
+        result = visitor_visit_function_definition(visitor, node);
+        break;
     case AST_VARIABLE:
-        return visitor_visit_variable(visitor, node);
+        result = visitor_visit_variable(visitor, node);
+        break;
     case AST_FUNCTION_CALL:
-        return visitor_visit_function_call(visitor, node);
+        result = visitor_visit_function_call(visitor, node);
+        break;
     case AST_COMPOUND:
-        return visitor_visit_compound(visitor, node);
+        result = visitor_visit_compound(visitor, node);
+        break;
     case AST_NOOP:
-        return rv_new_null();
+        result = rv_new_null();
+        break;
 
     // Literals - convert to RuntimeValue
     case AST_STRING:
-        return rv_new_string(node->string_value);
+        result = rv_new_string(node->string_value);
+        break;
     case AST_NUMBER:
-        return rv_new_number(node->number_value);
+        result = rv_new_number(node->number_value);
+        break;
     case AST_BOOLEAN:
-        return rv_new_boolean(node->boolean_value);
+        result = rv_new_boolean(node->boolean_value);
+        break;
     case AST_NULL:
     case AST_UNDECIDABLE:
-        return rv_new_null();
+        result = rv_new_null();
+        break;
 
     // Expression evaluation
     case AST_BINARY_OP:
-        return visitor_visit_binary_op(visitor, node);
+        result = visitor_visit_binary_op(visitor, node);
+        break;
     case AST_UNARY_OP:
-        return visitor_visit_unary_op(visitor, node);
+        result = visitor_visit_unary_op(visitor, node);
+        break;
 
     // Data structures
     case AST_ARRAY:
-        return visitor_visit_array(visitor, node);
+        result = visitor_visit_array(visitor, node);
+        break;
     case AST_OBJECT:
-        return visitor_visit_object(visitor, node);
+        result = visitor_visit_object(visitor, node);
+        break;
     case AST_PROPERTY_ACCESS:
-        return visitor_visit_property_access(visitor, node);
+        result = visitor_visit_property_access(visitor, node);
+        break;
 
     // Ternary conditional expression
     case AST_TERNARY: {
         if (!node->ternary_condition || !node->ternary_true_expr || !node->ternary_false_expr) {
-            return rv_new_null();
+            result = rv_new_null();
+            break;
         }
 
         // Evaluate the condition
         RuntimeValue *condition = visitor_visit(visitor, node->ternary_condition);
         if (!condition) {
-            return rv_new_null();
+            result = rv_new_null();
+            break;
         }
 
         // Check if condition is truthy
@@ -305,23 +322,28 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
         // Evaluate and return the appropriate branch
         if (is_truthy) {
-            return visitor_visit(visitor, node->ternary_true_expr);
+            result = visitor_visit(visitor, node->ternary_true_expr);
         } else {
-            return visitor_visit(visitor, node->ternary_false_expr);
+            result = visitor_visit(visitor, node->ternary_false_expr);
         }
+        break;
     }
 
     // Control flow
     case AST_IF_STATEMENT:
-        return visitor_visit_if_statement(visitor, node);
+        result = visitor_visit_if_statement(visitor, node);
+        break;
     case AST_WHILE_LOOP:
-        return visitor_visit_while_loop(visitor, node);
+        result = visitor_visit_while_loop(visitor, node);
+        break;
     case AST_FOR_LOOP:
-        return visitor_visit_for_loop(visitor, node);
+        result = visitor_visit_for_loop(visitor, node);
+        break;
     case AST_BREAK:
     case AST_CONTINUE:
         // Return special markers for control flow
-        return rv_new_string(node->type == AST_BREAK ? "__BREAK__" : "__CONTINUE__");
+        result = rv_new_string(node->type == AST_BREAK ? "__BREAK__" : "__CONTINUE__");
+        break;
     case AST_RETURN:
         // Handle return statements - evaluate the return value
         if (node->return_value) {
@@ -330,14 +352,17 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
             RuntimeValue *marker = rv_new_object();
             rv_object_set(marker, "__RETURN__", return_val);
             rv_unref(return_val);  // rv_object_set already refs the value
-            return marker;
+            result = marker;
+        } else {
+            result = rv_new_null();
         }
-        return rv_new_null();
+        break;
 
     // Database-like file operations
     case AST_FILE_GET: {
         if (!node->file_get_path) {
-            return rv_new_error("FILE_GET missing file path", -1);
+            result = rv_new_error("FILE_GET missing file path", -1);
+            break;
         }
 
         // Evaluate file path expression
@@ -345,7 +370,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         if (!path_val || path_val->type != RV_STRING) {
             if (path_val)
                 rv_unref(path_val);
-            return rv_new_error("FILE_GET requires string file path", -1);
+            result = rv_new_error("FILE_GET requires string file path", -1);
+            break;
         }
 
         // Use readFile to get the file content
@@ -361,10 +387,11 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
             if (parsed && parsed->type == RV_OBJECT) {
                 RuntimeValue *prop_val = visitor_visit(visitor, node->file_get_property);
                 if (prop_val && prop_val->type == RV_STRING) {
-                    RuntimeValue *result = rv_object_get(parsed, prop_val->data.string.data);
+                    RuntimeValue *extracted = rv_object_get(parsed, prop_val->data.string.data);
                     rv_unref(prop_val);
                     rv_unref(parsed);
-                    return result ? rv_ref(result) : rv_new_null();
+                    result = extracted ? rv_ref(extracted) : rv_new_null();
+                    break;
                 }
                 if (prop_val)
                     rv_unref(prop_val);
@@ -373,12 +400,14 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
                 rv_unref(parsed);
         }
 
-        return content ? content : rv_new_null();
+        result = content ? content : rv_new_null();
+        break;
     }
 
     case AST_FILE_PUT: {
         if (!node->file_put_path || !node->file_put_value) {
-            return rv_new_error("FILE_PUT missing required parameters", -1);
+            result = rv_new_error("FILE_PUT missing required parameters", -1);
+            break;
         }
 
         // Evaluate file path and value
@@ -390,7 +419,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
                 rv_unref(path_val);
             if (value_val)
                 rv_unref(value_val);
-            return rv_new_error("FILE_PUT requires valid path and value", -1);
+            result = rv_new_error("FILE_PUT requires valid path and value", -1);
+            break;
         }
 
         // Convert value to JSON string for storage
@@ -400,7 +430,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
         if (!json_str) {
             rv_unref(path_val);
-            return rv_new_error("Failed to serialize value for FILE_PUT", -1);
+            result = rv_new_error("Failed to serialize value for FILE_PUT", -1);
+            break;
         }
 
         RuntimeValue *json_rv = rv_new_string(json_str);
@@ -408,17 +439,17 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
         // Write to file
         RuntimeValue *write_args[2] = {path_val, json_rv};
-        RuntimeValue *result = io_write_file(write_args, 2);
+        result = io_write_file(write_args, 2);
 
         rv_unref(path_val);
         rv_unref(json_rv);
-
-        return result;
+        break;
     }
 
     case AST_FILE_REFERENCE: {
         if (!node->file_ref_target_file || !node->file_ref_property_path) {
-            return rv_new_error("FILE_REFERENCE missing target file or property path", -1);
+            result = rv_new_error("FILE_REFERENCE missing target file or property path", -1);
+            break;
         }
 
         // Load target file
@@ -429,7 +460,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         if (!file_content || file_content->type != RV_STRING) {
             if (file_content)
                 rv_unref(file_content);
-            return rv_new_error("Failed to load referenced file", -1);
+            result = rv_new_error("Failed to load referenced file", -1);
+            break;
         }
 
         // Parse as JSON
@@ -439,7 +471,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         if (!parsed || parsed->type != RV_OBJECT) {
             if (parsed)
                 rv_unref(parsed);
-            return rv_new_error("Referenced file is not valid JSON", -1);
+            result = rv_new_error("Referenced file is not valid JSON", -1);
+            break;
         }
 
         // Navigate property path (e.g., "office.alice")
@@ -463,7 +496,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         memory_free(path_copy);
         rv_unref(parsed);
 
-        return current ? current : rv_new_null();
+        result = current ? current : rv_new_null();
+        break;
     }
 
     // Formal Logic AST nodes - full implementations
@@ -493,7 +527,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
                 rv_unref(body);
         }
 
-        return quantifier;
+        result = quantifier;
+        break;
     }
 
     case AST_LOGICAL_PREDICATE: {
@@ -519,7 +554,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         }
 
         rv_object_set(predicate, "type", rv_new_string("predicate"));
-        return predicate;
+        result = predicate;
+        break;
     }
 
     case AST_LOGICAL_CONNECTIVE: {
@@ -564,7 +600,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
                 rv_unref(right);
         }
 
-        return connective;
+        result = connective;
+        break;
     }
 
     case AST_LOGICAL_VARIABLE: {
@@ -577,7 +614,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         rv_object_set(logical_var, "bound", rv_new_boolean(node->is_bound));
         rv_object_set(logical_var, "type", rv_new_string("logical_variable"));
 
-        return logical_var;
+        result = logical_var;
+        break;
     }
 
     case AST_LOGICAL_PROPOSITION: {
@@ -590,7 +628,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         rv_object_set(proposition, "value", rv_new_boolean(node->proposition_value));
         rv_object_set(proposition, "type", rv_new_string("proposition"));
 
-        return proposition;
+        result = proposition;
+        break;
     }
 
     case AST_LOGICAL_THEOREM: {
@@ -629,7 +668,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         }
 
         rv_object_set(theorem, "type", rv_new_string("theorem"));
-        return theorem;
+        result = theorem;
+        break;
     }
 
     case AST_LOGICAL_AXIOM: {
@@ -649,7 +689,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         rv_object_set(axiom, "consistent", rv_new_boolean(node->axiom_is_consistent));
         rv_object_set(axiom, "type", rv_new_string("axiom"));
 
-        return axiom;
+        result = axiom;
+        break;
     }
 
     case AST_LOGICAL_PROOF_STEP: {
@@ -684,7 +725,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         }
 
         rv_object_set(step, "type", rv_new_string("proof_step"));
-        return step;
+        result = step;
+        break;
     }
 
     case AST_LOGICAL_PREMISE:
@@ -750,14 +792,15 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
                 rv_unref(conclusion);
         }
 
-        return inference;
+        result = inference;
+        break;
     }
 
     case AST_LOGICAL_SUBSTITUTION:
         // Basic substitution representation
         result = rv_new_object();
         rv_object_set(result, "type", rv_new_string("substitution"));
-        return result;
+        break;
 
     case AST_MATHEMATICAL_EQUATION: {
         RuntimeValue *equation = rv_new_object();
@@ -779,7 +822,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         rv_object_set(equation, "type", rv_new_string("equation"));
         rv_object_set(equation, "operator", rv_new_string("equals"));
 
-        return equation;
+        result = equation;
+        break;
     }
 
     case AST_MATHEMATICAL_INEQUALITY: {
@@ -821,7 +865,8 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         }
 
         rv_object_set(inequality, "type", rv_new_string("inequality"));
-        return inequality;
+        result = inequality;
+        break;
     }
 
     case AST_MATHEMATICAL_FUNCTION: {
@@ -846,25 +891,34 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
         }
 
         rv_object_set(math_func, "type", rv_new_string("mathematical_function"));
-        return math_func;
+        result = math_func;
+        break;
     }
 
     case AST_IMPORT:
-        return visitor_visit_import(visitor, node);
+        result = visitor_visit_import(visitor, node);
+        break;
     case AST_EXPORT:
-        return visitor_visit_export(visitor, node);
+        result = visitor_visit_export(visitor, node);
+        break;
     case AST_CLASS_DEFINITION:
-        return visitor_visit_class_definition(visitor, node);
+        result = visitor_visit_class_definition(visitor, node);
+        break;
     case AST_NEW_EXPRESSION:
-        return visitor_visit_new_expression(visitor, node);
+        result = visitor_visit_new_expression(visitor, node);
+        break;
     case AST_TRY_CATCH:
-        return visitor_visit_try_catch(visitor, node);
+        result = visitor_visit_try_catch(visitor, node);
+        break;
     case AST_THROW:
-        return visitor_visit_throw(visitor, node);
+        result = visitor_visit_throw(visitor, node);
+        break;
     case AST_COMPOUND_ASSIGNMENT:
-        return visitor_visit_compound_assignment(visitor, node);
+        result = visitor_visit_compound_assignment(visitor, node);
+        break;
     case AST_ASSIGNMENT:
-        return visitor_visit_assignment(visitor, node);
+        result = visitor_visit_assignment(visitor, node);
+        break;
 
     default:
         // For unimplemented features, return null
