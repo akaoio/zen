@@ -644,6 +644,8 @@ int lexer_keyword_type(const char *value)
     if (strcmp(value, "class") == 0) {
         return TOKEN_CLASS;
     }
+    if (strcmp(value, "method") == 0)
+        return TOKEN_METHOD;
     if (strcmp(value, "new") == 0)
         return TOKEN_NEW;
     if (strcmp(value, "extends") == 0)

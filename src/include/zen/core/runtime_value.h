@@ -14,6 +14,8 @@ typedef enum {
     RV_ARRAY,
     RV_OBJECT,
     RV_FUNCTION,
+    RV_CLASS,
+    RV_INSTANCE,
     RV_ERROR
 } RuntimeValueType;
 
@@ -44,6 +46,17 @@ struct RUNTIME_VALUE_STRUCT {
             void *scope;     // scope_T*
         } function;
         struct {
+            char *name;
+            void *methods;  // AST_T** array of method definitions
+            size_t method_count;
+            char *parent_class;
+        } class;
+        struct {
+            char *class_name;
+            RuntimeValue *class_def;
+            RuntimeValue *properties;  // Object holding instance properties
+        } instance;
+        struct {
             char *message;
             int code;
         } error;
@@ -58,6 +71,8 @@ RuntimeValue *rv_new_boolean(bool value);
 RuntimeValue *rv_new_array(void);
 RuntimeValue *rv_new_object(void);
 RuntimeValue *rv_new_function(void *ast_node, void *scope);
+RuntimeValue *rv_new_class(const char *name, void *methods, size_t method_count);
+RuntimeValue *rv_new_instance(const char *class_name, RuntimeValue *class_def);
 RuntimeValue *rv_new_error(const char *message, int code);
 
 // Reference counting
@@ -86,6 +101,8 @@ bool rv_is_boolean(RuntimeValue *value);
 bool rv_is_array(RuntimeValue *value);
 bool rv_is_object(RuntimeValue *value);
 bool rv_is_function(RuntimeValue *value);
+bool rv_is_class(RuntimeValue *value);
+bool rv_is_instance(RuntimeValue *value);
 bool rv_is_error(RuntimeValue *value);
 bool rv_is_truthy(RuntimeValue *value);
 

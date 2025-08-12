@@ -17,6 +17,8 @@ AST_T *parser_parse_throw(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_import_statement(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_export_statement(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_indented_object(parser_T *parser, scope_T *scope);
+AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope);
+AST_T *parser_parse_new_expression(parser_T *parser, scope_T *scope);
 
 /**
  * @brief Create parser instance
@@ -420,10 +422,17 @@ AST_T *parser_parse_function_call(parser_T *parser, scope_T *scope)
             break;
         }
 
-        // Parse the argument as a primary expression, NOT full expression
-        // This prevents binary operators from being consumed as part of the argument
-        // e.g., "f 2 + f 3" should be parsed as "(f 2) + (f 3)", not "f(2 + f 3)"
-        AST_T *arg = parser_parse_primary_expr(parser, scope);
+        // For stdlib functions, parse full expressions
+        // For user functions, stop at binary operators for correct precedence
+        AST_T *arg = NULL;
+        if (stdlib_get(function_call->function_call_name)) {
+            // Stdlib function: parse full expression (e.g., "print 5 + 3")
+            arg = parser_parse_ternary_expr(parser, scope);
+        } else {
+            // User function: stop at binary operators
+            // This ensures "f 2 + f 3" is parsed as "(f 2) + (f 3)"
+            arg = parser_parse_unary_expr(parser, scope);
+        }
         if (!arg) {
             LOG_PARSER_DEBUG("No argument parsed, breaking");
             break;
@@ -486,6 +495,10 @@ AST_T *parser_parse_function_call(parser_T *parser, scope_T *scope)
  */
 AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
 {
+    // Ensure parser->scope is set for object literal detection
+    scope_T *saved_scope = parser->scope;
+    parser->scope = scope;
+
     parser_eat(parser, TOKEN_SET);
 
     // Check if this is a property assignment (e.g., set obj.prop value)
@@ -504,6 +517,7 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
         if (parser->current_token->type != TOKEN_ID) {
             LOG_ERROR(LOG_CAT_PARSER, "Expected property name after dot");
             memory_free(obj_name);
+            parser->scope = saved_scope;
             return ast_new_noop();
         }
 
@@ -527,6 +541,9 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
         // Create an assignment node
         AST_T *assignment = ast_new_assignment(prop_access, value);
         assignment->scope = scope;
+
+        // Restore original parser scope
+        parser->scope = saved_scope;
         return assignment;
     }
 
@@ -578,6 +595,9 @@ AST_T *parser_parse_variable_definition(parser_T *parser, scope_T *scope)
     // NOTE: We do NOT add the variable to scope here anymore.
     // The visitor will do this after evaluating the expression.
     // This prevents issues with unevaluated expressions and scope corruption.
+
+    // Restore original parser scope
+    parser->scope = saved_scope;
 
     return var_def;
 }
@@ -857,8 +877,18 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
 
         // Also treat standalone property access as method call (zero-arg methods)
         // But only if we're in a statement context (not inside an expression)
-        // Disabled for now - will handle in visitor instead
+        // Check if this looks like a method call without args
         bool is_standalone = false;
+
+        // If this is a direct statement (e.g., "obj.method" on its own line)
+        // and the next token suggests end of statement, treat as zero-arg call
+        if (!has_args && expr->object &&
+            (parser->current_token->type == TOKEN_NEWLINE ||
+             parser->current_token->type == TOKEN_EOF ||
+             parser->current_token->type == TOKEN_DEDENT)) {
+            // This looks like a standalone method call
+            is_standalone = true;
+        }
 
         if (has_args || is_standalone) {
             // Convert property access to method call
@@ -885,7 +915,8 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
                        parser->current_token->type != TOKEN_RPAREN &&
                        parser->current_token->type != TOKEN_RBRACKET &&
                        !parser_is_binary_operator(parser->current_token->type)) {
-                    AST_T *arg = parser_parse_ternary_expr(parser, scope);
+                    // Parse as unary expression to stop at binary operators
+                    AST_T *arg = parser_parse_unary_expr(parser, scope);
                     if (!arg)
                         break;
 
@@ -1016,15 +1047,14 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
 
     // Check if this identifier has arguments (function call with args)
     // We check if the next token could be an argument to this function
-    bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
-                    parser->current_token->type != TOKEN_EOF &&
-                    parser->current_token->type != TOKEN_DEDENT &&
-                    parser->current_token->type != TOKEN_RPAREN &&
-                    parser->current_token->type != TOKEN_RBRACKET &&
-                    parser->current_token->type != TOKEN_COMMA &&
-                    parser->current_token->type != TOKEN_DOT &&
-                    parser->current_token->type != TOKEN_LBRACKET &&
-                    !parser_is_binary_operator(parser->current_token->type));
+    bool has_args =
+        (parser->current_token->type != TOKEN_NEWLINE && parser->current_token->type != TOKEN_EOF &&
+         parser->current_token->type != TOKEN_DEDENT &&
+         parser->current_token->type != TOKEN_RPAREN &&
+         parser->current_token->type != TOKEN_RBRACKET &&
+         parser->current_token->type != TOKEN_COMMA && parser->current_token->type != TOKEN_DOT &&
+         parser->current_token->type != TOKEN_LBRACKET &&
+         !parser_is_binary_operator(parser->current_token->type));
 
     // Check if this identifier is a stdlib function (for zero-arg calls)
     bool is_stdlib_function = (stdlib_get(original_name) != NULL);
@@ -1040,12 +1070,13 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
     // Treat as function call if appropriate
     bool should_be_function_call = false;
     if (parser->context.in_function_call) {
-        // Inside function arguments: treat as function call if it has arguments OR is stdlib
-        // CRITICAL FIX: Also check if it's a user-defined function to allow zero-arg calls
-        // This allows both "print greet 'World'" and "print get_value" to work
+        // Inside function arguments: only treat as function call if it's a known function
+        // This prevents variables like "x" from being treated as function calls
         AST_T *fdef = scope_get_function_definition(scope, original_name);
         bool is_user_function = (fdef != NULL);
-        should_be_function_call = has_args || is_stdlib_function || is_user_function;
+        // Only treat as function call if it's a known function
+        // Don't treat unknown IDs (like variable "x") as function calls
+        should_be_function_call = is_stdlib_function || is_user_function;
     } else {
         // Outside function arguments: normal behavior
         should_be_function_call = has_args || is_stdlib_function || is_standalone;
@@ -1094,9 +1125,17 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                     break;
                 }
 
-                // Parse as ternary expression to handle operators correctly
-                // This allows arguments like "a + b", "x > y", etc.
-                AST_T *arg = parser_parse_ternary_expr(parser, scope);
+                // Parse argument based on function type and position
+                AST_T *arg = NULL;
+                if (stdlib_get(function_call->function_call_name)) {
+                    // Stdlib function: parse full expression
+                    arg = parser_parse_ternary_expr(parser, scope);
+                } else {
+                    // User function: parse unary expression for each argument
+                    // This allows "calculate x 10" to parse both arguments
+                    // while "f 2 + f 3" correctly stops at the binary operator
+                    arg = parser_parse_unary_expr(parser, scope);
+                }
                 if (!arg)
                     break;
 
@@ -1136,8 +1175,14 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                 }
 
                 if (!has_next_arg) {
+                    LOG_PARSER_DEBUG(
+                        "No more arguments for function '%s', stopping at token type %d",
+                        function_call->function_call_name,
+                        parser->current_token->type);
                     break;  // No more arguments
                 }
+                LOG_PARSER_DEBUG("Continuing to parse next argument for function '%s'",
+                                 function_call->function_call_name);
             }
 
             // Clear context flag
@@ -1647,6 +1692,8 @@ int parser_detect_object_literal(parser_T *parser)
         return 0;
     }
 
+    LOG_PARSER_DEBUG("parser_detect_object_literal: parser->scope = %p", parser->scope);
+
     // Save current lexer state for restoration
     size_t saved_current = parser->lexer->i;
     size_t saved_line = parser->lexer->line_number;
@@ -1708,8 +1755,12 @@ int parser_detect_object_literal(parser_T *parser)
             }
 
             // CRITICAL FIX: Also check user-defined functions in scope
-            if (parser->scope && scope_get_function_definition(parser->scope, tokens[0]->value)) {
+            // Use the scope parameter if available, otherwise use parser->scope
+            scope_T *check_scope = parser->scope ? parser->scope : NULL;
+            if (check_scope && scope_get_function_definition(check_scope, tokens[0]->value)) {
                 // This is a user-defined function - not an object literal
+                LOG_PARSER_DEBUG("Detected user function '%s', not object literal",
+                                 tokens[0]->value);
                 is_object_literal = 0;
                 goto cleanup_and_return;
             }
@@ -2681,8 +2732,7 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
     while (parser->current_token && parser->current_token->type != TOKEN_EOF &&
            parser->current_token->type != TOKEN_DEDENT) {
         // Check if current token is a method/function declaration
-        if (!((parser->current_token->type == TOKEN_ID &&
-               strcmp(parser->current_token->value, "method") == 0) ||
+        if (!(parser->current_token->type == TOKEN_METHOD ||
               parser->current_token->type == TOKEN_FUNCTION)) {
             // Not a method declaration - we've reached the end of methods
             break;
@@ -2757,6 +2807,73 @@ AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope)
     memory_free(methods);  // ast_new_class_definition makes its own copy
 
     return class_def;
+}
+
+/**
+ * @brief Parse class method definition
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* Method definition (as function AST node)
+ */
+AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope)
+{
+    // Handle both 'method' keyword (as TOKEN_METHOD) and 'function' keyword
+    if (parser->current_token->type == TOKEN_METHOD) {
+        parser_eat(parser, TOKEN_METHOD);
+    } else if (parser->current_token->type == TOKEN_ID &&
+               strcmp(parser->current_token->value, "method") == 0) {
+        parser_eat(parser, TOKEN_ID);
+    } else if (parser->current_token->type == TOKEN_FUNCTION) {
+        parser_eat(parser, TOKEN_FUNCTION);
+    } else {
+        return NULL;
+    }
+
+    // Get method name
+    char *method_name = memory_strdup(parser->current_token->value);
+    parser_eat(parser, TOKEN_ID);
+
+    // Parse parameters
+    AST_T **args = NULL;
+    size_t arg_count = 0;
+
+    while (parser->current_token->type == TOKEN_ID) {
+        arg_count++;
+        args = memory_realloc(args, arg_count * sizeof(AST_T *));
+        char *arg_name = memory_strdup(parser->current_token->value);
+        args[arg_count - 1] = ast_new_variable(arg_name);
+        memory_free(arg_name);
+        parser_eat(parser, TOKEN_ID);
+    }
+
+    // Skip optional newline
+    if (parser->current_token->type == TOKEN_NEWLINE) {
+        parser_eat(parser, TOKEN_NEWLINE);
+    }
+
+    // Expect indent for method body
+    if (parser->current_token->type == TOKEN_INDENT) {
+        parser_eat(parser, TOKEN_INDENT);
+    }
+
+    // Parse method body
+    AST_T *body = parser_parse_statements(parser, scope);
+
+    // Consume dedent after method body
+    if (parser->current_token->type == TOKEN_DEDENT) {
+        parser_eat(parser, TOKEN_DEDENT);
+    }
+
+    // Create method as function definition
+    AST_T *method = ast_new_function_definition(method_name, args, arg_count, body);
+    method->scope = scope;
+
+    memory_free(method_name);
+    if (args) {
+        memory_free(args);
+    }
+
+    return method;
 }
 
 /**
@@ -2856,118 +2973,6 @@ AST_T *parser_parse_throw(parser_T *parser, scope_T *scope)
     throw_node->scope = scope;
 
     return throw_node;
-}
-
-/**
- * @brief Parse a class method definition
- * @param parser Parser instance
- * @param scope Current scope
- * @return AST_T* Function definition AST node for the method
- */
-AST_T *parser_parse_class_method(parser_T *parser, scope_T *scope)
-{
-    if (!parser || !parser->current_token) {
-        return NULL;
-    }
-
-    // Handle both 'method methodName' and 'function methodName' syntax
-    if (parser->current_token->type == TOKEN_ID &&
-        strcmp(parser->current_token->value, "method") == 0) {
-        // Consume 'method' token
-        parser_eat(parser, TOKEN_ID);
-    } else if (parser->current_token->type == TOKEN_FUNCTION) {
-        // Consume 'function' token
-        parser_eat(parser, TOKEN_FUNCTION);
-    } else {
-        // Error: expected 'method' or 'function'
-        return NULL;
-    }
-
-    // Get method name
-    if (!parser->current_token || parser->current_token->type != TOKEN_ID) {
-        // Error: expected method name
-        return NULL;
-    }
-
-    char *method_name = memory_strdup(parser->current_token->value);
-    parser_eat(parser, TOKEN_ID);
-
-    // Parse parameters - methods can have parameters like functions
-    AST_T **args = NULL;
-    size_t arg_count = 0;
-    size_t arg_capacity = 2;
-
-    args = memory_alloc(arg_capacity * sizeof(AST_T *));
-    if (!args) {
-        memory_free(method_name);
-        return NULL;
-    }
-
-    // Parse parameters until newline
-    while (parser->current_token && parser->current_token->type != TOKEN_NEWLINE &&
-           parser->current_token->type != TOKEN_EOF) {
-        if (parser->current_token->type == TOKEN_ID) {
-            // Parameter name
-            AST_T *param = ast_new_variable(parser->current_token->value);
-
-            // Expand args array if needed
-            if (arg_count >= arg_capacity) {
-                arg_capacity *= 2;
-                AST_T **new_args = memory_realloc(args, arg_capacity * sizeof(AST_T *));
-                if (!new_args) {
-                    // Cleanup on error
-                    for (size_t i = 0; i < arg_count; i++) {
-                        ast_free(args[i]);
-                    }
-                    memory_free(args);
-                    memory_free(method_name);
-                    return NULL;
-                }
-                args = new_args;
-            }
-
-            args[arg_count++] = param;
-            parser_eat(parser, TOKEN_ID);
-        } else {
-            // Skip other tokens (commas, etc.) - advance safely
-            parser_eat(parser, parser->current_token->type);
-        }
-    }
-
-    // Skip newline
-    if (parser->current_token && parser->current_token->type == TOKEN_NEWLINE) {
-        parser_eat(parser, TOKEN_NEWLINE);
-    }
-
-    // Handle method body indentation
-    if (parser->current_token && parser->current_token->type == TOKEN_INDENT) {
-        parser_eat(parser, TOKEN_INDENT);
-    }
-
-    // Set method body context
-    parser->context.in_method_body = true;
-
-    // Parse method body (indented block)
-    AST_T *body = parser_parse_statements(parser, scope);
-
-    // Clear method body context
-    parser->context.in_method_body = false;
-
-    // Handle end of method body
-    if (parser->current_token && parser->current_token->type == TOKEN_DEDENT) {
-        parser_eat(parser, TOKEN_DEDENT);
-    }
-
-    // Create function definition AST node for the method
-    AST_T *method_def = ast_new_function_definition(method_name, args, arg_count, body);
-
-    // Method created successfully
-
-    // Cleanup
-    memory_free(method_name);
-    memory_free(args);  // ast_new_function_definition makes its own copy
-
-    return method_def;
 }
 
 /**

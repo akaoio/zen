@@ -19,7 +19,7 @@ typedef struct SCOPE_STRUCT {
     // NEW: Proper variable storage with RuntimeValues
     scope_variable_T **variables;
     size_t variables_size;
-    
+
     // Parent scope for proper scope chaining
     struct SCOPE_STRUCT *parent;
 } scope_T;

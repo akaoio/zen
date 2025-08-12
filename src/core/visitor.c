@@ -1068,7 +1068,6 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     if (!visitor || !node) {
         return rv_new_null();
     }
-    
 
     // Handle method calls (obj.method syntax)
     if (node->function_call_expression) {
@@ -1157,25 +1156,51 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
             // Call the function
             AST_T *func_def = (AST_T *)func_rv->data.function.ast_node;
 
+            // Safety check
+            if (!func_def) {
+                LOG_ERROR(LOG_CAT_VISITOR, "Method function definition is NULL");
+                // Clean up
+                for (size_t i = 0; i < total_args; i++) {
+                    if (args[i])
+                        rv_unref(args[i]);
+                }
+                memory_free(args);
+                rv_unref(func_rv);
+                return rv_new_null();
+            }
+
             // Note: visitor_execute_user_function expects AST arguments, but we have RuntimeValues
             // We need to convert back to AST temporarily or modify the function
             // For now, let's use a simpler approach
 
-            // Create AST arguments from RuntimeValues
-            AST_T **ast_args = memory_alloc(sizeof(AST_T *) * total_args);
-            for (size_t i = 0; i < total_args; i++) {
-                ast_args[i] = runtime_value_to_ast(args[i]);
+            // For method calls, we need to handle 'this' binding differently
+            // We'll pass the evaluated runtime values and let the function handle them
+
+            // For methods, we need to pass 'self' as the first argument
+            // Create AST arguments array with self as first element
+            size_t total_ast_args = 1 + node->function_call_arguments_size;
+            AST_T **ast_args = memory_alloc(sizeof(AST_T *) * total_ast_args);
+
+            // Convert self RuntimeValue to AST for first argument
+            ast_args[0] = runtime_value_to_ast(self_rv);
+
+            // Copy remaining arguments
+            for (size_t i = 0; i < node->function_call_arguments_size; i++) {
+                ast_args[i + 1] = node->function_call_arguments[i];
             }
 
+            // Call the method with self as first argument
+            // Use the _ex version to indicate this is a method call
             result =
-                visitor_execute_user_function_ex(visitor, func_def, ast_args, total_args, true);
+                visitor_execute_user_function_ex(visitor, func_def, ast_args, total_ast_args, true);
+
+            // Clean up the self AST we created
+            ast_free(ast_args[0]);
 
             // Clean up
             for (size_t i = 0; i < total_args; i++) {
                 if (args[i])
                     rv_unref(args[i]);
-                if (ast_args[i])
-                    ast_free(ast_args[i]);
             }
             memory_free(args);
             memory_free(ast_args);
@@ -2121,7 +2146,7 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
         }
     }
 
-normal_property_access : {
+normal_property_access: {
     // Evaluate the object expression
     RuntimeValue *object_rv = visitor_visit(visitor, node->object);
     if (!object_rv) {
@@ -2585,6 +2610,12 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
         return rv_new_null();
     }
 
+    // For now, just log and return null to avoid crashes
+    LOG_INFO(LOG_CAT_VISITOR,
+             "Import statement encountered but not fully implemented: %s",
+             node->import_path);
+    return rv_new_null();
+
     // Read the module file
     char *module_path = node->import_path;
 
@@ -2649,7 +2680,8 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
             AST_T *stmt = module_ast->compound_statements[i];
             if (stmt && stmt->type == AST_VARIABLE_DEFINITION) {
                 const char *var_name = stmt->variable_definition_variable_name;
-                RuntimeValue *value = stmt->runtime_value;
+                // Get the runtime value from the module scope
+                RuntimeValue *value = scope_get_variable(module_scope, var_name);
 
                 if (var_name && value) {
                     rv_object_set(exports, var_name, value);
@@ -2667,12 +2699,9 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
                 continue;
             }
 
-            // Get the runtime value - first check cached, then try to convert from AST
-            RuntimeValue *value = var_def->runtime_value;
-            if (!value && var_def->variable_definition_value) {
-                // Evaluate the variable definition value directly
-                value = visitor_visit(module_visitor, var_def->variable_definition_value);
-            }
+            // Get the runtime value from the module scope
+            RuntimeValue *value =
+                scope_get_variable(module_scope, var_def->variable_definition_variable_name);
 
             if (value) {
                 rv_object_set(exports, var_def->variable_definition_variable_name, value);
@@ -2949,7 +2978,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
     // Arguments may contain recursive function calls
     RuntimeValue **evaluated_args = NULL;
     if (args_size > 0) {
-        evaluated_args = memory_alloc(sizeof(RuntimeValue*) * args_size);
+        evaluated_args = memory_alloc(sizeof(RuntimeValue *) * args_size);
         for (int i = 0; i < args_size; i++) {
             evaluated_args[i] = visitor_visit(visitor, args[i]);
             if (!evaluated_args[i]) {
@@ -2973,13 +3002,14 @@ static RuntimeValue *visitor_execute_user_function_ex(
         // Clean up evaluated args
         if (evaluated_args) {
             for (int i = 0; i < args_size; i++) {
-                if (evaluated_args[i]) rv_unref(evaluated_args[i]);
+                if (evaluated_args[i])
+                    rv_unref(evaluated_args[i]);
             }
             memory_free(evaluated_args);
         }
         return rv_new_null();
     }
-    
+
     // Set parent scope to the SAVED caller scope, not current scope
     // which may have been modified during argument evaluation
     function_scope->parent = caller_scope;
@@ -3023,7 +3053,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
         if (!self_value) {
             self_value = rv_new_null();
         } else {
-            rv_ref(self_value); // Keep a reference for the scope
+            rv_ref(self_value);  // Keep a reference for the scope
         }
 
         // Create a variable definition for self WITHOUT converting back to AST
@@ -3056,7 +3086,8 @@ static RuntimeValue *visitor_execute_user_function_ex(
             // Clean up evaluated args
             if (evaluated_args) {
                 for (int j = 0; j < args_size; j++) {
-                    if (evaluated_args[j]) rv_unref(evaluated_args[j]);
+                    if (evaluated_args[j])
+                        rv_unref(evaluated_args[j]);
                 }
                 memory_free(evaluated_args);
             }
@@ -3077,7 +3108,8 @@ static RuntimeValue *visitor_execute_user_function_ex(
             // Clean up evaluated args
             if (evaluated_args) {
                 for (int j = 0; j < args_size; j++) {
-                    if (evaluated_args[j]) rv_unref(evaluated_args[j]);
+                    if (evaluated_args[j])
+                        rv_unref(evaluated_args[j]);
                 }
                 memory_free(evaluated_args);
             }
@@ -3088,7 +3120,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
         if (!arg_value) {
             arg_value = rv_new_null();
         } else {
-            rv_ref(arg_value); // Keep a reference for conversion
+            rv_ref(arg_value);  // Keep a reference for conversion
         }
 
         // Convert RuntimeValue to AST for scope storage
@@ -3192,7 +3224,8 @@ static RuntimeValue *visitor_execute_user_function_ex(
     // Clean up evaluated arguments
     if (evaluated_args) {
         for (int i = 0; i < args_size; i++) {
-            if (evaluated_args[i]) rv_unref(evaluated_args[i]);
+            if (evaluated_args[i])
+                rv_unref(evaluated_args[i]);
         }
         memory_free(evaluated_args);
     }
@@ -3466,14 +3499,9 @@ static RuntimeValue *visitor_visit_class_definition(visitor_T *visitor, AST_T *n
         }
     }
 
-    // Store class in scope as a variable
-    AST_T *class_var = ast_new(AST_VARIABLE_DEFINITION);
-    class_var->variable_definition_variable_name = memory_strdup(node->class_name);
-    class_var->variable_definition_value = ast_new(AST_NULL);  // Placeholder
-    class_var->runtime_value = rv_ref(class_obj);
-    class_var->scope = node->scope;
-
-    scope_add_variable_definition(node->scope, class_var);
+    // Store class in scope as a runtime value directly
+    scope_T *target_scope = visitor->current_scope ? visitor->current_scope : node->scope;
+    scope_set_variable(target_scope, node->class_name, class_obj);
 
     return class_obj;
 }
@@ -3491,13 +3519,12 @@ static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *nod
     }
 
     // Look up the class
-    AST_T *class_def = scope_get_variable_definition(node->scope, node->new_class_name);
-    if (!class_def || !class_def->runtime_value) {
+    scope_T *lookup_scope = visitor->current_scope ? visitor->current_scope : node->scope;
+    RuntimeValue *class_obj = scope_get_variable(lookup_scope, node->new_class_name);
+    if (!class_obj) {
         LOG_ERROR(LOG_CAT_VISITOR, "Class '%s' not found", node->new_class_name);
         return rv_new_null();
     }
-
-    RuntimeValue *class_obj = (RuntimeValue *)class_def->runtime_value;
 
     // Verify it's a class
     RuntimeValue *is_class = rv_object_get(class_obj, "__class__");
@@ -3521,29 +3548,27 @@ static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *nod
     // Look for constructor method
     RuntimeValue *constructor = rv_object_get(class_obj, "__method_constructor");
     if (constructor && constructor->type == RV_FUNCTION) {
-        // Prepare arguments for constructor - first arg is always self
-        size_t total_args = 1 + node->new_arguments_size;
-        AST_T **constructor_args = memory_alloc(sizeof(AST_T *) * total_args);
+        // Create scope for constructor with 'this' binding
+        scope_T *constructor_scope = scope_new();
+        constructor_scope->parent = visitor->current_scope;
 
-        // Create self argument as a literal containing the instance
-        AST_T *self_arg = runtime_value_to_ast(instance);
-        constructor_args[0] = self_arg;
+        // Add 'this' to constructor scope - this allows constructor to set properties
+        scope_set_variable(constructor_scope, "this", instance);
 
-        // Copy user-provided arguments
-        for (size_t i = 0; i < node->new_arguments_size; i++) {
-            constructor_args[i + 1] = node->new_arguments[i];
-        }
+        // Execute constructor with user arguments (NOT including self)
+        scope_T *saved_scope = visitor->current_scope;
+        visitor->current_scope = constructor_scope;
 
-        // Execute constructor
+        AST_T *constructor_def = (AST_T *)constructor->data.function.ast_node;
         RuntimeValue *constructor_result = visitor_execute_user_function(
-            visitor, constructor->data.function.ast_node, constructor_args, total_args);
+            visitor, constructor_def, node->new_arguments, node->new_arguments_size);
+
+        visitor->current_scope = saved_scope;
+        scope_free(constructor_scope);
+
         if (constructor_result) {
             rv_unref(constructor_result);
         }
-
-        // Clean up
-        ast_free(self_arg);
-        memory_free(constructor_args);
     }
     if (constructor) {
         rv_unref(constructor);

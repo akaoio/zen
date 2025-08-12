@@ -31,6 +31,7 @@ typedef struct TOKEN_STRUCT {
         TOKEN_BREAK,
         TOKEN_CONTINUE,
         TOKEN_CLASS,
+        TOKEN_METHOD,
         TOKEN_NEW,
         TOKEN_EXTENDS,
         TOKEN_IMPORT,

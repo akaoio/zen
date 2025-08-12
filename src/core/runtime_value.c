@@ -106,6 +106,35 @@ RuntimeValue *rv_new_function(void *ast_node, void *scope)
     return rv;
 }
 
+RuntimeValue *rv_new_class(const char *name, void *methods, size_t method_count)
+{
+    RuntimeValue *rv = memory_alloc(sizeof(RuntimeValue));
+    if (!rv)
+        return NULL;
+
+    rv->type = RV_CLASS;
+    rv->ref_count = 1;
+    rv->data.class.name = name ? memory_strdup(name) : NULL;
+    rv->data.class.methods = methods;
+    rv->data.class.method_count = method_count;
+    rv->data.class.parent_class = NULL;
+    return rv;
+}
+
+RuntimeValue *rv_new_instance(const char *class_name, RuntimeValue *class_def)
+{
+    RuntimeValue *rv = memory_alloc(sizeof(RuntimeValue));
+    if (!rv)
+        return NULL;
+
+    rv->type = RV_INSTANCE;
+    rv->ref_count = 1;
+    rv->data.instance.class_name = class_name ? memory_strdup(class_name) : NULL;
+    rv->data.instance.class_def = rv_ref(class_def);
+    rv->data.instance.properties = rv_new_object();
+    return rv;
+}
+
 RuntimeValue *rv_new_error(const char *message, int code)
 {
     RuntimeValue *rv = memory_alloc(sizeof(RuntimeValue));
@@ -163,6 +192,28 @@ void rv_unref(RuntimeValue *value)
             }
             memory_free(value->data.object.keys);
             memory_free(value->data.object.values);
+        }
+        break;
+
+    case RV_CLASS:
+        if (value->data.class.name) {
+            memory_free(value->data.class.name);
+        }
+        if (value->data.class.parent_class) {
+            memory_free(value->data.class.parent_class);
+        }
+        // Note: methods are AST nodes and should be freed elsewhere
+        break;
+
+    case RV_INSTANCE:
+        if (value->data.instance.class_name) {
+            memory_free(value->data.instance.class_name);
+        }
+        if (value->data.instance.class_def) {
+            rv_unref(value->data.instance.class_def);
+        }
+        if (value->data.instance.properties) {
+            rv_unref(value->data.instance.properties);
         }
         break;
 
@@ -341,6 +392,10 @@ bool rv_is_object(RuntimeValue *value) { return value && value->type == RV_OBJEC
 
 bool rv_is_function(RuntimeValue *value) { return value && value->type == RV_FUNCTION; }
 
+bool rv_is_class(RuntimeValue *value) { return value && value->type == RV_CLASS; }
+
+bool rv_is_instance(RuntimeValue *value) { return value && value->type == RV_INSTANCE; }
+
 bool rv_is_error(RuntimeValue *value) { return value && value->type == RV_ERROR; }
 
 bool rv_is_truthy(RuntimeValue *value)
@@ -388,6 +443,19 @@ RuntimeValue *rv_copy(RuntimeValue *value)
     }
     case RV_FUNCTION:
         return rv_new_function(value->data.function.ast_node, value->data.function.scope);
+    case RV_CLASS:
+        return rv_new_class(
+            value->data.class.name, value->data.class.methods, value->data.class.method_count);
+    case RV_INSTANCE: {
+        RuntimeValue *copy =
+            rv_new_instance(value->data.instance.class_name, value->data.instance.class_def);
+        // Copy properties
+        if (copy && value->data.instance.properties) {
+            rv_unref(copy->data.instance.properties);
+            copy->data.instance.properties = rv_copy(value->data.instance.properties);
+        }
+        return copy;
+    }
     case RV_ERROR:
         return rv_new_error(value->data.error.message, value->data.error.code);
     }
@@ -511,6 +579,20 @@ char *rv_to_string(RuntimeValue *value)
     case RV_FUNCTION:
         return memory_strdup("[function]");
 
+    case RV_CLASS:
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "[class %s]",
+                 value->data.class.name ? value->data.class.name : "anonymous");
+        return memory_strdup(buffer);
+
+    case RV_INSTANCE:
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "[instance of %s]",
+                 value->data.instance.class_name ? value->data.instance.class_name : "unknown");
+        return memory_strdup(buffer);
+
     case RV_ERROR:
         snprintf(buffer,
                  sizeof(buffer),
@@ -556,6 +638,8 @@ bool rv_equals(RuntimeValue *a, RuntimeValue *b)
     case RV_ARRAY:
     case RV_OBJECT:
     case RV_FUNCTION:
+    case RV_CLASS:
+    case RV_INSTANCE:
     case RV_ERROR:
         // Reference equality for complex types
         return a == b;
@@ -584,6 +668,10 @@ const char *rv_type_name(RuntimeValue *value)
         return "object";
     case RV_FUNCTION:
         return "function";
+    case RV_CLASS:
+        return "class";
+    case RV_INSTANCE:
+        return "instance";
     case RV_ERROR:
         return "error";
     }
