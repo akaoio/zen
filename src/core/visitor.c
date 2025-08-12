@@ -1752,6 +1752,9 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
     // This prevents cached variable references in loops from causing infinite loops
 
     // Evaluate operands directly
+    // CRITICAL BUG FOUND: After deep recursion, AST nodes are being corrupted
+    // Variables are turning into function calls
+    // This needs to be investigated - likely memory pool corruption
     RuntimeValue *left_rv = visitor_visit(visitor, node->left);
     RuntimeValue *right_rv = visitor_visit(visitor, node->right);
 
@@ -2932,6 +2935,20 @@ static RuntimeValue *visitor_execute_user_function_ex(
         return rv_new_null();
     }
 
+    // CRITICAL FIX: Evaluate arguments BEFORE creating function scope
+    // This ensures arguments are evaluated in the caller's scope, not the callee's
+    // This is essential for proper recursive function calls
+    RuntimeValue **evaluated_args = NULL;
+    if (args_size > 0) {
+        evaluated_args = memory_alloc(sizeof(RuntimeValue*) * args_size);
+        for (int i = 0; i < args_size; i++) {
+            evaluated_args[i] = visitor_visit(visitor, args[i]);
+            if (!evaluated_args[i]) {
+                evaluated_args[i] = rv_new_null();
+            }
+        }
+    }
+
     // Push call frame for profiling and stack management
     visitor_push_call_frame(visitor, fdef, args, (size_t)args_size, function_name);
 
@@ -2941,6 +2958,13 @@ static RuntimeValue *visitor_execute_user_function_ex(
         visitor_throw_exception(
             visitor, ast_new(AST_NULL), "Failed to create function scope", function_name);
         visitor_pop_call_frame(visitor);
+        // Clean up evaluated args
+        if (evaluated_args) {
+            for (int i = 0; i < args_size; i++) {
+                if (evaluated_args[i]) rv_unref(evaluated_args[i]);
+            }
+            memory_free(evaluated_args);
+        }
         return rv_new_null();
     }
 
@@ -2975,30 +2999,12 @@ static RuntimeValue *visitor_execute_user_function_ex(
     // For method calls, we need to bind 'self' as the first parameter
     size_t param_offset = 0;
     if (is_method_call && args_size > 0) {
-        // Bind 'self' parameter for methods
-        // IMPORTANT: args[0] might already be a literal AST node (STRING, NUMBER, etc)
-        // or it might be an object. We need to handle it carefully to avoid recursion.
-        RuntimeValue *self_value = NULL;
-
-        // Check if args[0] is a simple literal that won't cause recursion
-        if (args[0]->type == AST_STRING || args[0]->type == AST_NUMBER ||
-            args[0]->type == AST_BOOLEAN || args[0]->type == AST_NULL ||
-            args[0]->type == AST_ARRAY || args[0]->type == AST_OBJECT) {
-            // Safe to evaluate - these are literals
-            self_value = visitor_visit(visitor, args[0]);
-        } else {
-            // For other types (like AST_VARIABLE), we need to be careful
-            // This might be a converted RuntimeValue, so let's check if it has runtime_value cached
-            if (args[0]->type == AST_VARIABLE_DEFINITION && args[0]->runtime_value) {
-                self_value = rv_ref((RuntimeValue *)args[0]->runtime_value);
-            } else {
-                // Fall back to evaluation but this might cause issues
-                self_value = visitor_visit(visitor, args[0]);
-            }
-        }
-
+        // Bind 'self' parameter for methods using pre-evaluated value
+        RuntimeValue *self_value = evaluated_args[0];
         if (!self_value) {
             self_value = rv_new_null();
+        } else {
+            rv_ref(self_value); // Keep a reference for the scope
         }
 
         // Create a variable definition for self WITHOUT converting back to AST
@@ -3027,10 +3033,17 @@ static RuntimeValue *visitor_execute_user_function_ex(
             LOG_ERROR(LOG_CAT_VISITOR, "Invalid parameter at index %zu", i);
             scope_free(function_scope);
             visitor_pop_call_frame(visitor);
+            // Clean up evaluated args
+            if (evaluated_args) {
+                for (int j = 0; j < args_size; j++) {
+                    if (evaluated_args[j]) rv_unref(evaluated_args[j]);
+                }
+                memory_free(evaluated_args);
+            }
             return rv_new_null();
         }
 
-        // Evaluate the argument to get its runtime value
+        // Use pre-evaluated argument value
         // For methods, we need to offset the argument index
         size_t arg_index = i + param_offset;
         if (arg_index >= (size_t)args_size) {
@@ -3040,12 +3053,21 @@ static RuntimeValue *visitor_execute_user_function_ex(
                       args_size);
             scope_free(function_scope);
             visitor_pop_call_frame(visitor);
+            // Clean up evaluated args
+            if (evaluated_args) {
+                for (int j = 0; j < args_size; j++) {
+                    if (evaluated_args[j]) rv_unref(evaluated_args[j]);
+                }
+                memory_free(evaluated_args);
+            }
             return rv_new_null();
         }
 
-        RuntimeValue *arg_value = visitor_visit(visitor, args[arg_index]);
+        RuntimeValue *arg_value = evaluated_args[arg_index];
         if (!arg_value) {
             arg_value = rv_new_null();
+        } else {
+            rv_ref(arg_value); // Keep a reference for conversion
         }
 
         // Convert RuntimeValue to AST for scope storage
@@ -3147,6 +3169,14 @@ static RuntimeValue *visitor_execute_user_function_ex(
 
     // Free the function scope (now safe - no AST nodes to double-free)
     scope_free(function_scope);
+
+    // Clean up evaluated arguments
+    if (evaluated_args) {
+        for (int i = 0; i < args_size; i++) {
+            if (evaluated_args[i]) rv_unref(evaluated_args[i]);
+        }
+        memory_free(evaluated_args);
+    }
 
     // Handle exceptions
     if (visitor_has_exception(visitor)) {
