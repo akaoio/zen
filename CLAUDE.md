@@ -114,6 +114,9 @@ if average student.scores >= 80
 - Memory management with leak detection and debugging capabilities
 - Error handling with location tracking and source context display
 - I/O operations and standard library functions
+- JSON parsing and stringification with full round-trip support
+- YAML parsing and stringification (with libyaml)
+- Nested object syntax with indentation (via `parser_parse_indented_object`)
 
 ✅ **Working Programs:**
 ```zen
@@ -126,6 +129,19 @@ function greet name
     print "Hello, " + name
 
 greet "World"         # Outputs: Hello, World
+
+# Nested object with indentation
+set user
+    name "Alice",
+    profile
+        age 30,
+        location
+            city "NYC"
+print user.profile.location.city  # Outputs: NYC
+
+# JSON/YAML round-trip
+set data jsonParse '{"key":"value"}'
+print yamlStringify data          # Outputs YAML format
 ```
 
 ## 🔒 CRITICAL: Code Enforcement System
@@ -232,4 +248,14 @@ make enforce
 ```
 
 
-- In zen, for var in string, we use {{var}} instead of ${var}
+## Important Development Principles
+
+### String Interpolation
+- In ZEN, for variable interpolation in strings, use `{{var}}` instead of `${var}`
+
+### Root Cause Analysis
+**CRITICAL**: When encountering bugs or issues, ALWAYS identify and fix the root cause rather than implementing workarounds.
+- Do NOT apply band-aid solutions or fix symptoms
+- Invest time to understand the fundamental problem
+- Proper root cause fixes prevent future issues and save time long-term
+- Workarounds create technical debt and compound problems
