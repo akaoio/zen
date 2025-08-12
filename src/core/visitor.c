@@ -1068,6 +1068,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     if (!visitor || !node) {
         return rv_new_null();
     }
+    
 
     // Handle method calls (obj.method syntax)
     if (node->function_call_expression) {

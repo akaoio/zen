@@ -385,7 +385,8 @@ AST_T *parser_parse_function_call(parser_T *parser, scope_T *scope)
     bool parsing_args = true;
     while (parsing_args && parser->current_token->type != TOKEN_NEWLINE &&
            parser->current_token->type != TOKEN_EOF &&
-           parser->current_token->type != TOKEN_DEDENT) {
+           parser->current_token->type != TOKEN_DEDENT &&
+           !parser_is_binary_operator(parser->current_token->type)) {
         LOG_PARSER_DEBUG(
             "Parsing function call argument %zu for '%s', current token type: %d, value: '%s'",
             function_call->function_call_arguments_size + 1,
@@ -419,9 +420,10 @@ AST_T *parser_parse_function_call(parser_T *parser, scope_T *scope)
             break;
         }
 
-        // Parse the argument as a ternary expression to handle all expression types
-        // including parenthesized expressions and function calls
-        AST_T *arg = parser_parse_ternary_expr(parser, scope);
+        // Parse the argument as a primary expression, NOT full expression
+        // This prevents binary operators from being consumed as part of the argument
+        // e.g., "f 2 + f 3" should be parsed as "(f 2) + (f 3)", not "f(2 + f 3)"
+        AST_T *arg = parser_parse_primary_expr(parser, scope);
         if (!arg) {
             LOG_PARSER_DEBUG("No argument parsed, breaking");
             break;
