@@ -1,0 +1,9 @@
+function add x y
+    return x + y
+
+function test
+    set a add 1 2
+    set b add 3 4
+    return add a b
+
+print test

@@ -29,6 +29,9 @@ scope_T *scope_new()
     scope->variables = NULL;
     scope->variables_size = 0;
 
+    // Initialize parent pointer
+    scope->parent = NULL;
+
     return scope;
 }
 
@@ -126,18 +129,26 @@ AST_T *scope_add_function_definition(scope_T *scope, AST_T *fdef)
 AST_T *scope_get_function_definition(scope_T *scope, const char *fname)
 {
     // Add NULL checks to prevent segfault
-    if (!scope || !fname || !scope->function_definitions) {
+    if (!scope || !fname) {
         return NULL;
     }
 
-    for (size_t i = 0; i < scope->function_definitions_size; i++) {
-        AST_T *fdef = scope->function_definitions[i];
+    // Search current scope first
+    if (scope->function_definitions) {
+        for (size_t i = 0; i < scope->function_definitions_size; i++) {
+            AST_T *fdef = scope->function_definitions[i];
 
-        // Check that fdef and its name are valid before comparing
-        if (fdef && fdef->function_definition_name &&
-            strcmp(fdef->function_definition_name, fname) == 0) {
-            return fdef;
+            // Check that fdef and its name are valid before comparing
+            if (fdef && fdef->function_definition_name &&
+                strcmp(fdef->function_definition_name, fname) == 0) {
+                return fdef;
+            }
         }
+    }
+
+    // If not found in current scope, search parent scopes recursively
+    if (scope->parent) {
+        return scope_get_function_definition(scope->parent, fname);
     }
 
     return NULL;

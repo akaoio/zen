@@ -191,6 +191,10 @@ void visitor_free(visitor_T *visitor)
         ast_free(visitor->exception_state.exception_value);
     }
 
+    // Clear current_scope reference to prevent dangling pointer
+    // Note: We don't free it as the visitor doesn't own the scope
+    visitor->current_scope = NULL;
+
     memory_free(visitor);
 }
 
@@ -2935,7 +2939,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
     // Push call frame for profiling and stack management
     visitor_push_call_frame(visitor, fdef, args, (size_t)args_size, function_name);
 
-    // Create a new scope for this function call
+    // Create a new scope for this function call with proper parent chaining
     scope_T *function_scope = scope_new();
     if (!function_scope) {
         visitor_throw_exception(
@@ -2943,6 +2947,10 @@ static RuntimeValue *visitor_execute_user_function_ex(
         visitor_pop_call_frame(visitor);
         return rv_new_null();
     }
+    
+    // Set parent scope to enable proper scope chain traversal
+    // Use visitor's current scope as parent to access global functions
+    function_scope->parent = visitor->current_scope;
 
     // Copy global variables AND functions into function scope so functions can access them
     // For methods, skip this as they should only access instance variables through self
@@ -2971,6 +2979,9 @@ static RuntimeValue *visitor_execute_user_function_ex(
 
     // SIMPLIFIED PARAMETER BINDING - Use straightforward value-based approach
     // This eliminates complex AST copying that causes double-free issues
+
+    // Save the visitor's current scope BEFORE any error paths
+    scope_T *previous_scope = visitor->current_scope;
 
     // For method calls, we need to bind 'self' as the first parameter
     size_t param_offset = 0;
@@ -3025,6 +3036,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
         AST_T *param_ast = fdef->function_definition_args[i];
         if (!param_ast || !param_ast->variable_name) {
             LOG_ERROR(LOG_CAT_VISITOR, "Invalid parameter at index %zu", i);
+            visitor->current_scope = previous_scope;  // Restore previous scope
             scope_free(function_scope);
             visitor_pop_call_frame(visitor);
             return rv_new_null();
@@ -3038,6 +3050,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
                       "Argument index %zu out of bounds (args_size=%d)",
                       arg_index,
                       args_size);
+            visitor->current_scope = previous_scope;  // Restore previous scope
             scope_free(function_scope);
             visitor_pop_call_frame(visitor);
             return rv_new_null();
@@ -3059,6 +3072,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
                 ast_free(param_value);
             if (param_def)
                 ast_free(param_def);
+            visitor->current_scope = previous_scope;  // Restore previous scope
             scope_free(function_scope);
             visitor_pop_call_frame(visitor);
             return rv_new_null();
@@ -3081,9 +3095,6 @@ static RuntimeValue *visitor_execute_user_function_ex(
 
     // CRITICAL FIX: Use visitor's current_scope instead of modifying AST nodes
     // This prevents corruption in recursive calls since AST nodes are shared
-
-    // Save the visitor's current scope
-    scope_T *previous_scope = visitor->current_scope;
 
     // Set the function scope as the current execution scope
     visitor->current_scope = function_scope;

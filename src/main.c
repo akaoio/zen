@@ -110,6 +110,10 @@ static bool execute_line(const char *line, scope_T *global_scope)
         lexer_free(lexer);
         return true;
     }
+    
+    // Set the visitor's current scope to the global scope
+    // This is critical for function lookup during recursive calls
+    visitor->current_scope = global_scope;
 
     // Execute the parsed code
     RuntimeValue *result = visitor_visit(visitor, root);
@@ -266,6 +270,10 @@ int main(int argc, char *argv[])
                     fprintf(stderr, "Error: Failed to create visitor for file '%s'\n", argv[i]);
                     return 1;
                 }
+                
+                // Set the visitor's current scope to the global scope
+                // This is critical for function lookup during recursive calls
+                visitor->current_scope = global_scope;
 
                 // Execute the parsed AST
 
