@@ -1,133 +1,222 @@
 # ZEN Programming Language
 
-⚠️ **WARNING: This is an experimental, incomplete implementation. Most features don't work. See [ACTUAL_STATUS.md](ACTUAL_STATUS.md) for details.**
+A lightweight scripting language with natural syntax and minimal punctuation.
 
-## Overview
-
-ZEN is an experimental programming language concept that aims to provide natural syntax with minimal punctuation. However, the current implementation is severely limited and unstable.
-
-### Key Syntax Difference
-- **`=` is for comparison** (not assignment) - use `set` for assignment
-- Example: `if x = 5` checks if x equals 5, while `set x 5` assigns 5 to x
-
-### Current State
-
-- **Partially implemented** - Only basic features work
-- **Many crashes and bugs** - Arrays, objects, and loops are broken
-- **Not suitable for any real use** - This is a proof-of-concept at best
-- **Build may be broken** - Check workspace subdirectories for working binaries
-
-## What Actually Works
-
-Very limited functionality:
-- Basic print statements
-- Simple variable assignment (single values only)
-- Basic arithmetic and string concatenation
-- Simple if statements
-- Basic function definitions
-
-## What Doesn't Work
-
-Most language features are broken or missing:
-- ❌ **Arrays** - Syntax `1, 2, 3` returns empty object
-- ❌ **Objects** - Syntax `name "x", age 30` returns null
-- ❌ **Loops** - For loops hang, while loops have infinite loop bugs
-- ❌ **Error handling** - No try/catch
-- ❌ **File I/O** - Not implemented
-- ❌ **Imports/Modules** - Not implemented
-- ❌ **Most built-in functions** - Missing
-
-See [ACTUAL_STATUS.md](ACTUAL_STATUS.md) for a complete list of issues.
-
-## Quick Test
-
-If you want to see what little works:
+## Installation
 
 ```bash
-# Find a working binary (main build is broken)
-find . -name "zen" -type f -executable
+# Build from source
+make clean && make
 
-# Test basic functionality
-echo 'print "Hello World"' | ./path/to/zen
+# Run tests
+make test
 
-# Simple arithmetic
-echo 'print 2 + 3' | ./path/to/zen
+# Install system-wide
+sudo make install PREFIX=/usr/local
 ```
 
-## Example of What Works
+## Quick Start
+
+```bash
+# Run REPL (ALWAYS use timeout to prevent hangs)
+timeout 2 ./zen
+
+# Run a ZEN file
+timeout 2 ./zen script.zen
+
+# One-liner
+echo 'print "Hello World"' | timeout 2 ./zen
+```
+
+## Language Basics
+
+### Key Syntax
+
+- **`set` for assignment**: `set x 42`
+- **`=` for comparison**: `if x = 42`
+- **No semicolons** - newline terminated
+- **No parentheses** in function calls
+- **Indentation-based** blocks
+
+### Variables and Types
 
 ```zen
-# This works
-print "Hello World"
-set x 42        # Assignment uses 'set'
-print x
+# Basic types
+set name "Alice"
+set age 30
+set pi 3.14159
+set flag true
+set nothing null
 
-# Comparison uses '='
-if x = 42
-    print "x is 42"
+# Arrays
+set numbers 1, 2, 3, 4, 5
+print numbers[0]  # Access element: 1
 
-# This also works
+# Objects
+set user name "Bob", age 25, active true
+print user.name   # Access property: Bob
+
+# Nested structures
+set config
+    server "localhost",
+    port 8080,
+    database
+        host "db.example.com",
+        credentials
+            user "admin",
+            pass "secret"
+```
+
+### Control Flow
+
+```zen
+# If statements
+if age >= 18
+    print "Adult"
+else if age >= 13
+    print "Teen"
+else
+    print "Child"
+
+# While loops
+set count 0
+while count < 5
+    print count
+    set count count + 1
+
+# For loops (limited support)
+set items "apple", "banana", "orange"
+for item in items
+    print item
+```
+
+### Functions
+
+```zen
+# Define function
 function greet name
-    print "Hello " + name
-    
-greet "World"
+    return "Hello, " + name
+
+# Call function
+set message greet "World"
+print message
+
+# Functions with multiple parameters
+function calculate x y operation
+    if operation = "add"
+        return x + y
+    else if operation = "multiply"
+        return x * y
+    else
+        return 0
+
+set result calculate 10 5 "add"
+print result  # 15
 ```
 
-## Examples of What DOESN'T Work
+### Built-in Functions
 
 ```zen
-# Arrays - BROKEN
-set arr 1, 2, 3  # Returns {} instead of array
+# I/O
+print "Output text"
+set input readLine "Enter name: "
 
-# Objects - BROKEN  
-set person name "Bob", age 25  # Returns null
+# Type conversion
+set num toNumber "42"
+set str toString 42
 
-# Loops - BROKEN (will hang or infinite loop)
-for i in 1..5
-    print i
+# JSON operations
+set data jsonParse "{\"key\":\"value\"}"
+set json jsonStringify data
+
+# YAML operations
+set config yamlParse "key: value"
+set yaml yamlStringify config
+
+# String operations
+set upper toUpperCase "hello"
+set lower toLowerCase "WORLD"
+set parts split "a,b,c" ","
+set joined join parts "-"
+
+# Math
+set r random
+set rounded round 3.14159 2
 ```
 
-## Development Status
+## Working Features
 
-The current implementation is incomplete with many features still in development. This is an ongoing experimental project exploring natural syntax programming language design.
+✅ **Core Language**
+- Variables and assignments
+- Basic data types (null, boolean, number, string)
+- Arrays and objects with access syntax
+- Arithmetic and logical operations
+- String concatenation
+- If/else conditionals
+- While loops
+- Function definitions and calls
+- Comments
 
-## Building
+✅ **Standard Library**
+- print, readLine
+- JSON parsing/stringification
+- YAML parsing/stringification (requires libyaml)
+- Type conversions
+- Basic string operations
+- Math functions
 
-The main build is currently broken. You might find working binaries in workspace subdirectories:
+## Known Limitations
+
+⚠️ **Important Notes**
+- Always use `timeout` when running - some inputs can cause hangs
+- For loops have limited functionality
+- Complex nested operations may fail
+- Error messages need improvement
+- No module/import system yet
+- No try/catch error handling
+
+## Development
 
 ```bash
-# Main build (currently broken)
-make
+# Essential commands
+make enforce              # Check manifest compliance
+make format              # Format code
+make test               # Run test suite
+make test-valgrind      # Memory leak check
+make lint               # Static analysis
 
-# Look for working binaries
-find . -name "zen" -type f -executable
+# Debug flags
+./zen --debug-lexer file.zen    # Show tokens
+./zen --debug-ast file.zen      # Show AST
+```
+
+### Project Structure
+
+```
+src/
+├── core/       # Lexer, parser, AST, runtime
+├── types/      # Value system
+├── runtime/    # Operators, execution
+└── stdlib/     # Built-in functions
+
+tests/          # Test suite
+docs/           # Documentation
+MANIFEST.json   # Function specifications (enforced)
+CLAUDE.md      # AI assistant instructions
 ```
 
 ## Contributing
 
-This project needs major work to become functional:
-
-1. Fix array and object parsing
-2. Fix loop implementation  
-3. Add error handling
-4. Implement missing built-in functions
-5. Fix memory management issues
-6. Add real tests (current tests all fail)
-
-## Documentation
-
-- `docs/idea.md` - The aspirational language specification (mostly not implemented)
-- `ACTUAL_STATUS.md` - Honest assessment of what actually works
-- `MANIFEST.json` - File and function definitions (many are stubs/broken)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Key points:
+- Follow `MANIFEST.json` specifications exactly
+- Run `make enforce` before committing
+- Add tests for new features
+- Fix root causes, not symptoms
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+MIT License - See [LICENSE](LICENSE)
 
 ## Author
 
 Created by Nguyen Ky Son
-
----
-
-**⚠️ IMPORTANT: This is not a working programming language. It's an incomplete experiment with serious implementation issues. Do not use for any real purpose.**
