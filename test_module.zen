@@ -1,0 +1,18 @@
+# Test module for import testing
+
+function greet name
+    return "Hello from module, " + name
+
+function add a b
+    return a + b
+
+set PI 3.14159
+
+class Calculator
+    method multiply a b
+        return a * b
+    
+    method divide a b
+        if b = 0
+            throw "Division by zero"
+        return a / b

@@ -1,0 +1,9 @@
+# Test import + undefined class
+import "test_module.zen"
+
+set calc new Calculator
+
+try
+    calc.divide 10 0
+catch error
+    print "Caught error:" error

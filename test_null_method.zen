@@ -1,0 +1,7 @@
+# Test null.method
+set calc null
+
+try
+    calc.divide 10 0
+catch error
+    print "Caught error:" error

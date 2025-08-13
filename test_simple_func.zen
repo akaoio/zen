@@ -1,0 +1,5 @@
+import "test_module.zen"
+try
+    null.x 1 2
+catch e
+    print "caught"

@@ -1,0 +1,7 @@
+# Absolute minimal test
+import "test_module.zen"
+
+try
+    print "test"
+catch error
+    print "error"

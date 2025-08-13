@@ -1,0 +1,39 @@
+# Test without import
+
+# Test functions
+function greet name
+    return "Hello, " + name
+
+function add a b
+    return a + b
+
+# Test variables
+set PI 3.14159
+
+# Test class
+class Calculator
+    method multiply a b
+        return a * b
+    
+    method divide a b
+        if b = 0
+            throw "Division by zero"
+        return a / b
+
+# Test accessing functions
+print greet "World"
+print "2 + 3 =" add 2 3
+
+# Test accessing variables
+print "PI =" PI
+
+# Test using class
+set calc new Calculator
+print "5 * 3 =" calc.multiply 5 3
+print "10 / 2 =" calc.divide 10 2
+
+# Test error handling
+try
+    calc.divide 10 0
+catch error
+    print "Caught error:" error

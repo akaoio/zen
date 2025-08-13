@@ -1,0 +1,4 @@
+try
+    x.y 1
+catch e
+    print "c"

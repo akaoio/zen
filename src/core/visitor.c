@@ -212,6 +212,9 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
     static int depth = 0;
     depth++;
+    if (depth > 20) {
+        LOG_ERROR(LOG_CAT_VISITOR, "Deep recursion detected! Depth=%d, Node type=%d", depth, node->type);
+    }
     if (depth > 100) {
         LOG_ERROR(LOG_CAT_VISITOR, "Stack overflow detected! Node type=%d", node->type);
         depth--;
@@ -1126,7 +1129,9 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
     // Handle method calls (obj.method syntax)
     if (node->function_call_expression) {
         // Evaluate the expression to get the function
+        LOG_DEBUG(LOG_CAT_VISITOR, "Evaluating function call expression");
         RuntimeValue *func_rv = visitor_visit(visitor, node->function_call_expression);
+        LOG_DEBUG(LOG_CAT_VISITOR, "Function call expression evaluated, type: %d", func_rv ? (int)func_rv->type : -1);
 
         // Check if this is a stdlib function marker from property access
         if (func_rv && func_rv->type == RV_OBJECT) {
@@ -1178,6 +1183,7 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
         }
 
         if (!func_rv || func_rv->type != RV_FUNCTION) {
+            LOG_DEBUG(LOG_CAT_VISITOR, "Function call expression is not a function, returning null");
             if (func_rv)
                 rv_unref(func_rv);
             return rv_new_null();
@@ -1518,12 +1524,14 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
             continue;
         }
 
+        
         // Free previous result
         if (last_result) {
             rv_unref(last_result);
         }
 
         last_result = visitor_visit(visitor, node->compound_statements[i]);
+        
 
         // Property access handled
 
@@ -2213,7 +2221,9 @@ static RuntimeValue *visitor_visit_property_access(visitor_T *visitor, AST_T *no
 
 normal_property_access: {
     // Evaluate the object expression
+    LOG_DEBUG(LOG_CAT_VISITOR, "Property access: evaluating object");
     RuntimeValue *object_rv = visitor_visit(visitor, node->object);
+    LOG_DEBUG(LOG_CAT_VISITOR, "Property access: object evaluated, type: %d", object_rv ? (int)object_rv->type : -1);
     if (!object_rv) {
         return rv_new_null();
     }
@@ -2692,11 +2702,10 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
              "Import statement encountered but not fully implemented: %s",
              node->import_path);
     return rv_new_null();
-
-    // Read the module file
-    char *module_path = node->import_path;
-
+    
+#if 0  // Dead code - import not implemented yet
     // Add .zen extension if not present
+    char *module_path = node->import_path;
     char full_path[512];
     if (!strstr(module_path, ".zen") && !strstr(module_path, ".zn")) {
         snprintf(full_path, sizeof(full_path), "%s.zen", module_path);
@@ -2846,6 +2855,7 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
     memory_free(source);
 
     return exports;
+#endif  // Dead code - import not implemented yet
 }
 
 /**
@@ -3699,7 +3709,9 @@ static RuntimeValue *visitor_visit_try_catch(visitor_T *visitor, AST_T *node)
     visitor->exception_state.exception_message = NULL;
 
     // Execute try block
+    LOG_DEBUG(LOG_CAT_VISITOR, "Executing try block");
     RuntimeValue *result = visitor_visit(visitor, node->try_block);
+    LOG_DEBUG(LOG_CAT_VISITOR, "Try block executed, exception active: %d", visitor->exception_state.is_active);
 
     // Check if exception was thrown
     if (visitor->exception_state.is_active && node->catch_block) {
