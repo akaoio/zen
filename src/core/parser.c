@@ -758,9 +758,8 @@ AST_T *parser_parse_binary_expr(parser_T *parser, scope_T *scope, int min_preced
     while (parser_is_binary_operator(parser->current_token->type) &&
            parser_get_precedence(parser->current_token->type) >= min_precedence) {
         // If we're parsing inside parentheses, stop at closing paren or comma
-        if (parser->context.in_parentheses && 
-            (parser->current_token->type == TOKEN_RPAREN || 
-             parser->current_token->type == TOKEN_COMMA)) {
+        if (parser->context.in_parentheses && (parser->current_token->type == TOKEN_RPAREN ||
+                                               parser->current_token->type == TOKEN_COMMA)) {
             break;
         }
         int op_type = parser->current_token->type;
@@ -903,9 +902,9 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
             // 1. We're not in an assignment context
             // 2. We're not parsing function arguments
             // 3. This is truly a standalone statement (top-level expression)
-            is_standalone = !parser->context.in_variable_assignment && 
-                           !parser->context.in_function_call &&
-                           parser->recursion_depth <= 2;  // Only at top level
+            is_standalone = !parser->context.in_variable_assignment &&
+                            !parser->context.in_function_call &&
+                            parser->recursion_depth <= 2;  // Only at top level
         }
 
         if (has_args || is_standalone) {
@@ -1066,7 +1065,7 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
 
     // Check for parenthesized function call syntax: func()
     bool has_parens = (parser->current_token->type == TOKEN_LPAREN);
-    
+
     // Check if this identifier has arguments (function call with args)
     // We check if the next token could be an argument to this function
     bool has_args =
@@ -1120,24 +1119,27 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
             // Handle parenthesized arguments
             if (has_parens) {
                 parser_eat(parser, TOKEN_LPAREN);
-                
+
                 // Set flag to indicate we're parsing inside parentheses
                 parser->context.in_parentheses = true;
-                
+
                 // Parse comma-separated arguments until we hit RPAREN
                 while (parser->current_token->type != TOKEN_RPAREN &&
                        parser->current_token->type != TOKEN_EOF) {
                     // Parse argument as expression, but stop at RPAREN or COMMA
                     // We need to parse carefully to not consume the closing paren
                     AST_T *arg = parser_parse_expr(parser, scope);
-                    if (!arg) break;
-                    
+                    if (!arg)
+                        break;
+
                     function_call->function_call_arguments_size++;
                     function_call->function_call_arguments = memory_realloc(
                         function_call->function_call_arguments,
                         function_call->function_call_arguments_size * sizeof(struct AST_STRUCT *));
-                    function_call->function_call_arguments[function_call->function_call_arguments_size - 1] = arg;
-                    
+                    function_call
+                        ->function_call_arguments[function_call->function_call_arguments_size - 1] =
+                        arg;
+
                     // Check for comma separator
                     if (parser->current_token->type == TOKEN_COMMA) {
                         parser_eat(parser, TOKEN_COMMA);
@@ -1146,7 +1148,7 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                         break;
                     }
                 }
-                
+
                 parser_eat(parser, TOKEN_RPAREN);
                 parser->context.in_parentheses = false;  // Clear the flag
                 parser->context.in_function_call = false;
@@ -1158,90 +1160,90 @@ AST_T *parser_parse_id_or_object(parser_T *parser, scope_T *scope)
                        parser->current_token->type != TOKEN_RPAREN &&
                        parser->current_token->type != TOKEN_RBRACKET &&
                        !parser_is_binary_operator(parser->current_token->type)) {
-                // Check if current token can start an expression
-                bool can_parse_expr = false;
-                switch (parser->current_token->type) {
-                case TOKEN_ID:
-                case TOKEN_NUMBER:
-                case TOKEN_STRING:
-                case TOKEN_TRUE:
-                case TOKEN_FALSE:
-                case TOKEN_NULL:
-                case TOKEN_LBRACKET:
-                case TOKEN_LPAREN:
-                case TOKEN_NOT:
-                case TOKEN_MINUS:
-                case TOKEN_NEW:
-                    can_parse_expr = true;
-                    break;
-                default:
-                    can_parse_expr = false;
-                    break;
-                }
+                    // Check if current token can start an expression
+                    bool can_parse_expr = false;
+                    switch (parser->current_token->type) {
+                    case TOKEN_ID:
+                    case TOKEN_NUMBER:
+                    case TOKEN_STRING:
+                    case TOKEN_TRUE:
+                    case TOKEN_FALSE:
+                    case TOKEN_NULL:
+                    case TOKEN_LBRACKET:
+                    case TOKEN_LPAREN:
+                    case TOKEN_NOT:
+                    case TOKEN_MINUS:
+                    case TOKEN_NEW:
+                        can_parse_expr = true;
+                        break;
+                    default:
+                        can_parse_expr = false;
+                        break;
+                    }
 
-                if (!can_parse_expr) {
-                    break;
-                }
+                    if (!can_parse_expr) {
+                        break;
+                    }
 
-                // Parse argument based on function type and position
-                AST_T *arg = NULL;
-                if (stdlib_get(function_call->function_call_name)) {
-                    // Stdlib function: parse full expression
-                    arg = parser_parse_ternary_expr(parser, scope);
-                } else {
-                    // User function: parse full expression like stdlib functions
-                    // This is needed for recursive calls like "countdown n - 1"
-                    // The old behavior of stopping at binary operators broke recursion
-                    arg = parser_parse_ternary_expr(parser, scope);
-                }
-                if (!arg)
-                    break;
+                    // Parse argument based on function type and position
+                    AST_T *arg = NULL;
+                    if (stdlib_get(function_call->function_call_name)) {
+                        // Stdlib function: parse full expression
+                        arg = parser_parse_ternary_expr(parser, scope);
+                    } else {
+                        // User function: parse full expression like stdlib functions
+                        // This is needed for recursive calls like "countdown n - 1"
+                        // The old behavior of stopping at binary operators broke recursion
+                        arg = parser_parse_ternary_expr(parser, scope);
+                    }
+                    if (!arg)
+                        break;
 
-                function_call->function_call_arguments_size++;
-                function_call->function_call_arguments = memory_realloc(
-                    function_call->function_call_arguments,
-                    function_call->function_call_arguments_size * sizeof(struct AST_STRUCT *));
-                function_call
-                    ->function_call_arguments[function_call->function_call_arguments_size - 1] =
-                    arg;
+                    function_call->function_call_arguments_size++;
+                    function_call->function_call_arguments = memory_realloc(
+                        function_call->function_call_arguments,
+                        function_call->function_call_arguments_size * sizeof(struct AST_STRUCT *));
+                    function_call
+                        ->function_call_arguments[function_call->function_call_arguments_size - 1] =
+                        arg;
 
-                // Handle comma separator for next argument
-                if (parser->current_token->type == TOKEN_COMMA) {
-                    parser_eat(parser, TOKEN_COMMA);
-                    continue;  // Continue parsing next argument after comma
-                }
+                    // Handle comma separator for next argument
+                    if (parser->current_token->type == TOKEN_COMMA) {
+                        parser_eat(parser, TOKEN_COMMA);
+                        continue;  // Continue parsing next argument after comma
+                    }
 
-                // Check if there's another argument (space-separated)
-                bool has_next_arg = false;
-                switch (parser->current_token->type) {
-                case TOKEN_ID:
-                case TOKEN_NUMBER:
-                case TOKEN_STRING:
-                case TOKEN_TRUE:
-                case TOKEN_FALSE:
-                case TOKEN_NULL:
-                case TOKEN_LBRACKET:
-                case TOKEN_LPAREN:
-                case TOKEN_NOT:
-                case TOKEN_MINUS:
-                case TOKEN_NEW:
-                    has_next_arg = true;
-                    break;
-                default:
-                    has_next_arg = false;
-                    break;
-                }
+                    // Check if there's another argument (space-separated)
+                    bool has_next_arg = false;
+                    switch (parser->current_token->type) {
+                    case TOKEN_ID:
+                    case TOKEN_NUMBER:
+                    case TOKEN_STRING:
+                    case TOKEN_TRUE:
+                    case TOKEN_FALSE:
+                    case TOKEN_NULL:
+                    case TOKEN_LBRACKET:
+                    case TOKEN_LPAREN:
+                    case TOKEN_NOT:
+                    case TOKEN_MINUS:
+                    case TOKEN_NEW:
+                        has_next_arg = true;
+                        break;
+                    default:
+                        has_next_arg = false;
+                        break;
+                    }
 
-                if (!has_next_arg) {
-                    LOG_PARSER_DEBUG(
-                        "No more arguments for function '%s', stopping at token type %d",
-                        function_call->function_call_name,
-                        parser->current_token->type);
-                    break;  // No more arguments
+                    if (!has_next_arg) {
+                        LOG_PARSER_DEBUG(
+                            "No more arguments for function '%s', stopping at token type %d",
+                            function_call->function_call_name,
+                            parser->current_token->type);
+                        break;  // No more arguments
+                    }
+                    LOG_PARSER_DEBUG("Continuing to parse next argument for function '%s'",
+                                     function_call->function_call_name);
                 }
-                LOG_PARSER_DEBUG("Continuing to parse next argument for function '%s'",
-                                 function_call->function_call_name);
-            }
             }  // End of else block for space-separated arguments
 
             // Clear context flag

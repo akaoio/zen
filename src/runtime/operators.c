@@ -52,7 +52,7 @@ RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
     /* Array concatenation */
     if (a->type == RV_ARRAY && b->type == RV_ARRAY) {
         RuntimeValue *result_array = rv_new_array();
-        
+
         // Add all elements from the first array
         for (size_t i = 0; i < a->data.array.count; i++) {
             RuntimeValue *elem = a->data.array.elements[i];
@@ -60,7 +60,7 @@ RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
                 rv_array_push(result_array, elem);
             }
         }
-        
+
         // Add all elements from the second array
         for (size_t i = 0; i < b->data.array.count; i++) {
             RuntimeValue *elem = b->data.array.elements[i];
@@ -68,7 +68,7 @@ RuntimeValue *op_add(RuntimeValue *a, RuntimeValue *b)
                 rv_array_push(result_array, elem);
             }
         }
-        
+
         return result_array;
     }
 

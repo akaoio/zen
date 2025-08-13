@@ -1,5 +1,0 @@
-# Test importing and using
-import "test_module.zen"
-
-# Try to use imported function
-print greet "World"

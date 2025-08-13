@@ -1,7 +1,0 @@
-# Test undefined class
-set calc new Calculator
-
-try
-    calc.divide 10 0
-catch error
-    print "Caught error:" error

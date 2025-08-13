@@ -1,5 +1,0 @@
-import "test_module.zen"
-try
-    null.x
-catch e
-    print "caught"

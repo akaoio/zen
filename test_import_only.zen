@@ -1,4 +1,0 @@
-# Test with just import
-import "test_module.zen"
-
-print "After import"

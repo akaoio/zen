@@ -1,7 +1,0 @@
-# Test without import
-set calc new Calculator
-
-try
-    calc.divide 10 0
-catch error
-    print "error"
