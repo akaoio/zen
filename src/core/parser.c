@@ -874,8 +874,7 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
 
     // Check if this property access should become a method call
     // In ZEN syntax, obj.method arg1 arg2 is a method call
-    // BUT: For now, disable automatic conversion to fix property access
-    if (false && expr && expr->type == AST_PROPERTY_ACCESS) {
+    if (expr && expr->type == AST_PROPERTY_ACCESS) {
         // Check if there are arguments following the property access
         bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
                          parser->current_token->type != TOKEN_EOF &&
@@ -895,14 +894,18 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
         // If this is a direct statement (e.g., "obj.method" on its own line)
         // and the next token suggests end of statement, treat as zero-arg call
         // BUT: Don't do this when we're in an assignment context or other expression
+        // Also don't do this when we're parsing function arguments
         if (!has_args && expr->object &&
             (parser->current_token->type == TOKEN_NEWLINE ||
              parser->current_token->type == TOKEN_EOF ||
              parser->current_token->type == TOKEN_DEDENT)) {
-            // Only treat as standalone method call if we're not in an assignment
-            // Check if we're on the right-hand side of assignment
-            // For now, disable standalone method calls to fix property access
-            is_standalone = false;
+            // Only treat as standalone method call if:
+            // 1. We're not in an assignment context
+            // 2. We're not parsing function arguments
+            // 3. This is truly a standalone statement (top-level expression)
+            is_standalone = !parser->context.in_variable_assignment && 
+                           !parser->context.in_function_call &&
+                           parser->recursion_depth <= 2;  // Only at top level
         }
 
         if (has_args || is_standalone) {

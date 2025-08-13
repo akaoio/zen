@@ -1235,8 +1235,10 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
             size_t total_ast_args = 1 + node->function_call_arguments_size;
             AST_T **ast_args = memory_alloc(sizeof(AST_T *) * total_ast_args);
 
-            // Convert self RuntimeValue to AST for first argument
-            ast_args[0] = runtime_value_to_ast(self_rv);
+            // Create a wrapper node for self to preserve the RuntimeValue
+            AST_T *self_wrapper = ast_new(AST_VARIABLE_DEFINITION);
+            self_wrapper->runtime_value = self_rv;  // Direct reference, no conversion
+            ast_args[0] = self_wrapper;
 
             // Copy remaining arguments
             for (size_t i = 0; i < node->function_call_arguments_size; i++) {
@@ -1248,9 +1250,9 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
             result =
                 visitor_execute_user_function_ex(visitor, func_def, ast_args, total_ast_args, true);
 
-            // CRITICAL: Don't free the self AST - it might be referenced by the function scope
-            // This is a temporary fix - proper solution is to track AST lifecycle
-            // ast_free(ast_args[0]);
+            // Clean up the wrapper but not the runtime_value it references
+            self_wrapper->runtime_value = NULL;  // Prevent double-free
+            ast_free(self_wrapper);
 
             // Clean up
             for (size_t i = 0; i < total_args; i++) {
@@ -1541,7 +1543,7 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
             }
 
             // Convert to AST for function execution
-            AST_T *self_ast = runtime_value_to_ast(self_value);
+            AST_T *self_ast = value_to_ast(self_value);
             AST_T **args = memory_alloc(sizeof(AST_T *));
             args[0] = self_ast;
 
@@ -1995,13 +1997,8 @@ static RuntimeValue *visitor_visit_binary_op(visitor_T *visitor, AST_T *node)
         return rv_new_null();
     }
 
-    // Convert result to RuntimeValue
-    AST_T *result_ast = value_to_ast(result);
-    rv_unref(result);
-    RuntimeValue *result_rv = ast_to_runtime_value(result_ast);
-    ast_free(result_ast);
-
-    return result_rv;
+    // The operators already return RuntimeValue*, no conversion needed
+    return result;
 }
 
 /**
@@ -2023,7 +2020,7 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
     }
 
     // Convert RuntimeValue to AST then to Value object
-    AST_T *operand_ast = runtime_value_to_ast(operand_rv);
+    AST_T *operand_ast = value_to_ast(operand_rv);
     RuntimeValue *operand_val = visitor_ast_to_value(operand_ast);
     ast_free(operand_ast);
     rv_unref(operand_rv);
@@ -2275,13 +2272,18 @@ normal_property_access: {
                 rv_ref(result);
             } else {
                 // Try to get instance property
+                LOG_VISITOR_DEBUG("Looking for property '%s' on instance", property_name);
                 result = rv_object_get(object_rv, property_name);
                 if (result) {
+                    LOG_VISITOR_DEBUG("Found property '%s', type: %d", property_name, result->type);
                     rv_ref(result);
                 } else {
+                    LOG_VISITOR_DEBUG("Property '%s' not found on instance", property_name);
                     result = rv_new_null();
                 }
             }
+            
+            // Note: class_obj is a borrowed reference from rv_object_get, don't unref
         } else {
             // Regular object property access
             result = rv_object_get(object_rv, property_name);
@@ -2533,7 +2535,7 @@ static RuntimeValue *visitor_visit_for_loop(visitor_T *visitor, AST_T *node)
                 continue;
 
             // Convert element to AST for variable storage
-            AST_T *element_ast = runtime_value_to_ast(element);
+            AST_T *element_ast = value_to_ast(element);
 
             // FIXED: Update the iterator variable's value instead of creating new one
             // Free the old AST value first to prevent memory leak
@@ -3289,7 +3291,7 @@ static RuntimeValue *visitor_execute_user_function_ex(
         for (size_t i = params_start; i < function_scope->variable_definitions_size; i++) {
             AST_T *param_def = function_scope->variable_definitions[i];
             if (param_def) {
-                // Free the value AST we created with runtime_value_to_ast
+                // Free the value AST we created with value_to_ast
                 if (param_def->variable_definition_value) {
                     ast_free(param_def->variable_definition_value);
                     param_def->variable_definition_value = NULL;  // Prevent double-free
@@ -3631,8 +3633,12 @@ static RuntimeValue *visitor_visit_new_expression(visitor_T *visitor, AST_T *nod
     // Don't set self here - it will be set when methods are called
     // rv_object_set(instance, "self", instance);
 
-    // Look for constructor method
-    RuntimeValue *constructor = rv_object_get(class_obj, "__method_constructor");
+    // Look for constructor method (init in ZEN)
+    RuntimeValue *constructor = rv_object_get(class_obj, "__method_init");
+    if (!constructor || constructor->type != RV_FUNCTION) {
+        // Try legacy name for compatibility
+        constructor = rv_object_get(class_obj, "__method_constructor");
+    }
     if (constructor && constructor->type == RV_FUNCTION) {
         // Create a special AST node that wraps the RuntimeValue directly
         // This avoids copying the instance
@@ -3777,7 +3783,7 @@ static RuntimeValue *visitor_visit_throw(visitor_T *visitor, AST_T *node)
         ast_free(visitor->exception_state.exception_value);
     }
     visitor->exception_state.exception_value =
-        exception_value ? runtime_value_to_ast(exception_value) : NULL;
+        exception_value ? value_to_ast(exception_value) : NULL;
 
     // Store exception message if it's a string
     if (visitor->exception_state.exception_message) {
@@ -3917,6 +3923,21 @@ static RuntimeValue *visitor_visit_assignment(visitor_T *visitor, AST_T *node)
     if (!object) {
         LOG_ERROR(LOG_CAT_VISITOR, "Failed to evaluate object in property assignment");
         return rv_new_null();
+    }
+
+    // If the object is null, auto-create an empty object
+    if (rv_is_null(object)) {
+        rv_unref(object);
+        object = rv_new_object();
+        
+        // We need to update the variable in the scope with the new object
+        if (prop_access->object->type == AST_VARIABLE) {
+            char *var_name = prop_access->object->variable_name;
+            scope_T *target_scope = visitor->current_scope ? visitor->current_scope : node->scope;
+            if (var_name && target_scope) {
+                scope_set_variable(target_scope, var_name, object);
+            }
+        }
     }
 
     // Check if object is actually an object
