@@ -118,8 +118,19 @@ static bool execute_line(const char *line, scope_T *global_scope)
     // Execute the parsed code
     RuntimeValue *result = visitor_visit(visitor, root);
 
-    // In REPL mode, display ALL types of values including null
-    // This allows users to see the result of any expression they type
+    // In REPL mode, display results intelligently
+    // Check if the last statement was a print function call
+    bool was_print_call = false;
+    if (root && root->type == AST_COMPOUND && root->compound_size > 0) {
+        AST_T *last_stmt = root->compound_statements[root->compound_size - 1];
+        if (last_stmt && last_stmt->type == AST_FUNCTION_CALL && 
+            last_stmt->function_call_name &&
+            strcmp(last_stmt->function_call_name, "print") == 0) {
+            was_print_call = true;
+        }
+    }
+    
+    // Only display the result if it's meaningful
     if (result) {
         // Special handling for control flow markers
         if (result->type == RV_STRING) {
@@ -146,8 +157,10 @@ static bool execute_line(const char *line, scope_T *global_scope)
                 printf("%s\n", str);
                 memory_free(str);
             }
+        } else if (result->type == RV_NULL && was_print_call) {
+            // Don't display null returned by print function
         } else {
-            // All other types including RV_NULL, RV_FUNCTION, RV_ERROR
+            // All other types including RV_NULL (when not from print), RV_FUNCTION, RV_ERROR
             char *str = rv_to_string(result);
             printf("%s\n", str);
             memory_free(str);

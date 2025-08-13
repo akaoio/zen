@@ -874,6 +874,10 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
     // Check if this property access should become a method call
     // In ZEN syntax, obj.method arg1 arg2 is a method call
     if (expr && expr->type == AST_PROPERTY_ACCESS) {
+        // CRITICAL FIX: Never treat array access (expr->left != NULL) as a method call
+        // Array access should always return the element value
+        bool is_array_access = (expr->left != NULL);
+        
         // Check if there are arguments following the property access
         bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
                          parser->current_token->type != TOKEN_EOF &&
@@ -885,29 +889,12 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
                          parser->current_token->type != TOKEN_LBRACKET &&
                          !parser_is_binary_operator(parser->current_token->type));
 
-        // Also treat standalone property access as method call (zero-arg methods)
-        // But only if we're in a statement context (not inside an expression)
-        // Check if this looks like a method call without args
-        bool is_standalone = false;
-
-        // If this is a direct statement (e.g., "obj.method" on its own line)
-        // and the next token suggests end of statement, treat as zero-arg call
-        // BUT: Don't do this when we're in an assignment context or other expression
-        // Also don't do this when we're parsing function arguments
-        if (!has_args && expr->object &&
-            (parser->current_token->type == TOKEN_NEWLINE ||
-             parser->current_token->type == TOKEN_EOF ||
-             parser->current_token->type == TOKEN_DEDENT)) {
-            // Only treat as standalone method call if:
-            // 1. We're not in an assignment context
-            // 2. We're not parsing function arguments
-            // 3. This is truly a standalone statement (top-level expression)
-            is_standalone = !parser->context.in_variable_assignment &&
-                            !parser->context.in_function_call &&
-                            parser->recursion_depth <= 2;  // Only at top level
-        }
-
-        if (has_args || is_standalone) {
+        // REMOVED: Standalone property access as method call feature
+        // This was causing confusion in REPL where obj.property should return the value
+        // Methods should be called with explicit arguments or parentheses
+        // Properties should always return their values
+        
+        if (has_args && !is_array_access) {
             // Convert property access to method call
             AST_T *method_call = ast_new(AST_FUNCTION_CALL);
             method_call->function_call_expression =
