@@ -1,0 +1,21 @@
+{
+  "name": "zen-fixbot",
+  "version": "1.0.0",
+  "description": "Automated issue fixer bot for ZEN language project",
+  "main": "fixbot.js",
+  "scripts": {
+    "start": "node fixbot.js",
+    "fixbot": "node fixbot.js"
+  },
+  "keywords": [
+    "automation",
+    "github",
+    "bot",
+    "zen"
+  ],
+  "author": "FixBot",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
