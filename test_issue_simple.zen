@@ -1,0 +1,3 @@
+# Simplified problematic case
+set data user name "Charlie", settings theme "dark"
+print data

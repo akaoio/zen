@@ -1,0 +1,3 @@
+# Test current nested object behavior
+set student name "Alice", scores math 95
+print student

@@ -1,0 +1,13 @@
+# What Test 4 expects:
+# Input: user name "Charlie", id 123, settings theme "dark", notifications true
+# Expected: {user: {name: "Charlie", id: 123}, settings: {theme: "dark", notifications: true}}
+
+# But the way it's written, it seems like it's trying to nest everything
+# Let me test what was expected
+set data1 user name "Charlie", id 123
+print "data1:"
+print data1
+
+set data2 settings theme "dark", notifications true  
+print "data2:"
+print data2

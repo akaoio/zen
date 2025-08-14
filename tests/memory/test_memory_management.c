@@ -9,7 +9,9 @@
 #include "zen/core/lexer.h"
 #include "zen/core/parser.h"
 #include "zen/core/visitor.h"
-#include "zen/core/runtime_value.h"
+#include "zen/core/token.h"
+#include "zen/core/scope.h"
+#include "zen/core/ast.h"
 
 TEST(test_basic_memory_allocation) {
     void* ptr = memory_alloc(1024);
@@ -52,28 +54,28 @@ TEST(test_memory_string_duplication) {
 
 TEST(test_reference_counting) {
     // Create a value with reference counting
-    Value* value = value_new_string("Reference Test");
+    RuntimeValue* value = rv_new_string("Reference Test");
     ASSERT_EQ(value->ref_count, 1);
     
     // Increment reference
-    Value* ref1 = value_ref(value);
+    RuntimeValue* ref1 = rv_ref(value);
     ASSERT_EQ(value, ref1);
     ASSERT_EQ(value->ref_count, 2);
     
     // Increment again
-    Value* ref2 = value_ref(value);
+    RuntimeValue* ref2 = rv_ref(value);
     ASSERT_EQ(value, ref2);
     ASSERT_EQ(value->ref_count, 3);
     
     // Decrement references
-    value_unref(ref2);
+    rv_unref(ref2);
     ASSERT_EQ(value->ref_count, 2);
     
-    value_unref(ref1);
+    rv_unref(ref1);
     ASSERT_EQ(value->ref_count, 1);
     
     // Final unref should free the memory
-    value_unref(value);
+    rv_unref(value);
     // value is now invalid
 }
 
@@ -143,26 +145,26 @@ TEST(test_value_memory_management) {
     memory_get_stats(&stats_before);
     
     // Create and manipulate values
-    Value* str_val = value_new_string("Memory Test");
-    Value* num_val = value_new_number(42.0);
-    Value* bool_val = value_new_boolean(true);
-    Value* null_val = value_new_null();
+    RuntimeValue* str_val = rv_new_string("Memory Test");
+    RuntimeValue* num_val = rv_new_number(42.0);
+    RuntimeValue* bool_val = rv_new_boolean(true);
+    RuntimeValue* null_val = rv_new_null();
     
     // Copy values (should allocate more memory)
-    Value* str_copy = value_copy(str_val);
-    Value* num_copy = value_copy(num_val);
+    RuntimeValue* str_copy = rv_copy(str_val);
+    RuntimeValue* num_copy = rv_copy(num_val);
     
     MemoryStats stats_after_alloc;
     memory_get_stats(&stats_after_alloc);
     ASSERT_TRUE(stats_after_alloc.allocation_count > stats_before.allocation_count);
     
     // Free all values
-    value_unref(str_val);
-    value_unref(num_val);
-    value_unref(bool_val);
-    value_unref(null_val);
-    value_unref(str_copy);
-    value_unref(num_copy);
+    rv_unref(str_val);
+    rv_unref(num_val);
+    rv_unref(bool_val);
+    rv_unref(null_val);
+    rv_unref(str_copy);
+    rv_unref(num_copy);
     
     MemoryStats stats_after_free;
     memory_get_stats(&stats_after_free);
@@ -186,25 +188,33 @@ TEST(test_lexer_memory_management) {
     lexer_T* lexer = lexer_new(input);
     
     // Tokenize entire input
-    token_T* token;
+    token_T* token = NULL;
+    token_T* prev_token = NULL;
     do {
+        if (prev_token) {
+            token_free(prev_token);
+        }
+        prev_token = token;
         token = lexer_get_next_token(lexer);
     } while (token && token->type != TOKEN_EOF);
     
+    // Free the last tokens
+    if (token) {
+        token_free(token);
+    }
+    if (prev_token && prev_token != token) {
+        token_free(prev_token);
+    }
+    
     // Free lexer (should free all associated memory)
-    // Note: Need proper lexer cleanup function
+    lexer_free(lexer);
     
     MemoryStats stats_after;
     memory_get_stats(&stats_after);
     
-    // Should not have significant memory increase
-    // (tokens might be cached, but no major leaks)
-    size_t has_leaks = memory_check_leaks();
-    
-    // Don't assert no leaks since lexer cleanup might not be fully implemented
-    // Just verify no major memory explosion
-    (void)has_leaks; // Suppress unused variable warning
-    ASSERT_TRUE(stats_after.allocation_count < stats_before.allocation_count + 100);
+    // Should have no leaks
+    size_t leaks = memory_check_leaks();
+    ASSERT_EQ(leaks, 0);
     
     memory_debug_enable(false);
 }
@@ -231,15 +241,15 @@ TEST(test_parser_memory_management) {
     // AST should be created without memory leaks
     ASSERT_NOT_NULL(ast);
     
-    // Clean up AST (should free all nodes recursively)
+    // Clean up everything
     ast_free(ast);
+    scope_free(scope);
+    parser_free(parser);
+    lexer_free(lexer);
     
-    // Should not have memory leaks
-    size_t has_leaks = memory_check_leaks();
-    
-    // Don't assert no leaks since parser/AST cleanup might not be fully implemented
-    // Just verify no major leaks
-    (void)has_leaks; // Suppress unused variable warning
+    // Should have no leaks
+    size_t leaks = memory_check_leaks();
+    ASSERT_EQ(leaks, 0);
     
     memory_debug_enable(false);
 }
@@ -268,12 +278,14 @@ TEST(test_visitor_memory_management) {
     
     // Clean up everything
     ast_free(ast);
-    // Note: Need proper cleanup functions for lexer, parser, visitor, scope
+    visitor_free(visitor);
+    scope_free(scope);
+    parser_free(parser);
+    lexer_free(lexer);
     
-    size_t has_leaks = memory_check_leaks();
-    
-    // Don't assert no leaks since cleanup might not be fully implemented
-    (void)has_leaks; // Suppress unused variable warning
+    // Should have no leaks
+    size_t leaks = memory_check_leaks();
+    ASSERT_EQ(leaks, 0);
     
     memory_debug_enable(false);
 }

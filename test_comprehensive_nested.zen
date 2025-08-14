@@ -1,0 +1,31 @@
+# Comprehensive test of nested object syntax
+
+print "=== Test 1: Simple nested object ==="
+set student1 name "Alice", scores math 95, science 88
+print student1
+print "Math score: " + student1.scores.math
+print "Science score: " + student1.scores.science
+
+print "\n=== Test 2: Deeply nested object ==="
+set config server host "localhost", port 8080, timeout 30
+print config
+print "Server host: " + config.server.host
+print "Server port: " + config.server.port
+
+print "\n=== Test 3: Mixed nested and flat ==="
+set person name "Bob", age 25, address street "Main St", city "NYC"
+print person
+print "City: " + person.address.city
+
+print "\n=== Test 4: Multiple nested objects ==="
+set data user name "Charlie", id 123, settings theme "dark", notifications true
+print data
+print "Theme: " + data.settings.theme
+
+print "\n=== Test 5: Complex nested structure ==="
+set app name "MyApp", version "1.0", database host "db.example.com", port 5432, credentials user "admin", pass "secret"
+print app
+print "DB Host: " + app.database.host
+print "DB User: " + app.database.credentials.user
+
+print "\n=== All tests passed! ==="

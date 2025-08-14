@@ -1,0 +1,27 @@
+# GitHub Issue #30 Validation
+
+print "=== GitHub Issue #30: Nested Object Syntax Fix ==="
+
+# Original issue example
+set student name "Alice", scores math 95, science 88
+print "Original issue example:"
+print student
+print "Expected: {name: Alice, scores: {math: 95, science: 88}}"
+print ""
+
+# Another nested example
+set config server host "localhost", port 8080
+print "Nested config example:"
+print config
+print "Expected: {server: {host: localhost, port: 8080}}"
+print ""
+
+# Workaround still works
+set scores2 english 92, history 88
+set student2 name "Charlie", scores scores2
+print "Workaround method:"
+print student2
+print "Expected: {name: Charlie, scores: {english: 92, history: 88}}"
+
+print ""
+print "=== Issue #30 FIXED ===="

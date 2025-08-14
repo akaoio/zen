@@ -1,0 +1,12 @@
+# Test with different value types
+set obj1 key subkey 123
+print "obj1 (number value):"
+print obj1
+
+set obj2 key subkey "string"  
+print "obj2 (string value):"
+print obj2
+
+set obj3 key subkey true
+print "obj3 (boolean value):"
+print obj3

@@ -1,0 +1,11 @@
+# Test nested object syntax
+set student name "Alice", scores math 95, science 88
+print student
+
+# Also test deeper nesting
+set company name "TechCorp", address street "123 Main", city "NYC", zip 10001
+print company
+
+# Test mixed nesting
+set profile name "Bob", details age 30, location city "Seattle", state "WA"
+print profile

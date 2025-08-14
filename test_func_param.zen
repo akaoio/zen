@@ -1,0 +1,4 @@
+function greet name
+    print name
+
+greet "Alice"

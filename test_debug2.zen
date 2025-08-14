@@ -1,0 +1,3 @@
+# Test with string keys that look like keywords
+set student name "Alice", scores "math" 95, "science" 88
+print student

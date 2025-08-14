@@ -1,0 +1,25 @@
+# Test different nested patterns
+
+print "Pattern 1: key value, key value (siblings)"
+set obj1 name "Alice", age 30
+print obj1
+print ""
+
+print "Pattern 2: key key value (nested single)"
+set obj2 person name "Bob"
+print obj2
+print ""
+
+print "Pattern 3: key key value, key value (nested with multiple pairs)"
+set obj3 scores math 95, science 88
+print obj3
+print ""
+
+print "Pattern 4: key key value key value (nested with space-separated pairs)"
+set obj4 grades math 95 science 88
+print obj4
+print ""
+
+print "Pattern 5: Mixed"
+set obj5 name "Charlie", scores math 85 english 92, active true
+print obj5

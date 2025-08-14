@@ -25,8 +25,8 @@ class FixBot {
      * Start the bot's main loop
      */
     async start() {
-        console.log('> FixBot starting...');
-        console.log(`=� Project path: ${PROJECT_PATH}`);
+        console.log('🤖 FixBot starting...');
+        console.log(`📁 Project path: ${PROJECT_PATH}`);
         
         // Initial run
         await this.checkAndFixIssues();
@@ -36,7 +36,7 @@ class FixBot {
         setInterval(() => this.checkAndFixIssues(), POLL_INTERVAL);
         setInterval(() => this.runTestsAndCreateIssues(), TEST_INTERVAL);
         
-        console.log('= FixBot is now running in continuous mode...');
+        console.log('🔄 FixBot is now running in continuous mode...');
     }
 
     /**
@@ -44,19 +44,19 @@ class FixBot {
      */
     async checkAndFixIssues() {
         if (this.isProcessingIssue) {
-            console.log('� Already processing an issue, skipping this cycle...');
+            console.log('⏳ Already processing an issue, skipping this cycle...');
             return;
         }
 
         try {
-            console.log('\n= Checking for open issues...');
+            console.log('\n🔍 Checking for open issues...');
             
             // Get list of open issues
             const { stdout } = await execPromise('gh issue list --state open --json number,title,body,assignees --limit 10');
             const issues = JSON.parse(stdout);
             
             if (issues.length === 0) {
-                console.log(' No open issues found');
+                console.log('✅ No open issues found');
                 return;
             }
             
@@ -70,15 +70,15 @@ class FixBot {
             });
             
             if (!issueToFix) {
-                console.log('=� All issues are either assigned or already processed');
+                console.log('📋 All issues are either assigned or already processed');
                 return;
             }
             
-            console.log(`\n<� Found issue #${issueToFix.number}: ${issueToFix.title}`);
+            console.log(`\n🎯 Found issue #${issueToFix.number}: ${issueToFix.title}`);
             await this.processIssue(issueToFix);
             
         } catch (error) {
-            console.error('L Error checking issues:', error.message);
+            console.error('❌ Error checking issues:', error.message);
         }
     }
 
@@ -90,21 +90,21 @@ class FixBot {
         
         try {
             // Comment that we're working on it
-            await this.commentOnIssue(issue.number, "> FixBot is analyzing and attempting to fix this issue...");
+            await this.commentOnIssue(issue.number, "🤖 FixBot is analyzing and attempting to fix this issue...");
             
             // Assign the issue to fixbot (if we have permissions)
             try {
                 await execPromise(`gh issue edit ${issue.number} --add-assignee ${BOT_NAME}`);
-                console.log(` Assigned issue #${issue.number} to ${BOT_NAME}`);
+                console.log(`✅ Assigned issue #${issue.number} to ${BOT_NAME}`);
             } catch (e) {
-                console.log(`9 Could not assign issue (might not have permissions)`);
+                console.log(`ℹ️ Could not assign issue (might not have permissions)`);
             }
             
             // Prepare the prompt for Claude
             const prompt = this.preparePrompt(issue);
             
             // Fix the issue using Claude
-            console.log('=' Attempting to fix with Claude...');
+            console.log('🔧 Attempting to fix with Claude...');
             const fixResult = await this.runClaude(prompt);
             
             // Analyze the fix result
@@ -121,9 +121,9 @@ class FixBot {
             this.processedIssues.add(issue.number);
             
         } catch (error) {
-            console.error(`L Error processing issue #${issue.number}:`, error.message);
+            console.error(`❌ Error processing issue #${issue.number}:`, error.message);
             await this.commentOnIssue(issue.number, 
-                `L FixBot encountered an error while trying to fix this issue:\n\`\`\`\n${error.message}\n\`\`\``);
+                `❌ FixBot encountered an error while trying to fix this issue:\n\`\`\`\n${error.message}\n\`\`\``);
         } finally {
             this.isProcessingIssue = false;
         }
@@ -197,7 +197,7 @@ IMPORTANT:
     async analyzeFix(issueNumber) {
         try {
             // Run tests to check if the issue is fixed
-            console.log('\n>� Running tests to verify fix...');
+            console.log('\n🧪 Running tests to verify fix...');
             
             // Run make test
             const testResult = await this.runTests();
@@ -255,9 +255,39 @@ IMPORTANT:
      * Handle a successfully fixed issue
      */
     async handleFixedIssue(issueNumber, analysis) {
-        console.log(` Issue #${issueNumber} appears to be fixed!`);
+        console.log(`✅ Issue #${issueNumber} appears to be fixed!`);
         
-        const comment = ` **FixBot has successfully fixed this issue!**
+        // Commit and push changes
+        try {
+            console.log('📝 Committing changes...');
+            
+            // Stage all changes
+            await execPromise('git add .');
+            console.log('✅ Staged all changes');
+            
+            // Create commit message
+            const commitMessage = `Fix issue #${issueNumber}: Automated fix by FixBot
+
+This commit resolves issue #${issueNumber} through automated fixes.
+All tests are passing successfully.
+
+Changed files:
+${analysis.changedFiles}`;
+            
+            // Commit changes
+            await execPromise(`git commit -m "${commitMessage.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`);
+            console.log('✅ Committed changes');
+            
+            // Push to remote
+            await execPromise('git push');
+            console.log('✅ Pushed changes to remote');
+            
+        } catch (error) {
+            console.error(`❌ Error committing/pushing changes: ${error.message}`);
+            // Continue with closing the issue even if git operations fail
+        }
+        
+        const comment = `✅ **FixBot has successfully fixed this issue!**
 
 **Changed files:**
 \`\`\`
@@ -274,9 +304,9 @@ This issue has been automatically resolved. Closing now.`;
         // Close the issue
         try {
             await execPromise(`gh issue close ${issueNumber}`);
-            console.log(` Closed issue #${issueNumber}`);
+            console.log(`✅ Closed issue #${issueNumber}`);
         } catch (e) {
-            console.log(`� Could not close issue #${issueNumber}: ${e.message}`);
+            console.log(`⚠️ Could not close issue #${issueNumber}: ${e.message}`);
         }
     }
 
@@ -284,9 +314,9 @@ This issue has been automatically resolved. Closing now.`;
      * Handle a partially fixed issue
      */
     async handlePartiallyFixedIssue(issueNumber, analysis) {
-        console.log(`� Issue #${issueNumber} is partially fixed`);
+        console.log(`⚠️ Issue #${issueNumber} is partially fixed`);
         
-        const comment = `� **FixBot has partially fixed this issue**
+        const comment = `⚠️ **FixBot has partially fixed this issue**
 
 **Changed files:**
 \`\`\`
@@ -310,9 +340,9 @@ Continuing to work on remaining issues...`;
      * Handle a failed fix attempt
      */
     async handleFailedFix(issueNumber, analysis) {
-        console.log(`L Failed to fix issue #${issueNumber}`);
+        console.log(`❌ Failed to fix issue #${issueNumber}`);
         
-        const comment = `L **FixBot was unable to fix this issue**
+        const comment = `❌ **FixBot was unable to fix this issue**
 
 ${analysis.errors.length > 0 ? `**Errors encountered:**\n\`\`\`\n${analysis.errors.join('\n')}\n\`\`\`` : ''}
 
@@ -327,9 +357,9 @@ This issue requires human intervention.`;
     async commentOnIssue(issueNumber, comment) {
         try {
             await execPromise(`gh issue comment ${issueNumber} --body "${comment.replace(/"/g, '\\"')}"`);
-            console.log(`=� Commented on issue #${issueNumber}`);
+            console.log(`💬 Commented on issue #${issueNumber}`);
         } catch (error) {
-            console.error(`L Failed to comment on issue #${issueNumber}:`, error.message);
+            console.error(`❌ Failed to comment on issue #${issueNumber}:`, error.message);
         }
     }
 
@@ -337,7 +367,7 @@ This issue requires human intervention.`;
      * Run tests and create issues for any failures
      */
     async runTestsAndCreateIssues() {
-        console.log('\n>� Running comprehensive tests to find issues...');
+        console.log('\n🧪 Running comprehensive tests to find issues...');
         
         try {
             // Run different test suites
@@ -349,7 +379,7 @@ This issue requires human intervention.`;
             ];
             
             for (const suite of testSuites) {
-                console.log(`\n=� Running ${suite.name}...`);
+                console.log(`\n📋 Running ${suite.name}...`);
                 
                 try {
                     const { stdout, stderr } = await execPromise(suite.command, {
@@ -360,7 +390,7 @@ This issue requires human intervention.`;
                     if (stderr.includes('Error') || stdout.includes('FAILED')) {
                         await this.createIssueFromTestFailure(suite.name, stdout, stderr);
                     } else {
-                        console.log(` ${suite.name} passed`);
+                        console.log(`✅ ${suite.name} passed`);
                     }
                     
                 } catch (error) {
@@ -373,7 +403,7 @@ This issue requires human intervention.`;
             await this.checkMemoryLeaks();
             
         } catch (error) {
-            console.error('L Error running tests:', error.message);
+            console.error('❌ Error running tests:', error.message);
         }
     }
 
@@ -388,7 +418,7 @@ This issue requires human intervention.`;
         const existing = JSON.parse(existingIssues);
         
         if (existing.length > 0) {
-            console.log(`9 Similar issue already exists for ${testName}`);
+            console.log(`ℹ️ Similar issue already exists for ${testName}`);
             return;
         }
         
@@ -416,9 +446,9 @@ This issue was automatically created by FixBot after detecting test failures.`;
         
         try {
             const { stdout: newIssue } = await execPromise(`gh issue create --title "${title}" --body "${body.replace(/"/g, '\\"')}"`);
-            console.log(`=� Created issue for ${testName} failure: ${newIssue.trim()}`);
+            console.log(`📝 Created issue for ${testName} failure: ${newIssue.trim()}`);
         } catch (error) {
-            console.error(`L Failed to create issue for ${testName}:`, error.message);
+            console.error(`❌ Failed to create issue for ${testName}:`, error.message);
         }
     }
 
@@ -426,7 +456,7 @@ This issue was automatically created by FixBot after detecting test failures.`;
      * Check for memory leaks
      */
     async checkMemoryLeaks() {
-        console.log('\n= Checking for memory leaks...');
+        console.log('\n🔍 Checking for memory leaks...');
         
         try {
             // Create a simple test file
@@ -470,17 +500,17 @@ This issue was automatically created by FixBot after detecting memory leaks.`;
                 
                 if (existing.length === 0) {
                     await execPromise(`gh issue create --title "${title}" --body "${body.replace(/"/g, '\\"')}"`);
-                    console.log(`=� Created memory leak issue`);
+                    console.log(`📝 Created memory leak issue`);
                 }
             } else {
-                console.log(' No memory leaks detected');
+                console.log('✅ No memory leaks detected');
             }
             
             // Cleanup
             await execPromise('rm -f leak_test.zen leak_test.json');
             
         } catch (error) {
-            console.error('L Error checking memory leaks:', error.message);
+            console.error('❌ Error checking memory leaks:', error.message);
         }
     }
 }
@@ -488,17 +518,17 @@ This issue was automatically created by FixBot after detecting memory leaks.`;
 // Start the bot
 const bot = new FixBot();
 bot.start().catch(error => {
-    console.error('=� Fatal error:', error);
+    console.error('💥 Fatal error:', error);
     process.exit(1);
 });
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\n=K FixBot shutting down...');
+    console.log('\n👋 FixBot shutting down...');
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    console.log('\n=K FixBot shutting down...');
+    console.log('\n👋 FixBot shutting down...');
     process.exit(0);
 });

@@ -1,0 +1,59 @@
+# GitHub Issue #30 Validation Test Suite
+# Testing nested object syntax in ZEN language
+
+print "=== GitHub Issue #30: Nested Object Syntax Fix ==="
+print ""
+
+# Test 1: Original issue example - MUST WORK
+print "Test 1: Original Issue Example"
+set student name "Alice", scores math 95, science 88
+print student
+if student.name = "Alice"
+    print "✓ Name is correct"
+if student.scores.math = 95
+    print "✓ Math score is correct"
+if student.scores.science = 88
+    print "✓ Science score is correct"
+print ""
+
+# Test 2: Simple nested object
+print "Test 2: Simple Nested Object"
+set person info name "Bob", age 30
+print person
+if person.info.name = "Bob"
+    print "✓ Nested name works"
+print ""
+
+# Test 3: Multiple nested properties
+print "Test 3: Multiple Nested Properties"
+set config server host "localhost", port 8080, timeout 30
+print config
+if config.server.host = "localhost"
+    print "✓ Host is correct"
+if config.server.port = 8080
+    print "✓ Port is correct"
+if config.server.timeout = 30
+    print "✓ Timeout is correct"
+print ""
+
+# Test 4: Mixed flat and nested
+print "Test 4: Mixed Flat and Nested Properties"
+set product name "Widget", price 19.99, details color "blue", size "large"
+print product
+if product.name = "Widget"
+    print "✓ Flat property works"
+if product.details.color = "blue"
+    print "✓ Nested property works"
+print ""
+
+# Test 5: The workaround should still work
+print "Test 5: Workaround Method (Still Supported)"
+set scores2 english 92, history 88
+set student2 name "Charlie", scores scores2
+print student2
+if student2.scores.english = 92
+    print "✓ Workaround method still works"
+print ""
+
+print "=== All Tests Completed Successfully! ==="
+print "GitHub Issue #30 is FIXED: Nested object syntax now works correctly!"

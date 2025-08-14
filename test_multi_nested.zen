@@ -1,0 +1,9 @@
+# Test nested object with multiple properties
+set student name "Alice", scores math 95, science 88
+print student
+print "---"
+print student.scores
+print "Math score:"
+print student.scores.math
+print "Science score:"
+print student.scores.science

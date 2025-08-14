@@ -1,0 +1,3 @@
+# Multiple levels of nesting
+set obj3 a b c d e "deep"
+print obj3

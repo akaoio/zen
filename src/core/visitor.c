@@ -1622,8 +1622,8 @@ RuntimeValue *visitor_visit_compound(visitor_T *visitor, AST_T *node)
 
             // Cleanup
             rv_unref(self_value);
-            // Don't free self_ast - it might be referenced by the function scope
-            // ast_free(self_ast);
+            // Free self_ast - function should copy what it needs, not hold the pointer
+            ast_free(self_ast);
             memory_free(args);
             rv_unref(last_result);
             last_result = method_result;
@@ -1806,8 +1806,7 @@ AST_T *value_to_ast(RuntimeValue *value)
             for (size_t i = 0; i < length; i++) {
                 RuntimeValue *element_val = value->data.array.elements[i];
                 ast->array_elements[i] = value_to_ast(element_val);
-                if (element_val)
-                    rv_unref(element_val);
+                // Don't unref element_val - it's borrowed from the array, not a new reference
             }
         } else {
             ast->array_elements = NULL;
@@ -2081,37 +2080,27 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
     }
 
     // Evaluate operand
-    RuntimeValue *operand_rv = visitor_visit(visitor, node->operand);
-    if (!operand_rv) {
-        return rv_new_null();
-    }
-
-    // Convert RuntimeValue to AST then to Value object
-    AST_T *operand_ast = value_to_ast(operand_rv);
-    RuntimeValue *operand_val = visitor_ast_to_value(operand_ast);
-    ast_free(operand_ast);
-    rv_unref(operand_rv);
-
-    if (!operand_val) {
+    RuntimeValue *operand = visitor_visit(visitor, node->operand);
+    if (!operand) {
         return rv_new_null();
     }
 
     RuntimeValue *result = NULL;
 
-    // Apply the appropriate unary operator
+    // Apply the appropriate unary operator directly on RuntimeValue
     switch (node->operator_type) {
     case TOKEN_MINUS:
         // Unary minus: multiply by -1
         {
             RuntimeValue *neg_one = rv_new_number(-1.0);
             if (neg_one) {
-                result = op_multiply(operand_val, neg_one);
+                result = op_multiply(operand, neg_one);
                 rv_unref(neg_one);
             }
         }
         break;
     case TOKEN_NOT:
-        result = op_logical_not(operand_val);
+        result = op_logical_not(operand);
         break;
     default:
         LOG_ERROR(LOG_CAT_VISITOR, "Unknown unary operator %d", node->operator_type);
@@ -2120,19 +2109,13 @@ static RuntimeValue *visitor_visit_unary_op(visitor_T *visitor, AST_T *node)
     }
 
     // Clean up operand
-    rv_unref(operand_val);
+    rv_unref(operand);
 
     if (!result) {
         return rv_new_null();
     }
 
-    // Convert result to RuntimeValue
-    AST_T *result_ast = value_to_ast(result);
-    rv_unref(result);
-    RuntimeValue *result_rv = ast_to_runtime_value(result_ast);
-    ast_free(result_ast);
-
-    return result_rv;
+    return result;
 }
 
 /**
@@ -3309,11 +3292,12 @@ static RuntimeValue *visitor_execute_user_function_ex(
         }
 
         RuntimeValue *arg_value = evaluated_args[arg_index];
+        bool created_null = false;
         if (!arg_value) {
             arg_value = rv_new_null();
-        } else {
-            rv_ref(arg_value);  // Keep a reference for the scope
+            created_null = true;
         }
+        // Don't rv_ref here - scope_set_variable will handle the reference counting
 
         // Use the new RuntimeValue-based scope storage directly
         // This avoids AST conversion issues in recursive functions
@@ -3337,6 +3321,10 @@ static RuntimeValue *visitor_execute_user_function_ex(
         }
 
         // arg_value is now owned by the scope (scope_set_variable refs it)
+        // If we created a new null, unref it since scope_set_variable took ownership
+        if (created_null) {
+            rv_unref(arg_value);
+        }
 
         // Debug: Verify parameter binding
         LOG_VISITOR_DEBUG("Bound parameter %s", param_ast->variable_name);

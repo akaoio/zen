@@ -1,0 +1,8 @@
+# Current workaround - explicit nested object
+set nested subkey "value"
+set obj key nested
+print obj
+
+# What we want to work
+set obj2 key subkey "value"
+print obj2

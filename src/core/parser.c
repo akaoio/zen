@@ -19,6 +19,7 @@ AST_T *parser_parse_export_statement(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_indented_object(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_class_definition(parser_T *parser, scope_T *scope);
 AST_T *parser_parse_new_expression(parser_T *parser, scope_T *scope);
+AST_T *parser_parse_nested_object_value(parser_T *parser, scope_T *scope);
 
 /**
  * @brief Create parser instance
@@ -1436,10 +1437,41 @@ AST_T *parser_parse_object(parser_T *parser, scope_T *scope)
         case TOKEN_LBRACKET:
             value = parser_parse_array(parser, scope);
             break;
-        case TOKEN_ID:
-            // For object values, treat ID as variable reference only
-            value = parser_parse_variable(parser, scope);
+        case TOKEN_ID: {
+            // Check if this is a nested object literal
+            // We need to look ahead more carefully to distinguish between:
+            // 1. Variable reference: ID followed by comma/end
+            // 2. Nested object: ID followed by value (forming key-value pair)
+            token_T *next_token = lexer_peek_token(parser->lexer, 0);
+            
+            // Check if this looks like a nested object pattern
+            // Nested object would be: ID value [, ID value]*
+            bool is_nested_object = false;
+            if (next_token) {
+                // If next token can be a value (not comma, not end), it's likely nested object
+                if (next_token->type == TOKEN_STRING ||
+                    next_token->type == TOKEN_NUMBER ||
+                    next_token->type == TOKEN_TRUE ||
+                    next_token->type == TOKEN_FALSE ||
+                    next_token->type == TOKEN_NULL ||
+                    next_token->type == TOKEN_LBRACKET ||
+                    next_token->type == TOKEN_ID) {
+                    // This looks like nested object: current_id next_token form a key-value pair
+                    is_nested_object = true;
+                }
+            }
+            
+            if (is_nested_object) {
+                // Parse as nested object
+                if (next_token) token_free(next_token);
+                value = parser_parse_object(parser, scope);
+            } else {
+                // Regular variable reference
+                if (next_token) token_free(next_token);
+                value = parser_parse_variable(parser, scope);
+            }
             break;
+        }
         default:
             value = ast_new(AST_NOOP);
             break;
@@ -2106,6 +2138,132 @@ AST_T *parser_parse_indented_object(parser_T *parser, scope_T *scope)
 }
 
 /**
+ * @brief Parse nested object value (continues until pattern breaks)
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* Nested object AST node
+ */
+AST_T *parser_parse_nested_object_value(parser_T *parser, scope_T *scope)
+{
+    char **keys = NULL;
+    AST_T **values = NULL;
+    size_t pair_count = 0;
+
+    // Parse key-value pairs for the nested object
+    // Pattern: ID value [, ID value]* where values are not IDs that could start new top-level pairs
+    while (parser->current_token->type == TOKEN_ID) {
+        char *key = memory_strdup(parser->current_token->value);
+        parser_eat(parser, TOKEN_ID);
+
+        // Parse the value for this key
+        AST_T *value = NULL;
+        
+        // Check if we have a value or if this key stands alone
+        if (parser->current_token->type == TOKEN_COMMA ||
+            parser->current_token->type == TOKEN_EOF ||
+            parser->current_token->type == TOKEN_NEWLINE ||
+            parser->current_token->type == TOKEN_DEDENT) {
+            // No value, use key as variable reference
+            value = ast_new_variable(key);
+        } else {
+            // Parse the value
+            switch (parser->current_token->type) {
+            case TOKEN_STRING:
+                value = parser_parse_string(parser, scope);
+                break;
+            case TOKEN_NUMBER:
+                value = parser_parse_number(parser, scope);
+                break;
+            case TOKEN_TRUE:
+            case TOKEN_FALSE:
+                value = parser_parse_boolean(parser, scope);
+                break;
+            case TOKEN_NULL:
+                value = parser_parse_null(parser, scope);
+                break;
+            case TOKEN_LBRACKET:
+                value = parser_parse_array(parser, scope);
+                break;
+            case TOKEN_ID:
+                // Just a simple variable reference for nested value
+                value = parser_parse_variable(parser, scope);
+                break;
+            default:
+                value = ast_new(AST_NOOP);
+                break;
+            }
+        }
+
+        // Add the key-value pair
+        pair_count++;
+        keys = memory_realloc(keys, pair_count * sizeof(char *));
+        values = memory_realloc(values, pair_count * sizeof(AST_T *));
+        keys[pair_count - 1] = key;
+        values[pair_count - 1] = value;
+
+        // Check for continuation within the nested object
+        if (parser->current_token->type == TOKEN_COMMA) {
+            // Consume the comma
+            parser_eat(parser, TOKEN_COMMA);
+            
+            // After comma, check if next is an ID that continues this nested object
+            // or if it's a new top-level key
+            if (parser->current_token->type == TOKEN_ID) {
+                // Look ahead to see if this ID has a value that makes it part of nested object
+                token_T *next = lexer_peek_token(parser->lexer, 0);
+                if (next) {
+                    // If next is an ID, check one more token ahead
+                    // Pattern "ID ID value" after comma means NEW top-level nested object
+                    if (next->type == TOKEN_ID) {
+                        // Two IDs after comma - this starts a new top-level key
+                        token_free(next);
+                        break;  // End this nested object
+                    }
+                    // If the next token after the ID is a simple value, continue the nested object
+                    else if (next->type == TOKEN_STRING ||
+                             next->type == TOKEN_NUMBER ||
+                             next->type == TOKEN_TRUE ||
+                             next->type == TOKEN_FALSE ||
+                             next->type == TOKEN_NULL ||
+                             next->type == TOKEN_LBRACKET) {
+                        // Continue parsing this nested object
+                        token_free(next);
+                        continue;
+                    }
+                    token_free(next);
+                }
+            }
+            // Otherwise, we've hit the end of this nested object
+            break;
+        } else {
+            // No comma means end of nested object
+            break;
+        }
+    }
+
+    // Create the object AST node
+    AST_T *object = ast_new_object(keys, values, pair_count);
+    if (object) {
+        object->scope = scope;
+    }
+
+    // Clean up keys array (ast_new_object copies them)
+    if (keys) {
+        for (size_t i = 0; i < pair_count; i++) {
+            if (keys[i]) {
+                memory_free(keys[i]);
+            }
+        }
+        memory_free(keys);
+    }
+    if (values) {
+        memory_free(values);
+    }
+
+    return object;
+}
+
+/**
  * @brief Parse ZEN object literal creating AST_OBJECT nodes instead of AST_FUNCTION_CALL
  * @param parser Parser instance
  * @param scope Scope context for parsing
@@ -2184,10 +2342,56 @@ AST_T *parser_parse_object_literal(parser_T *parser, scope_T *scope)
         case TOKEN_LBRACKET:
             value = parser_parse_array(parser, scope);
             break;
-        case TOKEN_ID:
-            // For object values, treat ID as variable reference only
-            value = parser_parse_variable(parser, scope);
+        case TOKEN_ID: {
+            // Check if this is a nested object literal
+            // We need to look ahead more carefully to distinguish between:
+            // 1. Variable reference: ID followed by comma/end
+            // 2. Nested object: ID followed by value (forming key-value pair)
+            // 3. Important: nested object ends when we see a comma after a complete pair
+            token_T *next_token = lexer_peek_token(parser->lexer, 0);
+            
+            // Check if this looks like a nested object pattern
+            // Nested object would be: ID value [ID value]* (no commas within)
+            bool is_nested_object = false;
+            if (next_token) {
+                // If next token can be a value (not comma, not end), check for nested pattern
+                if (next_token->type == TOKEN_STRING ||
+                    next_token->type == TOKEN_NUMBER ||
+                    next_token->type == TOKEN_TRUE ||
+                    next_token->type == TOKEN_FALSE ||
+                    next_token->type == TOKEN_NULL ||
+                    next_token->type == TOKEN_LBRACKET) {
+                    // Definitely a nested object with literal value
+                    is_nested_object = true;
+                } else if (next_token->type == TOKEN_ID) {
+                    // Two IDs in a row - could be nested object OR variable followed by key
+                    // Look ahead one more token to disambiguate
+                    token_T *next_next_token = lexer_peek_token(parser->lexer, 1);
+                    if (next_next_token) {
+                        // If we have: ID ID value-token, it's a nested object
+                        // If we have: ID ID COMMA, the first ID is a variable
+                        if (next_next_token->type != TOKEN_COMMA &&
+                            next_next_token->type != TOKEN_EOF &&
+                            next_next_token->type != TOKEN_NEWLINE &&
+                            next_next_token->type != TOKEN_DEDENT) {
+                            is_nested_object = true;
+                        }
+                        token_free(next_next_token);
+                    }
+                }
+            }
+            
+            if (is_nested_object) {
+                // Parse as nested object literal - but ONLY the nested part
+                if (next_token) token_free(next_token);
+                value = parser_parse_nested_object_value(parser, scope);
+            } else {
+                // Regular variable reference
+                if (next_token) token_free(next_token);
+                value = parser_parse_variable(parser, scope);
+            }
             break;
+        }
         default:
             value = ast_new(AST_NOOP);
             break;

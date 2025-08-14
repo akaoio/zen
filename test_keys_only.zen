@@ -1,0 +1,3 @@
+# Empty nested object (just keys)
+set obj5 parent child grandchild
+print obj5

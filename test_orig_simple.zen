@@ -1,0 +1,2 @@
+set student name "Alice", scores math 95, science 88
+print student
