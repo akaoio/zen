@@ -1,4 +1,0 @@
-function calculate x y z
-    return x + y * z
-
-set result calculate 1 2 3

@@ -1,1 +1,0 @@
-print "Should be: {name: Alice, scores: {math: 95, science: 88}}"

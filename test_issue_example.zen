@@ -1,4 +1,0 @@
-# Exact example from issue #30
-set student name "Alice", scores math 95, science 88
-print student
-print "Expected: {name: 'Alice', scores: {math: 95, science: 88}}"

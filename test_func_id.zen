@@ -1,8 +1,0 @@
-# This might be broken
-set myName "Bob"
-
-function greet name
-    print name
-
-# Function call with variable as argument
-greet myName

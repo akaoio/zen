@@ -1,9 +1,0 @@
-# The problematic case from Test 4
-set data user name "Charlie", id 123, settings theme "dark", notifications true
-print data
-
-# What we expect:
-# {user: {name: "Charlie", id: 123}, settings: {theme: "dark", notifications: true}}
-
-# What we get:
-# {user: {name: "Charlie", id: 123, settings: {theme: "dark", notifications: true}}}

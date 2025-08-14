@@ -1,8 +1,0 @@
-# Final check - ensure the exact issue example works
-set student name "Alice", scores math 95, science 88
-print student
-
-# Access nested properties
-print "Name: " + student.name
-print "Math: " + student.scores.math  
-print "Science: " + student.scores.science

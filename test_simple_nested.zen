@@ -1,3 +1,0 @@
-# Simplest test case
-set obj key subkey value
-print obj

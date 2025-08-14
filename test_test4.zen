@@ -1,3 +1,0 @@
-# Test 4 case
-set data user name "Charlie", id 123, settings theme "dark", notifications true
-print data

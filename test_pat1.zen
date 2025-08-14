@@ -1,2 +1,0 @@
-set obj1 name "Alice", age 30
-print obj1

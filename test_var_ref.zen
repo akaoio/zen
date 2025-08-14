@@ -1,4 +1,0 @@
-# Variable reference should still work
-set myVar 42
-set obj1 key myVar
-print obj1

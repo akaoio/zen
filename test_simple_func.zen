@@ -1,8 +1,0 @@
-print "Before function"
-
-function hello
-    print "In function"
-
-hello
-
-print "After function"
