@@ -6,6 +6,7 @@
 #include "zen/core/scope.h"
 #include "zen/core/visitor.h"
 #include "zen/stdlib/io.h"
+#include "zen/stdlib/database.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -345,6 +346,9 @@ int main(int argc, char *argv[])
 
     // CRITICAL: Free global scope before exit
     scope_free(global_scope);
+
+    // CRITICAL: Clear database file cache
+    database_clear_cache();
 
     // CRITICAL: Cleanup logging system
     logger_cleanup();

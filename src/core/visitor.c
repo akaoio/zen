@@ -24,6 +24,7 @@
 #include "zen/stdlib/json.h"
 #include "zen/stdlib/module.h"
 #include "zen/stdlib/stdlib.h"
+#include "zen/stdlib/database.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -378,33 +379,53 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
             break;
         }
 
-        // Use readFile to get the file content
-        RuntimeValue *content = io_read_file(&path_val, 1);
+        const char *filepath = path_val->data.string.data;
+        LOG_VISITOR_DEBUG("FILE_GET: Loading file %s", filepath);
+        
+        // Load file with caching (handles JSON/YAML automatically)
+        RuntimeValue *content = database_load_file_cached(filepath);
+        if (content) {
+            LOG_VISITOR_DEBUG("FILE_GET: Loaded content type=%d", (int)content->type);
+        } else {
+            LOG_VISITOR_DEBUG("FILE_GET: Failed to load content");
+        }
         rv_unref(path_val);
-
-        // If property specified, extract that property
-        if (node->file_get_property && content && content->type == RV_STRING) {
-            // Try to parse as JSON and extract property
-            RuntimeValue *parsed = json_parse(content->data.string.data);
-            rv_unref(content);
-
-            if (parsed && parsed->type == RV_OBJECT) {
-                RuntimeValue *prop_val = visitor_visit(visitor, node->file_get_property);
-                if (prop_val && prop_val->type == RV_STRING) {
-                    RuntimeValue *extracted = rv_object_get(parsed, prop_val->data.string.data);
-                    rv_unref(prop_val);
-                    rv_unref(parsed);
-                    result = extracted ? rv_ref(extracted) : rv_new_null();
-                    break;
-                }
-                if (prop_val)
-                    rv_unref(prop_val);
-            }
-            if (parsed)
-                rv_unref(parsed);
+        
+        if (!content) {
+            result = rv_new_null();
+            break;
         }
 
-        result = content ? content : rv_new_null();
+        // If property specified, extract that property using dot notation
+        if (node->file_get_property) {
+            // Build the property path from the AST
+            char property_path[1024] = "";
+            AST_T *prop_node = node->file_get_property;
+            
+            // Handle property chain (e.g., alice.scores.math)
+            if (prop_node->type == AST_PROPERTY_ACCESS) {
+                // Recursively build the path
+                // For now, use a simple approach
+                if (prop_node->property_name) {
+                    strncpy(property_path, prop_node->property_name, sizeof(property_path) - 1);
+                }
+            } else if (prop_node->type == AST_VARIABLE) {
+                strncpy(property_path, prop_node->variable_name, sizeof(property_path) - 1);
+            } else if (prop_node->type == AST_STRING) {
+                // Parser returns AST_STRING for simple property names
+                strncpy(property_path, prop_node->string_value, sizeof(property_path) - 1);
+            }
+            
+            if (strlen(property_path) > 0) {
+                RuntimeValue *extracted = database_get_nested_property(content, property_path);
+                result = extracted ? rv_ref(extracted) : rv_new_null();
+            } else {
+                result = rv_ref(content);
+            }
+            rv_unref(content);
+        } else {
+            result = content;
+        }
         break;
     }
 
@@ -427,26 +448,46 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
             break;
         }
 
-        // Convert value to JSON string for storage
-        RuntimeValue *json_args[1] = {value_val};
-        char *json_str = json_stringify(json_args[0]);
-        rv_unref(value_val);
-
-        if (!json_str) {
-            rv_unref(path_val);
-            result = rv_new_error("Failed to serialize value for FILE_PUT", -1);
-            break;
+        const char *filepath = path_val->data.string.data;
+        
+        // If property path specified, need to update nested property
+        if (node->file_put_property) {
+            // Load existing file content (or create new object)
+            RuntimeValue *content = database_load_file_cached(filepath);
+            if (!content || content->type != RV_OBJECT) {
+                if (content) rv_unref(content);
+                content = rv_new_object();
+            }
+            
+            // Build the property path
+            char property_path[1024] = "";
+            AST_T *prop_node = node->file_put_property;
+            
+            if (prop_node->type == AST_PROPERTY_ACCESS) {
+                if (prop_node->property_name) {
+                    strncpy(property_path, prop_node->property_name, sizeof(property_path) - 1);
+                }
+            } else if (prop_node->type == AST_VARIABLE) {
+                strncpy(property_path, prop_node->variable_name, sizeof(property_path) - 1);
+            }
+            
+            // Set the nested property
+            if (strlen(property_path) > 0) {
+                database_set_nested_property(content, property_path, value_val);
+            }
+            
+            // Save the updated content
+            bool success = database_save_file(filepath, content);
+            rv_unref(content);
+            result = success ? rv_new_boolean(true) : rv_new_error("Failed to save file", -1);
+        } else {
+            // Direct file write
+            bool success = database_save_file(filepath, value_val);
+            result = success ? rv_new_boolean(true) : rv_new_error("Failed to save file", -1);
         }
 
-        RuntimeValue *json_rv = rv_new_string(json_str);
-        memory_free(json_str);
-
-        // Write to file
-        RuntimeValue *write_args[2] = {path_val, json_rv};
-        result = io_write_file(write_args, 2);
-
         rv_unref(path_val);
-        rv_unref(json_rv);
+        rv_unref(value_val);
         break;
     }
 

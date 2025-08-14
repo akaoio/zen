@@ -836,6 +836,12 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
     case TOKEN_NEW:
         expr = parser_parse_new_expression(parser, scope);
         break;
+    case TOKEN_GET:
+        expr = parser_parse_file_get(parser, scope);
+        break;
+    case TOKEN_PUT:
+        expr = parser_parse_file_put(parser, scope);
+        break;
     default:
         expr = ast_new(AST_NOOP);
         break;
@@ -1840,10 +1846,13 @@ int parser_detect_object_literal(parser_T *parser)
                 // This pattern commonly represents function calls like "test_func 42"
                 // Only treat as object literal if we have clear evidence (like comma, colon, etc.)
                 if (tokens[1]->type == TOKEN_NUMBER) {
-                    // For number values, require explicit object literal indicators
-                    // Don't auto-assume ID NUMBER is an object literal
-                    if (token_count >= 3 &&
+                    // In variable assignment context, be more lenient
+                    if (parser->context.in_variable_assignment) {
+                        // In variable assignment, treat ID NUMBER as object literal
+                        is_object_literal = 1;
+                    } else if (token_count >= 3 &&
                         (tokens[2]->type == TOKEN_COMMA || tokens[2]->type == TOKEN_COLON)) {
+                        // For number values, require explicit object literal indicators
                         is_object_literal = 1;
                     }
                     // Otherwise, assume it's a function call with numeric argument
@@ -1856,9 +1865,11 @@ int parser_detect_object_literal(parser_T *parser)
                 }
             } else if (tokens[1]->type == TOKEN_ID) {
                 // ID ID pattern - ambiguous, could be function call OR object literal
-                // BE CONSERVATIVE: Only treat as object literal if we have strong evidence
-                // Require a comma or additional pairs to disambiguate
-                if (token_count >= 3 && tokens[2]->type == TOKEN_COMMA) {
+                // In variable assignment context, be more lenient
+                if (parser->context.in_variable_assignment) {
+                    // In variable assignment, treat ID ID as object literal
+                    is_object_literal = 1;
+                } else if (token_count >= 3 && tokens[2]->type == TOKEN_COMMA) {
                     // ID ID, pattern - likely object literal
                     is_object_literal = 1;
                 } else if (token_count >= 4 && tokens[2]->type == TOKEN_ID) {
@@ -2371,8 +2382,20 @@ AST_T *parser_parse_file_get(parser_T *parser, scope_T *scope)
 {
     parser_eat(parser, TOKEN_GET);
 
-    // Parse file path expression (can be string literal or variable)
-    AST_T *file_path = parser_parse_expr(parser, scope);
+    // Parse file path - could be string literal or variable
+    // Use primary_expr to avoid consuming property access
+    AST_T *file_path = NULL;
+    
+    if (parser->current_token->type == TOKEN_STRING) {
+        // String literal file path
+        file_path = parser_parse_string(parser, scope);
+    } else if (parser->current_token->type == TOKEN_ID) {
+        // Variable containing file path
+        file_path = parser_parse_variable(parser, scope);
+    } else {
+        // Invalid file path
+        file_path = ast_new_noop();
+    }
 
     // Parse property path (dot notation)
     AST_T *property_path = NULL;

@@ -427,6 +427,18 @@ void ast_free(AST_T *ast)
         ast_free(ast->lambda_body);
     if (ast->export_value)
         ast_free(ast->export_value);
+    
+    // Free FILE_GET and FILE_PUT nodes
+    if (ast->file_get_path)
+        ast_free(ast->file_get_path);
+    if (ast->file_get_property)
+        ast_free(ast->file_get_property);
+    if (ast->file_put_path)
+        ast_free(ast->file_put_path);
+    if (ast->file_put_property)
+        ast_free(ast->file_put_property);
+    if (ast->file_put_value)
+        ast_free(ast->file_put_value);
 
     // Free arrays of AST nodes
     if (ast->function_definition_args) {
