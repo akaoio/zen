@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ZEN is a lightweight, mobile-friendly, markdown-compatible scripting language with minimal syntax. The project implements a comprehensive interpreter for a natural language-inspired programming language.
 
 **Key Resources:**
-- Language Specification: `docs/idea.md` (complete 564-line spec)
+- Language Specification: `docs/ZEN.md` (complete 564-line spec)
 - **Manifest**: `MANIFEST.json` (🔒 ENFORCED specification of ALL files/functions)
 - Current Implementation: Full interpreter in development
 

@@ -52,7 +52,7 @@ ZEN is a lightweight, mobile-friendly, markdown-compatible scripting language wi
 - Natural language-like syntax
 
 ### Key Resources
-- **Language Spec**: `docs/idea.md` (complete specification)
+- **Language Spec**: `docs/ZEN.md` (complete specification)
 - **Strategic Plan**: `docs/FUTURE.md` (multi-swarm roadmap and development phases)
 - **Architecture**: `ARCHITECTURE.md` (system design)
 - **Manifest**: `MANIFEST.json` (function signatures - ENFORCEMENT CRITICAL)
@@ -2678,7 +2678,7 @@ You are successful when:
 - ✅ 100% of tests passing
 - ✅ 0 memory leaks (valgrind clean)
 - ✅ All examples in examples/ run correctly
-- ✅ Full language specification from docs/idea.md works
+- ✅ Full language specification from docs/ZEN.md works
 
 ### The Persistence Pledge
 
@@ -2813,7 +2813,7 @@ Your tasks are visible to ALL 32 AGENTS via `make vision`:
 
 When you run `node task.js list --active`, you see tasks from ALL swarms:
 ```
-○ 20250805-1430.yaml - swarm-1-zen-worker-lexer - 2025-08-05
+○ 20250805-1430.yaml - zen-worker-lexer - 2025-08-05
   Implement lexer_scan_number function
 
 ○ 20250805-1435.yaml - swarm-2-zen-worker-parser - 2025-08-05
