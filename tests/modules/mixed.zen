@@ -1,0 +1,14 @@
+# Module with mixed exports
+
+export set PI 3.14159
+export set E 2.71828
+
+export function calculate x y
+    return x * PI + y * E
+
+export function factorial n
+    if n <= 1
+        return 1
+    return n * factorial(n - 1)
+
+print "Mixed module loaded"

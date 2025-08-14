@@ -13,6 +13,19 @@
  */
 AST_T *ast_new(int type)
 {
+    // TEMPORARY FIX: Disable pooling entirely to fix import memory corruption
+    // The AST pool is global and causes issues when modules are imported
+    // as their AST nodes get mixed with the main program's nodes in the pool
+    // TODO: Implement per-parser-context pools or reference counting
+    #if 1  // Set to 0 to re-enable pooling
+        AST_T *ast = memory_alloc(sizeof(AST_T));
+        if (!ast) {
+            return NULL;  // Allocation failed
+        }
+        memset(ast, 0, sizeof(AST_T));
+        ast->type = type;
+        ast->pooled = false;  // Mark as not pooled
+    #else
     // Try to allocate from memory pool first for better performance
     AST_T *ast = ast_pool_alloc_node(type);
     if (!ast) {
@@ -25,6 +38,7 @@ AST_T *ast_new(int type)
         ast->type = type;
         ast->pooled = false;  // Mark as not pooled
     }
+    #endif
 
     ast->scope = (void *)0;
 
@@ -353,6 +367,8 @@ void ast_free(AST_T *ast)
         memory_free(ast->file_ref_target_file);
     if (ast->file_ref_property_path)
         memory_free(ast->file_ref_property_path);
+    if (ast->export_name)
+        memory_free(ast->export_name);
 
     // Free object keys
     if (ast->object_keys) {
@@ -409,6 +425,8 @@ void ast_free(AST_T *ast)
         ast_free(ast->exception_value);
     if (ast->lambda_body)
         ast_free(ast->lambda_body);
+    if (ast->export_value)
+        ast_free(ast->export_value);
 
     // Free arrays of AST nodes
     if (ast->function_definition_args) {

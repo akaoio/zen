@@ -877,7 +877,7 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
         // CRITICAL FIX: Never treat array access (expr->left != NULL) as a method call
         // Array access should always return the element value
         bool is_array_access = (expr->left != NULL);
-        
+
         // Check if there are arguments following the property access
         bool has_args = (parser->current_token->type != TOKEN_NEWLINE &&
                          parser->current_token->type != TOKEN_EOF &&
@@ -893,7 +893,7 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
         // This was causing confusion in REPL where obj.property should return the value
         // Methods should be called with explicit arguments or parentheses
         // Properties should always return their values
-        
+
         if (has_args && !is_array_access) {
             // Convert property access to method call
             AST_T *method_call = ast_new(AST_FUNCTION_CALL);

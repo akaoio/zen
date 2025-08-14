@@ -123,13 +123,12 @@ static bool execute_line(const char *line, scope_T *global_scope)
     bool was_print_call = false;
     if (root && root->type == AST_COMPOUND && root->compound_size > 0) {
         AST_T *last_stmt = root->compound_statements[root->compound_size - 1];
-        if (last_stmt && last_stmt->type == AST_FUNCTION_CALL && 
-            last_stmt->function_call_name &&
+        if (last_stmt && last_stmt->type == AST_FUNCTION_CALL && last_stmt->function_call_name &&
             strcmp(last_stmt->function_call_name, "print") == 0) {
             was_print_call = true;
         }
     }
-    
+
     // Only display the result if it's meaningful
     if (result) {
         // Special handling for control flow markers

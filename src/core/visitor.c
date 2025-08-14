@@ -1458,10 +1458,26 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
         // First try the new RuntimeValue storage
         RuntimeValue *var_value = scope_get_variable(lookup_scope, node->function_call_name);
         if (var_value) {
-            LOG_VISITOR_DEBUG(
-                "Function '%s' not found, treating as variable reference (new storage)",
-                node->function_call_name);
-            return var_value;  // Already referenced by scope_get_variable
+            // Check if this variable is actually a function
+            if (var_value->type == RV_FUNCTION) {
+                LOG_VISITOR_DEBUG(
+                    "Found function '%s' as RuntimeValue, executing it",
+                    node->function_call_name);
+                // Execute the function stored as RuntimeValue
+                AST_T *func_ast = (AST_T *)var_value->data.function.ast_node;
+                scope_T *func_scope = (scope_T *)var_value->data.function.scope;
+                
+                if (func_ast && func_scope) {
+                    return visitor_execute_user_function(
+                        visitor, func_ast, node->function_call_arguments, 
+                        node->function_call_arguments_size);
+                }
+            } else {
+                LOG_VISITOR_DEBUG(
+                    "Function '%s' not found, treating as variable reference (new storage)",
+                    node->function_call_name);
+                return var_value;  // Already referenced by scope_get_variable
+            }
         }
 
         // Then try the old AST storage
@@ -2701,14 +2717,6 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
     if (!visitor || !node || !node->import_path) {
         return rv_new_null();
     }
-
-    // For now, just log and return null to avoid crashes
-    LOG_INFO(LOG_CAT_VISITOR,
-             "Import statement encountered but not fully implemented: %s",
-             node->import_path);
-    return rv_new_null();
-
-#if 0   // Dead code - import not implemented yet
     // Add .zen extension if not present
     char *module_path = node->import_path;
     char full_path[512];
@@ -2724,6 +2732,12 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
     if (!source) {
         LOG_ERROR(LOG_CAT_VISITOR, "Failed to read module: %s", full_path);
         return rv_new_null();
+    }
+    
+    // Check for empty file
+    if (strlen(source) == 0) {
+        memory_free(source);
+        return rv_new_object();  // Return empty exports for empty file
     }
 
     // Create a new lexer and parser for the module
@@ -2763,61 +2777,92 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
 
     // Get all exported values from the module scope
     RuntimeValue *exports = rv_new_object();
+    bool has_exported_functions = false;  // Track if we export any functions
 
-    // Add all variables from module scope to exports
+    // Process the module AST to find export statements
     if (module_ast && module_ast->type == AST_COMPOUND && module_ast->compound_statements) {
-        // Try to find variable definitions in the compound statements
         for (size_t i = 0; i < module_ast->compound_size; i++) {
             AST_T *stmt = module_ast->compound_statements[i];
-            if (stmt && stmt->type == AST_VARIABLE_DEFINITION) {
-                const char *var_name = stmt->variable_definition_variable_name;
-                // Get the runtime value from the module scope
-                RuntimeValue *value = scope_get_variable(module_scope, var_name);
 
-                if (var_name && value) {
-                    rv_object_set(exports, var_name, value);
+            if (stmt && stmt->type == AST_EXPORT) {
+                // This is an export statement
+                if (stmt->export_name && stmt->export_value) {
+                    const char *export_name = stmt->export_name;
+
+                    // Handle different types of exports
+                    if (stmt->export_value->type == AST_VARIABLE_DEFINITION) {
+                        // Export set x value
+                        const char *var_name =
+                            stmt->export_value->variable_definition_variable_name;
+                        RuntimeValue *value = scope_get_variable(module_scope, var_name);
+                        if (value) {
+                            rv_object_set(exports, export_name, value);
+                        }
+                    } else if (stmt->export_value->type == AST_FUNCTION_DEFINITION) {
+                        // Export function name args...
+                        // The function definition is directly in stmt->export_value
+                        AST_T *func_def = stmt->export_value;
+                        if (func_def) {
+                            // Also add it to the module scope so it can be called within the module
+                            scope_add_function_definition(module_scope, func_def);
+                            
+                            RuntimeValue *func_value = rv_new_function(func_def, module_scope);
+                            rv_object_set(exports, export_name, func_value);
+                            rv_unref(func_value);
+                            has_exported_functions = true;
+                        }
+                    } else if (stmt->export_value->type == AST_VARIABLE) {
+                        // Export existing_var
+                        const char *var_name = stmt->export_value->variable_name;
+                        RuntimeValue *value = scope_get_variable(module_scope, var_name);
+                        if (value) {
+                            rv_object_set(exports, export_name, value);
+                        }
+                    }
                 }
             }
         }
     }
 
-    // Also check scope variable definitions
-    for (size_t i = 0; i < module_scope->variable_definitions_size; i++) {
-        AST_T *var_def = module_scope->variable_definitions[i];
-        if (var_def && var_def->variable_definition_variable_name) {
-            // Skip internal variables
-            if (var_def->variable_definition_variable_name[0] == '_') {
-                continue;
+    // If no explicit exports found, export all public symbols (for backward compatibility)
+    if (exports->data.object.count == 0) {
+        // Add all non-private variables from module scope
+        for (size_t i = 0; i < module_scope->variable_definitions_size; i++) {
+            AST_T *var_def = module_scope->variable_definitions[i];
+            if (var_def && var_def->variable_definition_variable_name) {
+                // Skip internal variables (starting with _)
+                if (var_def->variable_definition_variable_name[0] == '_') {
+                    continue;
+                }
+
+                RuntimeValue *value =
+                    scope_get_variable(module_scope, var_def->variable_definition_variable_name);
+
+                if (value) {
+                    rv_object_set(exports, var_def->variable_definition_variable_name, value);
+                    rv_unref(value);
+                }
             }
+        }
 
-            // Get the runtime value from the module scope
-            RuntimeValue *value =
-                scope_get_variable(module_scope, var_def->variable_definition_variable_name);
+        // Add all non-private functions from module scope
+        for (size_t i = 0; i < module_scope->function_definitions_size; i++) {
+            AST_T *func_def = module_scope->function_definitions[i];
+            if (func_def && func_def->function_definition_name) {
+                // Skip internal functions (starting with _)
+                if (func_def->function_definition_name[0] == '_') {
+                    continue;
+                }
 
-            if (value) {
-                rv_object_set(exports, var_def->variable_definition_variable_name, value);
-                rv_unref(value);  // rv_object_set refs it
+                RuntimeValue *func_value = rv_new_function(func_def, module_scope);
+                rv_object_set(exports, func_def->function_definition_name, func_value);
+                rv_unref(func_value);
+                has_exported_functions = true;
             }
         }
     }
 
-    // Add all functions from module scope to exports
-    for (size_t i = 0; i < module_scope->function_definitions_size; i++) {
-        AST_T *func_def = module_scope->function_definitions[i];
-        if (func_def && func_def->function_definition_name) {
-            // Skip internal functions
-            if (func_def->function_definition_name[0] == '_') {
-                continue;
-            }
-
-            // Create function value
-            RuntimeValue *func_value = rv_new_function(func_def, module_scope);
-            rv_object_set(exports, func_def->function_definition_name, func_value);
-            rv_unref(func_value);
-        }
-    }
-
-    // Import into current scope
+    // Import into current scope - store in a simple way without creating new AST nodes
     if (node->import_names_size == 0) {
         // Import all exports into current scope
         if (exports->type == RV_OBJECT) {
@@ -2825,42 +2870,31 @@ RuntimeValue *visitor_visit_import(visitor_T *visitor, AST_T *node)
                 const char *name = exports->data.object.keys[i];
                 RuntimeValue *value = exports->data.object.values[i];
 
-                if (value->type == RV_FUNCTION && value->data.function.ast_node) {
-                    // Import as function definition
-                    AST_T *func_ast = (AST_T *)value->data.function.ast_node;
-                    // Create a shallow copy of the function definition with the correct scope
-                    AST_T *import_func = ast_new(AST_FUNCTION_DEFINITION);
-                    import_func->function_definition_name = memory_strdup(name);
-                    import_func->function_definition_args = func_ast->function_definition_args;
-                    import_func->function_definition_args_size =
-                        func_ast->function_definition_args_size;
-                    import_func->function_definition_body = func_ast->function_definition_body;
-                    import_func->scope = node->scope;
-
-                    scope_add_function_definition(node->scope, import_func);
-                } else {
-                    // Import as variable definition
-                    AST_T *import_var = ast_new(AST_VARIABLE_DEFINITION);
-                    import_var->variable_definition_variable_name = memory_strdup(name);
-                    import_var->runtime_value = rv_ref(value);
-                    import_var->scope = node->scope;
-
-                    scope_add_variable_definition(node->scope, import_var);
-                }
+                // Simply store the runtime values in the current scope
+                // without creating new AST nodes to avoid memory management issues
+                scope_set_variable(node->scope, name, value);
             }
         }
     }
 
-    // Cleanup - Don't free module_ast and module_scope as they're referenced by functions
+    // Cleanup
     visitor_free(module_visitor);
-    // ast_free(module_ast);  // Keep alive - referenced by exported functions
-    // scope_free(module_scope);  // Keep alive - referenced by exported functions
+    
+    // CRITICAL: Only free module AST and scope if no functions were exported
+    // Functions store references to their AST nodes and scope, so we must keep them alive
+    if (!has_exported_functions) {
+        ast_free(module_ast);
+        scope_free(module_scope);
+    }
+    // NOTE: This will cause a memory leak for the AST and scope of modules with functions
+    // This is a known limitation - proper fix would require deep copying AST nodes
+    // or reference counting for AST nodes
+    
     parser_free(module_parser);
     lexer_free(module_lexer);
     memory_free(source);
 
     return exports;
-#endif  // Dead code - import not implemented yet
 }
 
 /**
@@ -2875,15 +2909,27 @@ RuntimeValue *visitor_visit_export(visitor_T *visitor, AST_T *node)
         return rv_new_null();
     }
 
-    // For now, export is a no-op since we export all non-private symbols by default
-    // In the future, we could implement specific export handling
-
     // Export a named value
     if (node->export_name && node->export_value) {
         LOG_VISITOR_DEBUG("Exporting: %s", node->export_name);
+
+        // Evaluate the exported value
         RuntimeValue *value = visitor_visit(visitor, node->export_value);
-        // Could maintain an export list here
-        rv_unref(value);
+
+        if (value) {
+            // If export_value is a variable definition or function definition,
+            // it should be properly added to the scope
+            if (node->export_value->type == AST_VARIABLE_DEFINITION) {
+                // Already handled by visitor_visit
+            } else if (node->export_value->type == AST_FUNCTION_DEFINITION) {
+                // Already handled by visitor_visit
+            } else if (node->export_value->type == AST_VARIABLE) {
+                // Exporting an existing variable - no additional action needed
+                // The variable is already in scope
+            }
+
+            rv_unref(value);
+        }
     }
 
     return rv_new_null();

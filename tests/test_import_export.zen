@@ -1,0 +1,49 @@
+# Comprehensive test of import/export functionality
+
+print "=== Import/Export Test Suite ==="
+print ""
+
+# Test 1: Import module with variable exports
+print "Test 1: Variable exports"
+import "./modules/variables.zen"
+if x = 42
+    print "✓ Variable x imported correctly"
+else
+    print "✗ Variable x not imported correctly"
+
+if name = "Test"
+    print "✓ Variable name imported correctly"
+else
+    print "✗ Variable name not imported correctly"
+
+print ""
+
+# Test 2: Import module with function exports
+print "Test 2: Function exports"
+import "./modules/functions.zen"
+set result add 5 3
+if result = 8
+    print "✓ Function add works correctly"
+else
+    print "✗ Function add failed"
+
+set result2 square 4
+if result2 = 16
+    print "✓ Function square works correctly"
+else
+    print "✗ Function square failed"
+
+print ""
+
+# Test 3: Import module with mixed exports
+print "Test 3: Mixed exports"
+import "./modules/mixed.zen"
+set res calculate 10 5
+print "calculate(10, 5) = " + toString res
+if PI > 3.14 and PI < 3.15
+    print "✓ Constant PI imported correctly"
+else
+    print "✗ Constant PI not imported correctly"
+
+print ""
+print "=== All tests completed ==="

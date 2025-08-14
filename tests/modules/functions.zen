@@ -1,0 +1,12 @@
+# Module that exports functions
+
+export function add a b
+    return a + b
+
+export function square x
+    return x * x
+
+export function greet name
+    return "Hello, " + name
+
+print "Functions module loaded"

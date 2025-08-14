@@ -1,0 +1,7 @@
+# Module that exports variables
+
+export set x 42
+export set name "Test"
+export set flag true
+
+print "Variables module loaded"
