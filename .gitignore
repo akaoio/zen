@@ -65,3 +65,7 @@ __pycache__/
 *.pyo
 
 workspace/
+# Compiled binaries
+zen
+*.exe
+*.out
