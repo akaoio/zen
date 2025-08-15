@@ -3309,11 +3309,14 @@ static RuntimeValue *visitor_execute_user_function_ex(
         }
 
         RuntimeValue *arg_value = evaluated_args[arg_index];
+        bool created_null = false;
         if (!arg_value) {
             arg_value = rv_new_null();
-        } else {
-            rv_ref(arg_value);  // Keep a reference for the scope
+            evaluated_args[arg_index] = arg_value;  // Store it so cleanup can handle it
+            created_null = true;
         }
+        // Note: scope_set_variable will handle referencing the value internally
+        // We don't need to reference it here since we'll clean up our copy in evaluated_args
 
         // Use the new RuntimeValue-based scope storage directly
         // This avoids AST conversion issues in recursive functions
@@ -3321,7 +3324,9 @@ static RuntimeValue *visitor_execute_user_function_ex(
             LOG_ERROR(LOG_CAT_VISITOR,
                       "Failed to set parameter '%s' in function scope",
                       param_ast->variable_name);
-            rv_unref(arg_value);
+            if (created_null) {
+                rv_unref(arg_value);  // Only unref if we created it locally
+            }
             visitor->current_scope = previous_scope;  // Restore previous scope
             scope_free(function_scope);
             visitor_pop_call_frame(visitor);

@@ -6,6 +6,7 @@
 #include "../../framework/test.h"
 #include "zen/core/runtime_value.h"
 #include "zen/core/memory.h"
+#include <string.h>
 
 // Forward declare all tests
 DECLARE_TEST(test_value_new_string);
@@ -34,9 +35,10 @@ TEST(test_value_new_string) {
     
     ASSERT_NOT_NULL(value);
     ASSERT_EQ(value->type, RV_STRING);
-    ASSERT_NOT_NULL(value->data.string.data);
-    ASSERT_STR_EQ(value->data.string.data, "Hello World");
-    ASSERT_EQ(value->data.string.length, 11);
+    const char* str = rv_get_string(value);
+    ASSERT_NOT_NULL(str);
+    ASSERT_STR_EQ(str, "Hello World");
+    ASSERT_EQ(strlen(str), 11);
     
     rv_unref(value);
 }
@@ -82,10 +84,10 @@ TEST(test_value_copy_string) {
     
     ASSERT_NOT_NULL(copy);
     ASSERT_EQ(copy->type, RV_STRING);
-    ASSERT_STR_EQ(copy->data.string.data, "Test String");
+    ASSERT_STR_EQ(rv_get_string(copy), "Test String");
     
     // Should be independent copies
-    ASSERT_NE(copy->data.string.data, original->data.string.data);
+    ASSERT_NE(rv_get_string(copy), rv_get_string(original));
     
     rv_unref(original);
     rv_unref(copy);
@@ -276,8 +278,9 @@ TEST(test_value_empty_string) {
     
     ASSERT_NOT_NULL(value);
     ASSERT_EQ(value->type, RV_STRING);
-    ASSERT_STR_EQ(value->data.string.data, "");
-    ASSERT_EQ(value->data.string.length, 0);
+    const char* str = rv_get_string(value);
+    ASSERT_STR_EQ(str, "");
+    ASSERT_EQ(strlen(str), 0);
     
     rv_unref(value);
 }
@@ -292,9 +295,10 @@ TEST(test_value_null_string) {
     value = rv_new_string("");
     ASSERT_NOT_NULL(value);
     ASSERT_EQ(value->type, RV_STRING);
-    ASSERT_NOT_NULL(value->data.string.data);
-    ASSERT_STR_EQ(value->data.string.data, "");
-    ASSERT_EQ(value->data.string.length, 0);
+    const char* str = rv_get_string(value);
+    ASSERT_NOT_NULL(str);
+    ASSERT_STR_EQ(str, "");
+    ASSERT_EQ(strlen(str), 0);
     
     rv_unref(value);
 }

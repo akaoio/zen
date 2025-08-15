@@ -8,9 +8,7 @@
 #include <string.h>
 #include <assert.h>
 #include "zen/stdlib/regex.h"
-#include "zen/types/value.h"
-#include "zen/types/array.h"
-#include "zen/types/object.h"
+#include "zen/core/runtime_value.h"
 #include "zen/core/memory.h"
 
 /**
@@ -20,34 +18,34 @@ void test_regex_match_basic() {
     printf("Testing basic regex matching...\n");
     
     // Test simple digit matching
-    Value* text = value_new_string("Hello 123 World 456");
-    Value* pattern = value_new_string("\\d+");
+    RuntimeValue* text = rv_new_string("Hello 123 World 456");
+    RuntimeValue* pattern = rv_new_string("\\d+");
     
-    Value* result = regex_match(text, pattern);
+    RuntimeValue* result = regex_match(text, pattern);
     
     assert(result != NULL);
-    assert(result->type == VALUE_OBJECT);
+    assert(result->type == RV_OBJECT);
     
     // Check if match was found
-    Value* matched = object_get(result, "matched");
+    RuntimeValue* matched = rv_object_get(result, "matched");
     assert(matched != NULL);
-    assert(matched->type == VALUE_BOOLEAN);
-    assert(matched->as.boolean == true);
+    assert(matched->type == RV_BOOLEAN);
+    assert(matched->data.boolean == true);
     
     // Check match count
-    Value* count = object_get(result, "count");
+    RuntimeValue* count = rv_object_get(result, "count");
     assert(count != NULL);
-    assert(count->type == VALUE_NUMBER);
-    assert((int)count->as.number >= 1);
+    assert(count->type == RV_NUMBER);
+    assert((int)count->data.number >= 1);
     
     // Check matches array exists
-    Value* matches = object_get(result, "matches");
+    RuntimeValue* matches = rv_object_get(result, "matches");
     assert(matches != NULL);
-    assert(matches->type == VALUE_ARRAY);
+    assert(matches->type == RV_ARRAY);
     
-    value_free(text);
-    value_free(pattern);
-    value_free(result);
+    rv_unref(text);
+    rv_unref(pattern);
+    rv_unref(result);
     printf("✓ Basic regex matching test passed\n");
 }
 
@@ -57,29 +55,29 @@ void test_regex_match_basic() {
 void test_regex_match_no_match() {
     printf("Testing regex matching with no matches...\n");
     
-    Value* text = value_new_string("Hello World");
-    Value* pattern = value_new_string("\\d+");
+    RuntimeValue* text = rv_new_string("Hello World");
+    RuntimeValue* pattern = rv_new_string("\\d+");
     
-    Value* result = regex_match(text, pattern);
+    RuntimeValue* result = regex_match(text, pattern);
     
     assert(result != NULL);
-    assert(result->type == VALUE_OBJECT);
+    assert(result->type == RV_OBJECT);
     
     // Check if no match was found
-    Value* matched = object_get(result, "matched");
+    RuntimeValue* matched = rv_object_get(result, "matched");
     assert(matched != NULL);
-    assert(matched->type == VALUE_BOOLEAN);
-    assert(matched->as.boolean == false);
+    assert(matched->type == RV_BOOLEAN);
+    assert(matched->data.boolean == false);
     
     // Check match count is zero
-    Value* count = object_get(result, "count");
+    RuntimeValue* count = rv_object_get(result, "count");
     assert(count != NULL);
-    assert(count->type == VALUE_NUMBER);
-    assert((int)count->as.number == 0);
+    assert(count->type == RV_NUMBER);
+    assert((int)count->data.number == 0);
     
-    value_free(text);
-    value_free(pattern);
-    value_free(result);
+    rv_unref(text);
+    rv_unref(pattern);
+    rv_unref(result);
     printf("✓ No match test passed\n");
 }
 
@@ -89,25 +87,25 @@ void test_regex_match_no_match() {
 void test_regex_replace() {
     printf("Testing regex replacement...\n");
     
-    Value* text = value_new_string("Hello 123 World 456");
-    Value* pattern = value_new_string("\\d+");
-    Value* replacement = value_new_string("NUMBER");
+    RuntimeValue* text = rv_new_string("Hello 123 World 456");
+    RuntimeValue* pattern = rv_new_string("\\d+");
+    RuntimeValue* replacement = rv_new_string("NUMBER");
     
-    Value* result = regex_replace(text, pattern, replacement);
+    RuntimeValue* result = regex_replace(text, pattern, replacement);
     
     assert(result != NULL);
-    assert(result->type == VALUE_STRING);
+    assert(result->type == RV_STRING);
     
     // Check that digits were replaced
-    const char* result_str = result->as.string->data;
+    const char* result_str = rv_get_string(result);
     assert(strstr(result_str, "NUMBER") != NULL);
     assert(strstr(result_str, "123") == NULL);
     assert(strstr(result_str, "456") == NULL);
     
-    value_free(text);
-    value_free(pattern);
-    value_free(replacement);
-    value_free(result);
+    rv_unref(text);
+    rv_unref(pattern);
+    rv_unref(replacement);
+    rv_unref(result);
     printf("✓ Regex replacement test passed\n");
 }
 
@@ -117,31 +115,31 @@ void test_regex_replace() {
 void test_regex_split() {
     printf("Testing regex splitting...\n");
     
-    Value* text = value_new_string("apple,banana;orange:grape");
-    Value* pattern = value_new_string("[,:;]");
+    RuntimeValue* text = rv_new_string("apple,banana;orange:grape");
+    RuntimeValue* pattern = rv_new_string("[,:;]");
     
-    Value* result = regex_split(text, pattern);
+    RuntimeValue* result = regex_split(text, pattern);
     
     assert(result != NULL);
-    assert(result->type == VALUE_ARRAY);
+    assert(result->type == RV_ARRAY);
     
     // Should split into 4 parts
-    size_t length = array_length(result);
+    size_t length = rv_array_size(result);
     assert(length == 4);
     
     // Check individual parts
-    Value* part1 = array_get(result, 0);
+    RuntimeValue* part1 = rv_array_get(result, 0);
     assert(part1 != NULL);
-    assert(part1->type == VALUE_STRING);
-    assert(strcmp(part1->as.string->data, "apple") == 0);
+    assert(part1->type == RV_STRING);
+    assert(strcmp(rv_get_string(part1), "apple") == 0);
     
-    Value* part2 = array_get(result, 1);
+    RuntimeValue* part2 = rv_array_get(result, 1);
     assert(part2 != NULL);
-    assert(strcmp(part2->as.string->data, "banana") == 0);
+    assert(strcmp(rv_get_string(part2), "banana") == 0);
     
-    value_free(text);
-    value_free(pattern);
-    value_free(result);
+    rv_unref(text);
+    rv_unref(pattern);
+    rv_unref(result);
     printf("✓ Regex splitting test passed\n");
 }
 
@@ -151,27 +149,27 @@ void test_regex_split() {
 void test_regex_compile() {
     printf("Testing regex compilation...\n");
     
-    Value* pattern = value_new_string("\\b\\w+@\\w+\\.\\w+\\b");
+    RuntimeValue* pattern = rv_new_string("\\b\\w+@\\w+\\.\\w+\\b");
     
-    Value* result = regex_compile(pattern);
+    RuntimeValue* result = regex_compile(pattern);
     
     assert(result != NULL);
-    assert(result->type == VALUE_OBJECT);
+    assert(result->type == RV_OBJECT);
     
     // Check compilation status
-    Value* compiled = object_get(result, "compiled");
+    RuntimeValue* compiled = rv_object_get(result, "compiled");
     assert(compiled != NULL);
-    assert(compiled->type == VALUE_BOOLEAN);
-    assert(compiled->as.boolean == true);
+    assert(compiled->type == RV_BOOLEAN);
+    assert(compiled->data.boolean == true);
     
     // Check pattern is stored
-    Value* stored_pattern = object_get(result, "pattern");
+    RuntimeValue* stored_pattern = rv_object_get(result, "pattern");
     assert(stored_pattern != NULL);
-    assert(stored_pattern->type == VALUE_STRING);
-    assert(strcmp(stored_pattern->as.string->data, pattern->as.string->data) == 0);
+    assert(stored_pattern->type == RV_STRING);
+    assert(strcmp(rv_get_string(stored_pattern), rv_get_string(pattern)) == 0);
     
-    value_free(pattern);
-    value_free(result);
+    rv_unref(pattern);
+    rv_unref(result);
     printf("✓ Regex compilation test passed\n");
 }
 
@@ -181,17 +179,17 @@ void test_regex_compile() {
 void test_regex_error_handling() {
     printf("Testing regex error handling...\n");
     
-    Value* text = value_new_string("test");
-    Value* invalid_pattern = value_new_string("[invalid");  // Unclosed bracket
+    RuntimeValue* text = rv_new_string("test");
+    RuntimeValue* invalid_pattern = rv_new_string("[invalid");  // Unclosed bracket
     
-    Value* result = regex_match(text, invalid_pattern);
+    RuntimeValue* result = regex_match(text, invalid_pattern);
     
     assert(result != NULL);
-    assert(result->type == VALUE_ERROR);
+    assert(result->type == RV_ERROR);
     
-    value_free(text);
-    value_free(invalid_pattern);
-    value_free(result);
+    rv_unref(text);
+    rv_unref(invalid_pattern);
+    rv_unref(result);
     printf("✓ Error handling test passed\n");
 }
 
@@ -202,22 +200,22 @@ void test_regex_input_validation() {
     printf("Testing input validation...\n");
     
     // Test with null inputs
-    Value* result1 = regex_match(NULL, NULL);
+    RuntimeValue* result1 = regex_match(NULL, NULL);
     assert(result1 != NULL);
-    assert(result1->type == VALUE_ERROR);
-    value_free(result1);
+    assert(result1->type == RV_ERROR);
+    rv_unref(result1);
     
     // Test with non-string inputs
-    Value* number = value_new_number(123);
-    Value* pattern = value_new_string("\\d+");
+    RuntimeValue* number = rv_new_number(123);
+    RuntimeValue* pattern = rv_new_string("\\d+");
     
-    Value* result2 = regex_match(number, pattern);
+    RuntimeValue* result2 = regex_match(number, pattern);
     assert(result2 != NULL);
-    assert(result2->type == VALUE_ERROR);
+    assert(result2->type == RV_ERROR);
     
-    value_free(number);
-    value_free(pattern);
-    value_free(result2);
+    rv_unref(number);
+    rv_unref(pattern);
+    rv_unref(result2);
     printf("✓ Input validation test passed\n");
 }
 
@@ -227,22 +225,22 @@ void test_regex_input_validation() {
 void test_regex_utf8() {
     printf("Testing UTF-8 support...\n");
     
-    Value* text = value_new_string("Hello 世界 123");
-    Value* pattern = value_new_string("\\p{Han}+");  // Match Chinese characters
+    RuntimeValue* text = rv_new_string("Hello 世界 123");
+    RuntimeValue* pattern = rv_new_string("\\p{Han}+");  // Match Chinese characters
     
-    Value* result = regex_match(text, pattern);
+    RuntimeValue* result = regex_match(text, pattern);
     
     assert(result != NULL);
-    assert(result->type == VALUE_OBJECT);
+    assert(result->type == RV_OBJECT);
     
-    Value* matched = object_get(result, "matched");
+    RuntimeValue* matched = rv_object_get(result, "matched");
     assert(matched != NULL);
-    assert(matched->type == VALUE_BOOLEAN);
-    assert(matched->as.boolean == true);
+    assert(matched->type == RV_BOOLEAN);
+    assert(matched->data.boolean == true);
     
-    value_free(text);
-    value_free(pattern);
-    value_free(result);
+    rv_unref(text);
+    rv_unref(pattern);
+    rv_unref(result);
     printf("✓ UTF-8 support test passed\n");
 }
 

@@ -195,6 +195,12 @@ void rv_unref(RuntimeValue *value)
         }
         break;
 
+    case RV_FUNCTION:
+        // Note: ast_node and scope are not owned by the RuntimeValue
+        // They are references to existing AST nodes and scopes that are managed elsewhere
+        // No additional cleanup needed for function data
+        break;
+
     case RV_CLASS:
         if (value->data.class.name) {
             memory_free(value->data.class.name);

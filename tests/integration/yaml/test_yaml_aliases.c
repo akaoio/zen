@@ -5,9 +5,7 @@
 
 #include "tests/framework/test.h"
 #include "zen/stdlib/yaml.h"
-#include "zen/types/value.h"
-#include "zen/types/object.h"
-#include "zen/types/array.h"
+#include "zen/core/runtime_value.h"
 #include "zen/core/error.h"
 
 // Test basic alias functionality
@@ -19,36 +17,36 @@ void test_yaml_basic_alias(void) {
         "\n"
         "employee: *john\n";
     
-    Value* result = yaml_parse(yaml);
+    RuntimeValue* result = yaml_parse(yaml);
     TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, result->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, result->type);
     
-    Value* person = object_get(result, "person");
+    RuntimeValue* person = rv_object_get(result, "person");
     TEST_ASSERT_NOT_NULL(person);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, person->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, person->type);
     
-    Value* employee = object_get(result, "employee");
+    RuntimeValue* employee = rv_object_get(result, "employee");
     TEST_ASSERT_NOT_NULL(employee);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, employee->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, employee->type);
     
     // Check that both have the same data
-    Value* person_name = object_get(person, "name");
-    Value* employee_name = object_get(employee, "name");
+    RuntimeValue* person_name = rv_object_get(person, "name");
+    RuntimeValue* employee_name = rv_object_get(employee, "name");
     TEST_ASSERT_NOT_NULL(person_name);
     TEST_ASSERT_NOT_NULL(employee_name);
-    TEST_ASSERT_EQUAL(VALUE_STRING, person_name->type);
-    TEST_ASSERT_EQUAL(VALUE_STRING, employee_name->type);
-    TEST_ASSERT_STR_EQUAL(person_name->as.string->data, employee_name->as.string->data);
+    TEST_ASSERT_EQUAL(RV_STRING, person_name->type);
+    TEST_ASSERT_EQUAL(RV_STRING, employee_name->type);
+    TEST_ASSERT_STR_EQUAL(rv_get_string(person_name), rv_get_string(employee_name));
     
-    Value* person_age = object_get(person, "age");
-    Value* employee_age = object_get(employee, "age");
+    RuntimeValue* person_age = rv_object_get(person, "age");
+    RuntimeValue* employee_age = rv_object_get(employee, "age");
     TEST_ASSERT_NOT_NULL(person_age);
     TEST_ASSERT_NOT_NULL(employee_age);
-    TEST_ASSERT_EQUAL(VALUE_NUMBER, person_age->type);
-    TEST_ASSERT_EQUAL(VALUE_NUMBER, employee_age->type);
-    TEST_ASSERT_EQUAL(person_age->as.number, employee_age->as.number);
+    TEST_ASSERT_EQUAL(RV_NUMBER, person_age->type);
+    TEST_ASSERT_EQUAL(RV_NUMBER, employee_age->type);
+    TEST_ASSERT_EQUAL(person_age->data.number, employee_age->data.number);
     
-    value_unref(result);
+    rv_unref(result);
 }
 
 // Test array alias
@@ -62,44 +60,44 @@ void test_yaml_array_alias(void) {
         "basket1: *my_fruits\n"
         "basket2: *my_fruits\n";
     
-    Value* result = yaml_parse(yaml);
+    RuntimeValue* result = yaml_parse(yaml);
     TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, result->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, result->type);
     
-    Value* fruits = object_get(result, "fruits");
+    RuntimeValue* fruits = rv_object_get(result, "fruits");
     TEST_ASSERT_NOT_NULL(fruits);
-    TEST_ASSERT_EQUAL(VALUE_ARRAY, fruits->type);
-    TEST_ASSERT_EQUAL(3, fruits->as.array->length);
+    TEST_ASSERT_EQUAL(RV_ARRAY, fruits->type);
+    TEST_ASSERT_EQUAL(3, rv_array_size(fruits));
     
-    Value* basket1 = object_get(result, "basket1");
+    RuntimeValue* basket1 = rv_object_get(result, "basket1");
     TEST_ASSERT_NOT_NULL(basket1);
-    TEST_ASSERT_EQUAL(VALUE_ARRAY, basket1->type);
-    TEST_ASSERT_EQUAL(3, basket1->as.array->length);
+    TEST_ASSERT_EQUAL(RV_ARRAY, basket1->type);
+    TEST_ASSERT_EQUAL(3, rv_array_size(basket1));
     
-    Value* basket2 = object_get(result, "basket2");
+    RuntimeValue* basket2 = rv_object_get(result, "basket2");
     TEST_ASSERT_NOT_NULL(basket2);
-    TEST_ASSERT_EQUAL(VALUE_ARRAY, basket2->type);
-    TEST_ASSERT_EQUAL(3, basket2->as.array->length);
+    TEST_ASSERT_EQUAL(RV_ARRAY, basket2->type);
+    TEST_ASSERT_EQUAL(3, rv_array_size(basket2));
     
     // Check array contents
     for (size_t i = 0; i < 3; i++) {
-        Value* fruit = fruits->as.array->items[i];
-        Value* item1 = basket1->as.array->items[i];
-        Value* item2 = basket2->as.array->items[i];
+        RuntimeValue* fruit = rv_array_get(fruits, i);
+        RuntimeValue* item1 = rv_array_get(basket1, i);
+        RuntimeValue* item2 = rv_array_get(basket2, i);
         
         TEST_ASSERT_NOT_NULL(fruit);
         TEST_ASSERT_NOT_NULL(item1);
         TEST_ASSERT_NOT_NULL(item2);
         
-        TEST_ASSERT_EQUAL(VALUE_STRING, fruit->type);
-        TEST_ASSERT_EQUAL(VALUE_STRING, item1->type);
-        TEST_ASSERT_EQUAL(VALUE_STRING, item2->type);
+        TEST_ASSERT_EQUAL(RV_STRING, fruit->type);
+        TEST_ASSERT_EQUAL(RV_STRING, item1->type);
+        TEST_ASSERT_EQUAL(RV_STRING, item2->type);
         
-        TEST_ASSERT_STR_EQUAL(fruit->as.string->data, item1->as.string->data);
-        TEST_ASSERT_STR_EQUAL(fruit->as.string->data, item2->as.string->data);
+        TEST_ASSERT_STR_EQUAL(rv_get_string(fruit), rv_get_string(item1));
+        TEST_ASSERT_STR_EQUAL(rv_get_string(fruit), rv_get_string(item2));
     }
     
-    value_unref(result);
+    rv_unref(result);
 }
 
 // Test merge key functionality
@@ -120,51 +118,51 @@ void test_yaml_merge_key(void) {
         "  timeout: 60\n"
         "  server: dev.example.com\n";
     
-    Value* result = yaml_parse(yaml);
+    RuntimeValue* result = yaml_parse(yaml);
     TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, result->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, result->type);
     
-    Value* production = object_get(result, "production");
+    RuntimeValue* production = rv_object_get(result, "production");
     TEST_ASSERT_NOT_NULL(production);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, production->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, production->type);
     
     // Check merged values
-    Value* prod_timeout = object_get(production, "timeout");
+    RuntimeValue* prod_timeout = rv_object_get(production, "timeout");
     TEST_ASSERT_NOT_NULL(prod_timeout);
-    TEST_ASSERT_EQUAL(VALUE_NUMBER, prod_timeout->type);
-    TEST_ASSERT_EQUAL(30, prod_timeout->as.number); // From defaults
+    TEST_ASSERT_EQUAL(RV_NUMBER, prod_timeout->type);
+    TEST_ASSERT_EQUAL(30, rv_get_number(prod_timeout)); // From defaults
     
-    Value* prod_retries = object_get(production, "retries");
+    RuntimeValue* prod_retries = rv_object_get(production, "retries");
     TEST_ASSERT_NOT_NULL(prod_retries);
-    TEST_ASSERT_EQUAL(VALUE_NUMBER, prod_retries->type);
-    TEST_ASSERT_EQUAL(3, prod_retries->as.number); // From defaults
+    TEST_ASSERT_EQUAL(RV_NUMBER, prod_retries->type);
+    TEST_ASSERT_EQUAL(3, rv_get_number(prod_retries)); // From defaults
     
-    Value* prod_log = object_get(production, "log_level");
+    RuntimeValue* prod_log = rv_object_get(production, "log_level");
     TEST_ASSERT_NOT_NULL(prod_log);
-    TEST_ASSERT_EQUAL(VALUE_STRING, prod_log->type);
-    TEST_ASSERT_STR_EQUAL("warn", prod_log->as.string->data); // Overridden
+    TEST_ASSERT_EQUAL(RV_STRING, prod_log->type);
+    TEST_ASSERT_STR_EQUAL("warn", rv_get_string(prod_log)); // Overridden
     
-    Value* prod_server = object_get(production, "server");
+    RuntimeValue* prod_server = rv_object_get(production, "server");
     TEST_ASSERT_NOT_NULL(prod_server);
-    TEST_ASSERT_EQUAL(VALUE_STRING, prod_server->type);
-    TEST_ASSERT_STR_EQUAL("prod.example.com", prod_server->as.string->data); // New field
+    TEST_ASSERT_EQUAL(RV_STRING, prod_server->type);
+    TEST_ASSERT_STR_EQUAL("prod.example.com", rv_get_string(prod_server)); // New field
     
     // Check development environment
-    Value* development = object_get(result, "development");
+    RuntimeValue* development = rv_object_get(result, "development");
     TEST_ASSERT_NOT_NULL(development);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, development->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, development->type);
     
-    Value* dev_timeout = object_get(development, "timeout");
+    RuntimeValue* dev_timeout = rv_object_get(development, "timeout");
     TEST_ASSERT_NOT_NULL(dev_timeout);
-    TEST_ASSERT_EQUAL(VALUE_NUMBER, dev_timeout->type);
-    TEST_ASSERT_EQUAL(60, dev_timeout->as.number); // Overridden
+    TEST_ASSERT_EQUAL(RV_NUMBER, dev_timeout->type);
+    TEST_ASSERT_EQUAL(60, rv_get_number(dev_timeout)); // Overridden
     
-    Value* dev_retries = object_get(development, "retries");
+    RuntimeValue* dev_retries = rv_object_get(development, "retries");
     TEST_ASSERT_NOT_NULL(dev_retries);
-    TEST_ASSERT_EQUAL(VALUE_NUMBER, dev_retries->type);
-    TEST_ASSERT_EQUAL(3, dev_retries->as.number); // From defaults
+    TEST_ASSERT_EQUAL(RV_NUMBER, dev_retries->type);
+    TEST_ASSERT_EQUAL(3, rv_get_number(dev_retries)); // From defaults
     
-    value_unref(result);
+    rv_unref(result);
 }
 
 // Test alias in array
@@ -180,54 +178,54 @@ void test_yaml_alias_in_array(void) {
         "    age: 25\n"
         "  - *john\n";
     
-    Value* result = yaml_parse(yaml);
+    RuntimeValue* result = yaml_parse(yaml);
     TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, result->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, result->type);
     
-    Value* employees = object_get(result, "employees");
+    RuntimeValue* employees = rv_object_get(result, "employees");
     TEST_ASSERT_NOT_NULL(employees);
-    TEST_ASSERT_EQUAL(VALUE_ARRAY, employees->type);
-    TEST_ASSERT_EQUAL(3, employees->as.array->length);
+    TEST_ASSERT_EQUAL(RV_ARRAY, employees->type);
+    TEST_ASSERT_EQUAL(3, rv_array_size(employees));
     
     // First and third employees should be John
-    Value* emp1 = employees->as.array->items[0];
-    Value* emp3 = employees->as.array->items[2];
+    RuntimeValue* emp1 = rv_array_get(employees, 0);
+    RuntimeValue* emp3 = rv_array_get(employees, 2);
     TEST_ASSERT_NOT_NULL(emp1);
     TEST_ASSERT_NOT_NULL(emp3);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, emp1->type);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, emp3->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, emp1->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, emp3->type);
     
-    Value* emp1_name = object_get(emp1, "name");
-    Value* emp3_name = object_get(emp3, "name");
+    RuntimeValue* emp1_name = rv_object_get(emp1, "name");
+    RuntimeValue* emp3_name = rv_object_get(emp3, "name");
     TEST_ASSERT_NOT_NULL(emp1_name);
     TEST_ASSERT_NOT_NULL(emp3_name);
-    TEST_ASSERT_STR_EQUAL("John Doe", emp1_name->as.string->data);
-    TEST_ASSERT_STR_EQUAL("John Doe", emp3_name->as.string->data);
+    TEST_ASSERT_STR_EQUAL("John Doe", rv_get_string(emp1_name));
+    TEST_ASSERT_STR_EQUAL("John Doe", rv_get_string(emp3_name));
     
     // Second employee should be Jane
-    Value* emp2 = employees->as.array->items[1];
+    RuntimeValue* emp2 = rv_array_get(employees, 1);
     TEST_ASSERT_NOT_NULL(emp2);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, emp2->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, emp2->type);
     
-    Value* emp2_name = object_get(emp2, "name");
+    RuntimeValue* emp2_name = rv_object_get(emp2, "name");
     TEST_ASSERT_NOT_NULL(emp2_name);
-    TEST_ASSERT_STR_EQUAL("Jane Smith", emp2_name->as.string->data);
+    TEST_ASSERT_STR_EQUAL("Jane Smith", rv_get_string(emp2_name));
     
-    value_unref(result);
+    rv_unref(result);
 }
 
 // Test unknown anchor error
 void test_yaml_unknown_anchor(void) {
     const char* yaml = "data: *unknown_anchor\n";
     
-    Value* result = yaml_parse(yaml);
+    RuntimeValue* result = yaml_parse(yaml);
     TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_EQUAL(VALUE_ERROR, result->type);
-    TEST_ASSERT_NOT_NULL(result->as.error);
-    TEST_ASSERT_NOT_NULL(result->as.error->message);
-    TEST_ASSERT_STR_CONTAINS(result->as.error->message, "Unknown anchor");
+    TEST_ASSERT_EQUAL(RV_ERROR, result->type);
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_NOT_NULL(rv_get_error_message(result));
+    TEST_ASSERT_STR_CONTAINS(rv_get_error_message(result), "Unknown anchor");
     
-    value_unref(result);
+    rv_unref(result);
 }
 
 // Test duplicate anchor error
@@ -238,12 +236,12 @@ void test_yaml_duplicate_anchor(void) {
         "second: &same\n"
         "  value: 2\n";
     
-    Value* result = yaml_parse(yaml);
+    RuntimeValue* result = yaml_parse(yaml);
     // libyaml might handle this differently - it might just use the last definition
     // For now, we'll just check that parsing doesn't crash
     TEST_ASSERT_NOT_NULL(result);
     
-    value_unref(result);
+    rv_unref(result);
 }
 
 // Test nested aliases
@@ -262,28 +260,28 @@ void test_yaml_nested_aliases(void) {
         "  <<: *middle\n"
         "  name: final\n";
     
-    Value* result = yaml_parse(yaml);
+    RuntimeValue* result = yaml_parse(yaml);
     TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, result->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, result->type);
     
-    Value* final = object_get(result, "final");
+    RuntimeValue* final = rv_object_get(result, "final");
     TEST_ASSERT_NOT_NULL(final);
-    TEST_ASSERT_EQUAL(VALUE_OBJECT, final->type);
+    TEST_ASSERT_EQUAL(RV_OBJECT, final->type);
     
     // Should have all fields
-    Value* name = object_get(final, "name");
+    RuntimeValue* name = rv_object_get(final, "name");
     TEST_ASSERT_NOT_NULL(name);
-    TEST_ASSERT_STR_EQUAL("final", name->as.string->data); // Overridden twice
+    TEST_ASSERT_STR_EQUAL("final", rv_get_string(name)); // Overridden twice
     
-    Value* value = object_get(final, "value");
+    RuntimeValue* value = rv_object_get(final, "value");
     TEST_ASSERT_NOT_NULL(value);
-    TEST_ASSERT_EQUAL(100, value->as.number); // From base
+    TEST_ASSERT_EQUAL(100, rv_get_number(value)); // From base
     
-    Value* extra = object_get(final, "extra");
+    RuntimeValue* extra = rv_object_get(final, "extra");
     TEST_ASSERT_NOT_NULL(extra);
-    TEST_ASSERT_EQUAL(200, extra->as.number); // From middle
+    TEST_ASSERT_EQUAL(200, rv_get_number(extra)); // From middle
     
-    value_unref(result);
+    rv_unref(result);
 }
 
 int main(void) {

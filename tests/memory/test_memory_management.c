@@ -52,28 +52,28 @@ TEST(test_memory_string_duplication) {
 
 TEST(test_reference_counting) {
     // Create a value with reference counting
-    Value* value = value_new_string("Reference Test");
+    RuntimeValue* value = rv_new_string("Reference Test");
     ASSERT_EQ(value->ref_count, 1);
     
     // Increment reference
-    Value* ref1 = value_ref(value);
+    RuntimeValue* ref1 = rv_ref(value);
     ASSERT_EQ(value, ref1);
     ASSERT_EQ(value->ref_count, 2);
     
     // Increment again
-    Value* ref2 = value_ref(value);
+    RuntimeValue* ref2 = rv_ref(value);
     ASSERT_EQ(value, ref2);
     ASSERT_EQ(value->ref_count, 3);
     
     // Decrement references
-    value_unref(ref2);
+    rv_unref(ref2);
     ASSERT_EQ(value->ref_count, 2);
     
-    value_unref(ref1);
+    rv_unref(ref1);
     ASSERT_EQ(value->ref_count, 1);
     
     // Final unref should free the memory
-    value_unref(value);
+    rv_unref(value);
     // value is now invalid
 }
 
@@ -143,26 +143,26 @@ TEST(test_value_memory_management) {
     memory_get_stats(&stats_before);
     
     // Create and manipulate values
-    Value* str_val = value_new_string("Memory Test");
-    Value* num_val = value_new_number(42.0);
-    Value* bool_val = value_new_boolean(true);
-    Value* null_val = value_new_null();
+    RuntimeValue* str_val = rv_new_string("Memory Test");
+    RuntimeValue* num_val = rv_new_number(42.0);
+    RuntimeValue* bool_val = rv_new_boolean(true);
+    RuntimeValue* null_val = rv_new_null();
     
     // Copy values (should allocate more memory)
-    Value* str_copy = value_copy(str_val);
-    Value* num_copy = value_copy(num_val);
+    RuntimeValue* str_copy = rv_copy(str_val);
+    RuntimeValue* num_copy = rv_copy(num_val);
     
     MemoryStats stats_after_alloc;
     memory_get_stats(&stats_after_alloc);
     ASSERT_TRUE(stats_after_alloc.allocation_count > stats_before.allocation_count);
     
     // Free all values
-    value_unref(str_val);
-    value_unref(num_val);
-    value_unref(bool_val);
-    value_unref(null_val);
-    value_unref(str_copy);
-    value_unref(num_copy);
+    rv_unref(str_val);
+    rv_unref(num_val);
+    rv_unref(bool_val);
+    rv_unref(null_val);
+    rv_unref(str_copy);
+    rv_unref(num_copy);
     
     MemoryStats stats_after_free;
     memory_get_stats(&stats_after_free);
