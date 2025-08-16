@@ -140,6 +140,7 @@ token_T *lexer_get_next_token(lexer_T *lexer)
     while (lexer->c != '\0' && lexer->i < lexer->content_length) {
         // Skip whitespace, newlines, and comments in a unified way
         while ((lexer->c == ' ' || lexer->c == '\t' || lexer->c == '\n') ||
+               (lexer->c == '#') ||  // ZEN uses # for comments
                (lexer->c == '/' && lexer->i + 1 < lexer->content_length &&
                 (lexer->contents[lexer->i + 1] == '/' || lexer->contents[lexer->i + 1] == '*'))) {
             // Handle newlines
@@ -174,6 +175,14 @@ token_T *lexer_get_next_token(lexer_T *lexer)
                     }
                 }
                 lexer_advance(lexer);
+                continue;
+            }
+
+            // Handle ZEN # comments  
+            if (lexer->c == '#') {
+                while (lexer->c != '\0' && lexer->c != '\n') {
+                    lexer_advance(lexer);
+                }
                 continue;
             }
 
