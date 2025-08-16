@@ -309,13 +309,11 @@ typedef struct AST_STRUCT {
     size_t math_function_args_size;          // Number of arguments
 
     /* AST_FILE_GET */
-    struct AST_STRUCT *file_get_path;  // File path expression (can be string literal or variable)
-    struct AST_STRUCT *file_get_property;  // Property path expression (dot-separated path)
+    struct AST_STRUCT *file_get_expression;  // Expression to get from (file path + property chain)
 
     /* AST_FILE_PUT */
-    struct AST_STRUCT *file_put_path;      // File path expression
-    struct AST_STRUCT *file_put_property;  // Property path expression
-    struct AST_STRUCT *file_put_value;     // Value to put
+    struct AST_STRUCT *file_put_target;      // Target expression (file path + property chain)
+    struct AST_STRUCT *file_put_value;       // Value to put
 
     /* AST_FILE_REFERENCE */
     char *file_ref_target_file;    // Target file path (e.g., "../addresses.json")
@@ -540,7 +538,7 @@ AST_T *ast_new_mathematical_function(const char *name, AST_T **args, size_t args
  * @param property_path Property path expression for accessing nested data
  * @return Pointer to AST_FILE_GET node
  */
-AST_T *ast_new_file_get(AST_T *file_path, AST_T *property_path);
+AST_T *ast_new_file_get(AST_T *expression);
 
 /**
  * @brief Create a new file put AST node
@@ -549,7 +547,7 @@ AST_T *ast_new_file_get(AST_T *file_path, AST_T *property_path);
  * @param value Value to store
  * @return Pointer to AST_FILE_PUT node
  */
-AST_T *ast_new_file_put(AST_T *file_path, AST_T *property_path, AST_T *value);
+AST_T *ast_new_file_put(AST_T *target, AST_T *value);
 
 /**
  * @brief Create a new file reference AST node for @ prefix cross-file references

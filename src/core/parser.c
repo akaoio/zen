@@ -261,7 +261,7 @@ AST_T *parser_parse_statements(parser_T *parser, scope_T *scope)
 
     parser->recursion_depth++;
 
-    while (parser->current_token->type != TOKEN_EOF) {
+    while (parser->current_token && parser->current_token->type != TOKEN_EOF) {
         // Handle DEDENT tokens
         if (parser->current_token->type == TOKEN_DEDENT) {
             if (parser->recursion_depth > 1) {
@@ -840,7 +840,13 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
         expr = parser_parse_file_get(parser, scope);
         break;
     case TOKEN_PUT:
-        expr = parser_parse_file_put(parser, scope);
+        // PUT should not be parsed as an expression unless we're in a file operation
+        if (!parser->context.in_file_operation) {
+            expr = ast_new(AST_NULL);
+        } else {
+            // This shouldn't happen - PUT within PUT
+            expr = ast_new(AST_NULL);
+        }
         break;
     default:
         expr = ast_new(AST_NOOP);
@@ -868,8 +874,19 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
 
         } else if (parser->current_token->type == TOKEN_DOT) {
             parser_eat(parser, TOKEN_DOT);
-            char *property = memory_strdup(parser->current_token->value);
-            parser_eat(parser, TOKEN_ID);
+            
+            // Handle special method names that are also keywords
+            char *property = NULL;
+            if (parser->current_token->type == TOKEN_GET) {
+                property = memory_strdup("get");
+                parser_eat(parser, TOKEN_GET);
+            } else if (parser->current_token->type == TOKEN_PUT) {
+                property = memory_strdup("put");
+                parser_eat(parser, TOKEN_PUT);
+            } else {
+                property = memory_strdup(parser->current_token->value);
+                parser_eat(parser, TOKEN_ID);
+            }
 
             AST_T *prop_access = ast_new_property_access(expr, property);
             prop_access->scope = scope;
@@ -879,7 +896,8 @@ AST_T *parser_parse_primary_expr(parser_T *parser, scope_T *scope)
 
     // Check if this property access should become a method call
     // In ZEN syntax, obj.method arg1 arg2 is a method call
-    if (expr && expr->type == AST_PROPERTY_ACCESS) {
+    // CRITICAL: Don't convert to method call when parsing file operations (GET/PUT targets)
+    if (expr && expr->type == AST_PROPERTY_ACCESS && !parser->context.in_file_operation) {
         // CRITICAL FIX: Never treat array access (expr->left != NULL) as a method call
         // Array access should always return the element value
         bool is_array_access = (expr->left != NULL);
@@ -1320,6 +1338,101 @@ AST_T *parser_parse_undecidable(parser_T *parser, scope_T *scope)
 }
 
 /**
+ * @brief Parse object value which might be a nested object or simple value
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* Parsed value AST node
+ */
+static AST_T *parser_parse_object_value(parser_T *parser, scope_T *scope)
+{
+    if (!parser || !scope) return NULL;
+    
+    AST_T *value = NULL;
+    
+    switch (parser->current_token->type) {
+    case TOKEN_STRING:
+        value = parser_parse_string(parser, scope);
+        break;
+    case TOKEN_NUMBER:
+        value = parser_parse_number(parser, scope);
+        break;
+    case TOKEN_TRUE:
+    case TOKEN_FALSE:
+        value = parser_parse_boolean(parser, scope);
+        break;
+    case TOKEN_NULL:
+        value = parser_parse_null(parser, scope);
+        break;
+    case TOKEN_UNDECIDABLE:
+        value = parser_parse_undecidable(parser, scope);
+        break;
+    case TOKEN_LBRACKET:
+        value = parser_parse_array(parser, scope);
+        break;
+    case TOKEN_ID: {
+        // Check if this ID starts a nested object literal
+        int saved_in_var_assign = parser->context.in_variable_assignment;
+        parser->context.in_variable_assignment = 1;
+        
+        if (parser_detect_object_literal(parser)) {
+            // Parse as nested object
+            char **nested_keys = NULL;
+            AST_T **nested_values = NULL;
+            size_t nested_count = 0;
+            
+            while (parser->current_token->type == TOKEN_ID) {
+                char *nested_key = memory_strdup(parser->current_token->value);
+                parser_eat(parser, TOKEN_ID);
+                
+                // Recursively parse the value
+                AST_T *nested_value = parser_parse_object_value(parser, scope);
+                
+                nested_count++;
+                nested_keys = memory_realloc(nested_keys, nested_count * sizeof(char *));
+                nested_values = memory_realloc(nested_values, nested_count * sizeof(AST_T *));
+                nested_keys[nested_count - 1] = nested_key;
+                nested_values[nested_count - 1] = nested_value;
+                
+                // Check for comma continuation
+                if (parser->current_token->type == TOKEN_COMMA) {
+                    parser_eat(parser, TOKEN_COMMA);
+                    if (parser->current_token->type != TOKEN_ID) {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            
+            value = ast_new_object(nested_keys, nested_values, nested_count);
+            
+            // Clean up keys
+            if (nested_keys) {
+                for (size_t i = 0; i < nested_count; i++) {
+                    if (nested_keys[i]) memory_free(nested_keys[i]);
+                }
+                memory_free(nested_keys);
+            }
+            if (nested_values) {
+                memory_free(nested_values);
+            }
+        } else {
+            // Regular variable reference
+            value = parser_parse_variable(parser, scope);
+        }
+        
+        parser->context.in_variable_assignment = saved_in_var_assign;
+        break;
+    }
+    default:
+        value = ast_new(AST_NOOP);
+        break;
+    }
+    
+    return value;
+}
+
+/**
  * @brief Parse array literal with comma-separated elements
  * @param parser Parser instance
  * @param scope Scope context for parsing
@@ -1414,36 +1527,8 @@ AST_T *parser_parse_object(parser_T *parser, scope_T *scope)
             }
         }
 
-        // Parse value without triggering object literal detection
-        AST_T *value = NULL;
-        switch (parser->current_token->type) {
-        case TOKEN_STRING:
-            value = parser_parse_string(parser, scope);
-            break;
-        case TOKEN_NUMBER:
-            value = parser_parse_number(parser, scope);
-            break;
-        case TOKEN_TRUE:
-        case TOKEN_FALSE:
-            value = parser_parse_boolean(parser, scope);
-            break;
-        case TOKEN_NULL:
-            value = parser_parse_null(parser, scope);
-            break;
-        case TOKEN_UNDECIDABLE:
-            value = parser_parse_undecidable(parser, scope);
-            break;
-        case TOKEN_LBRACKET:
-            value = parser_parse_array(parser, scope);
-            break;
-        case TOKEN_ID:
-            // For object values, treat ID as variable reference only
-            value = parser_parse_variable(parser, scope);
-            break;
-        default:
-            value = ast_new(AST_NOOP);
-            break;
-        }
+        // Parse value using the new recursive helper
+        AST_T *value = parser_parse_object_value(parser, scope);
 
         pair_count++;
         keys = memory_realloc(keys, pair_count * sizeof(char *));
@@ -2162,36 +2247,8 @@ AST_T *parser_parse_object_literal(parser_T *parser, scope_T *scope)
             }
         }
 
-        // Parse value without triggering object literal detection
-        AST_T *value = NULL;
-        switch (parser->current_token->type) {
-        case TOKEN_STRING:
-            value = parser_parse_string(parser, scope);
-            break;
-        case TOKEN_NUMBER:
-            value = parser_parse_number(parser, scope);
-            break;
-        case TOKEN_TRUE:
-        case TOKEN_FALSE:
-            value = parser_parse_boolean(parser, scope);
-            break;
-        case TOKEN_NULL:
-            value = parser_parse_null(parser, scope);
-            break;
-        case TOKEN_UNDECIDABLE:
-            value = parser_parse_undecidable(parser, scope);
-            break;
-        case TOKEN_LBRACKET:
-            value = parser_parse_array(parser, scope);
-            break;
-        case TOKEN_ID:
-            // For object values, treat ID as variable reference only
-            value = parser_parse_variable(parser, scope);
-            break;
-        default:
-            value = ast_new(AST_NOOP);
-            break;
-        }
+        // Parse value using the new recursive helper
+        AST_T *value = parser_parse_object_value(parser, scope);
 
         pair_count++;
         keys = memory_realloc(keys, pair_count * sizeof(char *));
@@ -2372,43 +2429,6 @@ AST_T *parser_parse_compound_assignment(parser_T *parser, scope_T *scope)
     return compound_assignment;
 }
 
-/**
- * @brief Parse file get operation
- * @param parser Parser instance
- * @param scope Scope context for parsing
- * @return AST_T* File get AST node
- */
-AST_T *parser_parse_file_get(parser_T *parser, scope_T *scope)
-{
-    parser_eat(parser, TOKEN_GET);
-
-    // Parse file path - could be string literal or variable
-    // Use primary_expr to avoid consuming property access
-    AST_T *file_path = NULL;
-    
-    if (parser->current_token->type == TOKEN_STRING) {
-        // String literal file path
-        file_path = parser_parse_string(parser, scope);
-    } else if (parser->current_token->type == TOKEN_ID) {
-        // Variable containing file path
-        file_path = parser_parse_variable(parser, scope);
-    } else {
-        // Invalid file path
-        file_path = ast_new_noop();
-    }
-
-    // Parse property path (dot notation)
-    AST_T *property_path = NULL;
-    if (parser->current_token->type == TOKEN_DOT) {
-        parser_eat(parser, TOKEN_DOT);
-        property_path = parser_parse_property_access_chain(parser, scope);
-    }
-
-    AST_T *file_get = ast_new_file_get(file_path, property_path);
-    file_get->scope = scope;
-
-    return file_get;
-}
 
 /**
  * @brief Parse file put operation
@@ -2452,54 +2472,6 @@ AST_T *parser_parse_file_reference(parser_T *parser, const char *ref_string)
     memory_free(target_file);
 
     return ref_node;
-}
-
-/**
- * @brief Parse a 'put' statement for file manipulation
- * @param parser Parser instance
- * @param scope Current parsing scope
- * @return AST node representing the file put operation
- */
-AST_T *parser_parse_file_put(parser_T *parser, scope_T *scope)
-{
-    parser_eat(parser, TOKEN_PUT);
-
-    // Parse file path expression
-    AST_T *file_path = parser_parse_expr(parser, scope);
-
-    // Parse property path (dot notation)
-    AST_T *property_path = NULL;
-    if (parser->current_token->type == TOKEN_DOT) {
-        parser_eat(parser, TOKEN_DOT);
-        property_path = parser_parse_property_access_chain(parser, scope);
-    }
-
-    // Parse value to put - check for @ prefix for file references or object syntax
-    AST_T *value = NULL;
-
-    if (parser->current_token->type == TOKEN_STRING && parser->current_token->value &&
-        strncmp(parser->current_token->value, "@ ", 2) == 0) {
-        // This is a file reference with @ prefix
-        value = parser_parse_file_reference(parser, parser->current_token->value);
-        parser_eat(parser, TOKEN_STRING);  // Consume the reference string
-
-        if (!value) {
-            LOG_ERROR(LOG_CAT_PARSER, "Invalid file reference format");
-            value = ast_new(AST_NULL);
-        }
-    } else if (parser->current_token->type == TOKEN_ID) {
-        // Check if this is object syntax (key-value pairs)
-        // Look ahead to see if we have "key value" or "key value, key value" pattern
-        value = parser_parse_id_or_object(parser, scope);
-    } else {
-        // Regular value (string, number, etc.)
-        value = parser_parse_expr(parser, scope);
-    }
-
-    AST_T *file_put = ast_new_file_put(file_path, property_path, value);
-    file_put->scope = scope;
-
-    return file_put;
 }
 
 /**
@@ -3128,4 +3100,160 @@ AST_T *parser_parse_new_expression(parser_T *parser, scope_T *scope)
     }
 
     return new_expr;
+}
+
+/**
+ * @brief Parse file get operation (get "file.json".path.to.value)
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* File get AST node or NULL on error
+ */
+AST_T *parser_parse_file_get(parser_T *parser, scope_T *scope)
+{
+    if (!parser || !scope || parser->current_token->type != TOKEN_GET) {
+        return NULL;
+    }
+
+    // Consume "get" token
+    parser_eat(parser, TOKEN_GET);
+
+    // Save parser state to prevent issues with expression parsing
+    int saved_in_file_op = parser->context.in_file_operation;
+    parser->context.in_file_operation = 1;
+
+    // Parse the primary expression (usually a string literal)
+    AST_T *expression = parser_parse_primary_expr(parser, scope);
+    if (!expression) {
+        parser->context.in_file_operation = saved_in_file_op;
+        return NULL;
+    }
+
+    // Now handle property access chain if present
+    while (parser->current_token->type == TOKEN_DOT) {
+        parser_eat(parser, TOKEN_DOT);
+        
+        if (parser->current_token->type != TOKEN_ID) {
+            ast_free(expression);
+            parser->context.in_file_operation = saved_in_file_op;
+            return NULL;
+        }
+        
+        char *property = memory_strdup(parser->current_token->value);
+        parser_eat(parser, TOKEN_ID);
+        
+        AST_T *prop_access = ast_new_property_access(expression, property);
+        prop_access->scope = scope;
+        expression = prop_access;
+    }
+
+    // Restore parser state
+    parser->context.in_file_operation = saved_in_file_op;
+
+    // Create file get AST node
+    AST_T *get_node = ast_new(AST_FILE_GET);
+    if (!get_node) {
+        ast_free(expression);
+        return NULL;
+    }
+
+    get_node->file_get_expression = expression;
+    get_node->scope = scope;
+
+    return get_node;
+}
+
+/**
+ * @brief Parse file put operation (put "file.json".path.to.value <value>)
+ * @param parser Parser instance
+ * @param scope Scope context for parsing
+ * @return AST_T* File put AST node or NULL on error
+ */
+AST_T *parser_parse_file_put(parser_T *parser, scope_T *scope)
+{
+    if (!parser || !scope || parser->current_token->type != TOKEN_PUT) {
+        return NULL;
+    }
+
+    // Consume "put" token
+    parser_eat(parser, TOKEN_PUT);
+
+    // Save parser state to prevent infinite recursion
+    int saved_in_file_op = parser->context.in_file_operation;
+    parser->context.in_file_operation = 1;
+
+    // Parse the target expression (file path + property chain)
+    // Similar to GET, parse the primary expression first (the file path)
+    AST_T *target = parser_parse_primary_expr(parser, scope);
+    if (!target) {
+        parser->context.in_file_operation = saved_in_file_op;
+        return NULL;
+    }
+    
+    // Handle property access chain if present
+    while (parser->current_token->type == TOKEN_DOT) {
+        parser_eat(parser, TOKEN_DOT);
+        
+        if (parser->current_token->type != TOKEN_ID) {
+            ast_free(target);
+            parser->context.in_file_operation = saved_in_file_op;
+            return NULL;
+        }
+        
+        char *property = memory_strdup(parser->current_token->value);
+        parser_eat(parser, TOKEN_ID);
+        
+        AST_T *prop_access = ast_new_property_access(target, property);
+        prop_access->scope = scope;
+        target = prop_access;
+    }
+
+    // Debug: log current token before parsing value
+    LOG_PARSER_DEBUG("PUT: Before parsing value, current token type: %d, value: %s", 
+        parser->current_token->type, parser->current_token->value ? parser->current_token->value : "null");
+    
+    // Parse the value to put
+    // Check if the next tokens form an object literal
+    AST_T *value = NULL;
+    
+    // Save current context and set that we're in value assignment for object detection
+    int saved_in_var_assign = parser->context.in_variable_assignment;
+    parser->context.in_variable_assignment = 1;
+    
+    // Check if we have an object literal pattern
+    if (parser->current_token->type == TOKEN_ID && parser_detect_object_literal(parser)) {
+        // Parse as object literal
+        value = parser_parse_object(parser, scope);
+    } else {
+        // Parse as regular expression
+        value = parser_parse_ternary_expr(parser, scope);
+    }
+    
+    // Restore context
+    parser->context.in_variable_assignment = saved_in_var_assign;
+    
+    // Debug: log after parsing value
+    LOG_PARSER_DEBUG("PUT: After parsing value, current token type: %d", parser->current_token->type);
+    
+    if (!value) {
+        ast_free(target);
+        parser->context.in_file_operation = saved_in_file_op;
+        return NULL;
+    }
+
+    // Restore parser state
+    parser->context.in_file_operation = saved_in_file_op;
+
+    // Create file put AST node
+    AST_T *put_node = ast_new(AST_FILE_PUT);
+    if (!put_node) {
+        ast_free(target);
+        ast_free(value);
+        return NULL;
+    }
+
+    put_node->file_put_target = target;
+    put_node->file_put_value = value;
+    put_node->scope = scope;
+
+    return put_node;
 }

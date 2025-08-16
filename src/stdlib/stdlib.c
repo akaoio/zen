@@ -15,6 +15,7 @@
 #include "zen/stdlib/convert.h"
 #include "zen/stdlib/io.h"
 #include "zen/stdlib/json.h"
+#include "zen/stdlib/stream.h"
 #include "zen/stdlib/logging.h"
 #include "zen/stdlib/logic.h"
 #include "zen/stdlib/math.h"

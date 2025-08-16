@@ -21,6 +21,7 @@ typedef struct PARSER_STRUCT {
         bool in_function_call;
         bool in_print_statement;
         bool in_parentheses;  // For parsing expressions inside parentheses
+        bool in_file_operation;  // For parsing file get/put operations
     } context;
 
     // Performance optimization cache

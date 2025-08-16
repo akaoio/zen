@@ -24,10 +24,14 @@
 #include "zen/stdlib/json.h"
 #include "zen/stdlib/module.h"
 #include "zen/stdlib/stdlib.h"
+#include "zen/stdlib/stream.h"
 #include "zen/stdlib/database.h"
 
 #include <ctype.h>
 #include <math.h>
+
+// Native function typedef for runtime integration
+typedef RuntimeValue *(*ZenNativeFunc)(RuntimeValue **args, size_t argc);
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -241,6 +245,7 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
     RuntimeValue *result = NULL;
 
+
     switch (node->type) {
     case AST_VARIABLE_DEFINITION:
         result = visitor_visit_variable_definition(visitor, node);
@@ -365,129 +370,522 @@ RuntimeValue *visitor_visit(visitor_T *visitor, AST_T *node)
 
     // Database-like file operations
     case AST_FILE_GET: {
-        if (!node->file_get_path) {
-            result = rv_new_error("FILE_GET missing file path", -1);
+        if (!node->file_get_expression) {
+            result = rv_new_error("FILE_GET missing file expression", -1);
             break;
         }
 
-        // Evaluate file path expression
-        RuntimeValue *path_val = visitor_visit(visitor, node->file_get_path);
-        if (!path_val || path_val->type != RV_STRING) {
-            if (path_val)
-                rv_unref(path_val);
-            result = rv_new_error("FILE_GET requires string file path", -1);
-            break;
-        }
-
-        const char *filepath = path_val->data.string.data;
-        LOG_VISITOR_DEBUG("FILE_GET: Loading file %s", filepath);
-        
-        // Load file with caching (handles JSON/YAML automatically)
-        RuntimeValue *content = database_load_file_cached(filepath);
-        if (content) {
-            LOG_VISITOR_DEBUG("FILE_GET: Loaded content type=%d", (int)content->type);
-        } else {
-            LOG_VISITOR_DEBUG("FILE_GET: Failed to load content");
-        }
-        rv_unref(path_val);
-        
-        if (!content) {
-            result = rv_new_null();
-            break;
-        }
-
-        // If property specified, extract that property using dot notation
-        if (node->file_get_property) {
-            // Build the property path from the AST
-            char property_path[1024] = "";
-            AST_T *prop_node = node->file_get_property;
+        // The expression should be a property access like "file.json".property.path
+        // We need to extract the file path and navigate the property chain
+        if (node->file_get_expression->type == AST_PROPERTY_ACCESS) {
+            // Find the root node (should be a string with the file path)
+            AST_T *current = node->file_get_expression;
+            AST_T *file_node = NULL;
             
-            // Handle property chain (e.g., alice.scores.math)
-            if (prop_node->type == AST_PROPERTY_ACCESS) {
-                // Recursively build the path
-                // For now, use a simple approach
-                if (prop_node->property_name) {
-                    strncpy(property_path, prop_node->property_name, sizeof(property_path) - 1);
+            // Navigate to the leftmost node (the file path)
+            while (current && current->type == AST_PROPERTY_ACCESS) {
+                if (current->object && current->object->type != AST_PROPERTY_ACCESS) {
+                    file_node = current->object;
+                    break;
                 }
-            } else if (prop_node->type == AST_VARIABLE) {
-                strncpy(property_path, prop_node->variable_name, sizeof(property_path) - 1);
-            } else if (prop_node->type == AST_STRING) {
-                // Parser returns AST_STRING for simple property names
-                strncpy(property_path, prop_node->string_value, sizeof(property_path) - 1);
+                current = current->object;
             }
             
-            if (strlen(property_path) > 0) {
-                RuntimeValue *extracted = database_get_nested_property(content, property_path);
-                result = extracted ? rv_ref(extracted) : rv_new_null();
-            } else {
-                result = rv_ref(content);
+            if (!file_node) {
+                result = rv_new_error("FILE_GET: Could not find file path", -1);
+                break;
             }
-            rv_unref(content);
+            
+            // Evaluate the file node to get the file path
+            RuntimeValue *file_path_val = visitor_visit(visitor, file_node);
+            if (!file_path_val || file_path_val->type != RV_STRING) {
+                if (file_path_val) rv_unref(file_path_val);
+                result = rv_new_error("FILE_GET requires string file path", -1);
+                break;
+            }
+            
+            const char *filepath = rv_get_string(file_path_val);
+            LOG_VISITOR_DEBUG("FILE_GET: Loading from file %s", filepath);
+            
+            // Build the property path from the AST
+            char path_buffer[1024] = "";
+            size_t path_len = 0;
+            current = node->file_get_expression;
+            
+            // Build dot-separated path
+            while (current && current->type == AST_PROPERTY_ACCESS && current->property_name) {
+                if (path_len > 0) {
+                    if (path_len + 1 < sizeof(path_buffer)) {
+                        path_buffer[path_len++] = '.';
+                    }
+                }
+                size_t prop_len = strlen(current->property_name);
+                if (path_len + prop_len < sizeof(path_buffer)) {
+                    memcpy(path_buffer + path_len, current->property_name, prop_len);
+                    path_len += prop_len;
+                }
+                current = current->object;
+            }
+            path_buffer[path_len] = '\0';
+            
+            // Use streaming for JSON/YAML files
+            size_t filepath_len = strlen(filepath);
+            bool is_json = filepath_len > 5 && strcmp(filepath + filepath_len - 5, ".json") == 0;
+            bool is_yaml = (filepath_len > 5 && strcmp(filepath + filepath_len - 5, ".yaml") == 0) ||
+                          (filepath_len > 4 && strcmp(filepath + filepath_len - 4, ".yml") == 0);
+            
+            if (is_json && path_len > 0) {
+                // Use streaming for JSON files with specific paths
+                result = stream_get_internal(filepath, path_buffer);
+                rv_unref(file_path_val);
+                LOG_VISITOR_DEBUG("FILE_GET: Streamed path '%s' from %s", path_buffer, filepath);
+            } else {
+                // For YAML or when no specific path, load the whole file
+                // (streaming YAML not implemented yet)
+                const ZenStdlibFunction *read_file = stdlib_get("readFile");
+                RuntimeValue *content_str = NULL;
+                if (read_file && read_file->func) {
+                    RuntimeValue *args[1] = {file_path_val};
+                    content_str = read_file->func(args, 1);
+                }
+                rv_unref(file_path_val);
+                
+                if (!content_str || content_str->type != RV_STRING) {
+                    if (content_str) rv_unref(content_str);
+                    result = rv_new_null();
+                    break;
+                }
+                
+                // Parse the content
+                RuntimeValue *content = NULL;
+                if (is_json) {
+                    const ZenStdlibFunction *json_parse = stdlib_get("jsonParse");
+                    if (json_parse && json_parse->func) {
+                        RuntimeValue *args[1] = {content_str};
+                        content = json_parse->func(args, 1);
+                    }
+                } else if (is_yaml) {
+                    const ZenStdlibFunction *yaml_parse = stdlib_get("yamlParse");
+                    if (yaml_parse && yaml_parse->func) {
+                        RuntimeValue *args[1] = {content_str};
+                        content = yaml_parse->func(args, 1);
+                    }
+                } else {
+                    // Just return the string content for non-JSON/YAML files
+                    content = content_str;
+                    content_str = NULL;
+                }
+                
+                if (content_str) rv_unref(content_str);
+                
+                if (!content) {
+                    result = rv_new_null();
+                    break;
+                }
+                
+                // If we need to navigate further in the loaded content
+                if (path_len > 0) {
+                    // We already got the specific path via streaming or need to navigate
+                    current = node->file_get_expression;
+                    RuntimeValue *current_value = content;
+                    
+                    while (current && current->type == AST_PROPERTY_ACCESS && current->property_name) {
+                        if (current_value->type != RV_OBJECT) {
+                            rv_unref(current_value);
+                            result = rv_new_null();
+                            break;
+                        }
+                        
+                        RuntimeValue *next_value = rv_object_get(current_value, current->property_name);
+                        if (current_value != content) {
+                            rv_unref(current_value);
+                        }
+                        
+                        if (!next_value) {
+                            result = rv_new_null();
+                            break;
+                        }
+                        
+                        current_value = rv_ref(next_value);
+                        current = current->object;
+                    }
+                    
+                    if (!result && current_value) {
+                        result = current_value;
+                    }
+                    
+                    if (content && content != current_value) {
+                        rv_unref(content);
+                    }
+                } else {
+                    // No specific path, return the whole content
+                    result = content;
+                }
+            }
+        } else if (node->file_get_expression->type == AST_STRING) {
+            // Simple case: just load the entire file
+            const char *filepath = node->file_get_expression->string_value;
+            LOG_VISITOR_DEBUG("FILE_GET: Loading entire file %s", filepath);
+            
+            RuntimeValue *content = database_load_file_cached(filepath);
+            if (content) {
+                result = content;
+            } else {
+                result = rv_new_null();
+            }
         } else {
-            result = content;
+            // Try evaluating the expression as-is
+            result = visitor_visit(visitor, node->file_get_expression);
         }
         break;
     }
 
     case AST_FILE_PUT: {
-        if (!node->file_put_path || !node->file_put_value) {
+        LOG_VISITOR_DEBUG("FILE_PUT: Starting");
+        
+        if (!node || !node->file_put_target || !node->file_put_value) {
             result = rv_new_error("FILE_PUT missing required parameters", -1);
             break;
         }
 
-        // Evaluate file path and value
-        RuntimeValue *path_val = visitor_visit(visitor, node->file_put_path);
+        // Evaluate the value to put first
         RuntimeValue *value_val = visitor_visit(visitor, node->file_put_value);
-
-        if (!path_val || path_val->type != RV_STRING || !value_val) {
-            if (path_val)
-                rv_unref(path_val);
-            if (value_val)
-                rv_unref(value_val);
-            result = rv_new_error("FILE_PUT requires valid path and value", -1);
+        if (!value_val) {
+            LOG_VISITOR_DEBUG("FILE_PUT: file_put_value is NULL or visitor returned NULL");
+            result = rv_new_error("FILE_PUT: Failed to evaluate value", -1);
             break;
         }
-
-        const char *filepath = path_val->data.string.data;
         
-        // If property path specified, need to update nested property
-        if (node->file_put_property) {
+        // Debug: log what value we got
+        char *value_str = rv_to_string(value_val);
+        LOG_VISITOR_DEBUG("FILE_PUT: Value evaluated to: %s (type: %d)", 
+            value_str ? value_str : "null", value_val->type);
+        if (value_str) memory_free(value_str);
+        
+        // Additional debug for target
+        if (node->file_put_target) {
+            LOG_VISITOR_DEBUG("FILE_PUT: Target AST type: %d", node->file_put_target->type);
+        }
+
+        // Check if target is a property access (file.property.path) or just a string
+        if (node->file_put_target->type == AST_PROPERTY_ACCESS) {
+            // Complex case: put "file.json".path.to.property value
+            AST_T *current = node->file_put_target;
+            AST_T *file_node = NULL;
+            
+            // Find the root file node
+            while (current && current->type == AST_PROPERTY_ACCESS) {
+                if (current->object && current->object->type != AST_PROPERTY_ACCESS) {
+                    file_node = current->object;
+                    break;
+                }
+                current = current->object;
+            }
+            
+            if (!file_node) {
+                rv_unref(value_val);
+                result = rv_new_error("FILE_PUT: Could not find file path", -1);
+                break;
+            }
+            
+            // Get the file path
+            RuntimeValue *file_path_val = visitor_visit(visitor, file_node);
+            if (!file_path_val || file_path_val->type != RV_STRING) {
+                if (file_path_val) rv_unref(file_path_val);
+                rv_unref(value_val);
+                result = rv_new_error("FILE_PUT requires string file path", -1);
+                break;
+            }
+            
+            const char *filepath = rv_get_string(file_path_val);
+            
+            // Build the property path
+            char path_buffer[1024] = "";
+            size_t path_len = 0;
+            current = node->file_put_target;
+            
+            while (current && current->type == AST_PROPERTY_ACCESS && current->property_name) {
+                if (path_len > 0) {
+                    if (path_len + 1 < sizeof(path_buffer)) {
+                        path_buffer[path_len++] = '.';
+                    }
+                }
+                size_t prop_len = strlen(current->property_name);
+                if (path_len + prop_len < sizeof(path_buffer)) {
+                    memcpy(path_buffer + path_len, current->property_name, prop_len);
+                    path_len += prop_len;
+                }
+                current = current->object;
+            }
+            path_buffer[path_len] = '\0';
+            
+            LOG_VISITOR_DEBUG("FILE_PUT: Setting %s in file %s", path_buffer, filepath);
+            
+            // For now, we need to load, modify, and save
+            // (streaming put not fully implemented yet)
+            const ZenStdlibFunction *read_file = stdlib_get("readFile");
+            RuntimeValue *content_str = NULL;
+            if (read_file && read_file->func) {
+                RuntimeValue *args[1] = {file_path_val};
+                content_str = read_file->func(args, 1);
+            }
+            
+            if (!content_str || content_str->type != RV_STRING) {
+                // File doesn't exist, create new content
+                content_str = rv_new_string("{}");
+            }
+            
+            // Parse the content
+            size_t filepath_len = strlen(filepath);
+            bool is_json = filepath_len > 5 && strcmp(filepath + filepath_len - 5, ".json") == 0;
+            bool is_yaml = (filepath_len > 5 && strcmp(filepath + filepath_len - 5, ".yaml") == 0) ||
+                          (filepath_len > 4 && strcmp(filepath + filepath_len - 4, ".yml") == 0);
+            
+            RuntimeValue *content = NULL;
+            if (is_json) {
+                const ZenStdlibFunction *json_parse = stdlib_get("jsonParse");
+                if (json_parse && json_parse->func) {
+                    RuntimeValue *args[1] = {content_str};
+                    content = json_parse->func(args, 1);
+                }
+            } else if (is_yaml) {
+                const ZenStdlibFunction *yaml_parse = stdlib_get("yamlParse");
+                if (yaml_parse && yaml_parse->func) {
+                    RuntimeValue *args[1] = {content_str};
+                    content = yaml_parse->func(args, 1);
+                }
+            }
+            
+            if (!content) {
+                content = rv_new_object();
+            }
+            
+            // Set the value at the path
+            if (path_len > 0) {
+                // Parse path and set nested value
+                char *path_copy = memory_strdup(path_buffer);
+                char *token = strtok(path_copy, ".");
+                RuntimeValue *current_obj = content;
+                char *next_token = strtok(NULL, ".");
+                
+                while (token && next_token) {
+                    RuntimeValue *nested = rv_object_get(current_obj, token);
+                    if (!nested || nested->type != RV_OBJECT) {
+                        nested = rv_new_object();
+                        rv_object_set(current_obj, token, nested);
+                        rv_unref(nested);
+                        nested = rv_object_get(current_obj, token);
+                    }
+                    current_obj = nested;
+                    token = next_token;
+                    next_token = strtok(NULL, ".");
+                }
+                
+                if (token) {
+                    rv_object_set(current_obj, token, value_val);
+                }
+                
+                memory_free(path_copy);
+            } else {
+                // Replace entire content
+                rv_unref(content);
+                content = rv_ref(value_val);
+            }
+            
+            // Convert back to string
+            RuntimeValue *stringified = NULL;
+            if (is_json) {
+                const ZenStdlibFunction *json_stringify = stdlib_get("jsonStringify");
+                if (json_stringify && json_stringify->func) {
+                    RuntimeValue *args[1] = {content};
+                    stringified = json_stringify->func(args, 1);
+                }
+            } else if (is_yaml) {
+                const ZenStdlibFunction *yaml_stringify = stdlib_get("yamlStringify");
+                if (yaml_stringify && yaml_stringify->func) {
+                    RuntimeValue *args[1] = {content};
+                    stringified = yaml_stringify->func(args, 1);
+                }
+            }
+            
+            // Write back to file
+            if (stringified && stringified->type == RV_STRING) {
+                const ZenStdlibFunction *write_file = stdlib_get("writeFile");
+                if (write_file && write_file->func) {
+                    RuntimeValue *args[2] = {file_path_val, stringified};
+                    write_file->func(args, 2);
+                    result = rv_new_boolean(true);
+                } else {
+                    result = rv_new_error("FILE_PUT: Failed to write file", -1);
+                }
+                rv_unref(stringified);
+            } else {
+                result = rv_new_error("FILE_PUT: Failed to stringify content", -1);
+            }
+            
+            rv_unref(content_str);
+            rv_unref(content);
+            rv_unref(file_path_val);
+        } else {
+            // Simple case: put "filename" value (replace entire file)
+            RuntimeValue *target_val = visitor_visit(visitor, node->file_put_target);
+            if (!target_val || target_val->type != RV_STRING) {
+                if (target_val) rv_unref(target_val);
+                rv_unref(value_val);
+                result = rv_new_error("FILE_PUT: Target must be a string filename", -1);
+                break;
+            }
+            
+            const char *filepath = rv_get_string(target_val);
+            LOG_VISITOR_DEBUG("FILE_PUT: Saving entire file %s", filepath);
+            
+            // Determine file type and stringify accordingly
+            size_t filepath_len = strlen(filepath);
+            bool is_json = filepath_len > 5 && strcmp(filepath + filepath_len - 5, ".json") == 0;
+            bool is_yaml = (filepath_len > 5 && strcmp(filepath + filepath_len - 5, ".yaml") == 0) ||
+                          (filepath_len > 4 && strcmp(filepath + filepath_len - 4, ".yml") == 0);
+            
+            RuntimeValue *stringified = NULL;
+            if (is_json) {
+                const ZenStdlibFunction *json_stringify = stdlib_get("jsonStringify");
+                if (json_stringify && json_stringify->func) {
+                    RuntimeValue *args[1] = {value_val};
+                    stringified = json_stringify->func(args, 1);
+                }
+            } else if (is_yaml) {
+                const ZenStdlibFunction *yaml_stringify = stdlib_get("yamlStringify");
+                if (yaml_stringify && yaml_stringify->func) {
+                    RuntimeValue *args[1] = {value_val};
+                    stringified = yaml_stringify->func(args, 1);
+                }
+            } else {
+                // For non-JSON/YAML, try to convert to string
+                char *str = rv_to_string(value_val);
+                if (str) {
+                    stringified = rv_new_string(str);
+                    memory_free(str);
+                }
+            }
+            
+            if (stringified && stringified->type == RV_STRING) {
+                const ZenStdlibFunction *write_file = stdlib_get("writeFile");
+                if (write_file && write_file->func) {
+                    RuntimeValue *args[2] = {target_val, stringified};
+                    write_file->func(args, 2);
+                    result = rv_new_boolean(true);
+                } else {
+                    result = rv_new_error("FILE_PUT: Failed to write file", -1);
+                }
+                rv_unref(stringified);
+            } else {
+                result = rv_new_error("FILE_PUT: Failed to stringify value", -1);
+            }
+            
+            rv_unref(target_val);
+        }
+        
+        rv_unref(value_val);
+        break;
+        
+        // Old complex implementation commented out for now
+        #if 0
+        if (node->file_put_target->type == AST_PROPERTY_ACCESS) {
+            // Extract file path and property chain from property access
+            AST_T *current = node->file_put_target;
+            AST_T *file_node = NULL;
+            
+            // Navigate to the leftmost node (the file path)
+            while (current && current->type == AST_PROPERTY_ACCESS) {
+                if (current->object && current->object->type != AST_PROPERTY_ACCESS) {
+                    file_node = current->object;
+                    break;
+                }
+                current = current->object;
+            }
+            
+            if (!file_node) {
+                rv_unref(value_val);
+                result = rv_new_error("FILE_PUT: Could not find file path", -1);
+                break;
+            }
+            
+            // Get the file path
+            RuntimeValue *file_path_val = visitor_visit(visitor, file_node);
+            if (!file_path_val || file_path_val->type != RV_STRING) {
+                if (file_path_val) rv_unref(file_path_val);
+                rv_unref(value_val);
+                result = rv_new_error("FILE_PUT requires string file path", -1);
+                break;
+            }
+            
+            const char *filepath = rv_get_string(file_path_val);
+            LOG_VISITOR_DEBUG("FILE_PUT: Target file %s", filepath);
             // Load existing file content (or create new object)
             RuntimeValue *content = database_load_file_cached(filepath);
-            if (!content || content->type != RV_OBJECT) {
+            if (!content || rv_is_error(content)) {
                 if (content) rv_unref(content);
                 content = rv_new_object();
             }
             
-            // Build the property path
-            char property_path[1024] = "";
-            AST_T *prop_node = node->file_put_property;
+            // Navigate property chain and set the value
+            current = node->file_put_target;
+            RuntimeValue *target_obj = content;
             
-            if (prop_node->type == AST_PROPERTY_ACCESS) {
-                if (prop_node->property_name) {
-                    strncpy(property_path, prop_node->property_name, sizeof(property_path) - 1);
+            // Build the property chain, creating objects as needed
+            while (current && current->type == AST_PROPERTY_ACCESS && current->property_name) {
+                const char *prop_name = current->property_name;
+                
+                // Check if this is the last property in the chain
+                bool is_last = (current->object == file_node) || 
+                              (current->object && current->object->type != AST_PROPERTY_ACCESS);
+                
+                if (is_last) {
+                    // Set the value at this property
+                    rv_object_set(target_obj, prop_name, value_val);
+                    break;
+                } else {
+                    // Navigate to or create the next level
+                    RuntimeValue *next_obj = rv_object_get(target_obj, prop_name);
+                    if (!next_obj || next_obj->type != RV_OBJECT) {
+                        // Create new object for this property
+                        next_obj = rv_new_object();
+                        rv_object_set(target_obj, prop_name, next_obj);
+                    }
+                    
+                    if (target_obj != content) {
+                        rv_unref(target_obj);
+                    }
+                    target_obj = rv_ref(next_obj);
+                    
+                    // Move to parent property access
+                    if (current->object && current->object->type == AST_PROPERTY_ACCESS) {
+                        current = current->object;
+                    } else {
+                        break;
+                    }
                 }
-            } else if (prop_node->type == AST_VARIABLE) {
-                strncpy(property_path, prop_node->variable_name, sizeof(property_path) - 1);
             }
             
-            // Set the nested property
-            if (strlen(property_path) > 0) {
-                database_set_nested_property(content, property_path, value_val);
+            if (target_obj != content) {
+                rv_unref(target_obj);
             }
             
             // Save the updated content
             bool success = database_save_file(filepath, content);
             rv_unref(content);
+            rv_unref(file_path_val);
             result = success ? rv_new_boolean(true) : rv_new_error("Failed to save file", -1);
-        } else {
-            // Direct file write
+        } else if (node->file_put_target->type == AST_STRING) {
+            // Simple case: replace entire file
+            const char *filepath = node->file_put_target->string_value;
             bool success = database_save_file(filepath, value_val);
             result = success ? rv_new_boolean(true) : rv_new_error("Failed to save file", -1);
+        } else {
+            result = rv_new_error("FILE_PUT: Invalid target type", -1);
         }
 
-        rv_unref(path_val);
         rv_unref(value_val);
+        #endif
         break;
     }
 
@@ -1170,6 +1568,217 @@ RuntimeValue *visitor_visit_function_call(visitor_T *visitor, AST_T *node)
 
     // Handle method calls (obj.method syntax)
     if (node->function_call_expression) {
+        // Check if this is a .get() or .put() method call on an object
+        if (node->function_call_expression->type == AST_PROPERTY_ACCESS) {
+            AST_T *prop_access = node->function_call_expression;
+            const char *method_name = prop_access->property_name;
+            
+            // Special handling for get and put methods
+            if (method_name && (strcmp(method_name, "get") == 0 || strcmp(method_name, "put") == 0)) {
+                // Evaluate the object
+                RuntimeValue *object_rv = visitor_visit(visitor, prop_access->object);
+                if (!object_rv) {
+                    return rv_new_null();
+                }
+                
+                // Handle .get() method
+                if (strcmp(method_name, "get") == 0) {
+                    LOG_DEBUG(LOG_CAT_VISITOR, "Handling .get() method call");
+                    
+                    // get() expects one argument: the property name
+                    if (node->function_call_arguments_size != 1) {
+                        LOG_ERROR(LOG_CAT_VISITOR, "get() called with %zu arguments, expected 1", 
+                                  node->function_call_arguments_size);
+                        rv_unref(object_rv);
+                        return rv_new_null();
+                    }
+                    
+                    // Evaluate the property name argument
+                    RuntimeValue *prop_name_rv = visitor_visit(visitor, node->function_call_arguments[0]);
+                    if (!prop_name_rv || prop_name_rv->type != RV_STRING) {
+                        LOG_ERROR(LOG_CAT_VISITOR, "get() argument is not a string, type: %d", 
+                                  prop_name_rv ? prop_name_rv->type : -1);
+                        if (prop_name_rv) rv_unref(prop_name_rv);
+                        rv_unref(object_rv);
+                        return rv_new_null();
+                    }
+                    
+                    const char *prop_name = rv_get_string(prop_name_rv);
+                    LOG_DEBUG(LOG_CAT_VISITOR, "Getting property '%s' from object", prop_name);
+                    
+                    RuntimeValue *result = NULL;
+                    
+                    // Check if this is a file path (string ending in .json or .yaml)
+                    if (object_rv->type == RV_STRING) {
+                        const char *path = rv_get_string(object_rv);
+                        size_t path_len = strlen(path);
+                        
+                        // Check if it's a JSON or YAML file
+                        bool is_json = path_len > 5 && strcmp(path + path_len - 5, ".json") == 0;
+                        bool is_yaml = (path_len > 5 && strcmp(path + path_len - 5, ".yaml") == 0) ||
+                                      (path_len > 4 && strcmp(path + path_len - 4, ".yml") == 0);
+                        
+                        if (is_json || is_yaml) {
+                            // Use streaming for file operations
+                            LOG_DEBUG(LOG_CAT_VISITOR, "Detected file path '%s', using streaming", path);
+                            
+                            // Use internal streaming function directly
+                            result = stream_get_internal(path, prop_name);
+                        } else {
+                            LOG_ERROR(LOG_CAT_VISITOR, "get() called on string that's not a file path: %s", path);
+                            result = rv_new_null();
+                        }
+                    } else if (object_rv->type == RV_OBJECT) {
+                        // Regular object property access
+                        RuntimeValue *value = rv_object_get(object_rv, prop_name);
+                        if (value) {
+                            LOG_DEBUG(LOG_CAT_VISITOR, "Found property '%s', type: %d", 
+                                      prop_name, value->type);
+                            result = rv_ref(value);
+                        } else {
+                            LOG_DEBUG(LOG_CAT_VISITOR, "Property '%s' not found", prop_name);
+                            result = rv_new_null();
+                        }
+                    } else {
+                        LOG_ERROR(LOG_CAT_VISITOR, "get() called on non-object/non-string, type: %d", 
+                                  object_rv->type);
+                        result = rv_new_null();
+                    }
+                    
+                    rv_unref(prop_name_rv);
+                    rv_unref(object_rv);
+                    return result;
+                }
+                
+                // Handle .put() method
+                if (strcmp(method_name, "put") == 0) {
+                    LOG_DEBUG(LOG_CAT_VISITOR, "Handling .put() method call");
+                    
+                    // put() expects two arguments: property name and value
+                    if (node->function_call_arguments_size != 2) {
+                        LOG_ERROR(LOG_CAT_VISITOR, "put() called with %zu arguments, expected 2", 
+                                  node->function_call_arguments_size);
+                        rv_unref(object_rv);
+                        return rv_new_null();
+                    }
+                    
+                    // Evaluate the property name argument
+                    RuntimeValue *prop_name_rv = visitor_visit(visitor, node->function_call_arguments[0]);
+                    if (!prop_name_rv || prop_name_rv->type != RV_STRING) {
+                        LOG_ERROR(LOG_CAT_VISITOR, "put() first argument is not a string, type: %d", 
+                                  prop_name_rv ? prop_name_rv->type : -1);
+                        if (prop_name_rv) rv_unref(prop_name_rv);
+                        rv_unref(object_rv);
+                        return rv_new_null();
+                    }
+                    
+                    // Evaluate the value argument
+                    RuntimeValue *value_rv = visitor_visit(visitor, node->function_call_arguments[1]);
+                    if (!value_rv) {
+                        value_rv = rv_new_null();
+                    }
+                    
+                    const char *prop_name = rv_get_string(prop_name_rv);
+                    LOG_DEBUG(LOG_CAT_VISITOR, "Setting property '%s' on object", prop_name);
+                    
+                    // Check if this is a file path (string ending in .json or .yaml)
+                    if (object_rv->type == RV_STRING) {
+                        const char *path = rv_get_string(object_rv);
+                        size_t path_len = strlen(path);
+                        
+                        // Check if it's a JSON or YAML file
+                        bool is_json = path_len > 5 && strcmp(path + path_len - 5, ".json") == 0;
+                        bool is_yaml = (path_len > 5 && strcmp(path + path_len - 5, ".yaml") == 0) ||
+                                      (path_len > 4 && strcmp(path + path_len - 4, ".yml") == 0);
+                        
+                        if (is_json || is_yaml) {
+                            // For now, we'll need to read, modify, and write back
+                            // In the future, streamPut could do this more efficiently
+                            LOG_DEBUG(LOG_CAT_VISITOR, "Detected file path '%s', using file-based put", path);
+                            
+                            // Read the file
+                            const ZenStdlibFunction *read_file = stdlib_get("readFile");
+                            RuntimeValue *content_rv = NULL;
+                            if (read_file && read_file->func) {
+                                RuntimeValue *args[1] = {object_rv};
+                                content_rv = read_file->func(args, 1);
+                            }
+                            
+                            if (content_rv && content_rv->type == RV_STRING) {
+                                // Parse the content
+                                RuntimeValue *parsed = NULL;
+                                if (is_json) {
+                                    const ZenStdlibFunction *json_parse = stdlib_get("jsonParse");
+                                    if (json_parse && json_parse->func) {
+                                        RuntimeValue *args[1] = {content_rv};
+                                        parsed = json_parse->func(args, 1);
+                                    }
+                                } else {
+                                    const ZenStdlibFunction *yaml_parse = stdlib_get("yamlParse");
+                                    if (yaml_parse && yaml_parse->func) {
+                                        RuntimeValue *args[1] = {content_rv};
+                                        parsed = yaml_parse->func(args, 1);
+                                    }
+                                }
+                                
+                                if (parsed && parsed->type == RV_OBJECT) {
+                                    // Set the property
+                                    rv_object_set(parsed, prop_name, value_rv);
+                                    
+                                    // Convert back to string
+                                    RuntimeValue *stringified = NULL;
+                                    if (is_json) {
+                                        const ZenStdlibFunction *json_stringify = stdlib_get("jsonStringify");
+                                        if (json_stringify && json_stringify->func) {
+                                            RuntimeValue *args[1] = {parsed};
+                                            stringified = json_stringify->func(args, 1);
+                                        }
+                                    } else {
+                                        const ZenStdlibFunction *yaml_stringify = stdlib_get("yamlStringify");
+                                        if (yaml_stringify && yaml_stringify->func) {
+                                            RuntimeValue *args[1] = {parsed};
+                                            stringified = yaml_stringify->func(args, 1);
+                                        }
+                                    }
+                                    
+                                    // Write back to file
+                                    if (stringified && stringified->type == RV_STRING) {
+                                        const ZenStdlibFunction *write_file = stdlib_get("writeFile");
+                                        if (write_file && write_file->func) {
+                                            RuntimeValue *args[2] = {object_rv, stringified};
+                                            write_file->func(args, 2);
+                                            LOG_DEBUG(LOG_CAT_VISITOR, "File '%s' updated successfully", path);
+                                        }
+                                        rv_unref(stringified);
+                                    }
+                                    
+                                    rv_unref(parsed);
+                                }
+                                rv_unref(content_rv);
+                            }
+                        } else {
+                            LOG_ERROR(LOG_CAT_VISITOR, "put() called on string that's not a file path: %s", path);
+                        }
+                    } else if (object_rv->type == RV_OBJECT) {
+                        // Regular object property setting
+                        rv_object_set(object_rv, prop_name, value_rv);
+                        LOG_DEBUG(LOG_CAT_VISITOR, "Property '%s' set successfully", prop_name);
+                    } else {
+                        LOG_ERROR(LOG_CAT_VISITOR, "put() called on non-object/non-string, type: %d", 
+                                  object_rv->type);
+                    }
+                    
+                    rv_unref(prop_name_rv);
+                    rv_unref(value_rv);
+                    
+                    // Return the object itself (for chaining)
+                    return object_rv;
+                }
+                
+                rv_unref(object_rv);
+            }
+        }
+        
         // Evaluate the expression to get the function
         LOG_DEBUG(LOG_CAT_VISITOR, "Evaluating function call expression");
         RuntimeValue *func_rv = visitor_visit(visitor, node->function_call_expression);
@@ -4176,3 +4785,4 @@ bool visitor_optimize_hot_function(visitor_T *visitor, const char *function_name
 
     return false;
 }
+

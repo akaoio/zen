@@ -22,6 +22,7 @@ lexer_T *lexer_new(char *contents)
         lexer_T *lexer = memory_alloc(sizeof(struct LEXER_STRUCT));
         memset(lexer, 0, sizeof(struct LEXER_STRUCT));
         lexer->contents = "";
+        lexer->content_length = 0;  // Empty content
         lexer->i = 0;
         lexer->c = '\0';
         lexer->current_indent = 0;
@@ -37,6 +38,7 @@ lexer_T *lexer_new(char *contents)
     lexer_T *lexer = memory_alloc(sizeof(struct LEXER_STRUCT));
     memset(lexer, 0, sizeof(struct LEXER_STRUCT));
     lexer->contents = contents;
+    lexer->content_length = strlen(contents);  // Cache content length
     lexer->i = 0;
     lexer->c = contents[lexer->i];
     lexer->current_indent = 0;
@@ -104,7 +106,7 @@ void lexer_free(lexer_T *lexer)
  */
 void lexer_advance(lexer_T *lexer)
 {
-    if (lexer->c != '\0' && lexer->i < strlen(lexer->contents)) {
+    if (lexer->c != '\0' && lexer->i < lexer->content_length) {
         if (lexer->c == '\n') {
             lexer->at_line_start = 1;
             lexer->current_indent = 0;
@@ -135,12 +137,10 @@ void lexer_skip_whitespace(lexer_T *lexer)
  */
 token_T *lexer_get_next_token(lexer_T *lexer)
 {
-    size_t content_length = strlen(lexer->contents);
-
-    while (lexer->c != '\0' && lexer->i < content_length) {
+    while (lexer->c != '\0' && lexer->i < lexer->content_length) {
         // Skip whitespace, newlines, and comments in a unified way
         while ((lexer->c == ' ' || lexer->c == '\t' || lexer->c == '\n') ||
-               (lexer->c == '/' && lexer->i + 1 < content_length &&
+               (lexer->c == '/' && lexer->i + 1 < lexer->content_length &&
                 (lexer->contents[lexer->i + 1] == '/' || lexer->contents[lexer->i + 1] == '*'))) {
             // Handle newlines
             if (lexer->c == '\n') {
@@ -148,7 +148,7 @@ token_T *lexer_get_next_token(lexer_T *lexer)
                 lexer->current_indent = 0;
                 // Check if the entire input contains only whitespace
                 bool only_whitespace_input = true;
-                for (size_t j = 0; j < content_length; j++) {
+                for (size_t j = 0; j < lexer->content_length; j++) {
                     if (lexer->contents[j] != ' ' && lexer->contents[j] != '\t' &&
                         lexer->contents[j] != '\n' && lexer->contents[j] != '\r') {
                         only_whitespace_input = false;
@@ -178,7 +178,7 @@ token_T *lexer_get_next_token(lexer_T *lexer)
             }
 
             // Handle single-line comments //
-            if (lexer->c == '/' && lexer->i + 1 < content_length &&
+            if (lexer->c == '/' && lexer->i + 1 < lexer->content_length &&
                 lexer->contents[lexer->i + 1] == '/') {
                 while (lexer->c != '\0' && lexer->c != '\n') {
                     lexer_advance(lexer);
@@ -187,13 +187,13 @@ token_T *lexer_get_next_token(lexer_T *lexer)
             }
 
             // Handle multi-line comments /* */
-            if (lexer->c == '/' && lexer->i + 1 < content_length &&
+            if (lexer->c == '/' && lexer->i + 1 < lexer->content_length &&
                 lexer->contents[lexer->i + 1] == '*') {
                 lexer_advance(lexer);
                 lexer_advance(lexer);
 
                 while (lexer->c != '\0') {
-                    if (lexer->c == '*' && lexer->i + 1 < content_length &&
+                    if (lexer->c == '*' && lexer->i + 1 < lexer->content_length &&
                         lexer->contents[lexer->i + 1] == '/') {
                         lexer_advance(lexer);
                         lexer_advance(lexer);
@@ -242,7 +242,7 @@ token_T *lexer_get_next_token(lexer_T *lexer)
             // Use enhanced number parsing if underscores detected in lookahead
             size_t lookahead = lexer->i;
             bool has_underscore = false;
-            while (lookahead < strlen(lexer->contents) &&
+            while (lookahead < lexer->content_length &&
                    (isdigit(lexer->contents[lookahead]) || lexer->contents[lookahead] == '.' ||
                     lexer->contents[lookahead] == '_' || lexer->contents[lookahead] == 'e' ||
                     lexer->contents[lookahead] == 'E' || lexer->contents[lookahead] == '+' ||
@@ -281,66 +281,66 @@ token_T *lexer_get_next_token(lexer_T *lexer)
             return lexer_advance_with_token(lexer, token_new(TOKEN_EQUALS, "="));
 
         case '!':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_NOT_EQUALS, "!="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_NOT, "!"));
 
         case '<':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_LESS_EQUALS, "<="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_LESS_THAN, "<"));
 
         case '>':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_GREATER_EQUALS, ">="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_GREATER_THAN, ">"));
 
         case '+':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_PLUS_EQUALS, "+="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_PLUS, "+"));
         case '-':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_MINUS_EQUALS, "-="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_MINUS, "-"));
         case '*':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_MULTIPLY_EQUALS, "*="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_MULTIPLY, "*"));
         case '/':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_DIVIDE_EQUALS, "/="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_DIVIDE, "/"));
         case '%':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '=') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '=') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_MODULO_EQUALS, "%="));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_MODULO, "%"));
 
         case '&':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '&') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '&') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_AND, "&&"));
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_AND, "&"));
 
         case '|':
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '|') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '|') {
                 lexer_advance(lexer);
                 return lexer_advance_with_token(lexer, token_new(TOKEN_OR, "||"));
             }
@@ -350,19 +350,19 @@ token_T *lexer_get_next_token(lexer_T *lexer)
             return lexer_advance_with_token(lexer, token_new(TOKEN_COMMA, ","));
         case '.':
             // Check for spread operator (...) first
-            if (lexer->i + 2 < content_length && lexer->contents[lexer->i + 1] == '.' &&
+            if (lexer->i + 2 < lexer->content_length && lexer->contents[lexer->i + 1] == '.' &&
                 lexer->contents[lexer->i + 2] == '.') {
                 lexer_advance(lexer);  // advance past first .
                 lexer_advance(lexer);  // advance past second .
                 return lexer_advance_with_token(lexer, token_new(TOKEN_SPREAD, "..."));
             }
             // Check for range operator (..)
-            if (lexer->i + 1 < content_length && lexer->contents[lexer->i + 1] == '.') {
+            if (lexer->i + 1 < lexer->content_length && lexer->contents[lexer->i + 1] == '.') {
                 lexer_advance(lexer);  // advance past first .
                 return lexer_advance_with_token(lexer, token_new(TOKEN_RANGE, ".."));
             }
             // Check if it's a floating point number like .5
-            if (lexer->i + 1 < content_length && isdigit(lexer->contents[lexer->i + 1])) {
+            if (lexer->i + 1 < lexer->content_length && isdigit(lexer->contents[lexer->i + 1])) {
                 return lexer_collect_number(lexer);
             }
             return lexer_advance_with_token(lexer, token_new(TOKEN_DOT, "."));
@@ -412,7 +412,7 @@ token_T *lexer_collect_string(lexer_T *lexer)
 {
     lexer_advance(lexer);
 
-    size_t buffer_size = 64;
+    size_t buffer_size = 1024;  // Start with 1KB for strings
     char *value = memory_alloc(buffer_size);
     if (!value) {
         return NULL;
@@ -422,24 +422,18 @@ token_T *lexer_collect_string(lexer_T *lexer)
 
 #define APPEND_CHAR(ch)                                                                            \
     do {                                                                                           \
-        /* Prevent excessively long numbers that could cause memory issues */                      \
-        if (value_len >= 64) {                                                                     \
-            memory_free(value);                                                                    \
-            lexer_enter_error_recovery(lexer, "Number literal too long");                          \
-            return NULL;                                                                           \
-        }                                                                                          \
         if (value_len + 1 >= buffer_size) {                                                        \
             size_t new_size = buffer_size * 2;                                                     \
-            /* Prevent excessive memory allocation */                                              \
-            if (new_size > 256) {                                                                  \
+            /* Allow strings up to 10MB for large JSON data */                                     \
+            if (new_size > 10 * 1024 * 1024) {                                                    \
                 memory_free(value);                                                                \
-                lexer_enter_error_recovery(lexer, "Number literal buffer overflow");               \
+                lexer_enter_error_recovery(lexer, "String literal exceeds 10MB limit");            \
                 return NULL;                                                                       \
             }                                                                                      \
             char *new_value = memory_realloc(value, new_size);                                     \
             if (!new_value) {                                                                      \
                 memory_free(value);                                                                \
-                lexer_enter_error_recovery(lexer, "Out of memory parsing number");                 \
+                lexer_enter_error_recovery(lexer, "Out of memory parsing string");                 \
                 return NULL;                                                                       \
             }                                                                                      \
             value = new_value;                                                                     \
@@ -452,7 +446,7 @@ token_T *lexer_collect_string(lexer_T *lexer)
     while (lexer->c != '"' && lexer->c != '\0') {
         char ch_to_add;
 
-        if (lexer->c == '\\' && lexer->i + 1 < strlen(lexer->contents)) {
+        if (lexer->c == '\\' && lexer->i + 1 < lexer->content_length) {
             lexer_advance(lexer);
 
             switch (lexer->c) {
@@ -553,7 +547,7 @@ token_T *lexer_collect_number(lexer_T *lexer)
         if (lexer->c == '.') {
             // If this is the first character and it's a dot, we need at least one following digit
             if (value_len == 0) {
-                if (lexer->i + 1 >= strlen(lexer->contents) ||
+                if (lexer->i + 1 >= lexer->content_length ||
                     !isdigit(lexer->contents[lexer->i + 1])) {
                     break;
                 }
@@ -1107,7 +1101,7 @@ token_T *lexer_collect_enhanced_number(lexer_T *lexer)
         if (lexer->c == '.') {
             // If this is the first character and it's a dot, we need at least one following digit
             if (value_len == 0 || clean_len == 0) {
-                if (lexer->i + 1 >= strlen(lexer->contents) ||
+                if (lexer->i + 1 >= lexer->content_length ||
                     (!isdigit(lexer->contents[lexer->i + 1]) &&
                      lexer->contents[lexer->i + 1] != '_')) {
                     break;
@@ -1151,7 +1145,7 @@ token_T *lexer_collect_enhanced_number(lexer_T *lexer)
                             break;
 
                         // Look ahead to ensure underscore is followed by digit
-                        if (lexer->i + 1 >= strlen(lexer->contents) ||
+                        if (lexer->i + 1 >= lexer->content_length ||
                             !isdigit(lexer->contents[lexer->i + 1])) {
                             break;  // Trailing underscore not allowed
                         }

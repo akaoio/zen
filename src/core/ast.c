@@ -187,12 +187,10 @@ AST_T *ast_new(int type)
     ast->math_function_args_size = 0;
 
     /* AST_FILE_GET */
-    ast->file_get_path = (void *)0;
-    ast->file_get_property = (void *)0;
+    ast->file_get_expression = (void *)0;
 
     /* AST_FILE_PUT */
-    ast->file_put_path = (void *)0;
-    ast->file_put_property = (void *)0;
+    ast->file_put_target = (void *)0;
     ast->file_put_value = (void *)0;
 
     return ast;
@@ -429,14 +427,10 @@ void ast_free(AST_T *ast)
         ast_free(ast->export_value);
     
     // Free FILE_GET and FILE_PUT nodes
-    if (ast->file_get_path)
-        ast_free(ast->file_get_path);
-    if (ast->file_get_property)
-        ast_free(ast->file_get_property);
-    if (ast->file_put_path)
-        ast_free(ast->file_put_path);
-    if (ast->file_put_property)
-        ast_free(ast->file_put_property);
+    if (ast->file_get_expression)
+        ast_free(ast->file_get_expression);
+    if (ast->file_put_target)
+        ast_free(ast->file_put_target);
     if (ast->file_put_value)
         ast_free(ast->file_put_value);
 
@@ -885,30 +879,26 @@ AST_T *ast_new_mathematical_function(const char *name, AST_T **args, size_t args
 
 /**
  * @brief Create a new file get AST node
- * @param file_path File path expression (string or variable)
- * @param property_path Property path expression for accessing nested data
+ * @param expression Expression containing file path and property chain
  * @return Pointer to AST_FILE_GET node
  */
-AST_T *ast_new_file_get(AST_T *file_path, AST_T *property_path)
+AST_T *ast_new_file_get(AST_T *expression)
 {
     AST_T *ast = ast_new(AST_FILE_GET);
-    ast->file_get_path = file_path;
-    ast->file_get_property = property_path;
+    ast->file_get_expression = expression;
     return ast;
 }
 
 /**
  * @brief Create a new file put AST node
- * @param file_path File path expression (string or variable)
- * @param property_path Property path expression for nested data
+ * @param target Target expression containing file path and property chain
  * @param value Value to store
  * @return Pointer to AST_FILE_PUT node
  */
-AST_T *ast_new_file_put(AST_T *file_path, AST_T *property_path, AST_T *value)
+AST_T *ast_new_file_put(AST_T *target, AST_T *value)
 {
     AST_T *ast = ast_new(AST_FILE_PUT);
-    ast->file_put_path = file_path;
-    ast->file_put_property = property_path;
+    ast->file_put_target = target;
     ast->file_put_value = value;
     return ast;
 }

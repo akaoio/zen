@@ -206,8 +206,15 @@ bool database_save_file(const char *filepath, RuntimeValue *value)
         return false;
     }
     
-    // Write to file
-    bool success = io_write_file_internal(filepath, content_str);
+    // Write to file directly
+    FILE *file = fopen(filepath, "w");
+    bool success = false;
+    if (file) {
+        if (fputs(content_str, file) != EOF) {
+            success = true;
+        }
+        fclose(file);
+    }
     memory_free(content_str);
     
     // Update cache if successful

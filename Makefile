@@ -19,7 +19,8 @@ sources := $(wildcard src/main.c src/core/*.c src/types/*.c src/runtime/*.c) \
            src/stdlib/convert.c src/stdlib/datastructures.c \
            src/stdlib/logic.c src/stdlib/module.c src/stdlib/system.c \
            src/stdlib/datetime.c src/stdlib/logging.c \
-           src/stdlib/http.c src/stdlib/regex.c src/stdlib/database.c $(YAML_SRC)
+           src/stdlib/http.c src/stdlib/regex.c src/stdlib/database.c \
+           src/stdlib/stream.c $(YAML_SRC)
 objects := $(patsubst %.c,$(BUILD_DIR)/%.o,$(sources))
 
 # Directories

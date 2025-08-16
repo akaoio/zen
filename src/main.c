@@ -288,8 +288,6 @@ int main(int argc, char *argv[])
                 // This is critical for function lookup during recursive calls
                 visitor->current_scope = global_scope;
 
-                // Execute the parsed AST
-
                 // Execute the parsed AST - this performs all side effects (print, variable
                 // assignments, etc.)
                 RuntimeValue *result = visitor_visit(visitor, root);

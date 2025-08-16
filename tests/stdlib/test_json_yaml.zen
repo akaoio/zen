@@ -1,0 +1,123 @@
+# Comprehensive tests for JSON and YAML functions
+
+print "===== JSON/YAML Function Tests ====="
+print ""
+
+# Test 1: JSON parsing basic types
+print "Test 1: JSON parsing basic types"
+set json1 "{\"string\":\"hello\",\"number\":42,\"bool\":true,\"null\":null}"
+set parsed1 jsonParse json1
+print "✓ String: " + parsed1.string
+print "✓ Number: " + toString parsed1.number
+print "✓ Boolean: " + toString parsed1.bool
+print "✓ Null: " + toString parsed1.null
+print ""
+
+# Test 2: JSON nested objects and arrays
+print "Test 2: JSON nested objects and arrays"
+set json2 "{\"users\":[{\"name\":\"Alice\",\"age\":30},{\"name\":\"Bob\",\"age\":25}],\"count\":2}"
+set parsed2 jsonParse json2
+print "✓ Count: " + toString parsed2.count
+print "✓ First user: " + parsed2.users[0].name + " (age " + toString parsed2.users[0].age + ")"
+print "✓ Second user: " + parsed2.users[1].name + " (age " + toString parsed2.users[1].age + ")"
+print ""
+
+# Test 3: JSON stringify
+print "Test 3: JSON stringify"
+set data3
+    name "Test",
+    value 123,
+    nested
+        key "value"
+set json3 jsonStringify data3
+print "✓ Stringified: " + json3
+set reparsed3 jsonParse json3
+print "✓ Round-trip successful: " + reparsed3.name
+print ""
+
+# Test 4: JSON pretty printing
+print "Test 4: JSON pretty printing"
+set pretty4 jsonPretty data3
+print "✓ Pretty formatted:"
+print pretty4
+print ""
+
+# Test 5: YAML basic conversion
+print "Test 5: YAML basic conversion"
+set data5
+    application "zen-test",
+    version "1.0.0",
+    settings
+        debug true,
+        port 8080
+set yaml5 yamlStringify data5
+print "✓ YAML output:"
+print yaml5
+print ""
+
+# Test 6: YAML parsing
+print "Test 6: YAML parsing"
+set yamlStr6 "name: test\nvalue: 42\nactive: true"
+set parsed6 yamlParse yamlStr6
+print "✓ Parsed name: " + parsed6.name
+print "✓ Parsed value: " + toString parsed6.value
+print "✓ Parsed active: " + toString parsed6.active
+print ""
+
+# Test 7: JSON/YAML round-trip
+print "Test 7: JSON/YAML round-trip"
+set original7
+    config "production",
+    servers 3,
+    features "auth", "api", "ui"
+    
+# Convert to JSON
+set json7 jsonStringify original7
+print "✓ As JSON: " + json7
+
+# Parse JSON and convert to YAML
+set fromJson7 jsonParse json7
+set yaml7 yamlStringify fromJson7
+print "✓ As YAML:"
+print yaml7
+
+# Parse YAML back
+set fromYaml7 yamlParse yaml7
+print "✓ Round-trip complete: " + fromYaml7.config
+print ""
+
+# Test 8: File operations
+print "Test 8: File operations"
+set fileData
+    test "json-file",
+    timestamp 2025
+set fileJson jsonStringify fileData
+writeFile "test-output.json" fileJson
+set loaded8 jsonLoadFile "test-output.json"
+print "✓ File saved and loaded: " + loaded8.test
+print ""
+
+# Test 9: Complex nested structures
+print "Test 9: Complex nested structures"
+set complex9
+    level1
+        level2
+            level3
+                value "deep",
+                array 1, 2, 3
+set json9 jsonStringify complex9
+set yaml9 yamlStringify complex9
+print "✓ Deep nesting JSON: " + json9
+print "✓ Deep nesting YAML:"
+print yaml9
+print ""
+
+# Test 10: Special characters and escaping
+print "Test 10: Special characters"
+set special10 "{\"quote\":\"He said \\\"Hello\\\"\",\"newline\":\"Line1\\nLine2\"}"
+set parsed10 jsonParse special10
+print "✓ Quote handling: " + parsed10.quote
+print "✓ Newline handling: " + parsed10.newline
+print ""
+
+print "===== All JSON/YAML tests completed successfully! ====="
