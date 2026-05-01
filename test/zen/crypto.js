@@ -572,6 +572,46 @@ describe("ZEN user graph — authenticator", function () {
     })().catch(done);
   });
 
+  // Regression test: trusted internal user-graph GET replies must not
+  // re-enter the async pub-verification path (faith bypass).  Running
+  // the write + immediate read-after-ack several times in one test
+  // exercises the timing window that caused the original flake.
+  it("read-after-ack on deep user-graph path delivers data without re-entering async pub verification", function (done) {
+    var zen = makeZen();
+    (async function () {
+      var bob = await ZEN.pair();
+      var enc = await ZEN.encrypt("secret", bob);
+      var ref = zen.get("~" + bob.pub).get("x").get("y");
+      var runs = 5;
+      var completed = 0;
+      function attempt() {
+        ref.put(
+          enc,
+          function (ack) {
+            if (ack && ack.err) {
+              return done(new Error("put failed on attempt " + (completed + 1) + ": " + ack.err));
+            }
+            ref.once(function (data) {
+              try {
+                assert.strictEqual(data, enc);
+                completed++;
+                if (completed >= runs) {
+                  done();
+                } else {
+                  attempt();
+                }
+              } catch (e) {
+                done(e);
+              }
+            });
+          },
+          { authenticator: bob },
+        );
+      }
+      attempt();
+    })().catch(done);
+  });
+
   it("accepts top-level authenticator options without mutating caller input", function (done) {
     var zen = makeZen();
     (async function () {

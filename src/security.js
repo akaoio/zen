@@ -108,6 +108,16 @@ var link_is = function (d, l) {
   return "string" == typeof (l = valid && valid(d)) && l;
 };
 
+// Returns true when `soul` belongs to the user-graph namespace:
+//   "~"        – the root shard index node
+//   "~/<key>"  – shard intermediate nodes
+//   "~<pub>…"  – per-user account nodes identified by a public key
+// Internal GET replies for these souls carry `faith` and must not be
+// re-routed through the async pub-verification path.
+check.isUserGraphSoul = function (soul) {
+  return "~" === soul || "~/" === soul.slice(0, 2) || !!settings.pub(soul);
+};
+
 function check(msg) {
   var eve = this,
     at = eve.as,
@@ -127,7 +137,7 @@ function check(msg) {
   if (
     (msg._ || "").faith &&
     "function" == typeof msg._ &&
-    ("~" === soul || "~/" === soul.slice(0, 2) || settings.pub(soul))
+    check.isUserGraphSoul(soul)
   ) {
     check.pipe.faith({ eve: eve, msg: msg, put: put, at: at });
     return;
