@@ -2985,10 +2985,13 @@ defmod('./src/security.js', function(module, exp){
       return;
     }
 
+    // In-memory user-graph GET replies tag their internal context with `faith`
+    // so signed account data can reuse already-verified graph state without
+    // re-entering the async pub check.
     if (
       (msg._ || "").faith &&
-      (at.opt || "").faith &&
-      "function" == typeof msg._
+      "function" == typeof msg._ &&
+      ("~" === soul || "~/" === soul.slice(0, 2) || settings.pub(soul))
     ) {
       check.pipe.faith({ eve: eve, msg: msg, put: put, at: at });
       return;
@@ -6643,6 +6646,7 @@ defmod('./src/put.js', function(module, exp){
 defmod('./src/get.js', function(module, exp){
   var __root = reqmod('./src/root.js').default;
   var Zen = __root;
+
   Zen.chain.get = function (key, cb, as) {
     var zen, tmp;
     if (typeof key === "string") {

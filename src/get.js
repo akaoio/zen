@@ -1,6 +1,7 @@
 import __root from "./root.js";
 
 var Zen = __root;
+
 Zen.chain.get = function (key, cb, as) {
   var zen, tmp;
   if (typeof key === "string") {
