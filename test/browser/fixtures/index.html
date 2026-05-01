@@ -13,6 +13,7 @@
       import ROPFS from '/lib/opfs.js';
       import Radix from '/lib/radix.js';
       import Radisk from '/lib/radisk.js';
+      import '/lib/store.js';
 
       // expose as globals (zen.js sets window.Zen internally; set others explicitly)
       window.RindexedDB = RindexedDB;
@@ -41,7 +42,7 @@
             radisk: true,
           };
           opt.store = makeStore(kind, opt);
-          current[id] = Zen(opt);
+          current[id] = new Zen(opt);
           return current[id];
         }
 

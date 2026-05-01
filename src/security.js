@@ -121,10 +121,13 @@ function check(msg) {
     return;
   }
 
+  // In-memory user-graph GET replies tag their internal context with `faith`
+  // so signed account data can reuse already-verified graph state without
+  // re-entering the async pub check.
   if (
     (msg._ || "").faith &&
-    (at.opt || "").faith &&
-    "function" == typeof msg._
+    "function" == typeof msg._ &&
+    ("~" === soul || "~/" === soul.slice(0, 2) || settings.pub(soul))
   ) {
     check.pipe.faith({ eve: eve, msg: msg, put: put, at: at });
     return;
