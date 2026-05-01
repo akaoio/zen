@@ -17,6 +17,7 @@
 
       // expose as globals (zen.js sets window.Zen internally; set others explicitly)
       window.RindexedDB = RindexedDB;
+      ROPFS.globalThis = globalThis;  // required: opfs.js uses Store.globalThis for navigator.storage
       window.ROPFS = ROPFS;
       window.Radix = Radix;
       window.Radisk = Radisk;
