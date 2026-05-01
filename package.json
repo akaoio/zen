@@ -17,6 +17,8 @@
     "test": "npm run buildZEN && npm run test:all",
     "test:browser": "playwright test",
     "test:browser:setup": "playwright install chromium",
+    "test:browser:setup:deps": "playwright install chromium --with-deps",
+    "test:ci": "npm test && npm run test:browser",
     "test:all": "node test/all.js",
     "test:discover": "cross-env GUN_TEST_TMP=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/discover.js --timeout 15000",
     "test:mcp": "cross-env GUN_TEST_TMP=1 ZEN_SILENCE_TEST_WARNINGS=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/mcp.js --timeout 30000",
