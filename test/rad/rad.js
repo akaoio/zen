@@ -956,9 +956,13 @@ var Zen;
         zen
           .get("names")
           .map()
-          .once(function (data, key) {
-            expect(data.name).to.be.ok();
-            expect(data.age).to.be.ok();
+          .on(function (data, key) {
+            // Use .on() so data arriving from a cold RAD disk cache is still
+            // captured (not missed by .once()). Guard against stub nodes that
+            // arrive before their full data is loaded from disk.
+            if (!data || !data.name || !data.age) {
+              return;
+            }
             delete all[key];
             if (!Object.empty(all)) {
               return;
