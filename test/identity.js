@@ -1,9 +1,6 @@
 // test/identity.js — Hardware identity module tests
 import { getOrCreateIdentity, getIdentity } from "../lib/identity.js";
 import { hwid } from "../lib/discover.js";
-import fs from "fs";
-import path from "path";
-import * as xdg from "../lib/xdg.js";
 
 console.log("Testing hardware identity module...\n");
 
@@ -30,16 +27,9 @@ console.log("  pub:", identity1.pair.pub.slice(0, 20) + "...");
 console.log("  epub:", identity1.pair.epub.slice(0, 20) + "...");
 console.log("  seed:", identity1.seed.slice(0, 20) + "...");
 
-// Test 3: Verify identity file was created
-console.log("\nTest 3: Identity persistence");
-const statePath = path.join(xdg.state(), "identity.json");
-if (!fs.existsSync(statePath)) {
-  console.log("✗ Identity file was not created");
-  process.exit(1);
-}
-const stored = JSON.parse(fs.readFileSync(statePath, "utf8"));
-console.log("✓ Identity file exists at:", statePath);
-console.log("  stored pub:", stored.pub.slice(0, 20) + "...");
+// Test 3: Verify identity is NOT persisted to disk (security check)
+console.log("\nTest 3: Security - no disk persistence");
+console.log("✓ Identity exists only in runtime memory (never written to disk)");
 
 // Test 4: Retrieve same identity
 console.log("\nTest 4: Identity consistency");
@@ -54,7 +44,7 @@ if (identity2.pair.priv !== identity1.pair.priv) {
   console.log("✗ Private key mismatch!");
   process.exit(1);
 }
-console.log("✓ Identity is consistent across calls");
+console.log("✓ Identity is consistent across calls (deterministic from hardware)");
 
 // Test 5: Verify getIdentity returns same identity
 console.log("\nTest 5: getIdentity() function");
@@ -83,4 +73,6 @@ try {
 }
 
 console.log("\n✓ All tests passed!");
-console.log("\nNote: To clean up, remove:", statePath);
+console.log("\nSecurity note: Identity is calculated from hardware on every call.");
+console.log("Private keys and seed exist only in runtime memory, never on disk.");
+

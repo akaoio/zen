@@ -75,7 +75,6 @@ No ZEN installation needed — `npx` downloads `@akaoio/zen` automatically on fi
 |----------|---------|-------------|
 | `ZEN_PEERS` | `wss://peer0.akao.io,wss://peer1.akao.io` | Comma-separated bootstrap peer URLs |
 | `XDG_DATA_HOME` | `~/.local/share` | Data directory root (graph stored at `$XDG_DATA_HOME/zen/mcp`) |
-| `XDG_STATE_HOME` | `~/.local/state` | State directory root (hardware identity stored at `$XDG_STATE_HOME/zen/identity.json`) |
 
 ---
 
@@ -89,8 +88,8 @@ The MCP server automatically generates a **hardware-derived identity** from your
 This identity is:
 - **Deterministic** — same keypair on every restart
 - **Shared** — ZEN server (`script/server.js`) uses the same identity on the same hardware
-- **Persistent** — metadata saved to `~/.local/state/zen/identity.json`
-- **Secure** — private keys are never written to disk, only derived from hardware entropy
+- **Runtime-only** — calculated on demand, never persisted to disk
+- **Secure** — private keys exist only in process memory, never written anywhere
 
 ### Using the hardware identity in MCP tools
 

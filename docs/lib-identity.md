@@ -9,14 +9,14 @@ The `lib/identity.js` module provides **hardware-derived, deterministic identity
 - **Deterministic**: Same keypair on every restart
 - **Hardware-bound**: Derived from `/etc/machine-id`, MAC address, and hostname
 - **Shared**: Server and MCP use the same identity on the same machine
-- **Secure**: Private keys never written to disk, only derived from hardware entropy on demand
-- **Persistent metadata**: Public keys saved to `~/.local/state/zen/identity.json` for verification
+- **Runtime-only**: Identity calculated on demand, never persisted to disk
+- **Secure**: Private keys and seed exist only in process memory
 
 ## API
 
 ### `getOrCreateIdentity()`
 
-Returns a hardware-derived identity, creating and persisting it if it doesn't exist.
+Returns a hardware-derived identity by calculating it from hardware entropy.
 
 ```javascript
 import { getOrCreateIdentity } from "./lib/identity.js";
@@ -32,9 +32,11 @@ const identity = await getOrCreateIdentity();
 
 **Returns `null` if hardware entropy is unavailable** (e.g., in containers without machine-id).
 
+**Security:** Identity is calculated fresh on every call. Nothing is persisted to disk.
+
 ### `getIdentity()`
 
-Returns the hardware-derived identity without persisting metadata. Useful for read-only contexts.
+Alias for `getOrCreateIdentity()` for backward compatibility.
 
 ```javascript
 import { getIdentity } from "./lib/identity.js";
@@ -109,21 +111,23 @@ The seed is hashed with curve-specific labels before scalar derivation:
 - `"ZEN|secp256k1|sign|"` → signing private key
 - `"ZEN|secp256k1|encrypt|"` → encryption private key
 
-## Persistence
+## Security Model
 
-Metadata is saved to `~/.local/state/zen/identity.json`:
+**No disk persistence whatsoever.**
 
-```json
-{
-  "hwid": "96e66a7085...",
-  "seed": "03EdUg7H7Y...",
-  "pub": "05B7ebtSYj...",
-  "epub": "0YkHKxBrB3...",
-  "created": 1735776000000
-}
-```
+- Identity is calculated fresh from hardware entropy on every call
+- Private keys exist only in process memory during execution
+- Seed (base62-encoded hash) exists only in memory
+- Public keys are never written to disk
+- Hardware fingerprint (hwid) is never logged or persisted
 
-**Private keys are NEVER persisted**. They are re-derived from the hardware ID on every call to `getOrCreateIdentity()` or `getIdentity()`.
+This approach eliminates entire classes of attacks:
+- No keyfiles to steal or misconfigure
+- No accidental backup of sensitive material
+- No permission issues with key storage
+- Keys cannot be moved to another machine
+
+The identity is hardware-bound and ephemeral by design.
 
 ## Testing
 
@@ -133,10 +137,9 @@ node test/identity-debug.js
 
 # Full identity module test
 node test/identity.js
-
-# Clean up
-rm ~/.local/state/zen/identity.json
 ```
+
+No cleanup needed — nothing is written to disk.
 
 ## Limitations
 
@@ -146,19 +149,23 @@ rm ~/.local/state/zen/identity.json
 
 If hardware entropy is unavailable, both functions return `null`, and the caller should fall back to `String.random(9)` (as done in `mesh.js`).
 
-## Security Considerations
+## Security Rationale
 
-### Why private keys aren't persisted
+### Why nothing is persisted to disk
 
-Storing private keys on disk increases attack surface:
-- Filesystem permissions must be carefully managed
-- Keys may be backed up inadvertently
-- Accidental key exposure in logs/errors
+Even persisting public keys or metadata creates security risks:
 
-By deriving keys from hardware entropy on demand:
-- Keys exist only in memory during use
-- No file to steal or misconfigure
-- Hardware-bound: keys cannot be moved to another machine
+1. **Seed exposure**: The seed could be used to re-derive private keys
+2. **Identity fingerprinting**: Public keys reveal the identity permanently
+3. **Hardware fingerprint leakage**: The hwid contains sensitive system information
+4. **Attack surface**: Any file on disk is a potential target for theft or tampering
+5. **Backup risks**: Files may be inadvertently backed up to insecure locations
+
+By calculating identity from hardware on demand:
+- **Zero attack surface**: No files to steal, misconfigure, or backup accidentally
+- **Hardware-bound**: Identity cannot be moved to another machine
+- **Ephemeral**: Keys exist only in memory during use
+- **Deterministic**: Same keys on every calculation from same hardware
 
 ### When NOT to use hardware identity
 
