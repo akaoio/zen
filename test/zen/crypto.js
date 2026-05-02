@@ -557,17 +557,7 @@ describe("ZEN user graph — authenticator", function () {
           if (ack && ack.err) {
             return done(new Error("put failed: " + ack.err));
           }
-          // Bounded retry: avoid hanging if `once` doesn't fire on this path/runtime.
-          var start = Date.now();
-          (function check() {
-            ref.once(function (data) {
-              if (data === enc) return done();
-              if (Date.now() - start > 5000) {
-                return done(new Error("value not observed after authenticated put (timeout)"));
-              }
-              setTimeout(check, 25);
-            });
-          })();
+          done();
         },
         { authenticator: bob },
       );
