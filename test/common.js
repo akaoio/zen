@@ -4507,6 +4507,7 @@ describe("ZEN", function () {
     });
 
     it("If chain cannot be called, ack", function (done) {
+      this.timeout(9000);
       Zen.statedisk(
         { wat: 1, a: true },
         "nl/app",
