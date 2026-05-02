@@ -107,6 +107,51 @@ function pubToJwkXY(pub) {
   throw new Error("pubToJwkXY: unrecognised pub format");
 }
 
+// Fixed-length constants for AES-GCM wire format fields.
+// IV  = 15 bytes → 21 base62 chars  (62^21 > 256^15)
+// salt =  9 bytes → 13 base62 chars  (62^13 > 256^9)
+const IV_B62_LEN = 21;
+const S_B62_LEN  = 13;
+
+// Encode an AES-GCM ciphertext buffer (arbitrary length) into base62.
+// Format: 1-char prefix = last-chunk byte count (1-32, ALPHA-indexed),
+//         then ceil(buf.length/32) × 44-char base62 chunks (each chunk is
+//         32 bytes zero-left-padded and encoded as biToB62).
+// The prefix lets the decoder reconstruct exact byte length without any extra metadata.
+function bufToB62Ct(buf) {
+  if (!buf || buf.length === 0) return ALPHA[0]; // edge: 0-byte output
+  const lastLen = ((buf.length - 1) % 32) + 1;  // 1..32
+  let out = ALPHA[lastLen];                       // 1-char prefix
+  for (let i = 0; i < buf.length; i += 32) {
+    const srcLen = Math.min(32, buf.length - i);
+    const chunk = new Uint8Array(32);             // zero-padded 32 bytes
+    for (let j = 0; j < srcLen; j++) chunk[32 - srcLen + j] = buf[i + j]; // left-pad
+    out += biToB62(_32ToBi(chunk));
+  }
+  return out;
+}
+
+// Decode a bufToB62Ct-encoded string back to a Uint8Array.
+function b62CtToBuf(s) {
+  if (!s || s.length < 2) return new Uint8Array(0);
+  const lastLen = ALPHA_MAP[s[0]];  // 1..32
+  if (lastLen === undefined || lastLen === 0) return new Uint8Array(0);
+  const data = s.slice(1);
+  const numChunks = data.length / 44;
+  const result = [];
+  for (let i = 0; i < numChunks; i++) {
+    const chunk44 = data.slice(i * 44, (i + 1) * 44);
+    const bytes = bito(b62ToBI(chunk44));   // 32 bytes, big-endian
+    if (i < numChunks - 1) {
+      for (let j = 0; j < 32; j++) result.push(bytes[j]);
+    } else {
+      // Last chunk: the real data occupies the rightmost lastLen bytes.
+      for (let j = 32 - lastLen; j < 32; j++) result.push(bytes[j]);
+    }
+  }
+  return new Uint8Array(result);
+}
+
 // Encode an arbitrary-length buffer as a single base62 BigInt, padded to exactly `len` chars.
 function bufToB62Fixed(buf, len) {
   let hex = "";
@@ -169,7 +214,11 @@ const base62 = {
   pubToJwkXY,
   bufToB62,
   bufToB62Fixed,
+  bufToB62Ct,
   b62ToBuf,
+  b62CtToBuf,
+  IV_B62_LEN,
+  S_B62_LEN,
   PUB_LEN,
 };
 export default base62;

@@ -1711,6 +1711,51 @@ defmod('./src/base62.js', function(module, exp){
     throw new Error("pubToJwkXY: unrecognised pub format");
   }
 
+  // Fixed-length constants for AES-GCM wire format fields.
+  // IV  = 15 bytes → 21 base62 chars  (62^21 > 256^15)
+  // salt =  9 bytes → 13 base62 chars  (62^13 > 256^9)
+  const IV_B62_LEN = 21;
+  const S_B62_LEN  = 13;
+
+  // Encode an AES-GCM ciphertext buffer (arbitrary length) into base62.
+  // Format: 1-char prefix = last-chunk byte count (1-32, ALPHA-indexed),
+  //         then ceil(buf.length/32) × 44-char base62 chunks (each chunk is
+  //         32 bytes zero-left-padded and encoded as biToB62).
+  // The prefix lets the decoder reconstruct exact byte length without any extra metadata.
+  function bufToB62Ct(buf) {
+    if (!buf || buf.length === 0) return ALPHA[0]; // edge: 0-byte output
+    const lastLen = ((buf.length - 1) % 32) + 1;  // 1..32
+    let out = ALPHA[lastLen];                       // 1-char prefix
+    for (let i = 0; i < buf.length; i += 32) {
+      const srcLen = Math.min(32, buf.length - i);
+      const chunk = new Uint8Array(32);             // zero-padded 32 bytes
+      for (let j = 0; j < srcLen; j++) chunk[32 - srcLen + j] = buf[i + j]; // left-pad
+      out += biToB62(_32ToBi(chunk));
+    }
+    return out;
+  }
+
+  // Decode a bufToB62Ct-encoded string back to a Uint8Array.
+  function b62CtToBuf(s) {
+    if (!s || s.length < 2) return new Uint8Array(0);
+    const lastLen = ALPHA_MAP[s[0]];  // 1..32
+    if (lastLen === undefined || lastLen === 0) return new Uint8Array(0);
+    const data = s.slice(1);
+    const numChunks = data.length / 44;
+    const result = [];
+    for (let i = 0; i < numChunks; i++) {
+      const chunk44 = data.slice(i * 44, (i + 1) * 44);
+      const bytes = bito(b62ToBI(chunk44));   // 32 bytes, big-endian
+      if (i < numChunks - 1) {
+        for (let j = 0; j < 32; j++) result.push(bytes[j]);
+      } else {
+        // Last chunk: the real data occupies the rightmost lastLen bytes.
+        for (let j = 32 - lastLen; j < 32; j++) result.push(bytes[j]);
+      }
+    }
+    return new Uint8Array(result);
+  }
+
   // Encode an arbitrary-length buffer as a single base62 BigInt, padded to exactly `len` chars.
   function bufToB62Fixed(buf, len) {
     let hex = "";
@@ -1773,7 +1818,11 @@ defmod('./src/base62.js', function(module, exp){
     pubToJwkXY,
     bufToB62,
     bufToB62Fixed,
+    bufToB62Ct,
     b62ToBuf,
+    b62CtToBuf,
+    IV_B62_LEN,
+    S_B62_LEN,
     PUB_LEN,
   };
   exp.default = base62;
@@ -1816,9 +1865,13 @@ defmod('./src/settings.js', function(module, exp){
   // Compact wire format detector.
   // Signed secp256k1:   <86 base62 chars><v 0|1>:<message>
   // Signed other curve: <86 base62 chars><v 0|1>/<curve>:<message>
-  // Encrypted:          <ct_b64url>:<iv_b64url>:<s_b64url>  (exactly 3 colon-separated parts)
+  // Encrypted base62:   <ct_b62>.<iv_b62_21>.<s_b62_13>   (new format)
+  // Encrypted base64url:<ct_b64url>:<iv_b64url>:<s_b64url> (legacy format)
   const _SIG_HEAD = /^[0-9A-Za-z]{86}[01]/;
   const _ENC_PART = /^[A-Za-z0-9_-]+$/;
+  const _B62_PART = /^[A-Za-z0-9]+$/;
+  const IV_B62_LEN = 21;
+  const S_B62_LEN  = 13;
 
   settings.check = function (t) {
     if (typeof t !== "string") {
@@ -1828,7 +1881,20 @@ defmod('./src/settings.js', function(module, exp){
     if (t.length >= 88 && _SIG_HEAD.test(t) && (t[87] === ":" || t[87] === "/")) {
       return true;
     }
-    // Encrypted: exactly 3 non-empty base64url parts
+    // Encrypted base62: 3 dot-separated parts; iv is always 21 chars, s always 13 chars
+    const dparts = t.split(".");
+    if (
+      dparts.length === 3 &&
+      dparts[0].length > 0 &&
+      dparts[1].length === IV_B62_LEN &&
+      dparts[2].length === S_B62_LEN &&
+      _B62_PART.test(dparts[0]) &&
+      _B62_PART.test(dparts[1]) &&
+      _B62_PART.test(dparts[2])
+    ) {
+      return true;
+    }
+    // Encrypted base64url (legacy): exactly 3 non-empty colon-separated base64url parts
     const parts = t.split(":");
     if (
       parts.length === 3 &&
@@ -1863,7 +1929,20 @@ defmod('./src/settings.js', function(module, exp){
         }
       }
     }
-    // Encrypted: exactly 3 non-empty base64url parts
+    // Encrypted base62 (new): 3 dot-separated parts; iv=21 chars, s=13 chars
+    const dparts = t.split(".");
+    if (
+      dparts.length === 3 &&
+      dparts[0].length > 0 &&
+      dparts[1].length === IV_B62_LEN &&
+      dparts[2].length === S_B62_LEN &&
+      _B62_PART.test(dparts[0]) &&
+      _B62_PART.test(dparts[1]) &&
+      _B62_PART.test(dparts[2])
+    ) {
+      return { ct: dparts[0], iv: dparts[1], s: dparts[2], _enc: "base62" };
+    }
+    // Encrypted base64url (legacy): exactly 3 non-empty colon-separated parts
     const parts = t.split(":");
     if (
       parts.length === 3 &&
@@ -5125,7 +5204,18 @@ defmod('./src/encrypt.js', function(module, exp){
     try {
       opt = opt || {};
       const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
-      const key = (pair && pair.priv) || pair;
+      // Normalize pair.priv to canonical base62 so that different format
+      // representations of the same scalar (zen, evm) produce the same key.
+      // Falls back to raw string for formats parseScalar can't handle (e.g. BTC WIF).
+      const rawKey = (pair && pair.priv) || pair;
+      let key = rawKey;
+      if (pair && pair.priv) {
+        try {
+          key = c.scalarToString(c.parseScalar(pair.priv, "Encryption key"));
+        } catch (_) {
+          key = pair.priv;
+        }
+      }
       if (data === undefined) {
         throw new Error("`undefined` not allowed.");
       }
@@ -5145,11 +5235,11 @@ defmod('./src/encrypt.js', function(module, exp){
         new c.shim.TextEncoder().encode(message),
       );
       const out =
-        c.shim.Buffer.from(ct, "binary").toString("base64url") +
-        ":" +
-        rand.iv.toString("base64url") +
-        ":" +
-        rand.s.toString("base64url");
+        c.base62.bufToB62Ct(new Uint8Array(ct)) +
+        "." +
+        c.base62.bufToB62Fixed(rand.iv, c.base62.IV_B62_LEN) +
+        "." +
+        c.base62.bufToB62Fixed(rand.s, c.base62.S_B62_LEN);
       return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
     } catch (e) {
       return cryptoErr(e, cb);
@@ -5169,15 +5259,33 @@ defmod('./src/decrypt.js', function(module, exp){
     try {
       opt = opt || {};
       const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
-      const key = (pair && pair.priv) || pair;
+      // Normalize pair.priv to canonical base62 so that different format
+      // representations of the same scalar (zen, evm) can decrypt each other.
+      // Falls back to raw string for formats parseScalar can't handle (e.g. BTC WIF).
+      const rawKey = (pair && pair.priv) || pair;
+      let key = rawKey;
+      if (pair && pair.priv) {
+        try {
+          key = c.scalarToString(c.parseScalar(pair.priv, "Decryption key"));
+        } catch (_) {
+          key = pair.priv;
+        }
+      }
       if (!key) {
         throw new Error("No decryption key.");
       }
       const parsed = await c.settings.parse(data);
       const enc = parsed._enc || opt.encode || "base64";
-      const salt = c.shim.Buffer.from(parsed.s, enc);
-      const iv = c.shim.Buffer.from(parsed.iv, enc);
-      const ct = c.shim.Buffer.from(parsed.ct, enc);
+      let salt, iv, ct;
+      if (enc === "base62") {
+        salt = c.shim.Buffer.from(c.base62.b62ToBuf(parsed.s, 9));
+        iv   = c.shim.Buffer.from(c.base62.b62ToBuf(parsed.iv, 15));
+        ct   = c.base62.b62CtToBuf(parsed.ct);
+      } else {
+        salt = c.shim.Buffer.from(parsed.s, enc);
+        iv   = c.shim.Buffer.from(parsed.iv, enc);
+        ct   = c.shim.Buffer.from(parsed.ct, enc);
+      }
       const aes = await c.aeskey(key, salt, opt);
       const decrypted = await c.shim.subtle.decrypt(
         {

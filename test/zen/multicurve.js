@@ -361,3 +361,121 @@ describe("secret — multi-curve", function () {
     assert.match(s, /^[A-Za-z0-9]+$/, "shared secret should be base62");
   });
 });
+
+// ─── cross-format encrypt/decrypt ────────────────────────────────────────────
+describe("encrypt/decrypt — cross-format (zen ↔ evm)", function () {
+  this.timeout(20 * 1000);
+
+  const SEED = "cross-format-enc-seed";
+  let zenPair, evmPair;
+
+  before(async function () {
+    zenPair = await ZEN.pair(null, { seed: SEED });
+    evmPair = await ZEN.pair(null, { seed: SEED, format: "evm" });
+  });
+
+  it("zen and evm pairs from same seed share the same underlying key", function () {
+    assert.strictEqual(zenPair.address, evmPair.address, "same address proves same scalar");
+  });
+
+  it("encrypt with zen pair, decrypt with evm pair", async function () {
+    const enc = await ZEN.encrypt("hello cross", zenPair);
+    const dec = await ZEN.decrypt(enc, evmPair);
+    assert.strictEqual(dec, "hello cross");
+  });
+
+  it("encrypt with evm pair, decrypt with zen pair", async function () {
+    const enc = await ZEN.encrypt("hello cross", evmPair);
+    const dec = await ZEN.decrypt(enc, zenPair);
+    assert.strictEqual(dec, "hello cross");
+  });
+
+  it("spread evm pair into new zen pair and decrypt still works", async function () {
+    const spreadZen = await ZEN.pair(null, { priv: evmPair.priv, format: "zen" });
+    const enc = await ZEN.encrypt("spread test", zenPair);
+    const dec = await ZEN.decrypt(enc, spreadZen);
+    assert.strictEqual(dec, "spread test");
+  });
+
+  it("wrong pair (different seed) cannot decrypt", async function () {
+    const other = await ZEN.pair(null, { seed: "totally-different-seed" });
+    const enc = await ZEN.encrypt("secret", zenPair);
+    const dec = await ZEN.decrypt(enc, other).catch(() => undefined);
+    assert.notStrictEqual(dec, "secret", "wrong pair must not decrypt correctly");
+  });
+
+  it("zen and evm produce independent ciphertexts (random IV)", async function () {
+    const enc1 = await ZEN.encrypt("same", zenPair);
+    const enc2 = await ZEN.encrypt("same", evmPair);
+    assert.notStrictEqual(enc1, enc2, "each encrypt call produces unique ciphertext");
+    // but both decrypt to the same plaintext with either key
+    assert.strictEqual(await ZEN.decrypt(enc1, evmPair), "same");
+    assert.strictEqual(await ZEN.decrypt(enc2, zenPair), "same");
+  });
+
+  it("full workflow: encrypt zen → sign evm → verify zen → decrypt evm", async function () {
+    const plaintext = "end-to-end cross-format";
+    const enc = await ZEN.encrypt(plaintext, zenPair);
+    const sig = await ZEN.sign(enc, evmPair);
+    const verified = await ZEN.verify(sig, evmPair.pub);
+    const dec = await ZEN.decrypt(verified, zenPair);
+    assert.strictEqual(dec, plaintext);
+  });
+});
+
+// ─── cross-format sign/verify/recover ────────────────────────────────────────
+describe("sign/verify/recover — cross-format (zen ↔ evm)", function () {
+  this.timeout(20 * 1000);
+
+  const SEED = "cross-format-sign-seed";
+  let zenPair, evmPair;
+
+  before(async function () {
+    zenPair = await ZEN.pair(null, { seed: SEED });
+    evmPair = await ZEN.pair(null, { seed: SEED, format: "evm" });
+  });
+
+  it("sign with zen pair, verify with zen pub", async function () {
+    const sig = await ZEN.sign("msg", zenPair);
+    const out = await ZEN.verify(sig, zenPair.pub);
+    assert.strictEqual(out, "msg");
+  });
+
+  it("sign with evm pair, verify with evm pub", async function () {
+    const sig = await ZEN.sign("msg", evmPair);
+    const out = await ZEN.verify(sig, evmPair.pub);
+    assert.strictEqual(out, "msg");
+  });
+
+  it("recover from zen-signed returns zen-format pub", async function () {
+    const sig = await ZEN.sign("msg", zenPair);
+    const recovered = await ZEN.recover(sig);
+    assert.strictEqual(recovered, zenPair.pub, "recover matches zenPair.pub");
+  });
+
+  it("recover from evm-signed returns zen-format pub (sign normalises internally)", async function () {
+    const sig = await ZEN.sign("msg", evmPair);
+    const recovered = await ZEN.recover(sig);
+    // sign() calls parseScalar on priv → same scalar → same recovery output (zen pub format)
+    assert.strictEqual(recovered, zenPair.pub, "recover from evm-signed must equal zen pub");
+  });
+
+  it("sign with zen, verify with evm pub (parsePub handles both formats)", async function () {
+    const sig = await ZEN.sign("cross-verify", zenPair);
+    const out = await ZEN.verify(sig, evmPair.pub);
+    assert.strictEqual(out, "cross-verify");
+  });
+
+  it("sign with evm, verify with zen pub", async function () {
+    const sig = await ZEN.sign("cross-verify-2", evmPair);
+    const out = await ZEN.verify(sig, zenPair.pub);
+    assert.strictEqual(out, "cross-verify-2");
+  });
+
+  it("tampered message fails verification for both formats", async function () {
+    const sig = await ZEN.sign("original", zenPair);
+    const tampered = sig.slice(0, 88) + "tampered";
+    const bad = await ZEN.verify(tampered, zenPair.pub).catch(() => undefined);
+    assert.strictEqual(bad, undefined);
+  });
+});

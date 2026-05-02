@@ -5,15 +5,33 @@ async function decrypt(data, pair, cb, opt) {
   try {
     opt = opt || {};
     const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
-    const key = (pair && pair.priv) || pair;
+    // Normalize pair.priv to canonical base62 so that different format
+    // representations of the same scalar (zen, evm) can decrypt each other.
+    // Falls back to raw string for formats parseScalar can't handle (e.g. BTC WIF).
+    const rawKey = (pair && pair.priv) || pair;
+    let key = rawKey;
+    if (pair && pair.priv) {
+      try {
+        key = c.scalarToString(c.parseScalar(pair.priv, "Decryption key"));
+      } catch (_) {
+        key = pair.priv;
+      }
+    }
     if (!key) {
       throw new Error("No decryption key.");
     }
     const parsed = await c.settings.parse(data);
     const enc = parsed._enc || opt.encode || "base64";
-    const salt = c.shim.Buffer.from(parsed.s, enc);
-    const iv = c.shim.Buffer.from(parsed.iv, enc);
-    const ct = c.shim.Buffer.from(parsed.ct, enc);
+    let salt, iv, ct;
+    if (enc === "base62") {
+      salt = c.shim.Buffer.from(c.base62.b62ToBuf(parsed.s, 9));
+      iv   = c.shim.Buffer.from(c.base62.b62ToBuf(parsed.iv, 15));
+      ct   = c.base62.b62CtToBuf(parsed.ct);
+    } else {
+      salt = c.shim.Buffer.from(parsed.s, enc);
+      iv   = c.shim.Buffer.from(parsed.iv, enc);
+      ct   = c.shim.Buffer.from(parsed.ct, enc);
+    }
     const aes = await c.aeskey(key, salt, opt);
     const decrypted = await c.shim.subtle.decrypt(
       {

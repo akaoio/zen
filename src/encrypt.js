@@ -5,7 +5,18 @@ async function encrypt(data, pair, cb, opt) {
   try {
     opt = opt || {};
     const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
-    const key = (pair && pair.priv) || pair;
+    // Normalize pair.priv to canonical base62 so that different format
+    // representations of the same scalar (zen, evm) produce the same key.
+    // Falls back to raw string for formats parseScalar can't handle (e.g. BTC WIF).
+    const rawKey = (pair && pair.priv) || pair;
+    let key = rawKey;
+    if (pair && pair.priv) {
+      try {
+        key = c.scalarToString(c.parseScalar(pair.priv, "Encryption key"));
+      } catch (_) {
+        key = pair.priv;
+      }
+    }
     if (data === undefined) {
       throw new Error("`undefined` not allowed.");
     }
@@ -25,11 +36,11 @@ async function encrypt(data, pair, cb, opt) {
       new c.shim.TextEncoder().encode(message),
     );
     const out =
-      c.shim.Buffer.from(ct, "binary").toString("base64url") +
-      ":" +
-      rand.iv.toString("base64url") +
-      ":" +
-      rand.s.toString("base64url");
+      c.base62.bufToB62Ct(new Uint8Array(ct)) +
+      "." +
+      c.base62.bufToB62Fixed(rand.iv, c.base62.IV_B62_LEN) +
+      "." +
+      c.base62.bufToB62Fixed(rand.s, c.base62.S_B62_LEN);
     return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
   } catch (e) {
     return cryptoErr(e, cb);
