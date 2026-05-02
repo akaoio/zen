@@ -133,13 +133,13 @@ describe("MCP — tools/list", function () {
     });
   });
 
-  it("exposes exactly 3 tools", function () {
-    assert.strictEqual(tools.length, 3);
+  it("exposes exactly 4 tools", function () {
+    assert.strictEqual(tools.length, 4);
   });
 
-  it("tool names are graph, crypto, storePair", function () {
+  it("tool names are graph, crypto, storePair, getHardwareIdentity", function () {
     const names = tools.map(t => t.name);
-    assert.deepStrictEqual(names, ["graph", "crypto", "storePair"]);
+    assert.deepStrictEqual(names, ["graph", "crypto", "storePair", "getHardwareIdentity"]);
   });
 
   it("graph requires soul and op", function () {
