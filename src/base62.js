@@ -1,4 +1,3 @@
-import shim from "./shim.js";
 import bridge from "./crypto.js";
 
 let _wasmReady = false;
@@ -70,41 +69,6 @@ function b62ToBI(s) {
     n = n * 62n + BigInt(c);
   }
   return n;
-}
-
-function b64ToB62(s) {
-  const hex = shim.Buffer.from(atob(s), "binary").toString("hex");
-  return biToB62(BigInt("0x" + (hex || "0")));
-}
-
-function b62ToB64(s) {
-  const n = b62ToBI(s);
-  const hex = n.toString(16).padStart(64, "0");
-  return shim.Buffer.from(hex, "hex")
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-}
-
-function pubToJwkXY(pub) {
-  if (typeof pub !== "string") {
-    throw new Error("pubToJwkXY: pub must be a string");
-  }
-  if (pub.length === 87 && pub[43] === ".") {
-    const parts = pub.split(".");
-    if (parts.length !== 2) {
-      throw new Error("pubToJwkXY: invalid old pub format");
-    }
-    return { x: parts[0], y: parts[1] };
-  }
-  if (pub.length === 88 && /^[A-Za-z0-9]{88}$/.test(pub)) {
-    return {
-      x: b62ToB64(pub.slice(0, 44)),
-      y: b62ToB64(pub.slice(44)),
-    };
-  }
-  throw new Error("pubToJwkXY: unrecognised pub format");
 }
 
 // Fixed-length constants for AES-GCM wire format fields.
@@ -209,9 +173,6 @@ const base62 = {
   ALPHA,
   biToB62,
   b62ToBI,
-  b64ToB62,
-  b62ToB64,
-  pubToJwkXY,
   bufToB62,
   bufToB62Fixed,
   bufToB62Ct,

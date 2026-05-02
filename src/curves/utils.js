@@ -245,18 +245,6 @@ function createCurveCore(config) {
     return out;
   }
 
-  function decodeBase64Url(str) {
-    const padded = str
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
-      .padEnd(Math.ceil(str.length / 4) * 4, "=");
-    return new Uint8Array(shim.Buffer.from(padded, "base64"));
-  }
-
-  function encodeBase64(bytes, encoding) {
-    return shim.Buffer.from(bytes).toString(encoding || "base64");
-  }
-
   function assertScalar(value, name) {
     if (value <= 0n || value >= N) {
       throw new Error((name || "Scalar") + " out of range");
@@ -277,7 +265,7 @@ function createCurveCore(config) {
     } else if (/^0x[0-9a-fA-F]{64}$/.test(value)) {
       scalar = BigInt(value);                            // EVM/BTC 0x-prefixed hex (32 bytes)
     } else {
-      scalar = bytesToBigInt(decodeBase64Url(value));   // legacy base64url
+      throw new Error((name || "Scalar") + " format not recognised");
     }
     return assertScalar(scalar, name);
   }
@@ -330,19 +318,6 @@ function createCurveCore(config) {
       const parity = BigInt(pub[44]);
       const y = liftX(x, parity);
       point = { x, y };
-    } else if (pub.length === 88 && /^[A-Za-z0-9]{88}$/.test(pub)) {
-      // Legacy uncompressed format (backward compat)
-      point = {
-        x: base62.b62ToBI(pub.slice(0, 44)),
-        y: base62.b62ToBI(pub.slice(44)),
-      };
-    } else if (pub.length === 87 && pub[43] === ".") {
-      // Legacy GUN base64url format (backward compat)
-      const parts = pub.split(".");
-      point = {
-        x: bytesToBigInt(decodeBase64Url(parts[0])),
-        y: bytesToBigInt(decodeBase64Url(parts[1])),
-      };
     } else if (pub.length === 132 && /^0x04[0-9a-fA-F]{128}$/.test(pub)) {
       // EVM uncompressed pubkey: 0x04 + 32-byte x + 32-byte y
       point = {
@@ -481,8 +456,6 @@ function createCurveCore(config) {
       bytesToBigInt,
       bigIntToBytes,
       concatBytes,
-      decodeBase64Url,
-      encodeBase64,
       parseScalar,
       assertScalar,
       scalarToString,

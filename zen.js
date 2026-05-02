@@ -1603,7 +1603,6 @@ defmod('./src/crypto.js', function(module, exp){
 });
 
 defmod('./src/base62.js', function(module, exp){
-  var shim = reqmod('./src/shim.js').default;
   var bridge = reqmod('./src/crypto.js').default;
   let _wasmReady = false;
   bridge.ready.then(() => { _wasmReady = true; }).catch(() => {});
@@ -1674,41 +1673,6 @@ defmod('./src/base62.js', function(module, exp){
       n = n * 62n + BigInt(c);
     }
     return n;
-  }
-
-  function b64ToB62(s) {
-    const hex = shim.Buffer.from(atob(s), "binary").toString("hex");
-    return biToB62(BigInt("0x" + (hex || "0")));
-  }
-
-  function b62ToB64(s) {
-    const n = b62ToBI(s);
-    const hex = n.toString(16).padStart(64, "0");
-    return shim.Buffer.from(hex, "hex")
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=/g, "");
-  }
-
-  function pubToJwkXY(pub) {
-    if (typeof pub !== "string") {
-      throw new Error("pubToJwkXY: pub must be a string");
-    }
-    if (pub.length === 87 && pub[43] === ".") {
-      const parts = pub.split(".");
-      if (parts.length !== 2) {
-        throw new Error("pubToJwkXY: invalid old pub format");
-      }
-      return { x: parts[0], y: parts[1] };
-    }
-    if (pub.length === 88 && /^[A-Za-z0-9]{88}$/.test(pub)) {
-      return {
-        x: b62ToB64(pub.slice(0, 44)),
-        y: b62ToB64(pub.slice(44)),
-      };
-    }
-    throw new Error("pubToJwkXY: unrecognised pub format");
   }
 
   // Fixed-length constants for AES-GCM wire format fields.
@@ -1813,9 +1777,6 @@ defmod('./src/base62.js', function(module, exp){
     ALPHA,
     biToB62,
     b62ToBI,
-    b64ToB62,
-    b62ToB64,
-    pubToJwkXY,
     bufToB62,
     bufToB62Fixed,
     bufToB62Ct,
@@ -1832,7 +1793,6 @@ defmod('./src/base62.js', function(module, exp){
 });
 
 defmod('./src/settings.js', function(module, exp){
-  var base62 = reqmod('./src/base62.js').default;
   const settings = {};
   settings.pbkdf2 = { hash: { name: "SHA-256" }, iter: 100000, ks: 64 };
   settings.ecdsa = {
@@ -1840,17 +1800,6 @@ defmod('./src/settings.js', function(module, exp){
     sign: { name: "ECDSA", hash: { name: "SHA-256" } },
   };
   settings.ecdh = { name: "ECDH", namedCurve: "secp256k1" };
-
-  settings.jwk = function (pub, d) {
-    const xy = base62.pubToJwkXY(pub);
-    const jwk = { kty: "EC", crv: "secp256k1", x: xy.x, y: xy.y, ext: true };
-    jwk.key_ops = d ? ["sign"] : ["verify"];
-    if (d) {
-      jwk.d =
-        d.length === 44 && /^[A-Za-z0-9]{44}$/.test(d) ? base62.b62ToB64(d) : d;
-    }
-    return jwk;
-  };
 
   settings.keyToJwk = function (keyBytes) {
     const keyB64 = keyBytes.toString("base64");
@@ -1865,10 +1814,8 @@ defmod('./src/settings.js', function(module, exp){
   // Compact wire format detector.
   // Signed secp256k1:   <86 base62 chars><v 0|1>:<message>
   // Signed other curve: <86 base62 chars><v 0|1>/<curve>:<message>
-  // Encrypted base62:   <ct_b62>.<iv_b62_21>.<s_b62_13>   (new format)
-  // Encrypted base64url:<ct_b64url>:<iv_b64url>:<s_b64url> (legacy format)
+  // Encrypted:          <ct_b62>.<iv_b62_21>.<s_b62_13>
   const _SIG_HEAD = /^[0-9A-Za-z]{86}[01]/;
-  const _ENC_PART = /^[A-Za-z0-9_-]+$/;
   const _B62_PART = /^[A-Za-z0-9]+$/;
   const IV_B62_LEN = 21;
   const S_B62_LEN  = 13;
@@ -1891,19 +1838,6 @@ defmod('./src/settings.js', function(module, exp){
       _B62_PART.test(dparts[0]) &&
       _B62_PART.test(dparts[1]) &&
       _B62_PART.test(dparts[2])
-    ) {
-      return true;
-    }
-    // Encrypted base64url (legacy): exactly 3 non-empty colon-separated base64url parts
-    const parts = t.split(":");
-    if (
-      parts.length === 3 &&
-      parts[0].length > 0 &&
-      parts[1].length > 0 &&
-      parts[2].length > 0 &&
-      _ENC_PART.test(parts[0]) &&
-      _ENC_PART.test(parts[1]) &&
-      _ENC_PART.test(parts[2])
     ) {
       return true;
     }
@@ -1941,19 +1875,6 @@ defmod('./src/settings.js', function(module, exp){
       _B62_PART.test(dparts[2])
     ) {
       return { ct: dparts[0], iv: dparts[1], s: dparts[2], _enc: "base62" };
-    }
-    // Encrypted base64url (legacy): exactly 3 non-empty colon-separated parts
-    const parts = t.split(":");
-    if (
-      parts.length === 3 &&
-      parts[0].length > 0 &&
-      parts[1].length > 0 &&
-      parts[2].length > 0 &&
-      _ENC_PART.test(parts[0]) &&
-      _ENC_PART.test(parts[1]) &&
-      _ENC_PART.test(parts[2])
-    ) {
-      return { ct: parts[0], iv: parts[1], s: parts[2], _enc: "base64url" };
     }
     // Fallback: try JSON parse (handles serialised objects, numbers, booleans, null)
     try {
@@ -2474,18 +2395,6 @@ defmod('./src/curves/utils.js', function(module, exp){
       return out;
     }
 
-    function decodeBase64Url(str) {
-      const padded = str
-        .replace(/-/g, "+")
-        .replace(/_/g, "/")
-        .padEnd(Math.ceil(str.length / 4) * 4, "=");
-      return new Uint8Array(shim.Buffer.from(padded, "base64"));
-    }
-
-    function encodeBase64(bytes, encoding) {
-      return shim.Buffer.from(bytes).toString(encoding || "base64");
-    }
-
     function assertScalar(value, name) {
       if (value <= 0n || value >= N) {
         throw new Error((name || "Scalar") + " out of range");
@@ -2506,7 +2415,7 @@ defmod('./src/curves/utils.js', function(module, exp){
       } else if (/^0x[0-9a-fA-F]{64}$/.test(value)) {
         scalar = BigInt(value);                            // EVM/BTC 0x-prefixed hex (32 bytes)
       } else {
-        scalar = bytesToBigInt(decodeBase64Url(value));   // legacy base64url
+        throw new Error((name || "Scalar") + " format not recognised");
       }
       return assertScalar(scalar, name);
     }
@@ -2559,19 +2468,6 @@ defmod('./src/curves/utils.js', function(module, exp){
         const parity = BigInt(pub[44]);
         const y = liftX(x, parity);
         point = { x, y };
-      } else if (pub.length === 88 && /^[A-Za-z0-9]{88}$/.test(pub)) {
-        // Legacy uncompressed format (backward compat)
-        point = {
-          x: base62.b62ToBI(pub.slice(0, 44)),
-          y: base62.b62ToBI(pub.slice(44)),
-        };
-      } else if (pub.length === 87 && pub[43] === ".") {
-        // Legacy GUN base64url format (backward compat)
-        const parts = pub.split(".");
-        point = {
-          x: bytesToBigInt(decodeBase64Url(parts[0])),
-          y: bytesToBigInt(decodeBase64Url(parts[1])),
-        };
       } else if (pub.length === 132 && /^0x04[0-9a-fA-F]{128}$/.test(pub)) {
         // EVM uncompressed pubkey: 0x04 + 32-byte x + 32-byte y
         point = {
@@ -2710,8 +2606,6 @@ defmod('./src/curves/utils.js', function(module, exp){
         bytesToBigInt,
         bigIntToBytes,
         concatBytes,
-        decodeBase64Url,
-        encodeBase64,
         parseScalar,
         assertScalar,
         scalarToString,

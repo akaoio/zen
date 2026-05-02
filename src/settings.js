@@ -1,5 +1,3 @@
-import base62 from "./base62.js";
-
 const settings = {};
 settings.pbkdf2 = { hash: { name: "SHA-256" }, iter: 100000, ks: 64 };
 settings.ecdsa = {
@@ -7,17 +5,6 @@ settings.ecdsa = {
   sign: { name: "ECDSA", hash: { name: "SHA-256" } },
 };
 settings.ecdh = { name: "ECDH", namedCurve: "secp256k1" };
-
-settings.jwk = function (pub, d) {
-  const xy = base62.pubToJwkXY(pub);
-  const jwk = { kty: "EC", crv: "secp256k1", x: xy.x, y: xy.y, ext: true };
-  jwk.key_ops = d ? ["sign"] : ["verify"];
-  if (d) {
-    jwk.d =
-      d.length === 44 && /^[A-Za-z0-9]{44}$/.test(d) ? base62.b62ToB64(d) : d;
-  }
-  return jwk;
-};
 
 settings.keyToJwk = function (keyBytes) {
   const keyB64 = keyBytes.toString("base64");
@@ -32,10 +19,8 @@ settings.keyToJwk = function (keyBytes) {
 // Compact wire format detector.
 // Signed secp256k1:   <86 base62 chars><v 0|1>:<message>
 // Signed other curve: <86 base62 chars><v 0|1>/<curve>:<message>
-// Encrypted base62:   <ct_b62>.<iv_b62_21>.<s_b62_13>   (new format)
-// Encrypted base64url:<ct_b64url>:<iv_b64url>:<s_b64url> (legacy format)
+// Encrypted:          <ct_b62>.<iv_b62_21>.<s_b62_13>
 const _SIG_HEAD = /^[0-9A-Za-z]{86}[01]/;
-const _ENC_PART = /^[A-Za-z0-9_-]+$/;
 const _B62_PART = /^[A-Za-z0-9]+$/;
 const IV_B62_LEN = 21;
 const S_B62_LEN  = 13;
@@ -58,19 +43,6 @@ settings.check = function (t) {
     _B62_PART.test(dparts[0]) &&
     _B62_PART.test(dparts[1]) &&
     _B62_PART.test(dparts[2])
-  ) {
-    return true;
-  }
-  // Encrypted base64url (legacy): exactly 3 non-empty colon-separated base64url parts
-  const parts = t.split(":");
-  if (
-    parts.length === 3 &&
-    parts[0].length > 0 &&
-    parts[1].length > 0 &&
-    parts[2].length > 0 &&
-    _ENC_PART.test(parts[0]) &&
-    _ENC_PART.test(parts[1]) &&
-    _ENC_PART.test(parts[2])
   ) {
     return true;
   }
@@ -108,19 +80,6 @@ settings.parse = async function (t) {
     _B62_PART.test(dparts[2])
   ) {
     return { ct: dparts[0], iv: dparts[1], s: dparts[2], _enc: "base62" };
-  }
-  // Encrypted base64url (legacy): exactly 3 non-empty colon-separated parts
-  const parts = t.split(":");
-  if (
-    parts.length === 3 &&
-    parts[0].length > 0 &&
-    parts[1].length > 0 &&
-    parts[2].length > 0 &&
-    _ENC_PART.test(parts[0]) &&
-    _ENC_PART.test(parts[1]) &&
-    _ENC_PART.test(parts[2])
-  ) {
-    return { ct: parts[0], iv: parts[1], s: parts[2], _enc: "base64url" };
   }
   // Fallback: try JSON parse (handles serialised objects, numbers, booleans, null)
   try {
