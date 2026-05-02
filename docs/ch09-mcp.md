@@ -75,186 +75,155 @@ No ZEN installation needed — `npx` downloads `@akaoio/zen` automatically on fi
 |----------|---------|-------------|
 | `ZEN_PEERS` | `wss://peer0.akao.io,wss://peer1.akao.io` | Comma-separated bootstrap peer URLs |
 | `XDG_DATA_HOME` | `~/.local/share` | Data directory root (graph stored at `$XDG_DATA_HOME/zen/mcp`) |
+| `XDG_STATE_HOME` | `~/.local/state` | State directory root (hardware identity stored at `$XDG_STATE_HOME/zen/identity.json`) |
 
 ---
 
-## 9.4 Tool reference
+## 9.4 Hardware identity (shared with server)
+
+The MCP server automatically generates a **hardware-derived identity** from your machine's:
+- `/etc/machine-id` — stable 128-bit UUID set at OS install
+- MAC address — first non-loopback interface (sorted for determinism)
+- Hostname — fallback entropy source
+
+This identity is:
+- **Deterministic** — same keypair on every restart
+- **Shared** — ZEN server (`script/server.js`) uses the same identity on the same hardware
+- **Persistent** — metadata saved to `~/.local/state/zen/identity.json`
+- **Secure** — private keys are never written to disk, only derived from hardware entropy
+
+### Using the hardware identity in MCP tools
+
+The hardware identity is available via the special `pairId: "hw"`:
+
+```javascript
+// Get hardware identity info
+getHardwareIdentity() → { pairId: "hw", pub: "0...", epub: "0...", hwid: "..." }
+
+// Sign with hardware identity
+crypto({ method: "sign", data: "hello", pairId: "hw" })
+
+// Write to graph with hardware identity
+graph({ soul: "users", path: ["alice"], op: "put", value: {...}, opt: { pairId: "hw" } })
+```
+
+**Benefits:**
+- No need to generate or store keys manually
+- Same identity across MCP server and ZEN relay on the same machine
+- Private keys never leave the process (not stored on disk, only derived on demand)
+- Ideal for server-side authenticated operations
+
+**Privacy note:** The hardware identity is derived from machine-specific data. If you need per-application or per-user identities, use `crypto({ method: "pair", seed: "app-specific", store: true })` instead.
+
+---
+
+## 9.5 Tool reference
 
 All tools map 1:1 to the ZEN JavaScript API. All parameters are strings.
 
-### `get` — read a value
+### `getHardwareIdentity` — get server's hardware-derived identity
 
-| Param | Required | Description |
-|-------|----------|-------------|
-| `soul` | ✓ | Soul (node ID) |
-| `key`  | ✓ | Key within the node |
+No parameters required.
 
-Returns the current value or `null`.
-
+Returns:
+```json
+{
+  "pairId": "hw",
+  "pub": "0...",
+  "epub": "0...",
+  "hwid": "..."
+}
 ```
-get(soul="profile", key="name") → "Alice"
-```
+
+Use `pairId: "hw"` in `graph` and `crypto` operations to sign/encrypt with the persistent server identity.
 
 ---
 
-### `put` — write a value
+### `graph` — execute graph operations
 
 | Param | Required | Description |
 |-------|----------|-------------|
 | `soul`  | ✓ | Soul (node ID) |
-| `key`   | ✓ | Key within the node |
-| `value` | ✓ | Value to write (string) |
+| `path`  | — | Array of keys for nested access, e.g. `["alice","age"]` |
+| `op`    | ✓ | Operation: `"get"`, `"put"`, or `"set"` |
+| `value` | — | Value to write (for `put`/`set`) |
+| `opt`   | — | Options object: `{ pairId?, cert?, pow? }` |
 
-Returns `{"ok":true}` on success.
+Examples:
+```javascript
+// Read
+graph({ soul: "users", path: ["alice","age"], op: "get" }) → 30
 
-```
-put(soul="profile", key="name", value="Alice") → {"ok":true}
+// Write with hardware identity
+graph({ soul: "users", path: ["alice","age"], op: "put", value: 31, opt: { pairId: "hw" } })
+
+// Set operation (append to set node)
+graph({ soul: "tags", path: ["popular"], op: "set", value: "zen", opt: { pairId: "hw" } })
 ```
 
 ---
 
-### `on` — read current state
-
-Same params as `get`. Returns current value (reads from local graph state, equivalent to `.once()`).
-
----
-
-### `pair` — generate a key pair
+### `crypto` — call ZEN crypto methods
 
 | Param | Required | Description |
 |-------|----------|-------------|
-| `curve` | — | `"secp256k1"` (default) or `"p256"` |
-| `seed`  | — | Deterministic seed string |
-| `priv`  | — | Existing private key (for additive child derivation) |
-| `epriv` | — | Existing encryption private key (for additive child derivation) |
-| `pub`   | — | Existing public key (for public-only child derivation) |
-| `epub`  | — | Existing encryption public key (for public-only child derivation) |
+| `method` | ✓ | Crypto method name (see below) |
+| `pairId` | — | Key alias from `storePair` or `"hw"` for hardware identity |
+| ...      | — | Method-specific parameters |
 
-Returns a key pair object with `{ pub, priv, epub, epriv }`.
+**Methods:**
 
-```
-pair() → { pub: "0Abc...", priv: "0Xyz...", epub: "0Def...", epriv: "0Uvw..." }
-pair(seed="my-app") → same pair every time
-pair(curve="p256") → P-256/secp256r1 key pair
-pair(priv="0...", seed="child") → additive child key pair (HD derivation)
+- `pair` — `{ curve?, seed?, priv?, epriv?, pub?, epub?, store? }` → key pair
+- `sign` — `{ data, pairId }` or `{ data, priv, pub }` → signed string
+- `verify` — `{ signed, pub }` → original data or null
+- `encrypt` — `{ data, epub }` → encrypted blob
+- `decrypt` — `{ enc, pairId }` or `{ enc, epriv }` → plaintext
+- `secret` — `{ epub, pairId }` or `{ epub, epriv }` → shared secret
+- `hash` — `{ data, name?, encode?, salt?, iterations?, pow? }` → hash string
+- `certify` — `{ pub, policy, pairId }` or `{ pub, policy, priv }` → certificate
+- `recover` — `{ signed }` → public key
+- `pen` — `{ key?, val?, soul?, state?, path?, sign?, cert?, open?, pow? }` → soul string
+- `candle` — `{ seg?, sep?, size?, back?, fwd? }` → key expression
+
+**Using hardware identity:**
+```javascript
+// Sign with hardware identity
+crypto({ method: "sign", data: "hello", pairId: "hw" })
+
+// Generate new pair and store
+crypto({ method: "pair", seed: "my-app", store: true }) → { pairId: "pair_xyz", pub: "...", epub: "..." }
 ```
 
 ---
 
-### `sign` — sign data
+### `storePair` — store a key pair in server memory
 
 | Param | Required | Description |
 |-------|----------|-------------|
-| `data` | ✓ | Data to sign |
-| `priv` | ✓ | Private signing key |
-| `pub`  | ✓ | Public key matching `priv` |
+| `priv`  | — | Signing private key |
+| `pub`   | — | Signing public key |
+| `epriv` | — | Encryption private key |
+| `epub`  | — | Encryption public key |
 
-Returns a signed string (`ZEN{...}|{m,s,v}` format). The `v` recovery bit is included.
+Returns `{ pairId, pub, epub }`. Use the returned `pairId` in subsequent operations instead of passing raw private keys.
 
----
-
-### `verify` — verify a signature
-
-| Param | Required | Description |
-|-------|----------|-------------|
-| `signed` | ✓ | Signed string from `sign` |
-| `pub`    | ✓ | Signer's public key |
-
-Returns the original data if valid, or `null`.
+**Security benefit:** Private keys are stored only in the MCP server process and never exposed to the LLM after the initial `storePair` call.
 
 ---
 
-### `encrypt` — encrypt data
+### Legacy `get` / `put` / `on` tools
 
-| Param | Required | Description |
-|-------|----------|-------------|
-| `data` | ✓ | Plaintext to encrypt |
-| `epub` | ✓ | Recipient's encryption public key |
+Deprecated in favor of the unified `graph` tool. Still supported for backward compatibility:
 
-Returns an encrypted ciphertext object `{ ct, iv, s }`.
-
----
-
-### `decrypt` — decrypt data
-
-| Param | Required | Description |
-|-------|----------|-------------|
-| `enc`   | ✓ | Encrypted object from `encrypt` |
-| `epriv` | ✓ | Your encryption private key |
-
-Returns the original plaintext.
+| Tool | Equiv | Description |
+|------|-------|-------------|
+| `get(soul, key)` | `graph({ soul, path: [key], op: "get" })` | Read once |
+| `put(soul, key, value)` | `graph({ soul, path: [key], op: "put", value })` | Write |
+| `on(soul, key)` | `graph({ soul, path: [key], op: "get" })` | Read (alias) |
 
 ---
 
-### `secret` — ECDH shared secret
-
-| Param | Required | Description |
-|-------|----------|-------------|
-| `epub`  | ✓ | Other party's encryption public key |
-| `epriv` | ✓ | Your encryption private key |
-
-Returns a base62 shared secret string that both parties can independently derive.
-
-```
-secret(epub=alice.epub, epriv=bob.epriv) === secret(epub=bob.epub, epriv=alice.epriv)
-```
-
----
-
-### `hash` — hash data
-
-| Param | Required | Description |
-|-------|----------|-------------|
-| `data`       | ✓ | Data to hash |
-| `name`       | — | Algorithm: `"SHA-256"`, `"KECCAK-256"`, `"HKDF"`, or omit for PBKDF2 |
-| `salt`       | — | Salt string (PBKDF2/HKDF) |
-| `encode`     | — | Output encoding: `"base62"` (default), `"hex"`, `"base64"` |
-| `iterations` | — | PBKDF2 iteration count (default: 100000) |
-| `pow`        | — | Mining config JSON string: `{"unit":"0","difficulty":3}` |
-
-Default (no `name`): PBKDF2 with 100k iterations — correct for password hashing.
-
-```
-hash(data="hello", name="SHA-256") → "0YpdjLkGyb..."
-hash(data="hello", name="KECCAK-256") → "0Yv0XcI4sx..."
-hash(data="password", salt="random-salt") → PBKDF2 stretched hash
-hash(data="mykey", name="SHA-256", pow='{"unit":"0","difficulty":3}') → {hash, nonce, proof}
-```
-
----
-
-### `certify` — issue a write-access certificate
-
-| Param | Required | Description |
-|-------|----------|-------------|
-| `pub`        | ✓ | Recipient public key (or JSON array of keys) |
-| `policy`     | ✓ | Policy JSON string, e.g. `{"write":"*"}` |
-| `priv`       | ✓ | Issuer private key |
-| `expiry`     | — | Expiry timestamp (ms since epoch) |
-
-Returns a signed certificate string that can be passed as `cert` in authenticated writes.
-
-```
-certify(pub="0Abc...", policy='{"write":"*"}', priv="0Xyz...") → "ZEN{...}"
-```
-
----
-
-### `recover` — recover signer public key
-
-| Param | Required | Description |
-|-------|----------|-------------|
-| `signed` | ✓ | Signed string from `sign` (must contain `v` recovery bit) |
-
-Returns the signer's public key without needing it as input. Useful for verifying ownership when only the signed data is available.
-
-```
-recover(signed="ZEN{...}") → "0Abc..."
-```
-
----
-
-## 9.5 Architecture
+## 9.6 Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -281,7 +250,7 @@ The MCP server is a real ZEN peer:
 
 ---
 
-## 9.6 Coexistence with a relay
+## 9.7 Coexistence with a relay
 
 If you run a ZEN relay on port 8420 on the same machine, the MCP server connects to it as a WebSocket peer. No port conflict — the MCP server is a client, not a server on that port.
 
@@ -303,7 +272,7 @@ Set `ZEN_PEERS` to point at your local relay:
 
 ---
 
-## 9.7 Running directly
+## 9.8 Running directly
 
 ```bash
 # Without install (npx)
