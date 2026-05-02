@@ -328,7 +328,8 @@ check.auth = function (msg, no, authenticator, done) {
           if (!data || !data.m || !data.s) {
             return no("Invalid signature format");
           }
-          var parsed = settings.unpack(data.m);
+          var mObj = typeof data.m === "string" ? JSON.parse(data.m) : data.m;
+          var parsed = settings.unpack(mObj);
           msg.put[":"] = { ":": parsed, "~": data.s };
           msg.put["="] = parsed;
           done(parsed);
@@ -345,11 +346,14 @@ check.auth = function (msg, no, authenticator, done) {
         if (u === data) {
           return no("Signature fail.");
         }
-        if (!data.m || !data.s) {
+        var sigData =
+          typeof data === "string" ? await settings.parse(data) : data;
+        if (!sigData || !sigData.m || !sigData.s) {
           return no("Invalid signature format");
         }
-        var parsed = settings.unpack(data.m);
-        msg.put[":"] = { ":": parsed, "~": data.s };
+        var mObj = typeof sigData.m === "string" ? JSON.parse(sigData.m) : sigData.m;
+        var parsed = settings.unpack(mObj);
+        msg.put[":"] = { ":": parsed, "~": sigData.s };
         msg.put["="] = parsed;
         done(parsed);
       },
@@ -369,12 +373,10 @@ check.$vfy = function (
   certificant,
   cb,
 ) {
-  if (
-    !(certificate || "").m ||
-    !(certificate || "").s ||
-    !certificant ||
-    !pub
-  ) {
+  var certOk = typeof certificate === "string"
+    ? settings.check(certificate)
+    : (certificate && certificate.m && certificate.s);
+  if (!certOk || !certificant || !pub) {
     return;
   }
   return verify(certificate, pub, function (data) {

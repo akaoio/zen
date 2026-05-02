@@ -28,8 +28,8 @@ describe("ZEN.recover — basic", function () {
   });
 
   it("sign output now includes v field (0 or 1)", function () {
-    const parsed = JSON.parse(sig);
-    assert.ok(parsed.v === 0 || parsed.v === 1, "v must be 0 or 1");
+    // Compact format: <86-char base62 sig><v>:<msg> — recovery bit is at position 86
+    assert.ok(sig[86] === "0" || sig[86] === "1", "v must be 0 or 1");
   });
 
   it("recover is deterministic — same sig same pub", async function () {
@@ -94,25 +94,25 @@ describe("ZEN.recover — error cases", function () {
   });
 
   it("throws (or returns undefined via cb) when v is missing", async function () {
-    const parsed = JSON.parse(sig);
-    delete parsed.v;
-    const stripped = JSON.stringify(parsed);
+    // Build a JSON-format input without v so recover() can't find recovery bit
+    const sig86 = sig.slice(0, 86);
+    const msgPart = sig.slice(88); // message after <sig><v>:
+    const noV = JSON.stringify({ s: sig86, m: msgPart });
     await assert.rejects(
-      ZEN.recover(stripped),
+      ZEN.recover(noV),
       /recovery bit|v/i,
     );
   });
 
   it("tampered sig recovers a different (wrong) pub", async function () {
-    const parsed = JSON.parse(sig);
-    // Flip one byte in the base64 sig
-    const bytes = Buffer.from(parsed.s, "base64");
-    bytes[0] ^= 0xff;
-    parsed.s = bytes.toString("base64");
+    // Flip the first char of the 86-char base62 sig in the compact string
+    const origChar = sig[0];
+    const newChar = origChar === "A" ? "B" : "A";
+    const tampered = newChar + sig.slice(1);
     // Recovery may succeed but should return a different (wrong) public key
     let result;
     try {
-      result = await ZEN.recover(JSON.stringify(parsed));
+      result = await ZEN.recover(tampered);
     } catch (e) {
       // Throwing is also acceptable
       return;
@@ -141,12 +141,14 @@ describe("ZEN.recover — P-256 curve", function () {
   it("cross-curve: p256 sig forced to recover with secp256k1 gives wrong pub or throws", async function () {
     const pair = await ZEN.pair(null, { curve: "p256" });
     const sig = await ZEN.sign("cross curve test", pair);
-    // Strip the c field to force secp256k1 recovery
-    const parsed = JSON.parse(sig);
-    delete parsed.c;
+    // Compact p256 format: <86><v>/p256:<msg> — strip the curve tag to force secp256k1 recovery
+    const rest = sig.slice(88); // "p256:<msg>"
+    const ci = rest.indexOf(":");
+    const msgPart = rest.slice(ci + 1);
+    const noC = sig.slice(0, 87) + ":" + msgPart; // secp256k1 format
     let result;
     try {
-      result = await ZEN.recover(JSON.stringify(parsed));
+      result = await ZEN.recover(noC);
     } catch (e) {
       return;
     }
@@ -156,12 +158,11 @@ describe("ZEN.recover — P-256 curve", function () {
   it("cross-curve: secp256k1 sig forced to recover with p256 gives wrong pub or throws", async function () {
     const pair = await ZEN.pair(); // secp256k1
     const sig = await ZEN.sign("cross curve test", pair);
-    // Force curve to p256 by injecting c field
-    const parsed = JSON.parse(sig);
-    parsed.c = "p256";
+    // Compact secp256k1 format: <86><v>:<msg> — inject curve tag to force p256 recovery
+    const withC = sig.slice(0, 87) + "/p256:" + sig.slice(88);
     let result;
     try {
-      result = await ZEN.recover(JSON.stringify(parsed));
+      result = await ZEN.recover(withC);
     } catch (e) {
       // Throwing is acceptable — wrong curve, wrong curve constants
       return;

@@ -50,9 +50,9 @@ describe("ZEN crypto — tamper / wrong key", function () {
 
   it("verifying tampered payload rejects", async function () {
     var sig = await ZEN.sign("original", alice);
-    var tampered = JSON.parse(sig);
-    tampered.m = "tampered";
-    await assert.rejects(ZEN.verify(JSON.stringify(tampered), alice.pub));
+    // Compact format: <86 base62><v>:<message> — tamper the message part
+    var tampered = sig.slice(0, 88) + "tampered";
+    await assert.rejects(ZEN.verify(tampered, alice.pub));
   });
 
   it("decrypting with wrong pair returns undefined", async function () {

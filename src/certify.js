@@ -122,7 +122,8 @@ async function certify(certs, pol, auth, cb, opt) {
     );
 
     var cert = await sign(data, auth, null, { raw: 1 });
-    var out = opt.raw ? cert : JSON.stringify(cert);
+    // cert is now a compact signed string; no additional wrapping needed
+    var out = cert;
     return cbOk(cb, out);
   } catch (e) {
     return cryptoErr(e, cb);

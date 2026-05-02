@@ -24,8 +24,7 @@ const pair = await ZEN.pair();
 |-------|------|-------------|
 | `pub` | string (45 chars) | Public key, base62 compressed (44-char x + 1 parity) |
 | `priv` | string (44 chars) | Private key — **never share or store in the graph** |
-| `epub` | string (45 chars) | Ephemeral public key (for ECDH) |
-| `epriv` | string (44 chars) | Ephemeral private key |
+| `address` | string (42 chars) | Ethereum-style keccak160 address (hex, checksummed) |
 | `curve` | string | `"secp256k1"` by default |
 
 ```js
@@ -55,7 +54,7 @@ const pair = await ZEN.pair("my deterministic seed");
 
 **Format conversion — same key, different output format:**
 
-Pass an existing `priv`/`epriv` back into `ZEN.pair()` with a different `format`. The underlying scalar is identical; only the encoding changes.
+Pass an existing `priv` back into `ZEN.pair()` with a different `format`. The underlying scalar is identical; only the encoding changes.
 
 ```js
 // Generate once — use for graph writes, signing, ECDH
@@ -63,25 +62,22 @@ const zenPair = await ZEN.pair();
 
 // Get the same key in EVM format — use for on-chain transactions (ETH, BSC, …)
 const evmPair = await ZEN.pair(null, {
-  priv:  zenPair.priv,
-  epriv: zenPair.epriv,
+  priv:   zenPair.priv,
   format: "evm",
 });
 // evmPair.pub   = "0xAbCdEf…"  (EIP-55 checksummed address)
 // evmPair.priv  = "0x1234…"    (32-byte hex private key)
-// evmPair.epub  = "0x04…"      (uncompressed pubkey for ECDH)
 
 // Or Bitcoin P2PKH
 const btcPair = await ZEN.pair(null, {
-  priv:  zenPair.priv,
-  epriv: zenPair.epriv,
+  priv:   zenPair.priv,
   format: "btc",
 });
 // btcPair.pub  = "1AbcDef…"  (P2PKH mainnet address)
 // btcPair.priv = "KwDiBf…"   (WIF compressed)
 ```
 
-`zenPair`, `evmPair`, and `btcPair` all represent the **same cryptographic key** — just serialized differently. No new seed is generated; `priv` is parsed back to the raw scalar and re-encoded.
+`zenPair`, `evmPair`, and `btcPair` all represent the **same cryptographic key** — just serialized differently.
 
 ---
 
@@ -89,14 +85,27 @@ const btcPair = await ZEN.pair(null, {
 
 ### `ZEN.sign(data, pair)`
 
-Signs `data` with a private key. Returns a JSON string `{ m, s, v }` where `m` is the data, `s` is the signature, and `v` is the ECDSA recovery bit.
+Signs `data` with a private key. Returns a **compact string** in the format `<86-char base62 signature><v>:<message>` where `v` is the ECDSA recovery bit (`0` or `1`).
 
 ```js
 const signed = await ZEN.sign("hello", pair);
-// '{"m":"hello","s":"<signature>","v":0}'
+// '<86 base62 chars>0:"hello"'
+// signed[86] → '0' or '1'  (recovery bit)
+// signed[87] → ':'          (secp256k1 separator)
+// signed.slice(88) → '"hello"'  (JSON-encoded message)
 ```
 
-The `v` bit (0 or 1) enables public-key recovery from the signature — any party can determine who signed the data without being told the public key upfront (see `ZEN.recover`).
+For non-secp256k1 curves (e.g. P-256), the curve name is embedded after a `/`:
+
+```js
+const p256pair = await ZEN.pair(null, { curve: "p256" });
+const signed   = await ZEN.sign("hello", p256pair);
+// '<86 base62 chars>0/p256:"hello"'
+// signed[87] → '/'  — marks a curve tag
+// signed.slice(88) → 'p256:"hello"'
+```
+
+The recovery bit enables public-key recovery from the signature — any party can determine who signed the data without being told the public key upfront (see `ZEN.recover`).
 
 **`data` can be any valid JS value:**
 
@@ -121,15 +130,10 @@ const data = await ZEN.verify(signed, pair.pub);
 const bad = await ZEN.verify(signed, otherPair.pub);
 // undefined — wrong key
 
-const tampered = await ZEN.verify('{"m":"evil","s":"..."}', pair.pub);
+// Tamper by replacing message part (chars 88+):
+const tampered = signed.slice(0, 88) + '"evil"';
+const result   = await ZEN.verify(tampered, pair.pub);
 // undefined — signature mismatch
-```
-
-You can also pass the parsed JSON object directly:
-
-```js
-const obj = JSON.parse(signed);
-const data = await ZEN.verify(obj, pair.pub);
 ```
 
 If the original data was `JSON.stringify(...)`, the result is automatically parsed back:
@@ -184,15 +188,16 @@ const data = await ZEN.verify(signed, pub);
 
 ### `ZEN.encrypt(data, key)`
 
-Encrypts `data` using AES-GCM. Returns a ciphertext string.
+Encrypts `data` using AES-GCM. Returns a compact ciphertext string `<ct_b64url>:<iv_b64url>:<s_b64url>`.
 
 ```js
 const enc = await ZEN.encrypt("secret", pair);
+// "aB3xY...:kM2nP...:rQ7wS..."
 ```
 
 **`data` can be any valid JS value** (same as sign). **`key`** can be:
-- Your own `pair` (self-encryption)
-- Another user's `pair.epub` combined with your own pair (shared-key mode — see §3.4)
+- Your own `pair` (self-encryption using `pair.pub`/`pair.priv`)
+- Another user's `pub` for shared-key mode (see §3.4)
 
 ### `ZEN.decrypt(enc, key)`
 
@@ -219,7 +224,7 @@ const dec = await ZEN.decrypt(enc, pair);
 
 ## 3.4 Shared secrets (ECDH)
 
-### `ZEN.secret(epub, pair)`
+### `ZEN.secret(pub, pair)`
 
 Derives a shared AES secret using ECDH. Two parties can derive the same secret without transmitting it.
 
@@ -227,11 +232,11 @@ Derives a shared AES secret using ECDH. Two parties can derive the same secret w
 const alice = await ZEN.pair();
 const bob   = await ZEN.pair();
 
-// Alice derives the shared secret using Bob's epub and her own pair
-const sharedByAlice = await ZEN.secret(bob.epub, alice);
+// Alice derives the shared secret using Bob's pub and her own pair
+const sharedByAlice = await ZEN.secret(bob.pub, alice);
 
-// Bob derives the same secret using Alice's epub and his own pair
-const sharedByBob   = await ZEN.secret(alice.epub, bob);
+// Bob derives the same secret using Alice's pub and his own pair
+const sharedByBob   = await ZEN.secret(alice.pub, bob);
 
 // sharedByAlice === sharedByBob  ← same bytes, different derivations
 ```
@@ -239,8 +244,8 @@ const sharedByBob   = await ZEN.secret(alice.epub, bob);
 Use the shared secret as an encryption key:
 
 ```js
-const enc = await ZEN.encrypt("private msg", { ...alice, pub: sharedByAlice });
-const dec = await ZEN.decrypt(enc, { ...bob, priv: sharedByBob });
+const enc = await ZEN.encrypt("private msg", sharedByAlice);
+const dec = await ZEN.decrypt(enc, sharedByBob);
 ```
 
 ---
@@ -437,9 +442,10 @@ These are **not** exported as `ZEN.pack` / `ZEN.unpack` on the ZEN class.
 All public keys in ZEN use **base62 encoding** — only alphanumeric characters (`0-9A-Za-z`), no `+`, `/`, `=`, `_`, `-`, `.` separators. **ZEN does NOT use base64 or base64url.**
 
 | Field | Length | Format | Notes |
-|-------|--------|--------|---------|
-| `pub` / `epub` | **45 chars** | 44-char base62 x + `"0"`/`"1"` parity | Compressed EC point |
-| `priv` / `epriv` | 44 chars | base62 scalar | secp256k1 scalar |
+|-------|--------|--------|-------|
+| `pub` | **45 chars** | 44-char base62 x + `"0"`/`"1"` parity | Compressed EC public key |
+| `priv` | 44 chars | base62 scalar | secp256k1 scalar |
+| `address` | 42 chars | hex (checksummed) | Ethereum-style keccak160 address |
 
 Public keys are **compressed**: only the x-coordinate (44 chars base62) plus 1 parity character (`"0"` = y even, `"1"` = y odd) are stored. The y-coordinate is recovered on-the-fly via modular square root. This is the same concept as Bitcoin compressed pubkey (33 bytes), expressed in base62 instead of bytes.
 
@@ -473,8 +479,8 @@ const zen = new ZEN({ ... });
 const pair   = await zen.pair();
 const signed = await zen.sign("data", pair);
 const ok     = await zen.verify(signed, pair.pub);
-const enc    = await zen.encrypt("msg", pair);
-const dec    = await zen.decrypt(enc, pair);
+const enc    = await zen.encrypt("msg", pair.pub);
+const dec    = await zen.decrypt(enc, pair.priv);
 ```
 
 They behave identically to the static forms.
@@ -514,8 +520,8 @@ ZEN.security.opt === ZEN.opt  // true
 |--------|-----------|---------|
 | `sign(data, pair)` | Write | `pair.priv` |
 | `verify(sig, pub)` | Read | `pub` string |
-| `encrypt(data, pair)` | Write | `pair.priv` + own `pair.epub` |
-| `decrypt(enc, pair)` | Read | `pair.priv` + own `pair.epriv` |
-| `secret(epub, pair)` | Key exchange | `pair.epriv` + `epub` |
+| `encrypt(data, pub)` | Write | recipient's `pub` |
+| `decrypt(enc, priv)` | Read | `priv` (own private key) |
+| `secret(pub, pair)` | Key exchange | `pair.priv` + `pub` |
 | `certify(cert, policy, auth)` | Delegation | `auth.priv` |
 | `hash(data)` | Fingerprint | none (deterministic) |

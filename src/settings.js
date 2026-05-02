@@ -1,4 +1,3 @@
-import shim from "./shim.js";
 import base62 from "./base62.js";
 
 const settings = {};
@@ -30,37 +29,72 @@ settings.keyToJwk = function (keyBytes) {
   };
 };
 
+// Compact wire format detector.
+// Signed secp256k1:   <86 base62 chars><v 0|1>:<message>
+// Signed other curve: <86 base62 chars><v 0|1>/<curve>:<message>
+// Encrypted:          <ct_b64url>:<iv_b64url>:<s_b64url>  (exactly 3 colon-separated parts)
+const _SIG_HEAD = /^[0-9A-Za-z]{86}[01]/;
+const _ENC_PART = /^[A-Za-z0-9_-]+$/;
+
 settings.check = function (t) {
   if (typeof t !== "string") {
     return false;
   }
-  if ("ZEN{" === t.slice(0, 4)) {
+  // Signed: check first (must come before encrypted check)
+  if (t.length >= 88 && _SIG_HEAD.test(t) && (t[87] === ":" || t[87] === "/")) {
     return true;
   }
-  if ("{" !== t.slice(0, 1)) {
-    return false;
+  // Encrypted: exactly 3 non-empty base64url parts
+  const parts = t.split(":");
+  if (
+    parts.length === 3 &&
+    parts[0].length > 0 &&
+    parts[1].length > 0 &&
+    parts[2].length > 0 &&
+    _ENC_PART.test(parts[0]) &&
+    _ENC_PART.test(parts[1]) &&
+    _ENC_PART.test(parts[2])
+  ) {
+    return true;
   }
-  try {
-    const parsed = JSON.parse(t);
-    return !!(
-      parsed &&
-      ((typeof parsed.s === "string" &&
-        Object.prototype.hasOwnProperty.call(parsed, "m")) ||
-        (typeof parsed.ct === "string" &&
-          typeof parsed.iv === "string" &&
-          typeof parsed.s === "string"))
-    );
-  } catch (e) {}
   return false;
 };
 
 settings.parse = async function (t) {
-  try {
-    const yes = typeof t === "string";
-    if (yes && "ZEN{" === t.slice(0, 4)) {
-      t = t.slice(3);
+  if (typeof t !== "string") {
+    return t;
+  }
+  // Signed: check first
+  if (t.length >= 88 && _SIG_HEAD.test(t)) {
+    if (t[87] === ":") {
+      // secp256k1
+      return { s: t.slice(0, 86), v: parseInt(t[86]), m: t.slice(88) };
     }
-    return yes ? await shim.parse(t) : t;
+    if (t[87] === "/") {
+      // non-secp256k1: <sig86><v>/<curve>:<msg>
+      const rest = t.slice(88);
+      const ci = rest.indexOf(":");
+      if (ci !== -1) {
+        return { s: t.slice(0, 86), v: parseInt(t[86]), c: rest.slice(0, ci), m: rest.slice(ci + 1) };
+      }
+    }
+  }
+  // Encrypted: exactly 3 non-empty base64url parts
+  const parts = t.split(":");
+  if (
+    parts.length === 3 &&
+    parts[0].length > 0 &&
+    parts[1].length > 0 &&
+    parts[2].length > 0 &&
+    _ENC_PART.test(parts[0]) &&
+    _ENC_PART.test(parts[1]) &&
+    _ENC_PART.test(parts[2])
+  ) {
+    return { ct: parts[0], iv: parts[1], s: parts[2], _enc: "base64url" };
+  }
+  // Fallback: try JSON parse (handles serialised objects, numbers, booleans, null)
+  try {
+    return JSON.parse(t);
   } catch (e) {}
   return t;
 };

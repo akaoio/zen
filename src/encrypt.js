@@ -24,12 +24,13 @@ async function encrypt(data, pair, cb, opt) {
       aes,
       new c.shim.TextEncoder().encode(message),
     );
-    const out = {
-      ct: c.shim.Buffer.from(ct, "binary").toString(opt.encode || "base64"),
-      iv: rand.iv.toString(opt.encode || "base64"),
-      s: rand.s.toString(opt.encode || "base64"),
-    };
-    return c.finalize(out, opt, cb);
+    const out =
+      c.shim.Buffer.from(ct, "binary").toString("base64url") +
+      ":" +
+      rand.iv.toString("base64url") +
+      ":" +
+      rand.s.toString("base64url");
+    return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
   } catch (e) {
     return cryptoErr(e, cb);
   }

@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.0.9
+
+**Breaking changes** — compact wire format replaces JSON-wrapper format for all signed/encrypted values.
+
+- **Compact wire format for signed values**: `ZEN.sign()` now returns `<86-char base62 sig><v>:<message>` (secp256k1) or `<86-char base62 sig><v>/curve:<message>` (other curves) instead of the previous `{"m":...,"s":...,"v":...}` JSON object format. This is a **breaking change** — old signed strings from prior versions will not verify.
+- **Compact wire format for encrypted values**: `ZEN.encrypt()` now returns `<ct_b64url>:<iv_b64url>:<s_b64url>` (three colon-separated URL-safe base64 parts) instead of the previous JSON/object format.
+- **New pair schema**: pair objects now have four fields — `{curve, pub, priv, address}`. Removed `epub`/`epriv` fields. Encrypt/decrypt operations use `pub`/`priv` directly via ECDH.
+- **Compact certificate format**: `ZEN.certify()` now returns a compact signed string directly (not wrapped in a JSON object). Use `ZEN.verify(cert, pub)` to read cert payload.
+- **`base62.js` new exports**: `bufToB62Fixed(buf, len)` and `b62ToBuf(s, byteLen)` — encode/decode fixed-length base62 for signature transport.
+- **`settings.parse()` updated**: detects compact signed strings (position-based) and compact encrypted strings (3-part base64url). Detection order: signed first, then encrypted, then JSON.parse fallback.
+- **`settings.unpack(m)` note**: expects an object/raw value — not a JSON string. Callers must `JSON.parse(m)` when `m` comes from `settings.parse().m`.
+- **Security middleware fix** (`src/security.js`): `check.auth` now correctly handles the compact-format `m` field (JSON string → parsed object before `unpack`); `check.$vfy` now accepts compact cert strings (was silently rejecting string certs due to `certificate.m` guard).
+
 ## 1.0.8
 
 - **POSIX XDG Base Directory compliance**: ZEN now follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/) for all runtime paths, eliminating conflicts with other projects that use `~/`.

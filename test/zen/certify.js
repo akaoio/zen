@@ -1,8 +1,18 @@
 // Tests for zen.certify() — ZEN port of zen.certify
-import assert from "assert";
-import ZEN from "../../zen.js";
+import assert from 'assert';
+import ZEN from '../../zen.js';
 
-describe("zen.certify()", function () {
+// Compact cert is a signed string: <86 base62><v>:<payload> or <86 base62><v>/<curve>:<payload>
+function isCompactSig(s) {
+  return (
+    typeof s === 'string' &&
+    s.length >= 88 &&
+    /^[0-9A-Za-z]{86}[01]/.test(s) &&
+    (s[87] === ':' || s[87] === '/')
+  );
+}
+
+describe('zen.certify()', function () {
   this.timeout(20 * 1000);
 
   var alice, bob, carol;
@@ -13,277 +23,198 @@ describe("zen.certify()", function () {
     carol = await ZEN.pair();
   });
 
-  // ─── Basic write policy ────────────────────────────────────────────────────
-  describe("basic write policy", function () {
-    it("certifies a single pub with a string policy", async function () {
-      const out = await ZEN.certify(bob.pub, "inbox", alice);
-      assert.ok(typeof out === "string", "output should be a JSON string");
-      const cert = JSON.parse(out);
-      assert.ok(cert.m, "certificate should have .m");
-      assert.ok(cert.s, "certificate should have .s");
+  describe('basic write policy', function () {
+    it('certifies a single pub with a string policy', async function () {
+      const out = await ZEN.certify(bob.pub, 'inbox', alice);
+      assert.ok(isCompactSig(out), 'output should be a compact signed string');
     });
-
-    it("cert.m contains correct c and w fields", async function () {
-      const out = await ZEN.certify(bob.pub, "inbox", alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.c, bob.pub, "c should be the certificant pub");
-      assert.strictEqual(data.w, "inbox", "w should be the write policy");
-      assert.ok(!data.r, "r should not be present");
-      assert.ok(!data.e, "e should not be present");
+    it('cert payload contains correct c and w fields', async function () {
+      const out = await ZEN.certify(bob.pub, 'inbox', alice);
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.c, bob.pub, 'c should be the certificant pub');
+      assert.strictEqual(data.w, 'inbox', 'w should be the write policy');
     });
-
-    it("certificate verifies with authority pub", async function () {
-      const out = await ZEN.certify(bob.pub, "inbox", alice);
-      const cert = JSON.parse(out);
-      const verified = await ZEN.verify(cert, alice.pub);
-      assert.ok(verified !== undefined, "should verify");
-      const data =
-        typeof verified === "string" ? JSON.parse(verified) : verified;
-      assert.strictEqual(data.c, bob.pub);
-      assert.strictEqual(data.w, "inbox");
+    it('certificate verifies with authority pub', async function () {
+      const out = await ZEN.certify(bob.pub, 'inbox', alice);
+      const verified = await ZEN.verify(out, alice.pub);
+      assert.ok(verified !== undefined);
+      assert.strictEqual(verified.c, bob.pub);
+      assert.strictEqual(verified.w, 'inbox');
     });
   });
 
-  // ─── Wildcard certificants (removed — unsafe with recover-based verification) ─
-  describe("wildcard certificants", function () {
+  describe('wildcard certificants', function () {
     it('string "*" is rejected', async function () {
-      const out = await ZEN.certify("*", "messages", alice);
-      assert.strictEqual(out, undefined, 'wildcard "*" must be rejected');
+      const out = await ZEN.certify('*', 'messages', alice);
+      assert.strictEqual(out, undefined);
     });
-
     it('array containing "*" is rejected', async function () {
-      const out = await ZEN.certify([bob.pub, "*"], "messages", alice);
-      assert.strictEqual(out, undefined, 'array with wildcard "*" must be rejected');
+      const out = await ZEN.certify([bob.pub, '*'], 'messages', alice);
+      assert.strictEqual(out, undefined);
     });
   });
 
-  // ─── Array of certificants ────────────────────────────────────────────────
-  describe("array of certificants", function () {
-    it("array of pub strings", async function () {
-      const out = await ZEN.certify([bob.pub, carol.pub], "inbox", alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.ok(Array.isArray(data.c), "c should be an array");
+  describe('array of certificants', function () {
+    it('array of pub strings', async function () {
+      const out = await ZEN.certify([bob.pub, carol.pub], 'inbox', alice);
+      const data = await ZEN.verify(out, alice.pub);
+      assert.ok(Array.isArray(data.c));
       assert.ok(data.c.includes(bob.pub));
       assert.ok(data.c.includes(carol.pub));
     });
-
-    it("single-element array unwraps to string", async function () {
-      const out = await ZEN.certify([bob.pub], "inbox", alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.c, bob.pub, "single-element array should unwrap");
+    it('single-element array unwraps to string', async function () {
+      const out = await ZEN.certify([bob.pub], 'inbox', alice);
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.c, bob.pub);
     });
-
-    it("array of objects with .pub", async function () {
-      const out = await ZEN.certify([bob, carol], "inbox", alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+    it('array of objects with .pub', async function () {
+      const out = await ZEN.certify([bob, carol], 'inbox', alice);
+      const data = await ZEN.verify(out, alice.pub);
       assert.ok(Array.isArray(data.c));
       assert.ok(data.c.includes(bob.pub));
     });
   });
 
-  // ─── Object certificant ──────────────────────────────────────────────────
-  describe("object with .pub as certificant", function () {
-    it("single object with .pub", async function () {
-      const out = await ZEN.certify(bob, "inbox", alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+  describe('object with .pub as certificant', function () {
+    it('single object with .pub', async function () {
+      const out = await ZEN.certify(bob, 'inbox', alice);
+      const data = await ZEN.verify(out, alice.pub);
       assert.strictEqual(data.c, bob.pub);
     });
   });
 
-  // ─── Policy forms ─────────────────────────────────────────────────────────
-  describe("policy forms", function () {
-    it("RAD/LEX object as write policy", async function () {
-      const pol = { "#": "inbox", ".": "*" };
+  describe('policy forms', function () {
+    it('RAD/LEX object as write policy', async function () {
+      const pol = { '#': 'inbox', '.': '*' };
       const out = await ZEN.certify(bob.pub, pol, alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+      const data = await ZEN.verify(out, alice.pub);
       assert.deepStrictEqual(data.w, pol);
     });
-
-    it("array of policies as write policy", async function () {
-      const pol = ["inbox", "outbox"];
+    it('array of policies as write policy', async function () {
+      const pol = ['inbox', 'outbox'];
       const out = await ZEN.certify(bob.pub, pol, alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+      const data = await ZEN.verify(out, alice.pub);
       assert.deepStrictEqual(data.w, pol);
     });
-
-    it("policy.read and policy.write both set", async function () {
-      const pol = { read: "pub", write: "inbox" };
+    it('policy.read and policy.write both set', async function () {
+      const pol = { read: 'pub', write: 'inbox' };
       const out = await ZEN.certify(bob.pub, pol, alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.r, "pub", "r should be read policy");
-      assert.strictEqual(data.w, "inbox", "w should be write policy");
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.r, 'pub');
+      assert.strictEqual(data.w, 'inbox');
     });
-
-    it("policy.read only", async function () {
-      const pol = { read: "pub" };
+    it('policy.read only', async function () {
+      const pol = { read: 'pub' };
       const out = await ZEN.certify(bob.pub, pol, alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.r, "pub");
-      assert.ok(!data.w, "w should not be present");
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.r, 'pub');
     });
   });
 
-  // ─── Expiry ──────────────────────────────────────────────────────────────
-  describe("expiry", function () {
-    it("opt.expiry is embedded as e", async function () {
-      const ts = Date.now() + 60_000;
-      const out = await ZEN.certify(bob.pub, "inbox", alice, null, {
-        expiry: ts,
-      });
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+  describe('expiry', function () {
+    it('opt.expiry is embedded as e', async function () {
+      const ts = Date.now() + 60000;
+      const out = await ZEN.certify(bob.pub, 'inbox', alice, null, { expiry: ts });
+      const data = await ZEN.verify(out, alice.pub);
       assert.strictEqual(data.e, ts);
     });
-
-    it("opt.expiry as string is parsed to float", async function () {
-      const ts = Date.now() + 60_000;
-      const out = await ZEN.certify(bob.pub, "inbox", alice, null, {
-        expiry: String(ts),
-      });
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+    it('opt.expiry as string is parsed to float', async function () {
+      const ts = Date.now() + 60000;
+      const out = await ZEN.certify(bob.pub, 'inbox', alice, null, { expiry: String(ts) });
+      const data = await ZEN.verify(out, alice.pub);
       assert.strictEqual(data.e, parseFloat(String(ts)));
     });
   });
 
-  // ─── Block lists ─────────────────────────────────────────────────────────
-  describe("block lists", function () {
-    it("opt.block with write block string", async function () {
-      const out = await ZEN.certify(bob.pub, "inbox", alice, null, {
-        block: "blocklist",
-      });
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.wb, "blocklist");
+  describe('block lists', function () {
+    it('opt.block with write block string', async function () {
+      const out = await ZEN.certify(bob.pub, 'inbox', alice, null, { block: 'blocklist' });
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.wb, 'blocklist');
     });
-
-    it("opt.block with .read block", async function () {
-      const out = await ZEN.certify(bob.pub, "inbox", alice, null, {
-        block: { read: "readblock" },
-      });
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.rb, "readblock");
+    it('opt.block with .read block', async function () {
+      const out = await ZEN.certify(bob.pub, 'inbox', alice, null, { block: { read: 'readblock' } });
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.rb, 'readblock');
     });
-
-    it("opt.block with .write block soul ref", async function () {
-      const ref = { "#": "myBlockList" };
-      const out = await ZEN.certify(bob.pub, "inbox", alice, null, {
-        block: { write: ref },
-      });
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+    it('opt.block with .write block soul ref', async function () {
+      const ref = { '#': 'myBlockList' };
+      const out = await ZEN.certify(bob.pub, 'inbox', alice, null, { block: { write: ref } });
+      const data = await ZEN.verify(out, alice.pub);
       assert.deepStrictEqual(data.wb, ref);
     });
-
-    it("opt.blacklist alias works", async function () {
-      const out = await ZEN.certify(bob.pub, "inbox", alice, null, {
-        blacklist: "blist",
-      });
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.wb, "blist");
+    it('opt.blacklist alias works', async function () {
+      const out = await ZEN.certify(bob.pub, 'inbox', alice, null, { blacklist: 'blist' });
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.wb, 'blist');
     });
-
-    it("opt.ban alias works", async function () {
-      const out = await ZEN.certify(bob.pub, "inbox", alice, null, {
-        ban: "banlist",
-      });
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
-      assert.strictEqual(data.wb, "banlist");
+    it('opt.ban alias works', async function () {
+      const out = await ZEN.certify(bob.pub, 'inbox', alice, null, { ban: 'banlist' });
+      const data = await ZEN.verify(out, alice.pub);
+      assert.strictEqual(data.wb, 'banlist');
     });
   });
 
-  // ─── opt.raw ─────────────────────────────────────────────────────────────
-  describe("opt.raw", function () {
-    it("opt.raw returns cert object not string", async function () {
-      const cert = await ZEN.certify(bob.pub, "inbox", alice, null, { raw: 1 });
-      assert.ok(typeof cert === "object", "should be object with opt.raw");
-      assert.ok(cert.m && cert.s, "should have m and s");
+  describe('opt.raw', function () {
+    it('cert is always a compact string', async function () {
+      const cert = await ZEN.certify(bob.pub, 'inbox', alice, null, { raw: 1 });
+      assert.ok(isCompactSig(cert));
     });
   });
 
-  // ─── Callback ────────────────────────────────────────────────────────────
-  describe("callback", function () {
-    it("calls cb with result", function (done) {
-      ZEN.certify(bob.pub, "inbox", alice, function (out) {
-        assert.ok(typeof out === "string");
-        const cert = JSON.parse(out);
-        assert.ok(cert.m && cert.s);
+  describe('callback', function () {
+    it('calls cb with compact signed string', function (done) {
+      ZEN.certify(bob.pub, 'inbox', alice, function (out) {
+        assert.ok(isCompactSig(out));
         done();
       });
     });
   });
 
-  // ─── Error cases ──────────────────────────────────────────────────────────
-  describe("error cases", function () {
-    it("null certificants returns undefined (no crash)", async function () {
-      const out = await ZEN.certify(null, "inbox", alice);
+  describe('error cases', function () {
+    it('null certificants returns undefined', async function () {
+      const out = await ZEN.certify(null, 'inbox', alice);
       assert.strictEqual(out, undefined);
     });
-
-    it("empty object certificants returns undefined", async function () {
-      const out = await ZEN.certify({}, "inbox", alice);
+    it('empty object certificants returns undefined', async function () {
+      const out = await ZEN.certify({}, 'inbox', alice);
       assert.strictEqual(out, undefined);
     });
-
-    it("no policy returns undefined", async function () {
+    it('no policy returns undefined', async function () {
       const out = await ZEN.certify(bob.pub, {}, alice);
       assert.strictEqual(out, undefined);
     });
   });
 
-  // ─── Multi-curve authority ────────────────────────────────────────────────
-  describe("multi-curve authority (P-256)", function () {
-    it("p256 authority signs a certificate", async function () {
-      const p256alice = await ZEN.pair(null, { curve: "p256" });
-      const out = await ZEN.certify(bob.pub, "inbox", p256alice);
-      assert.ok(typeof out === "string", "output should be JSON string");
-      const cert = JSON.parse(out);
-      assert.ok(cert.m && cert.s, "cert should have m and s");
+  describe('multi-curve authority (P-256)', function () {
+    it('p256 authority signs a certificate', async function () {
+      const p256alice = await ZEN.pair(null, { curve: 'p256' });
+      const out = await ZEN.certify(bob.pub, 'inbox', p256alice);
+      assert.ok(isCompactSig(out));
     });
-
-    it("p256 certificate has curve marker in signed data", async function () {
-      const p256alice = await ZEN.pair(null, { curve: "p256" });
-      const out = await ZEN.certify(bob.pub, "inbox", p256alice);
-      const cert = JSON.parse(out);
-      const data = typeof cert.m === "string" ? JSON.parse(cert.m) : cert.m;
+    it('p256 certificate has curve marker', async function () {
+      const p256alice = await ZEN.pair(null, { curve: 'p256' });
+      const out = await ZEN.certify(bob.pub, 'inbox', p256alice);
+      assert.strictEqual(out[87], '/', 'p256 cert uses / curve separator');
+      assert.ok(out.slice(88).startsWith('p256:'));
+      const data = await ZEN.verify(out, p256alice.pub);
       assert.strictEqual(data.c, bob.pub);
-      assert.strictEqual(data.w, "inbox");
-      // sign.js embeds c: 'p256' in the cert envelope itself (not in the inner data)
-      assert.ok(cert.c === "p256", "envelope c field marks p256 curve");
+      assert.strictEqual(data.w, 'inbox');
     });
-
-    it("p256 certificate verifies with p256 authority pub", async function () {
-      const p256alice = await ZEN.pair(null, { curve: "p256" });
-      const out = await ZEN.certify(bob.pub, "inbox", p256alice);
-      const cert = JSON.parse(out);
-      const verified = await ZEN.verify(cert, p256alice.pub);
+    it('p256 certificate verifies with p256 authority pub', async function () {
+      const p256alice = await ZEN.pair(null, { curve: 'p256' });
+      const out = await ZEN.certify(bob.pub, 'inbox', p256alice);
+      const verified = await ZEN.verify(out, p256alice.pub);
       assert.ok(verified !== undefined);
-      const data =
-        typeof verified === "string" ? JSON.parse(verified) : verified;
-      assert.strictEqual(data.c, bob.pub);
+      assert.strictEqual(verified.c, bob.pub);
     });
   });
 
-  // ─── ZEN class instance ───────────────────────────────────────────────────
-  describe("ZEN instance method", function () {
-    it("zen.certify() mirrors static certify()", async function () {
-      const zen = new ZEN();
-      const out = await zen.certify(bob.pub, "inbox", alice);
-      assert.ok(typeof out === "string");
-      const cert = JSON.parse(out);
-      assert.ok(cert.m && cert.s);
+  describe('ZEN instance method', function () {
+    it('zen.certify() mirrors static certify()', async function () {
+      const zen = new ZEN({ localStorage: false });
+      const out = await zen.certify(bob.pub, 'inbox', alice);
+      assert.ok(isCompactSig(out));
     });
   });
 });

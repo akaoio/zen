@@ -31,10 +31,10 @@ describe("ZEN secp256k1", function () {
     assert.strictEqual(one.startsWith("ZEN"), false);
     assert.deepStrictEqual(verified, { ok: true });
 
-    var tampered = JSON.parse(one);
-    tampered.m = { ok: false };
+    // Compact format: <86-char sig><v>:<msg> — replace the message part to tamper
+    var tampered = one.slice(0, 88) + JSON.stringify({ ok: false });
     await assert.rejects(
-      ZEN.verify(JSON.stringify(tampered), pair.pub),
+      ZEN.verify(tampered, pair.pub),
       /Signature did not match/,
     );
   });

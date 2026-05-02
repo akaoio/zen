@@ -270,15 +270,16 @@ describe("sign/verify — multi-curve", function () {
   it("p256: signed data carries curve marker c=p256", async function () {
     const p = await ZEN.pair(null, { curve: "p256" });
     const signed = await ZEN.sign("test", p);
-    const env = JSON.parse(signed);
-    assert.strictEqual(env.c, "p256", "signed envelope should have c=p256");
+    // Compact p256 format: <86-char sig><v>/p256:<msg>
+    assert.strictEqual(signed[87], "/", "p256 uses / as curve separator");
+    assert.ok(signed.slice(88).startsWith("p256:"), "p256 curve tag should follow the separator");
   });
 
   it("secp256k1: signed data has no c field (backward compat)", async function () {
     const p = await ZEN.pair(null, { curve: "secp256k1" });
     const signed = await ZEN.sign("test", p);
-    const env = JSON.parse(signed);
-    assert.ok(!env.c, "secp256k1 signed envelope should have no c field");
+    // Compact secp256k1 format: <86-char sig><v>:<msg> — uses : not /
+    assert.strictEqual(signed[87], ":", "secp256k1 uses : as message separator (no curve tag)");
   });
 
   it("p256: verify with wrong pub returns undefined", async function () {

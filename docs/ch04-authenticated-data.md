@@ -79,7 +79,7 @@ zen.get("~" + me.pub).put(
 1. `put()` places `{ authenticator: me }` in the outgoing message `opt`
 2. The security middleware receives the write on the `"in"` channel
 3. `check.auth()` calls `ZEN.sign(payload, me)` — signs the data with `me.priv`
-4. The signed value is stored as `{ ":": value, "~": signature, "v": recoveryBit }`
+4. The signed value is stored as `{ ":": value, "~": "<86-char base62 signature>" }`
 5. On reads, `ZEN.recover(storedValue)` derives the signer's pub; `ZEN.verify(storedValue, pub)` confirms it
 
 ---
@@ -210,21 +210,23 @@ The cert's `c` field will be an array of pub strings. Each holder can use it ind
 
 ## 4.10 Certificate structure
 
-A cert is a signed JSON object. After `JSON.parse(cert)`:
+A cert is a **compact signed string** — the same format as `ZEN.sign()` output. Use `ZEN.verify(cert, issuerPub)` to read the payload:
 
 ```js
-{
-  m: '{"c":"<bob.pub>","w":"inbox"}',  // message (JSON string)
-  s: "<alice's signature>",             // ECDSA signature by alice.priv
-  v: 0                                  // ECDSA recovery bit
-}
+const cert    = await ZEN.certify(bob.pub, "inbox", alice);
+// cert = "<86 base62 chars>0:<payload json>"
+// cert[86] → '0' or '1'  (recovery bit)
+// cert[87] → ':'          (secp256k1 separator)
+
+const payload = await ZEN.verify(cert, alice.pub);
+// payload = { c: "<bob.pub>", w: "inbox" }
 ```
 
-Inside `m` (after parsing):
+Cert payload fields:
 
 | Field | Meaning |
 |-------|---------|
-| `c` | Certificant — the pub being granted access (string or array of strings; wildcard `"*"` is not supported) |
+| `c` | Certificant — the pub being granted access (string or array; wildcard `"*"` not supported) |
 | `w` | Write policy — key, array of keys, or LEX object |
 | `r` | Read policy (optional) |
 | `e` | Expiry timestamp (optional) |
@@ -258,13 +260,14 @@ You can verify signatures directly without going through the graph:
 ```js
 // Sign some data
 const signed = await ZEN.sign("important message", alice);
+// signed[86] → recovery bit, signed[87] → ':', signed.slice(88) → '"important message"'
 
 // Verify it (returns original data, or undefined if invalid)
 const data = await ZEN.verify(signed, alice.pub);
 console.log(data);  // "important message"
 
-// Tampered data fails verification
-const tampered = JSON.stringify({ ...JSON.parse(signed), m: "other message" });
+// Tampered data: replace the message part (chars 88+) while keeping the original sig
+const tampered = signed.slice(0, 88) + '"other message"';
 const bad = await ZEN.verify(tampered, alice.pub);
 console.log(bad);   // undefined
 ```

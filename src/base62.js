@@ -107,6 +107,32 @@ function pubToJwkXY(pub) {
   throw new Error("pubToJwkXY: unrecognised pub format");
 }
 
+// Encode an arbitrary-length buffer as a single base62 BigInt, padded to exactly `len` chars.
+function bufToB62Fixed(buf, len) {
+  let hex = "";
+  for (let i = 0; i < buf.length; i++) hex += ("0" + buf[i].toString(16)).slice(-2);
+  let n = BigInt("0x" + (hex || "0"));
+  let out = "";
+  while (n > 0n) { out = ALPHA[Number(n % 62n)] + out; n = n / 62n; }
+  while (out.length < len) out = "0" + out;
+  if (out.length > len) throw new Error("bufToB62Fixed: value overflows " + len + " chars");
+  return out;
+}
+
+// Decode a base62 string back to a fixed-length Uint8Array.
+function b62ToBuf(s, byteLen) {
+  let n = 0n;
+  for (let i = 0; i < s.length; i++) {
+    const c = ALPHA_MAP[s[i]];
+    if (c === undefined) throw new Error("b62ToBuf: invalid base62 char '" + s[i] + "'");
+    n = n * 62n + BigInt(c);
+  }
+  const hex = n.toString(16).padStart(byteLen * 2, "0");
+  const result = new Uint8Array(byteLen);
+  for (let i = 0; i < byteLen; i++) result[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return result;
+}
+
 function bufToB62(buf) {
   if (_wasmReady) {
     let out = "";
@@ -142,6 +168,8 @@ const base62 = {
   b62ToB64,
   pubToJwkXY,
   bufToB62,
+  bufToB62Fixed,
+  b62ToBuf,
   PUB_LEN,
 };
 export default base62;

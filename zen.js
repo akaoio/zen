@@ -1711,6 +1711,32 @@ defmod('./src/base62.js', function(module, exp){
     throw new Error("pubToJwkXY: unrecognised pub format");
   }
 
+  // Encode an arbitrary-length buffer as a single base62 BigInt, padded to exactly `len` chars.
+  function bufToB62Fixed(buf, len) {
+    let hex = "";
+    for (let i = 0; i < buf.length; i++) hex += ("0" + buf[i].toString(16)).slice(-2);
+    let n = BigInt("0x" + (hex || "0"));
+    let out = "";
+    while (n > 0n) { out = ALPHA[Number(n % 62n)] + out; n = n / 62n; }
+    while (out.length < len) out = "0" + out;
+    if (out.length > len) throw new Error("bufToB62Fixed: value overflows " + len + " chars");
+    return out;
+  }
+
+  // Decode a base62 string back to a fixed-length Uint8Array.
+  function b62ToBuf(s, byteLen) {
+    let n = 0n;
+    for (let i = 0; i < s.length; i++) {
+      const c = ALPHA_MAP[s[i]];
+      if (c === undefined) throw new Error("b62ToBuf: invalid base62 char '" + s[i] + "'");
+      n = n * 62n + BigInt(c);
+    }
+    const hex = n.toString(16).padStart(byteLen * 2, "0");
+    const result = new Uint8Array(byteLen);
+    for (let i = 0; i < byteLen; i++) result[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return result;
+  }
+
   function bufToB62(buf) {
     if (_wasmReady) {
       let out = "";
@@ -1746,6 +1772,8 @@ defmod('./src/base62.js', function(module, exp){
     b62ToB64,
     pubToJwkXY,
     bufToB62,
+    bufToB62Fixed,
+    b62ToBuf,
     PUB_LEN,
   };
   exp.default = base62;
@@ -1755,7 +1783,6 @@ defmod('./src/base62.js', function(module, exp){
 });
 
 defmod('./src/settings.js', function(module, exp){
-  var shim = reqmod('./src/shim.js').default;
   var base62 = reqmod('./src/base62.js').default;
   const settings = {};
   settings.pbkdf2 = { hash: { name: "SHA-256" }, iter: 100000, ks: 64 };
@@ -1786,37 +1813,72 @@ defmod('./src/settings.js', function(module, exp){
     };
   };
 
+  // Compact wire format detector.
+  // Signed secp256k1:   <86 base62 chars><v 0|1>:<message>
+  // Signed other curve: <86 base62 chars><v 0|1>/<curve>:<message>
+  // Encrypted:          <ct_b64url>:<iv_b64url>:<s_b64url>  (exactly 3 colon-separated parts)
+  const _SIG_HEAD = /^[0-9A-Za-z]{86}[01]/;
+  const _ENC_PART = /^[A-Za-z0-9_-]+$/;
+
   settings.check = function (t) {
     if (typeof t !== "string") {
       return false;
     }
-    if ("ZEN{" === t.slice(0, 4)) {
+    // Signed: check first (must come before encrypted check)
+    if (t.length >= 88 && _SIG_HEAD.test(t) && (t[87] === ":" || t[87] === "/")) {
       return true;
     }
-    if ("{" !== t.slice(0, 1)) {
-      return false;
+    // Encrypted: exactly 3 non-empty base64url parts
+    const parts = t.split(":");
+    if (
+      parts.length === 3 &&
+      parts[0].length > 0 &&
+      parts[1].length > 0 &&
+      parts[2].length > 0 &&
+      _ENC_PART.test(parts[0]) &&
+      _ENC_PART.test(parts[1]) &&
+      _ENC_PART.test(parts[2])
+    ) {
+      return true;
     }
-    try {
-      const parsed = JSON.parse(t);
-      return !!(
-        parsed &&
-        ((typeof parsed.s === "string" &&
-          Object.prototype.hasOwnProperty.call(parsed, "m")) ||
-          (typeof parsed.ct === "string" &&
-            typeof parsed.iv === "string" &&
-            typeof parsed.s === "string"))
-      );
-    } catch (e) {}
     return false;
   };
 
   settings.parse = async function (t) {
-    try {
-      const yes = typeof t === "string";
-      if (yes && "ZEN{" === t.slice(0, 4)) {
-        t = t.slice(3);
+    if (typeof t !== "string") {
+      return t;
+    }
+    // Signed: check first
+    if (t.length >= 88 && _SIG_HEAD.test(t)) {
+      if (t[87] === ":") {
+        // secp256k1
+        return { s: t.slice(0, 86), v: parseInt(t[86]), m: t.slice(88) };
       }
-      return yes ? await shim.parse(t) : t;
+      if (t[87] === "/") {
+        // non-secp256k1: <sig86><v>/<curve>:<msg>
+        const rest = t.slice(88);
+        const ci = rest.indexOf(":");
+        if (ci !== -1) {
+          return { s: t.slice(0, 86), v: parseInt(t[86]), c: rest.slice(0, ci), m: rest.slice(ci + 1) };
+        }
+      }
+    }
+    // Encrypted: exactly 3 non-empty base64url parts
+    const parts = t.split(":");
+    if (
+      parts.length === 3 &&
+      parts[0].length > 0 &&
+      parts[1].length > 0 &&
+      parts[2].length > 0 &&
+      _ENC_PART.test(parts[0]) &&
+      _ENC_PART.test(parts[1]) &&
+      _ENC_PART.test(parts[2])
+    ) {
+      return { ct: parts[0], iv: parts[1], s: parts[2], _enc: "base64url" };
+    }
+    // Fallback: try JSON parse (handles serialised objects, numbers, booleans, null)
+    try {
+      return JSON.parse(t);
     } catch (e) {}
     return t;
   };
@@ -2734,9 +2796,7 @@ defmod('./src/verify.js', function(module, exp){
       // Curve priority: embedded in signed data → pair.curve → opt.curve → secp256k1
       const c = crv((msg && msg.c) || (pair && pair.curve) || opt.curve);
       const h = await c.shaBytes(msg.m);
-      const sigBytes = new Uint8Array(
-        c.shim.Buffer.from(msg.s || "", opt.encode || "base64"),
-      );
+      const sigBytes = new Uint8Array(c.base62.b62ToBuf(msg.s || "0".repeat(86), 64));
       const { r, s } = c.parseSignature(sigBytes);
       let pt;
       if (pub) {
@@ -2787,9 +2847,7 @@ defmod('./src/recover.js', function(module, exp){
       }
       const c = crv((msg && msg.c) || opt.curve);
       const h = await c.shaBytes(msg.m);
-      const sigBytes = new Uint8Array(
-        c.shim.Buffer.from(msg.s || "", opt.encode || "base64"),
-      );
+      const sigBytes = new Uint8Array(c.base62.b62ToBuf(msg.s || "0".repeat(86), 64));
       const { r, s } = c.parseSignature(sigBytes);
       const point = c.recoverPub(msg.v, r, s, h);
       const pub = c.pointToPub(point);
@@ -2844,11 +2902,13 @@ defmod('./src/sign.js', function(module, exp){
           v ^= 1;
         }
         const sig = c.concatBytes(c.bigIntToBytes(r, 32), c.bigIntToBytes(s, 32));
-        const out = { m: msg, s: c.encodeBase64(sig, opt.encode || "base64"), v };
-        if (c.curve !== "secp256k1") {
-          out.c = c.curve;
-        }
-        return c.finalize(out, opt, cb);
+        const sigB62 = c.base62.bufToB62Fixed(sig, 86);
+        const msgStr = typeof msg === "string" ? msg : await c.shim.stringify(msg);
+        const out =
+          c.curve !== "secp256k1"
+            ? sigB62 + v + "/" + c.curve + ":" + msgStr
+            : sigB62 + v + ":" + msgStr;
+        return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
       }
       throw new Error("Failed to sign");
     } catch (e) {
@@ -3192,7 +3252,8 @@ defmod('./src/security.js', function(module, exp){
             if (!data || !data.m || !data.s) {
               return no("Invalid signature format");
             }
-            var parsed = settings.unpack(data.m);
+            var mObj = typeof data.m === "string" ? JSON.parse(data.m) : data.m;
+            var parsed = settings.unpack(mObj);
             msg.put[":"] = { ":": parsed, "~": data.s };
             msg.put["="] = parsed;
             done(parsed);
@@ -3209,11 +3270,14 @@ defmod('./src/security.js', function(module, exp){
           if (u === data) {
             return no("Signature fail.");
           }
-          if (!data.m || !data.s) {
+          var sigData =
+            typeof data === "string" ? await settings.parse(data) : data;
+          if (!sigData || !sigData.m || !sigData.s) {
             return no("Invalid signature format");
           }
-          var parsed = settings.unpack(data.m);
-          msg.put[":"] = { ":": parsed, "~": data.s };
+          var mObj = typeof sigData.m === "string" ? JSON.parse(sigData.m) : sigData.m;
+          var parsed = settings.unpack(mObj);
+          msg.put[":"] = { ":": parsed, "~": sigData.s };
           msg.put["="] = parsed;
           done(parsed);
         },
@@ -3233,12 +3297,10 @@ defmod('./src/security.js', function(module, exp){
     certificant,
     cb,
   ) {
-    if (
-      !(certificate || "").m ||
-      !(certificate || "").s ||
-      !certificant ||
-      !pub
-    ) {
+    var certOk = typeof certificate === "string"
+      ? settings.check(certificate)
+      : (certificate && certificate.m && certificate.s);
+    if (!certOk || !certificant || !pub) {
       return;
     }
     return verify(certificate, pub, function (data) {
@@ -5082,12 +5144,13 @@ defmod('./src/encrypt.js', function(module, exp){
         aes,
         new c.shim.TextEncoder().encode(message),
       );
-      const out = {
-        ct: c.shim.Buffer.from(ct, "binary").toString(opt.encode || "base64"),
-        iv: rand.iv.toString(opt.encode || "base64"),
-        s: rand.s.toString(opt.encode || "base64"),
-      };
-      return c.finalize(out, opt, cb);
+      const out =
+        c.shim.Buffer.from(ct, "binary").toString("base64url") +
+        ":" +
+        rand.iv.toString("base64url") +
+        ":" +
+        rand.s.toString("base64url");
+      return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
     } catch (e) {
       return cryptoErr(e, cb);
     }
@@ -5111,9 +5174,10 @@ defmod('./src/decrypt.js', function(module, exp){
         throw new Error("No decryption key.");
       }
       const parsed = await c.settings.parse(data);
-      const salt = c.shim.Buffer.from(parsed.s, opt.encode || "base64");
-      const iv = c.shim.Buffer.from(parsed.iv, opt.encode || "base64");
-      const ct = c.shim.Buffer.from(parsed.ct, opt.encode || "base64");
+      const enc = parsed._enc || opt.encode || "base64";
+      const salt = c.shim.Buffer.from(parsed.s, enc);
+      const iv = c.shim.Buffer.from(parsed.iv, enc);
+      const ct = c.shim.Buffer.from(parsed.ct, enc);
       const aes = await c.aeskey(key, salt, opt);
       const decrypted = await c.shim.subtle.decrypt(
         {
@@ -5295,7 +5359,8 @@ defmod('./src/certify.js', function(module, exp){
       );
 
       var cert = await sign(data, auth, null, { raw: 1 });
-      var out = opt.raw ? cert : JSON.stringify(cert);
+      // cert is now a compact signed string; no additional wrapping needed
+      var out = cert;
       return cbOk(cb, out);
     } catch (e) {
       return cryptoErr(e, cb);
@@ -8224,7 +8289,7 @@ defmod('./src/index.js', function(module, exp){
       ) {
         try {
           if (undefined !== (await verify(check, pairLike))) {
-            return finalizeSigned(await settings.parse(check), opt, cb);
+            return finalizeSigned(data, { raw: true }, cb);
           }
         } catch (e) {}
       }

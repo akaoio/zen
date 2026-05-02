@@ -146,23 +146,27 @@ zen.get("profile").get("age").on(function(data) {
 const pair = await ZEN.pair();                       // secp256k1
 
 const signed  = await ZEN.sign("hello", pair);
+// signed = "<86 base62 chars>0:\"hello\""
+// signed[86] → recovery bit (0 or 1)
+// signed[87] → ':'
 const ok      = await ZEN.verify(signed, pair.pub);  // "hello"
 
-const enc = await ZEN.encrypt("secret", pair);
-const dec = await ZEN.decrypt(enc, pair);            // "secret"
+const enc = await ZEN.encrypt("secret", pair.pub);
+// enc = "<ct_b64url>:<iv_b64url>:<s_b64url>"
+const dec = await ZEN.decrypt(enc, pair.priv);       // "secret"
 
 const bob    = await ZEN.pair();
-const shared = await ZEN.secret(bob.epub, pair);     // ECDH
+const shared = await ZEN.secret(bob.pub, pair);      // ECDH
 ```
 
-A pair object has four fields — all base62 (`0-9A-Za-z`), no `+`, `/`, or `=`:
+A pair object has four fields:
 
 | Field | Length | Description |
 |-------|--------|-------------|
-| `pub`   | 45 chars | Compressed EC public key — 44-char base62 x-coord + `"0"`/`"1"` parity |
-| `priv`  | 44 chars | Signing private key scalar |
-| `epub`  | 45 chars | Encryption public key (same format as `pub`) |
-| `epriv` | 44 chars | Encryption private key scalar |
+| `pub`     | 45 chars | Compressed EC public key — 44-char base62 x-coord + `"0"`/`"1"` parity |
+| `priv`    | 44 chars | Private key scalar |
+| `address` | 42 chars | Ethereum-style keccak160 address (hex, checksummed) |
+| `curve`   | string   | `"secp256k1"` by default |
 
 The 45-char compressed format (`x || parity`) saves space versus the legacy 88-char uncompressed form. Legacy keys are still accepted for backward compatibility.
 
@@ -357,8 +361,8 @@ No ZEN installation needed — `npx` fetches `@akaoio/zen` automatically.
 | `pair` | Generate a key pair (secp256k1 or P-256, optional seed) |
 | `sign` | Sign data with a private key |
 | `verify` | Verify a signed value |
-| `encrypt` | Encrypt data with an epub key |
-| `decrypt` | Decrypt data with an epriv key |
+| `encrypt` | Encrypt data with a public key |
+| `decrypt` | Decrypt data with a private key |
 | `secret` | ECDH shared secret |
 | `hash` | Hash data (SHA-256, KECCAK-256, PBKDF2, HKDF, or mining) |
 | `certify` | Issue a write-access certificate |

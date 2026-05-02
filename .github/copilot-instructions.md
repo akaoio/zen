@@ -44,7 +44,7 @@ ZEN uses **native ES modules** (`import`/`export`) throughout `/src`. A custom N
 ### Crypto Modules (`/src`)
 
 - `index.js` — ZEN class with static crypto methods; mirrors all statics + chain methods
-- `pair.js` — Key generation: `pair(cb, opt)` — secp256k1 or p256, supports seed and additive derivation
+- `pair.js` — Key generation: `pair(cb, opt)` — secp256k1 or p256, supports seed and additive derivation. Schema: `{curve, pub, priv, address}`
 - `sign.js` / `verify.js` — ECDSA sign/verify
 - `encrypt.js` / `decrypt.js` — AES-GCM encryption/decryption
 - `secret.js` — ECDH shared secret
@@ -201,15 +201,15 @@ const pair256 = await ZEN.pair(null, { curve: 'p256' })
 const derived = await ZEN.pair(null, { seed: 'passphrase' })
 
 // Additive derivation (HD wallets)
-const child = await ZEN.pair(null, { seed: 'child-seed', priv: pair.priv, epriv: pair.epriv })
+const child = await ZEN.pair(null, { seed: 'child-seed', priv: pair.priv })
 
 // Sign / verify
 const signed = await ZEN.sign(data, pair)
 const data = await ZEN.verify(signed, pair.pub)
 
 // Encrypt / decrypt
-const enc = await ZEN.encrypt(data, pair.epub)
-const dec = await ZEN.decrypt(enc, pair.epriv)
+const enc = await ZEN.encrypt(data, pair.pub)
+const dec = await ZEN.decrypt(enc, pair.priv)
 
 // Hash (SHA-256 or KECCAK-256)
 const h = await ZEN.hash(data, null, null, { name: 'SHA-256', encode: 'base62' })
@@ -219,20 +219,44 @@ const result = await ZEN.hash(data, null, null, { pow: { unit: '0', difficulty: 
 // result = { hash, nonce, proof }
 ```
 
-### 5. Signed Data Format
+### 5. Signed Data Format (compact wire format)
 
-- Signed: `'ZEN{...}' | '{"m":{...},"s":"sig","v":0}'`
-- Encrypted: `{ ct: "...", iv: "...", s: "..." }`
+**Signed secp256k1:** `<86_base62_sig><v 0|1>:<message>`
+- Chars 0–85: ECDSA signature (64 bytes → base62 left-padded → always 86 chars)
+- Char 86: recovery bit `0` or `1`
+- Char 87: `:` separator
+- Chars 88+: raw message string
+
+**Signed other curves (e.g. p256):** `<86_base62_sig><v>/<curve_tag>:<message>`
+- Char 87: `/` (not `:`) to unambiguously mark the curve tag
+- Example: `<sig>0/p256:<msg>`
+
+**Encrypted:** `<ct_b64url>:<iv_b64url>:<s_b64url>`
+- Three URL-safe base64 (no padding) parts separated by `:`
+- Detection: exactly 3 non-empty parts matching `/^[A-Za-z0-9_-]+$/`
+
+**Detection order (critical — always signed check first):**
+1. `len >= 88 && /^[0-9A-Za-z]{86}[01]/.test(t) && (t[87] === ":" || t[87] === "/")` → signed
+2. 3 base64url parts → encrypted
+3. `JSON.parse(t)` fallback → handles serialised primitives
+
 - `settings.check(t)` — detects signed/encrypted strings
-- `settings.parse(t)` — async parse/verify
+- `settings.parse(t)` — async parse → `{s, v, m}` (signed) or `{ct, iv, s, _enc}` (encrypted)
 - `settings.pack(d, cb, k, n, s)` — pack for verify
-- `settings.unpack(d, k, n)` — extract plaintext
+- `settings.unpack(d, k, n)` — extract plaintext; **takes object/value, NOT JSON string**
 
 ### 6. Certificates
 
+`ZEN.certify()` returns a **compact signed string** (not a JSON object).
+
 ```javascript
 // Grant write access to another pubkey
-const cert = await ZEN.certify([recipientPub], { write: policyExpr }, issuerPair)
+const cert = await ZEN.certify(recipientPub, 'inbox', issuerPair)
+// cert is a compact signed string: <86 base62 sig><v>:<payload json>
+
+// Verify cert payload
+const data = await ZEN.verify(cert, issuerPair.pub)
+// data = { c: recipientPub, w: 'inbox' }
 
 // Use cert in put
 zen.get(soul).get(key).put(data, null, { authenticator: pair, cert })
@@ -317,6 +341,10 @@ Zen.chain.myMethod = function (data) {
 8. **PEN soul must start with `!`** — the `ZEN.pen()` compiler always adds this prefix
 9. **`pen.ready`** is a Promise — must `await pen.ready` before calling `pen.run()` directly
 10. **`sign` and `pow` are independent policies** — can be combined freely in one `ZEN.pen()` spec
+11. **Compact wire format — no JSON.parse on signed strings**: `ZEN.sign()` output is NOT JSON. Use `settings.parse(sig)` → `{s, v, m}`. To check recovery bit: `sig[86]`. To check curve: `sig[87] === '/'`. Never `JSON.parse(sig)`.
+12. **`settings.unpack(m)` takes an object**, not a JSON string. After `settings.parse()`, the `m` field is a JSON string — do `JSON.parse(m)` before passing to `unpack()`.
+13. **`ZEN.certify()` returns a compact signed string** — not `{m, s}` object. Pass directly to `ZEN.verify(cert, pub)` to read payload. `check.$vfy` accepts both compact strings and `{m, s}` objects.
+14. **No `epub`/`epriv` in pair schema** — pair is `{curve, pub, priv, address}`. Encrypt/decrypt use `pub`/`priv` directly.
 
 ## File Naming Conventions
 

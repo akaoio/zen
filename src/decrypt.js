@@ -10,9 +10,10 @@ async function decrypt(data, pair, cb, opt) {
       throw new Error("No decryption key.");
     }
     const parsed = await c.settings.parse(data);
-    const salt = c.shim.Buffer.from(parsed.s, opt.encode || "base64");
-    const iv = c.shim.Buffer.from(parsed.iv, opt.encode || "base64");
-    const ct = c.shim.Buffer.from(parsed.ct, opt.encode || "base64");
+    const enc = parsed._enc || opt.encode || "base64";
+    const salt = c.shim.Buffer.from(parsed.s, enc);
+    const iv = c.shim.Buffer.from(parsed.iv, enc);
+    const ct = c.shim.Buffer.from(parsed.ct, enc);
     const aes = await c.aeskey(key, salt, opt);
     const decrypted = await c.shim.subtle.decrypt(
       {

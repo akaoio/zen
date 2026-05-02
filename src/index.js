@@ -119,7 +119,7 @@ class ZEN {
     ) {
       try {
         if (undefined !== (await verify(check, pairLike))) {
-          return finalizeSigned(await settings.parse(check), opt, cb);
+          return finalizeSigned(data, { raw: true }, cb);
         }
       } catch (e) {}
     }

@@ -37,11 +37,13 @@ async function sign(data, pair, cb, opt) {
         v ^= 1;
       }
       const sig = c.concatBytes(c.bigIntToBytes(r, 32), c.bigIntToBytes(s, 32));
-      const out = { m: msg, s: c.encodeBase64(sig, opt.encode || "base64"), v };
-      if (c.curve !== "secp256k1") {
-        out.c = c.curve;
-      }
-      return c.finalize(out, opt, cb);
+      const sigB62 = c.base62.bufToB62Fixed(sig, 86);
+      const msgStr = typeof msg === "string" ? msg : await c.shim.stringify(msg);
+      const out =
+        c.curve !== "secp256k1"
+          ? sigB62 + v + "/" + c.curve + ":" + msgStr
+          : sigB62 + v + ":" + msgStr;
+      return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
     }
     throw new Error("Failed to sign");
   } catch (e) {
