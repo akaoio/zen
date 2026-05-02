@@ -66,7 +66,7 @@ function intToB62(n) {
 export default async function hash(data, pair, cb, opt) {
   try {
     opt = opt || {};
-    let salt = (pair || {}).epub || pair;
+    let salt = (pair || {}).pub || pair;
     const enc = opt.encode || "base62";
 
     if (salt instanceof Function) {

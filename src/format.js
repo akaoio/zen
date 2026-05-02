@@ -1,5 +1,5 @@
 // Format converters for zen.pair() output.
-// Receives raw BigInt scalars and {x,y} curve points; returns {curve, pub, epub, priv, epriv}.
+// Receives raw BigInt scalars and {x,y} curve points; returns {curve, pub, priv, address}.
 import keccak256 from "./keccak256.js";
 import ripemd160 from "./ripemd160.js";
 import shim from "./shim.js";
@@ -125,54 +125,27 @@ function btcCompressedHex(pub) {
 // ── main export ───────────────────────────────────────────────────────────────
 
 export default async function applyFormat(format, curveName, core, raw) {
-  const { signPriv, signPub, encPriv, encPub } = raw;
+  const { signPriv, signPub } = raw;
   const out = { curve: curveName };
 
   if (format === "zen") {
-    if (signPriv) {
-      out.priv = core.scalarToString(signPriv);
-    }
-    if (signPub) {
-      out.pub = core.pointToPub(signPub);
-    }
-    if (encPriv) {
-      out.epriv = core.scalarToString(encPriv);
-    }
-    if (encPub) {
-      out.epub = core.pointToPub(encPub);
-    }
+    if (signPriv) out.priv = core.scalarToString(signPriv);
+    if (signPub)  out.pub  = core.pointToPub(signPub);
+    if (signPub)  out.address = await evmAddress(signPub);
     return out;
   }
 
   if (format === "evm") {
-    if (signPub) {
-      out.pub = await evmAddress(signPub);
-    }
-    if (signPriv) {
-      out.priv = evmPrivHex(signPriv);
-    }
-    if (encPub) {
-      out.epub = evmEncPub(encPub);
-    }
-    if (encPriv) {
-      out.epriv = evmPrivHex(encPriv);
-    }
+    if (signPub)  out.pub     = evmEncPub(signPub);       // 0x04 + 128 hex (uncompressed)
+    if (signPriv) out.priv    = evmPrivHex(signPriv);     // 0x + 64 hex
+    if (signPub)  out.address = await evmAddress(signPub); // 0x EIP-55 checksum
     return out;
   }
 
   if (format === "btc") {
-    if (signPub) {
-      out.pub = await btcAddress(signPub);
-    }
-    if (signPriv) {
-      out.priv = await btcWIF(signPriv);
-    }
-    if (encPub) {
-      out.epub = btcCompressedHex(encPub);
-    }
-    if (encPriv) {
-      out.epriv = await btcWIF(encPriv);
-    }
+    if (signPub)  out.pub     = btcCompressedHex(signPub); // 0x02/03 + 64 hex
+    if (signPriv) out.priv    = await btcWIF(signPriv);    // WIF compressed
+    if (signPub)  out.address = await btcAddress(signPub); // P2PKH base58
     return out;
   }
 

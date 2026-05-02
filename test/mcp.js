@@ -133,13 +133,13 @@ describe("MCP — tools/list", function () {
     });
   });
 
-  it("exposes exactly 4 tools", function () {
-    assert.strictEqual(tools.length, 4);
+  it("exposes exactly 3 tools", function () {
+    assert.strictEqual(tools.length, 3);
   });
 
-  it("tool names are graph, crypto, storePair, getHardwareIdentity", function () {
+  it("tool names are graph, crypto, identity", function () {
     const names = tools.map(t => t.name);
-    assert.deepStrictEqual(names, ["graph", "crypto", "storePair", "getHardwareIdentity"]);
+    assert.deepStrictEqual(names, ["graph", "crypto", "identity"]);
   });
 
   it("graph requires soul and op", function () {
@@ -164,10 +164,10 @@ describe("MCP — tools/list", function () {
     assert.ok(c.inputSchema.properties.pairId);
   });
 
-  it("storePair has priv/pub/epriv/epub properties", function () {
-    const s = tools.find(t => t.name === "storePair");
-    const props = Object.keys(s.inputSchema.properties);
-    assert.deepStrictEqual(props, ["priv", "pub", "epriv", "epub"]);
+  it("identity tool exists with no required fields", function () {
+    const t = tools.find(t => t.name === "identity");
+    assert.ok(t, "identity tool should be present");
+    assert.deepStrictEqual(t.inputSchema.required, undefined);
   });
 });
 
@@ -251,13 +251,15 @@ describe("MCP — graph", function () {
 describe("MCP — crypto (stateless)", function () {
   this.timeout(20000);
 
-  it("pair returns priv, pub, epriv, epub", async function () {
+  it("pair returns pub only (no private keys, no epub)", async function () {
     const res = await call("crypto", { method: "pair" });
     const pair = content(res);
-    assert.ok(pair.priv);
     assert.ok(pair.pub);
-    assert.ok(pair.epriv);
-    assert.ok(pair.epub);
+    assert.ok(pair.address, "address present");
+    assert.match(pair.address, /^0x[0-9a-fA-F]{40}$/, "address is EVM checksum");
+    assert.strictEqual(pair.epub, undefined);
+    assert.strictEqual(pair.priv, undefined);
+    assert.strictEqual(pair.epriv, undefined);
   });
 
   it("pair with seed is deterministic", async function () {
@@ -267,38 +269,52 @@ describe("MCP — crypto (stateless)", function () {
     ]);
     const p1 = content(r1), p2 = content(r2);
     assert.strictEqual(p1.pub, p2.pub);
-    assert.strictEqual(p1.epub, p2.epub);
+    assert.strictEqual(p1.address, p2.address);
+  });
+
+  it("pair with format:evm returns 0x-prefixed pub and address", async function () {
+    const res = await call("crypto", { method: "pair", format: "evm" });
+    const pair = content(res);
+    assert.match(pair.pub, /^0x04[0-9a-fA-F]{128}$/, "evm pub is uncompressed 04...");
+    assert.match(pair.address, /^0x[0-9a-fA-F]{40}$/, "evm address is checksummed");
+    assert.strictEqual(pair.priv, undefined);
+    assert.strictEqual(pair.epriv, undefined);
+  });
+
+  it("pair with format:btc returns compressed pub and P2PKH address", async function () {
+    const res = await call("crypto", { method: "pair", format: "btc" });
+    const pair = content(res);
+    assert.match(pair.pub, /^0x0[23][0-9a-fA-F]{64}$/, "btc pub is compressed 02/03...");
+    assert.match(pair.address, /^1[1-9A-HJ-NP-Za-km-z]{25,34}$/, "btc address is P2PKH");
+    assert.strictEqual(pair.priv, undefined);
+    assert.strictEqual(pair.epriv, undefined);
   });
 
   it("sign → verify round-trip", async function () {
     await withSession(async s => {
-      const pair   = content(await s.tool("crypto", { method: "pair" }));
-      const signed = content(await s.tool("crypto", { method: "sign", data: "hello", priv: pair.priv, pub: pair.pub }));
+      const identity = content(await s.tool("identity", {}));
+      const signed = content(await s.tool("crypto", { method: "sign", data: "hello", pairId: "self" }));
       assert.ok(typeof signed === "string");
-      const plain  = content(await s.tool("crypto", { method: "verify", signed, pub: pair.pub }));
+      const plain  = content(await s.tool("crypto", { method: "verify", signed, pub: identity.pub }));
       assert.strictEqual(plain, "hello");
     });
   });
 
   it("verify with wrong pub returns null/undefined (not throw)", async function () {
     await withSession(async s => {
-      const p1 = content(await s.tool("crypto", { method: "pair" }));
       const p2 = content(await s.tool("crypto", { method: "pair" }));
-      const signed = content(await s.tool("crypto", { method: "sign", data: "x", priv: p1.priv, pub: p1.pub }));
+      const signed = content(await s.tool("crypto", { method: "sign", data: "x", pairId: "self" }));
       const res = await s.tool("crypto", { method: "verify", signed, pub: p2.pub });
       const val = res.error ? null : content(res);
       assert.notStrictEqual(val, "x");
     });
   });
 
-  it("encrypt → decrypt round-trip", async function () {
-    // ZEN.encrypt/decrypt are symmetric — both use epriv as the AES key source
+  it("encrypt → decrypt round-trip via pairId:self", async function () {
     await withSession(async s => {
-      const pair = content(await s.tool("crypto", { method: "pair" }));
-      const enc  = content(await s.tool("crypto", { method: "encrypt", data: "secret", epriv: pair.epriv }));
+      const enc = content(await s.tool("crypto", { method: "encrypt", data: "secret", pairId: "self" }));
       assert.ok(typeof enc === "string" && enc.length > 0);
-      // pass the encrypted string directly (no re-stringify needed)
-      const dec  = content(await s.tool("crypto", { method: "decrypt", enc, epriv: pair.epriv }));
+      const dec = content(await s.tool("crypto", { method: "decrypt", enc, pairId: "self" }));
       assert.strictEqual(dec, "secret");
     });
   });
@@ -319,10 +335,10 @@ describe("MCP — crypto (stateless)", function () {
 
   it("recover returns the signer's pub key", async function () {
     await withSession(async s => {
-      const pair   = content(await s.tool("crypto", { method: "pair" }));
-      const signed = content(await s.tool("crypto", { method: "sign", data: "recov", priv: pair.priv, pub: pair.pub }));
-      const pub    = content(await s.tool("crypto", { method: "recover", signed }));
-      assert.strictEqual(pub, pair.pub);
+      const identity = content(await s.tool("identity", {}));
+      const signed   = content(await s.tool("crypto", { method: "sign", data: "recov", pairId: "self" }));
+      const pub      = content(await s.tool("crypto", { method: "recover", signed }));
+      assert.strictEqual(pub, identity.pub);
     });
   });
 
@@ -333,53 +349,31 @@ describe("MCP — crypto (stateless)", function () {
   });
 });
 
-// ─── storePair + pairId flow ──────────────────────────────────────────────────
+// ─── pairId:"self" flow ───────────────────────────────────────────────────────
 // All pairId tests share a SINGLE session so the in-memory pairStore persists.
 
-describe("MCP — storePair + pairId", function () {
+describe("MCP — pairId:\"self\" flow", function () {
   this.timeout(20000);
 
   let s;
   before(function () { s = new McpSession().start(); return s.init(); });
   after(function ()  { s.end(); });
 
-  it("storePair returns pairId and public keys, no priv", async function () {
-    const pair = content(await s.tool("crypto", { method: "pair" }));
-    const res  = content(await s.tool("storePair", { priv: pair.priv, pub: pair.pub, epriv: pair.epriv, epub: pair.epub }));
-    assert.ok(res.pairId && res.pairId.startsWith("pair_"));
-    assert.strictEqual(res.pub,  pair.pub);
-    assert.strictEqual(res.epub, pair.epub);
-    assert.strictEqual(res.priv,  undefined);
-  });
-
-  it("crypto pair store:true returns pairId without exposing priv", async function () {
-    const res = content(await s.tool("crypto", { method: "pair", store: true }));
-    assert.ok(res.pairId && res.pairId.startsWith("pair_"));
-    assert.ok(res.pub);
-    assert.ok(res.epub);
-    assert.strictEqual(res.priv,  undefined);
-    assert.strictEqual(res.epriv, undefined);
-  });
-
-  it("sign with pairId produces valid signature", async function () {
-    const stored = content(await s.tool("crypto", { method: "pair", store: true }));
-    const signed = content(await s.tool("crypto", { method: "sign", pairId: stored.pairId, data: "via-pairId" }));
+  it("sign with pairId:self produces valid signature", async function () {
+    const identity = content(await s.tool("identity", {}));
+    const signed = content(await s.tool("crypto", { method: "sign", pairId: "self", data: "via-self" }));
     assert.ok(typeof signed === "string");
-    const verified = content(await s.tool("crypto", { method: "verify", signed, pub: stored.pub }));
-    assert.strictEqual(verified, "via-pairId");
+    const verified = content(await s.tool("crypto", { method: "verify", signed, pub: identity.pub }));
+    assert.strictEqual(verified, "via-self");
   });
 
-  it("decrypt with pairId", async function () {
-    const stored = content(await s.tool("crypto", { method: "pair", store: true }));
-    // encrypt using the stored pairId (server uses kp.epriv internally)
-    const enc    = content(await s.tool("crypto", { method: "encrypt", pairId: stored.pairId, data: "private" }));
-    // enc is a JSON string — pass directly
-    const dec    = content(await s.tool("crypto", { method: "decrypt", pairId: stored.pairId, enc }));
+  it("encrypt/decrypt with pairId:self round-trips", async function () {
+    const enc = content(await s.tool("crypto", { method: "encrypt", pairId: "self", data: "private" }));
+    const dec = content(await s.tool("crypto", { method: "decrypt", pairId: "self", enc }));
     assert.strictEqual(dec, "private");
   });
 
-  it("pairId from one session is unknown in a new session", async function () {
-    // fresh process has empty pairStore
+  it("unknown pairId returns error", async function () {
     const res = await call("crypto", { method: "sign", pairId: "pair_stale123", data: "x" });
     assert.ok(res.error);
     assert.ok(res.error.message.includes("Unknown pairId"));
@@ -391,13 +385,12 @@ describe("MCP — storePair + pairId", function () {
 describe("MCP — authenticated graph write", function () {
   this.timeout(20000);
 
-  it("put with raw priv/pub stores and reads back", async function () {
+  it("put with pairId:self stores and reads back", async function () {
     const soul = "mcp_auth_" + Date.now();
     await withSession(async s => {
-      const pair = content(await s.tool("crypto", { method: "pair" }));
       const putRes = await s.tool("graph", {
         soul, path: ["msg"], op: "put", value: "auth-write",
-        opt: { priv: pair.priv, pub: pair.pub, epriv: pair.epriv, epub: pair.epub },
+        opt: { pairId: "self" },
       });
       const getRes = await s.tool("graph", { soul, path: ["msg"], op: "get" });
       assert.deepStrictEqual(content(putRes), { ok: true });

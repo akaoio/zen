@@ -139,8 +139,8 @@ describe("testZEN", function () {
     var zen = makeZEN("secret");
     var alice = await zen.pair();
     var bob = await zen.pair();
-    var toBob = await zen.secret(bob.epub, alice);
-    var toAlice = await zen.secret(alice.epub, bob);
+    var toBob = await zen.secret(bob.pub, alice);
+    var toAlice = await zen.secret(alice.pub, bob);
     var encrypted = await zen.encrypt("shared data", toBob);
     var decrypted = await zen.decrypt(encrypted, toAlice);
     assert.strictEqual(decrypted, "shared data");

@@ -1971,7 +1971,7 @@ defmod('./src/hash.js', function(module, exp){
   async function hash(data, pair, cb, opt) {
     try {
       opt = opt || {};
-      let salt = (pair || {}).epub || pair;
+      let salt = (pair || {}).pub || pair;
       const enc = opt.encode || "base62";
 
       if (salt instanceof Function) {
@@ -4797,7 +4797,7 @@ defmod('./src/ripemd160.js', function(module, exp){
 
 defmod('./src/format.js', function(module, exp){
   // Format converters for zen.pair() output.
-  // Receives raw BigInt scalars and {x,y} curve points; returns {curve, pub, epub, priv, epriv}.
+  // Receives raw BigInt scalars and {x,y} curve points; returns {curve, pub, priv, address}.
   var keccak256 = reqmod('./src/keccak256.js').default;
   var ripemd160 = reqmod('./src/ripemd160.js').default;
   var shim = reqmod('./src/shim.js').default;
@@ -4922,54 +4922,27 @@ defmod('./src/format.js', function(module, exp){
   // ── main export ───────────────────────────────────────────────────────────────
 
   async function applyFormat(format, curveName, core, raw) {
-    const { signPriv, signPub, encPriv, encPub } = raw;
+    const { signPriv, signPub } = raw;
     const out = { curve: curveName };
 
     if (format === "zen") {
-      if (signPriv) {
-        out.priv = core.scalarToString(signPriv);
-      }
-      if (signPub) {
-        out.pub = core.pointToPub(signPub);
-      }
-      if (encPriv) {
-        out.epriv = core.scalarToString(encPriv);
-      }
-      if (encPub) {
-        out.epub = core.pointToPub(encPub);
-      }
+      if (signPriv) out.priv = core.scalarToString(signPriv);
+      if (signPub)  out.pub  = core.pointToPub(signPub);
+      if (signPub)  out.address = await evmAddress(signPub);
       return out;
     }
 
     if (format === "evm") {
-      if (signPub) {
-        out.pub = await evmAddress(signPub);
-      }
-      if (signPriv) {
-        out.priv = evmPrivHex(signPriv);
-      }
-      if (encPub) {
-        out.epub = evmEncPub(encPub);
-      }
-      if (encPriv) {
-        out.epriv = evmPrivHex(encPriv);
-      }
+      if (signPub)  out.pub     = evmEncPub(signPub);       // 0x04 + 128 hex (uncompressed)
+      if (signPriv) out.priv    = evmPrivHex(signPriv);     // 0x + 64 hex
+      if (signPub)  out.address = await evmAddress(signPub); // 0x EIP-55 checksum
       return out;
     }
 
     if (format === "btc") {
-      if (signPub) {
-        out.pub = await btcAddress(signPub);
-      }
-      if (signPriv) {
-        out.priv = await btcWIF(signPriv);
-      }
-      if (encPub) {
-        out.epub = btcCompressedHex(encPub);
-      }
-      if (encPriv) {
-        out.epriv = await btcWIF(encPriv);
-      }
+      if (signPub)  out.pub     = btcCompressedHex(signPub); // 0x02/03 + 64 hex
+      if (signPriv) out.priv    = await btcWIF(signPriv);    // WIF compressed
+      if (signPub)  out.address = await btcAddress(signPub); // P2PKH base58
       return out;
     }
 
@@ -5019,87 +4992,57 @@ defmod('./src/pair.js', function(module, exp){
       const labelCurve = c.curve;
 
       let spriv = null,
-        spub = null,
-        epriv = null,
-        epub = null;
+        spub = null;
 
-      if (opt.seed && (opt.priv || opt.epriv || opt.pub || opt.epub)) {
+      if (opt.seed && (opt.priv || opt.pub)) {
         // Additive derivation from existing key + seed
         if (opt.priv) {
+          const basePriv = opt.priv;
           spriv = await derivepriv(
             c,
-            c.parseScalar(opt.priv, "Signing key"),
+            c.parseScalar(basePriv, "Signing key"),
             opt.seed,
             "ZEN.DERIVE|sign|",
           );
           spub = c.publicFromPrivate(spriv);
         }
-        if (opt.epriv) {
-          epriv = await derivepriv(
-            c,
-            c.parseScalar(opt.epriv, "Encryption key"),
-            opt.seed,
-            "ZEN.DERIVE|encrypt|",
-          );
-          epub = c.publicFromPrivate(epriv);
-        }
         if (opt.pub) {
+          const basePub = opt.pub;
           spub = await derivepub(
             c,
-            c.parsePub(opt.pub),
+            c.parsePub(basePub),
             opt.seed,
             "ZEN.DERIVE|sign|",
           );
         }
-        if (opt.epub) {
-          epub = await derivepub(
-            c,
-            c.parsePub(opt.epub),
-            opt.seed,
-            "ZEN.DERIVE|encrypt|",
-          );
-        }
       } else {
         // Generate fresh or restore from private / seed
-        spriv = opt.priv ? c.parseScalar(opt.priv, "Signing key") : null;
-        epriv = opt.epriv ? c.parseScalar(opt.epriv, "Encryption key") : null;
+        const rawPriv = opt.priv;
+        spriv = rawPriv ? c.parseScalar(rawPriv, "Signing key") : null;
 
         // Seed labels use canonical c.curve so aliases (secp256r1 ≡ p256) share the same key.
         // For secp256k1: 'ZEN|secp256k1|sign|' matches the original hardcoded value — backward compat.
         if (!spriv && opt.seed) {
           spriv = await c.hashToScalar(opt.seed, "ZEN|" + labelCurve + "|sign|");
         }
-        if (!epriv && opt.seed) {
-          epriv = await c.hashToScalar(
-            opt.seed,
-            "ZEN|" + labelCurve + "|encrypt|",
-          );
-        }
-        if (!spriv && !opt.pub) {
+        const rawPub = opt.pub;
+        if (!spriv && !rawPub) {
           spriv = await c.randomScalar();
-        }
-        if (!epriv && !opt.epub) {
-          epriv = await c.randomScalar();
         }
 
         if (spriv) {
           spub = c.publicFromPrivate(spriv);
-        } else if (opt.pub) {
-          spub = c.parsePub(opt.pub);
-        }
-
-        if (epriv) {
-          epub = c.publicFromPrivate(epriv);
-        } else if (opt.epub) {
-          epub = c.parsePub(opt.epub);
+        } else if (rawPub) {
+          spub = c.parsePub(rawPub);
         }
       }
 
+      // Single keypair — sign and encrypt use the same key
       const out = await applyFormat(format, labelCurve, c, {
         signPriv: spriv,
         signPub: spub,
-        encPriv: epriv,
-        encPub: epub,
+        encPriv: spriv,
+        encPub: spub,
       });
       return cbOk(cb, out);
     } catch (e) {
@@ -5120,7 +5063,7 @@ defmod('./src/encrypt.js', function(module, exp){
     try {
       opt = opt || {};
       const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
-      const key = (pair || opt).epriv || pair;
+      const key = (pair && pair.priv) || pair;
       if (data === undefined) {
         throw new Error("`undefined` not allowed.");
       }
@@ -5163,7 +5106,7 @@ defmod('./src/decrypt.js', function(module, exp){
     try {
       opt = opt || {};
       const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
-      const key = (pair || opt).epriv || pair;
+      const key = (pair && pair.priv) || pair;
       if (!key) {
         throw new Error("No decryption key.");
       }
@@ -5199,16 +5142,17 @@ defmod('./src/decrypt.js', function(module, exp){
 defmod('./src/secret.js', function(module, exp){
   var crv = reqmod('./src/curves.js').default;
   var { cryptoErr, cbOk } = reqmod('./src/err.js');
-  async function secret(epub, pair, cb, opt) {
+  async function secret(peer, pair, cb, opt) {
     try {
       opt = opt || {};
-      if (!pair || !pair.epriv) {
+      const privKey = (pair && pair.priv) || null;
+      if (!pair || !privKey) {
         throw new Error("No secret mix.");
       }
       const c = crv(pair.curve);
-      const peer = epub && epub.epub ? epub.epub : epub;
-      const pt = c.parsePub(peer);
-      const priv = c.parseScalar(pair.epriv, "Encryption key");
+      const peerPub = (peer && peer.pub) || peer;
+      const pt = c.parsePub(peerPub);
+      const priv = c.parseScalar(privKey, "Signing key");
       const shared = c.pointMultiply(priv, pt);
       if (!shared) {
         throw new Error("Could not derive shared secret");

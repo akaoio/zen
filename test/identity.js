@@ -24,7 +24,7 @@ if (!identity1) {
 }
 console.log("✓ Identity created");
 console.log("  pub:", identity1.pair.pub.slice(0, 20) + "...");
-console.log("  epub:", identity1.pair.epub.slice(0, 20) + "...");
+console.log("  address:", identity1.pair.address);
 console.log("  seed:", identity1.seed.slice(0, 20) + "...");
 
 // Test 3: Verify identity is NOT persisted to disk (security check)

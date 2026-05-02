@@ -1,16 +1,17 @@
 import crv from "./curves.js";
 import { cryptoErr, cbOk } from "./err.js";
 
-async function secret(epub, pair, cb, opt) {
+async function secret(peer, pair, cb, opt) {
   try {
     opt = opt || {};
-    if (!pair || !pair.epriv) {
+    const privKey = (pair && pair.priv) || null;
+    if (!pair || !privKey) {
       throw new Error("No secret mix.");
     }
     const c = crv(pair.curve);
-    const peer = epub && epub.epub ? epub.epub : epub;
-    const pt = c.parsePub(peer);
-    const priv = c.parseScalar(pair.epriv, "Encryption key");
+    const peerPub = (peer && peer.pub) || peer;
+    const pt = c.parsePub(peerPub);
+    const priv = c.parseScalar(privKey, "Signing key");
     const shared = c.pointMultiply(priv, pt);
     if (!shared) {
       throw new Error("Could not derive shared secret");

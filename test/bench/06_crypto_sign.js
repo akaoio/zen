@@ -54,11 +54,11 @@ suite("ZEN.encrypt() + decrypt()", () => {
 });
 
 suite("ZEN.secret() ECDH", () => {
-  bench("secret(epub, pair)", async () => {
-    return ZEN.secret(K1_PAIR.epub, P2_PAIR).catch(() => null);
+  bench("secret(pub, pair)", async () => {
+    return ZEN.secret(K1_PAIR.pub, P2_PAIR).catch(() => null);
   });
   bench("secret + encrypt", async () => {
-    const sec = await ZEN.secret(DEFAULT_PAIR.epub, DEFAULT_PAIR);
+    const sec = await ZEN.secret(DEFAULT_PAIR.pub, DEFAULT_PAIR);
     return ZEN.encrypt(SHORT_MSG, sec);
   });
 });

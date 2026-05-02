@@ -24,9 +24,9 @@ describe("ZEN crypto — quickstart", function () {
   it("shared secret exchange", async function () {
     var alice = await ZEN.pair();
     var bob = await ZEN.pair();
-    var aes = await ZEN.secret(bob.epub, alice);
+    var aes = await ZEN.secret(bob.pub, alice);
     var enc = await ZEN.encrypt("shared data", aes);
-    var aes2 = await ZEN.secret(alice.epub, bob);
+    var aes2 = await ZEN.secret(alice.pub, bob);
     var dec = await ZEN.decrypt(enc, aes2);
     assert.strictEqual(dec, "shared data");
   });
@@ -330,38 +330,38 @@ describe("ZEN crypto — pair() key format", function () {
     assert.match(p.pub, B62);
   });
 
-  it("epub is 45-char base62 compressed", function () {
-    assert.match(p.epub, B62);
+  it("epub not present (no separate encryption keypair)", function () {
+    assert.strictEqual(p.epub, undefined);
+    assert.strictEqual(p.epriv, undefined);
   });
 
   it("priv is 44-char base62", function () {
     assert.match(p.priv, B62_44);
   });
 
-  it("epriv is 44-char base62", function () {
-    assert.match(p.epriv, B62_44);
+  it("address is EVM checksummed", function () {
+    assert.match(p.address, /^0x[0-9a-fA-F]{40}$/);
   });
 
-  it("pub and epub differ (ECDSA vs ECDH)", function () {
-    assert.notStrictEqual(p.pub, p.epub);
+  it("pub and address differ", function () {
+    assert.notStrictEqual(p.pub, p.address);
   });
 
   it("format holds across multiple pairs", async function () {
     var pairs = await Promise.all([ZEN.pair(), ZEN.pair(), ZEN.pair()]);
     pairs.forEach(function (p) {
       assert.match(p.pub, B62);
-      assert.match(p.epub, B62);
       assert.match(p.priv, B62_44);
-      assert.match(p.epriv, B62_44);
+      assert.match(p.address, /^0x[0-9a-fA-F]{40}$/);
+      assert.strictEqual(p.epub, undefined);
     });
   });
 
   it("seed-based pair has same format", async function () {
     var p = await ZEN.pair(null, { seed: "test-seed-format" });
     assert.match(p.pub, B62);
-    assert.match(p.epub, B62);
     assert.match(p.priv, B62_44);
-    assert.match(p.epriv, B62_44);
+    assert.match(p.address, /^0x[0-9a-fA-F]{40}$/);
   });
 });
 
@@ -383,8 +383,7 @@ describe("ZEN crypto — seed-based key generation", function () {
     var p2 = await ZEN.pair(null, { seed: "my secret seed" });
     assert.strictEqual(p1.priv, p2.priv);
     assert.strictEqual(p1.pub, p2.pub);
-    assert.strictEqual(p1.epriv, p2.epriv);
-    assert.strictEqual(p1.epub, p2.epub);
+    assert.strictEqual(p1.address, p2.address);
   });
 
   it("different seed → different pair", async function () {
@@ -412,11 +411,11 @@ describe("ZEN crypto — seed-based key generation", function () {
     assert.strictEqual(rebuilt.pub, base.pub);
   });
 
-  it("pair from epriv restores epub", async function () {
-    var base = await ZEN.pair(null, { seed: "epriv-restore" });
-    var rebuilt = await ZEN.pair(null, { epriv: base.epriv });
-    assert.strictEqual(rebuilt.epriv, base.epriv);
-    assert.strictEqual(rebuilt.epub, base.epub);
+  it("pair from priv restores pub", async function () {
+    var base = await ZEN.pair(null, { seed: "priv-restore" });
+    var rebuilt = await ZEN.pair(null, { priv: base.priv });
+    assert.strictEqual(rebuilt.priv, base.priv);
+    assert.strictEqual(rebuilt.pub, base.pub);
   });
 
   it("seed types: empty, numeric, special chars, unicode all produce valid pairs", async function () {
@@ -472,26 +471,26 @@ describe("ZEN crypto — derive (additive)", function () {
     assert.strictEqual(bob.pub, alice.pub);
   });
 
-  it("Bob (epriv+seed) and Alice (epub+seed) produce same derived epub", async function () {
-    var bob = await ZEN.pair(null, { epriv: base.epriv, seed: "derive-enc" });
-    var alice = await ZEN.pair(null, { epub: base.epub, seed: "derive-enc" });
-    assert.strictEqual(bob.epub, alice.epub);
+  it("Bob (priv+seed) and Alice (pub+seed) produce same derived pub", async function () {
+    var bob = await ZEN.pair(null, { priv: base.priv, seed: "derive-enc" });
+    var alice = await ZEN.pair(null, { pub: base.pub, seed: "derive-enc" });
+    assert.strictEqual(bob.pub, alice.pub);
   });
 
-  it("partial output: priv+seed gives priv+pub only (no epub)", async function () {
+  it("partial output: priv+seed gives priv+pub+address (no epriv/epub)", async function () {
     var d = await ZEN.pair(null, { priv: base.priv, seed: "derive-partial" });
     assert.ok(d.priv);
     assert.ok(d.pub);
-    assert.ok(!d.epriv);
-    assert.ok(!d.epub);
+    assert.strictEqual(d.epriv, undefined);
+    assert.strictEqual(d.epub, undefined);
   });
 
-  it("partial output: pub+seed gives pub only", async function () {
+  it("partial output: pub+seed gives pub+address only (no priv)", async function () {
     var d = await ZEN.pair(null, { pub: base.pub, seed: "derive-pub-partial" });
     assert.ok(d.pub);
     assert.ok(!d.priv);
-    assert.ok(!d.epriv);
-    assert.ok(!d.epub);
+    assert.strictEqual(d.epriv, undefined);
+    assert.strictEqual(d.epub, undefined);
   });
 
   it("rejects invalid pub format", async function () {

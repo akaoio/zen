@@ -893,9 +893,9 @@ describe("ZEN + PEN integration", function () {
   });
 
   it("ZEN.secret shared key, wrong pair: decrypt returns undefined", function (done) {
-    ZEN.secret(pair2.epub, pair, function (aesKey) {
+    ZEN.secret(pair2.pub, pair, function (aesKey) {
       ZEN.encrypt("sensitive", aesKey, function (enc) {
-        ZEN.secret(pair.epub, pair2, function (aesKey2) {
+        ZEN.secret(pair.pub, pair2, function (aesKey2) {
           ZEN.decrypt(enc, aesKey2, function (dec) {
             assert.strictEqual(
               dec,
@@ -903,7 +903,7 @@ describe("ZEN + PEN integration", function () {
               "alice→bob shared key decrypts",
             );
             // deliberately use wrong key
-            ZEN.decrypt(enc, pair.epub, function (bad) {
+            ZEN.decrypt(enc, pair.pub, function (bad) {
               assert.strictEqual(bad, undefined, "wrong key yields undefined");
               done();
             });

@@ -10,8 +10,9 @@ describe("ZEN secp256k1", function () {
     assert.strictEqual(first.curve, "secp256k1");
     assert.strictEqual(first.priv, second.priv);
     assert.strictEqual(first.pub, second.pub);
-    assert.strictEqual(first.epriv, second.epriv);
-    assert.strictEqual(first.epub, second.epub);
+    assert.strictEqual(first.address, second.address);
+    assert.strictEqual(first.epub, undefined);
+    assert.strictEqual(first.epriv, undefined);
   });
 
   it("emits public keys that are valid secp256k1 points", async function () {
@@ -51,8 +52,8 @@ describe("ZEN secp256k1", function () {
   it("derives symmetric shared secrets for secp256k1 encryption keys", async function () {
     var alice = await ZEN.pair(null, { seed: "alice-secret" });
     var bob = await ZEN.pair(null, { seed: "bob-secret" });
-    var toBob = await ZEN.secret(bob.epub, alice);
-    var toAlice = await ZEN.secret(alice.epub, bob);
+    var toBob = await ZEN.secret(bob.pub, alice);
+    var toAlice = await ZEN.secret(alice.pub, bob);
     assert.strictEqual(toBob, toAlice);
     assert.strictEqual(typeof toBob, "string");
     assert.strictEqual(toBob.length, 44);

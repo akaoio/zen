@@ -140,14 +140,10 @@ describe("Private Message Threading", function () {
             var alice = (window.alice = {
               pub: "iYIONCL4rq6-SqmXHjDBoWBJIuhReIHy7MtzBp0zEiw.OXqW4c-FnmcbG2K9IM4avl8WyULHvZxQIyvgTH25PSo",
               priv: "5xIKfcjHSrPPr9u80YVJjDITMsif-MHYQyKY7xH-474",
-              epub: "4Goj7wufxhuyc7IdIMInEOqXgNHaZi8mCWgDGrQIikI.2oTovqZJb8Ez-GB4VEIVU4ixWlshPwt-99hcZk9i63E",
-              epriv: "6ut8nfxpGSBbyBoZso7QU7jyhiYGRgZZ4LPAtJvWQsQ",
             });
             var bob = (window.bob = {
               pub: "xDAF7JiabamDhUiUFuh4dI8cjRM-yIZwYInzoKoOLlQ.qyBHHKvFhNs0BesfWmpkkg-AyBslWgQ5NtIjZjtzpRM",
               priv: "skNy4i4FGFZudqxgkPYMjnggylMu_fZnl-vLref1Hl0",
-              epub: "ZiCAyWdAixUxYr0I4KRI2raWDXwj0dQltMvdR0_Eld8.Vjz_pGf2LE6i1Qi-8je9U42mnjoPyB50S2dmXZpnC_E",
-              epriv: "JdGqj9E_VzfjgLdi0fpj1VjeP5tKPYfstpd1n9DQklg",
             });
             var me = (window.me = env.i - 1 ? bob : alice); // keep it DRY since both need to login.
             var them = (window.them = env.i - 1 ? alice : bob);
@@ -186,7 +182,7 @@ describe("Private Message Threading", function () {
               }, 2000);
             });
             async function start() {
-              sec = window.sec = await ZEN.secret(me.epub, them);
+              sec = window.sec = await ZEN.secret(me.pub, them);
               to = window.to = zen.user().get("pchat").get(them.pub);
               fro = window.fro = zen.user(them.pub).get("pchat").get(me.pub);
               // TODO: THIS SHOULD DO THE THREADING FOR US LOL!! We have to manually do it.

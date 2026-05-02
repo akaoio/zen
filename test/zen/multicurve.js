@@ -11,14 +11,8 @@ describe("ripemd160 test vectors", function () {
   // produce the expected Bitcoin P2PKH address (which depends on ripemd160).
 
   it("known BTC P2PKH address from secp256k1 private key", async function () {
-    // Private key: 0x0000...0001 (scalar = 1n), pubkey = G
-    // Compressed G: 02 79BE667EF9DC... → known BTC address: 1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH
-    const knownPrivHex =
-      "0000000000000000000000000000000000000000000000000000000000000001";
-    // We generate using btc format with a known priv via seed that gives scalar=1 is impractical.
-    // Instead, test that btc format produces a valid Base58 address starting with '1'.
     const p = await ZEN.pair(null, { format: "btc" });
-    assert.ok(p.pub.startsWith("1"), "BTC P2PKH address should start with 1");
+    assert.ok(p.address.startsWith("1"), "BTC P2PKH address should start with 1");
     assert.ok(
       p.priv.startsWith("K") || p.priv.startsWith("L"),
       "WIF compressed mainnet starts with K or L",
@@ -41,14 +35,13 @@ describe("zen.pair() — secp256k1 backward compatibility", function () {
     const p2 = await ZEN.pair(null, { seed, curve: "secp256k1" });
     assert.strictEqual(p1.pub, p2.pub);
     assert.strictEqual(p1.priv, p2.priv);
-    assert.strictEqual(p1.epub, p2.epub);
-    assert.strictEqual(p1.epriv, p2.epriv);
+    assert.strictEqual(p1.address, p2.address);
   });
 
   it("secp256k1 pub is 45-char base62 compressed", async function () {
     const p = await ZEN.pair(null, { seed: "secp-base62-check" });
     assert.match(p.pub, /^[A-Za-z0-9]{44}[01]$/, "pub should be 45-char base62 compressed");
-    assert.match(p.epub, /^[A-Za-z0-9]{44}[01]$/, "epub should be 45-char base62 compressed");
+    assert.match(p.address, /^0x[0-9a-fA-F]{40}$/, "address should be EVM checksum");
   });
 
   it("secp256k1 additive derivation still works", async function () {
@@ -83,18 +76,19 @@ describe("zen.pair() — P-256 / secp256r1", function () {
     assert.strictEqual(p1.priv, p2.priv);
   });
 
-  it("p256 pair has all 4 keys", async function () {
+  it("p256 pair has pub, priv, address", async function () {
     const p = await ZEN.pair(null, { curve: "p256" });
     assert.ok(p.pub, "pub present");
     assert.ok(p.priv, "priv present");
-    assert.ok(p.epub, "epub present");
-    assert.ok(p.epriv, "epriv present");
+    assert.ok(p.address, "address present");
+    assert.ok(!p.epub, "epub not present");
+    assert.ok(!p.epriv, "epriv not present");
   });
 
   it("p256 pub is 45-char base62 compressed (zen format default)", async function () {
     const p = await ZEN.pair(null, { curve: "p256" });
     assert.match(p.pub, /^[A-Za-z0-9]{44}[01]$/, "pub 45-char base62 compressed");
-    assert.match(p.epub, /^[A-Za-z0-9]{44}[01]$/, "epub 45-char base62 compressed");
+    assert.match(p.address, /^0x[0-9a-fA-F]{40}$/, "address is EVM checksum");
   });
 
   it("p256 seed deterministic", async function () {
@@ -103,8 +97,7 @@ describe("zen.pair() — P-256 / secp256r1", function () {
     const p2 = await ZEN.pair(null, { seed, curve: "p256" });
     assert.strictEqual(p1.pub, p2.pub);
     assert.strictEqual(p1.priv, p2.priv);
-    assert.strictEqual(p1.epub, p2.epub);
-    assert.strictEqual(p1.epriv, p2.epriv);
+    assert.strictEqual(p1.address, p2.address);
   });
 
   it("p256 different seed → different keys", async function () {
@@ -145,14 +138,9 @@ describe("zen.pair() — P-256 / secp256r1", function () {
 describe("zen.pair() — format:evm", function () {
   this.timeout(20 * 1000);
 
-  it("evm format returns 0x-checksummed address", async function () {
+  it("evm format pub is 0x04 + 128 hex chars (uncompressed)", async function () {
     const p = await ZEN.pair(null, { format: "evm" });
-    assert.ok(p.pub, "pub present");
-    assert.match(
-      p.pub,
-      /^0x[0-9a-fA-F]{40}$/,
-      "pub is checksummed ETH address",
-    );
+    assert.match(p.pub, /^0x04[0-9a-f]{128}$/, "pub is uncompressed pubkey");
   });
 
   it("evm format priv is 0x + 64 hex chars", async function () {
@@ -160,9 +148,9 @@ describe("zen.pair() — format:evm", function () {
     assert.match(p.priv, /^0x[0-9a-f]{64}$/, "priv is 0x+64hex");
   });
 
-  it("evm format epub is 0x04 + 128 hex chars", async function () {
+  it("evm format address is 0x-checksummed ETH address", async function () {
     const p = await ZEN.pair(null, { format: "evm" });
-    assert.match(p.epub, /^0x04[0-9a-f]{128}$/, "epub is uncompressed pubkey");
+    assert.match(p.address, /^0x[0-9a-fA-F]{40}$/, "address is checksummed ETH address");
   });
 
   it("evm format is deterministic from seed", async function () {
@@ -171,25 +159,25 @@ describe("zen.pair() — format:evm", function () {
     const p2 = await ZEN.pair(null, { seed, format: "evm" });
     assert.strictEqual(p1.pub, p2.pub);
     assert.strictEqual(p1.priv, p2.priv);
+    assert.strictEqual(p1.address, p2.address);
   });
 
   it("evm address is EIP-55 checksummed (mixed case)", async function () {
-    // Check that at least some letter characters are uppercase (not all lowercase)
     const p = await ZEN.pair(null, {
       seed: "eip55-test-seed-xyz",
       format: "evm",
     });
-    const addr = p.pub.slice(2); // strip 0x
+    const addr = p.address.slice(2); // strip 0x
     const hasUpper = /[A-F]/.test(addr);
     const hasLower = /[a-f]/.test(addr);
-    // Most addresses have both; an all-digit address is astronomically rare
     assert.ok(hasUpper || hasLower, "address should have hex chars");
   });
 
   it("p256 + evm format returns valid ETH address", async function () {
     const p = await ZEN.pair(null, { curve: "p256", format: "evm" });
     assert.strictEqual(p.curve, "p256");
-    assert.match(p.pub, /^0x[0-9a-fA-F]{40}$/, "p256 evm pub is ETH address");
+    assert.match(p.pub, /^0x04[0-9a-f]{128}$/, "p256 evm pub is uncompressed pubkey");
+    assert.match(p.address, /^0x[0-9a-fA-F]{40}$/, "p256 evm address is ETH address");
     assert.match(p.priv, /^0x[0-9a-f]{64}$/, "p256 evm priv is 0x+hex");
   });
 });
@@ -198,9 +186,9 @@ describe("zen.pair() — format:evm", function () {
 describe("zen.pair() — format:btc", function () {
   this.timeout(20 * 1000);
 
-  it("btc format pub starts with 1 (P2PKH mainnet)", async function () {
+  it("btc format pub is compressed pubkey hex (0x02/03 + 64 hex)", async function () {
     const p = await ZEN.pair(null, { format: "btc" });
-    assert.match(p.pub, /^1[1-9A-HJ-NP-Za-km-z]+$/, "pub is base58 P2PKH");
+    assert.match(p.pub, /^0x0[23][0-9a-f]{64}$/, "pub is 0x02/03 + 32-byte x");
   });
 
   it("btc format priv is WIF compressed (K or L)", async function () {
@@ -212,13 +200,9 @@ describe("zen.pair() — format:btc", function () {
     );
   });
 
-  it("btc format epub is compressed pubkey hex", async function () {
+  it("btc format address is P2PKH base58 (starts with 1)", async function () {
     const p = await ZEN.pair(null, { format: "btc" });
-    assert.match(
-      p.epub,
-      /^0x0[23][0-9a-f]{64}$/,
-      "epub is 0x02/03 + 32-byte x",
-    );
+    assert.match(p.address, /^1[1-9A-HJ-NP-Za-km-z]+$/, "address is base58 P2PKH");
   });
 
   it("btc format is deterministic from seed", async function () {
@@ -227,19 +211,21 @@ describe("zen.pair() — format:btc", function () {
     const p2 = await ZEN.pair(null, { seed, format: "btc" });
     assert.strictEqual(p1.pub, p2.pub);
     assert.strictEqual(p1.priv, p2.priv);
+    assert.strictEqual(p1.address, p2.address);
   });
 
   it("p256 + btc format returns valid P2PKH address", async function () {
     const p = await ZEN.pair(null, { curve: "p256", format: "btc" });
     assert.strictEqual(p.curve, "p256");
-    assert.match(p.pub, /^1[1-9A-HJ-NP-Za-km-z]+$/, "p256 btc pub is P2PKH");
+    assert.match(p.address, /^1[1-9A-HJ-NP-Za-km-z]+$/, "p256 btc address is P2PKH");
+    assert.match(p.pub, /^0x0[23][0-9a-f]{64}$/, "p256 btc pub is compressed pubkey");
   });
 
   it("btc address length is 25–34 chars", async function () {
     const p = await ZEN.pair(null, { format: "btc" });
     assert.ok(
-      p.pub.length >= 25 && p.pub.length <= 34,
-      `address length ${p.pub.length} should be 25-34`,
+      p.address.length >= 25 && p.address.length <= 34,
+      `address length ${p.address.length} should be 25-34`,
     );
   });
 });
@@ -317,45 +303,40 @@ describe("sign/verify — multi-curve", function () {
 describe("zen.pair() — format round-trip", function () {
   this.timeout(20 * 1000);
 
-  it("zen → evm → zen round-trip preserves pub and epriv", async function () {
+  it("zen → evm → zen round-trip preserves pub and priv", async function () {
     const zen = await ZEN.pair(null, { seed: "round-trip-test" });
-    const evm = await ZEN.pair(null, { priv: zen.priv, epriv: zen.epriv, format: "evm" });
-    const back = await ZEN.pair(null, { priv: evm.priv, epriv: evm.epriv, format: "zen" });
+    const evm = await ZEN.pair(null, { priv: zen.priv, format: "evm" });
+    const back = await ZEN.pair(null, { priv: evm.priv, format: "zen" });
     assert.strictEqual(back.pub, zen.pub, "pub must survive zen→evm→zen round-trip");
-    assert.strictEqual(back.epub, zen.epub, "epub must survive zen→evm→zen round-trip");
     assert.strictEqual(back.priv, zen.priv, "priv must survive zen→evm→zen round-trip");
-    assert.strictEqual(back.epriv, zen.epriv, "epriv must survive zen→evm→zen round-trip");
+    assert.strictEqual(back.address, zen.address, "address must survive zen→evm→zen round-trip");
   });
 
   it("spread evm pair back to zen also round-trips", async function () {
     const zen = await ZEN.pair(null, { seed: "spread-round-trip" });
-    const evm = await ZEN.pair(null, { priv: zen.priv, epriv: zen.epriv, format: "evm" });
-    const back = await ZEN.pair(null, { ...evm, format: "zen" });
+    const evm = await ZEN.pair(null, { priv: zen.priv, format: "evm" });
+    const back = await ZEN.pair(null, { priv: evm.priv, format: "zen" });
     assert.strictEqual(back.pub, zen.pub, "spread round-trip must recover original pub");
-    assert.strictEqual(back.epub, zen.epub, "spread round-trip must recover original epub");
   });
 
-  it("zen → btc epub is parseable as a curve point (no round-trip via WIF)", async function () {
-    // BTC round-trip through WIF private key format is out of scope (requires base58 decode).
-    // This test confirms btc.epub (compressed hex 0x02/03+64hex) is a valid point that
-    // parsePub can handle — tested indirectly by verifying ECDH still works.
-    const alice = await ZEN.pair(null, { seed: "alice-btc-epub" });
-    const bob = await ZEN.pair(null, { seed: "bob-btc-epub" });
-    const bobBtc = await ZEN.pair(null, { priv: bob.priv, epriv: bob.epriv, format: "btc" });
-    // alice computes shared secret using bob's BTC-format compressed epub
-    const s1 = await ZEN.secret(bobBtc.epub, alice);
-    // bob computes shared secret using alice's zen epub
-    const s2 = await ZEN.secret(alice.epub, bob);
-    assert.strictEqual(s1, s2, "ECDH must work cross-format with BTC compressed epub");
+  it("btc pub (compressed hex) is parseable as a curve point for ECDH", async function () {
+    const alice = await ZEN.pair(null, { seed: "alice-btc-pub" });
+    const bob = await ZEN.pair(null, { seed: "bob-btc-pub" });
+    const bobBtc = await ZEN.pair(null, { priv: bob.priv, format: "btc" });
+    // alice computes shared secret using bob's BTC-format compressed pub
+    const s1 = await ZEN.secret(bobBtc.pub, alice);
+    // bob computes shared secret using alice's zen pub
+    const s2 = await ZEN.secret(alice.pub, bob);
+    assert.strictEqual(s1, s2, "ECDH must work cross-format with BTC compressed pub");
   });
 
   it("evm ECDH still works after round-trip", async function () {
     const alice = await ZEN.pair(null, { seed: "alice-rt" });
     const bob = await ZEN.pair(null, { seed: "bob-rt" });
-    const aliceEvm = await ZEN.pair(null, { priv: alice.priv, epriv: alice.epriv, format: "evm" });
-    const aliceBack = await ZEN.pair(null, { priv: aliceEvm.priv, epriv: aliceEvm.epriv, format: "zen" });
-    const s1 = await ZEN.secret(bob.epub, alice);
-    const s2 = await ZEN.secret(bob.epub, aliceBack);
+    const aliceEvm = await ZEN.pair(null, { priv: alice.priv, format: "evm" });
+    const aliceBack = await ZEN.pair(null, { priv: aliceEvm.priv, format: "zen" });
+    const s1 = await ZEN.secret(bob.pub, alice);
+    const s2 = await ZEN.secret(bob.pub, aliceBack);
     assert.strictEqual(s1, s2, "ECDH shared secret must match after evm round-trip");
   });
 });
@@ -367,15 +348,15 @@ describe("secret — multi-curve", function () {
   it("p256: ECDH shared secret matches", async function () {
     const alice = await ZEN.pair(null, { curve: "p256" });
     const bob = await ZEN.pair(null, { curve: "p256" });
-    const s1 = await ZEN.secret(bob.epub, alice);
-    const s2 = await ZEN.secret(alice.epub, bob);
+    const s1 = await ZEN.secret(bob.pub, alice);
+    const s2 = await ZEN.secret(alice.pub, bob);
     assert.strictEqual(s1, s2, "p256 ECDH shared secrets must match");
   });
 
   it("p256: shared secret is a base62 string", async function () {
     const alice = await ZEN.pair(null, { curve: "p256" });
     const bob = await ZEN.pair(null, { curve: "p256" });
-    const s = await ZEN.secret(bob.epub, alice);
+    const s = await ZEN.secret(bob.pub, alice);
     assert.match(s, /^[A-Za-z0-9]+$/, "shared secret should be base62");
   });
 });

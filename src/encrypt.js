@@ -5,7 +5,7 @@ async function encrypt(data, pair, cb, opt) {
   try {
     opt = opt || {};
     const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
-    const key = (pair || opt).epriv || pair;
+    const key = (pair && pair.priv) || pair;
     if (data === undefined) {
       throw new Error("`undefined` not allowed.");
     }

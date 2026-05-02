@@ -38,87 +38,57 @@ async function pair(cb, opt) {
     const labelCurve = c.curve;
 
     let spriv = null,
-      spub = null,
-      epriv = null,
-      epub = null;
+      spub = null;
 
-    if (opt.seed && (opt.priv || opt.epriv || opt.pub || opt.epub)) {
+    if (opt.seed && (opt.priv || opt.pub)) {
       // Additive derivation from existing key + seed
       if (opt.priv) {
+        const basePriv = opt.priv;
         spriv = await derivepriv(
           c,
-          c.parseScalar(opt.priv, "Signing key"),
+          c.parseScalar(basePriv, "Signing key"),
           opt.seed,
           "ZEN.DERIVE|sign|",
         );
         spub = c.publicFromPrivate(spriv);
       }
-      if (opt.epriv) {
-        epriv = await derivepriv(
-          c,
-          c.parseScalar(opt.epriv, "Encryption key"),
-          opt.seed,
-          "ZEN.DERIVE|encrypt|",
-        );
-        epub = c.publicFromPrivate(epriv);
-      }
       if (opt.pub) {
+        const basePub = opt.pub;
         spub = await derivepub(
           c,
-          c.parsePub(opt.pub),
+          c.parsePub(basePub),
           opt.seed,
           "ZEN.DERIVE|sign|",
         );
       }
-      if (opt.epub) {
-        epub = await derivepub(
-          c,
-          c.parsePub(opt.epub),
-          opt.seed,
-          "ZEN.DERIVE|encrypt|",
-        );
-      }
     } else {
       // Generate fresh or restore from private / seed
-      spriv = opt.priv ? c.parseScalar(opt.priv, "Signing key") : null;
-      epriv = opt.epriv ? c.parseScalar(opt.epriv, "Encryption key") : null;
+      const rawPriv = opt.priv;
+      spriv = rawPriv ? c.parseScalar(rawPriv, "Signing key") : null;
 
       // Seed labels use canonical c.curve so aliases (secp256r1 ≡ p256) share the same key.
       // For secp256k1: 'ZEN|secp256k1|sign|' matches the original hardcoded value — backward compat.
       if (!spriv && opt.seed) {
         spriv = await c.hashToScalar(opt.seed, "ZEN|" + labelCurve + "|sign|");
       }
-      if (!epriv && opt.seed) {
-        epriv = await c.hashToScalar(
-          opt.seed,
-          "ZEN|" + labelCurve + "|encrypt|",
-        );
-      }
-      if (!spriv && !opt.pub) {
+      const rawPub = opt.pub;
+      if (!spriv && !rawPub) {
         spriv = await c.randomScalar();
-      }
-      if (!epriv && !opt.epub) {
-        epriv = await c.randomScalar();
       }
 
       if (spriv) {
         spub = c.publicFromPrivate(spriv);
-      } else if (opt.pub) {
-        spub = c.parsePub(opt.pub);
-      }
-
-      if (epriv) {
-        epub = c.publicFromPrivate(epriv);
-      } else if (opt.epub) {
-        epub = c.parsePub(opt.epub);
+      } else if (rawPub) {
+        spub = c.parsePub(rawPub);
       }
     }
 
+    // Single keypair — sign and encrypt use the same key
     const out = await applyFormat(format, labelCurve, c, {
       signPriv: spriv,
       signPub: spub,
-      encPriv: epriv,
-      encPub: epub,
+      encPriv: spriv,
+      encPub: spub,
     });
     return cbOk(cb, out);
   } catch (e) {

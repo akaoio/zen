@@ -269,7 +269,7 @@ describe("Shocknet Test!", function () {
             var env = test.props;
             const ZEN = ZEN;
             const user = global.user;
-            return ZEN.secret(user._.zen.epub, user._.zen).then((mySecret) => {
+            return ZEN.secret(user._.zen.pub, user._.zen).then((mySecret) => {
               global.ZEN = ZEN;
               global.mySecret = mySecret;
               done();
