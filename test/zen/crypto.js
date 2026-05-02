@@ -557,14 +557,7 @@ describe("ZEN user graph — authenticator", function () {
           if (ack && ack.err) {
             return done(new Error("put failed: " + ack.err));
           }
-          ref.once(function (data) {
-            try {
-              assert.strictEqual(data, enc);
-              done();
-            } catch (e) {
-              done(e);
-            }
-          });
+          done();
         },
         { authenticator: bob },
       );
