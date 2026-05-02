@@ -11,6 +11,7 @@ import ZEN from "../index.js";
 import * as xdg from "../lib/xdg.js";
 import { disc, hwid, DOMF, PORTF } from "../lib/discover.js";
 import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
+import { getOrCreateIdentity } from "../lib/identity.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -334,16 +335,16 @@ if (main && cluster.isPrimary) {
 
   // ── deterministic peer ID from hardware entropy ───────────────────────────
   let ppid = null;
-  const hraw = hwid();
-  if (hraw) {
-    try {
-      const seed = await ZEN.hash(hraw, null, null, { encode: "base62" });
-      const ppair = await ZEN.pair(null, { seed });
-      ppid = ppair.pub;
+  let identity = null;
+  try {
+    identity = await getOrCreateIdentity();
+    if (identity) {
+      ppid = identity.pair.pub;
       console.log("Peer ID (stable):", ppid.slice(0, 9) + "...");
-    } catch (e) {
-      console.log("Warning: pid derivation failed:", e.message);
+      console.log("Hardware identity loaded from:", identity.hwid.slice(0, 30) + "...");
     }
+  } catch (e) {
+    console.log("Warning: identity derivation failed:", e.message);
   }
 
   // On Linux '::' is dual-stack (IPV6_V6ONLY=0 by default).
