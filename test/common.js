@@ -2129,9 +2129,11 @@ describe("ZEN", function () {
               }, 10);
             }
           });
+        // Use 1000ms to give the map subscription enough time to fully
+        // set up on slow CI machines (Windows disk I/O can exceed 300ms).
         setTimeout(function () {
           zen.get("GALICE2").put({ PhD: true });
-        }, 300);
+        }, 1000);
       });
 
       it("in memory get before map get", function (done) {
@@ -4965,6 +4967,11 @@ describe("ZEN", function () {
         .on(function (v, k) {
           if (++C === 1) {
             expect(v.num).to.be(3);
+            // Trigger the update only after the first notification fires,
+            // to avoid a race with slow disk I/O on CI machines.
+            setTimeout(function () {
+              app.get("watcher/1").put({ stats: { num: 4 }, name: "trexxx" });
+            }, 50);
             return;
           }
           expect(v.num).to.be(4);
@@ -4976,10 +4983,6 @@ describe("ZEN", function () {
           nopasstun(done, zen);
         });
       //return;
-
-      setTimeout(function () {
-        app.get("watcher/1").put({ stats: { num: 4 }, name: "trexxx" });
-      }, 100);
     });
     //return;
 
