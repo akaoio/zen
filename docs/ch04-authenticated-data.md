@@ -192,7 +192,6 @@ const cert = await ZEN.certify(
 |--------|------|-------------|
 | `expiry` | number | Timestamp after which the cert is invalid |
 | `block` | string or `{ write, read }` | Soul of a blocklist node; entries there revoke the cert |
-| `raw` | truthy | Return cert as object instead of JSON string |
 
 ---
 

@@ -24,7 +24,7 @@ This repository is documented as a structured book. Read it in order or jump to 
 | [Ch 4 — Authenticated Data](docs/ch04-authenticated-data.md) | Owned namespaces, signing writes, certificates, security pipeline |
 | [Ch 5 — Storage Adapters](docs/ch05-storage.md) | Radisk, filesystem, IndexedDB, OPFS, S3, writing your own |
 | [Ch 6 — Networking](docs/ch06-networking.md) | Mesh, peers, WebSocket, WebRTC, message protocol |
-| [Ch 7 — PEN Policy VM](docs/ch07-pen.md) | WASM bytecode engine, opcodes, `ZEN.pen()`, `ZEN.run()` |
+| [Ch 7 — PEN Policy VM](docs/ch07-pen.md) | WASM bytecode engine, opcodes, `ZEN.pen()`, bridge/runtime policy enforcement |
 | [Ch 8 — Contributing](docs/ch08-contributing.md) | Build system, test suite, adding chain methods, adding adapters |
 | [Ch 9 — MCP (AI Integration)](docs/ch09-mcp.md) | IDE peer, stdio server, tools, Cursor/VSCode config |
 
@@ -146,13 +146,13 @@ zen.get("profile").get("age").on(function(data) {
 const pair = await ZEN.pair();                       // secp256k1
 
 const signed  = await ZEN.sign("hello", pair);
-// signed = "<86 base62 chars>0:\"hello\""
+// signed = "<86 base62 chars>0:hello"
 // signed[86] → recovery bit (0 or 1)
 // signed[87] → ':'
 const ok      = await ZEN.verify(signed, pair.pub);  // "hello"
 
 const enc = await ZEN.encrypt("secret", pair.pub);
-// enc = "<ct_b64url>:<iv_b64url>:<s_b64url>"
+// enc = "<ct_base62>.<iv_base62_21>.<salt_base62_13>"
 const dec = await ZEN.decrypt(enc, pair.priv);       // "secret"
 
 const bob    = await ZEN.pair();
@@ -237,7 +237,7 @@ zen.back(n)         // navigate up the chain
 
 ```js
 ZEN.pair(cb, opt)                // generate key pair
-ZEN.sign(data, pair)             // sign data → { m, s, v } (v = recovery bit)
+ZEN.sign(data, pair)             // sign data → compact signed string
 ZEN.verify(data, pub)            // verify signature
 ZEN.recover(sig)                 // recover signer pub from signature (no pub needed)
 ZEN.encrypt(data, pair)          // encrypt
@@ -256,7 +256,9 @@ Every `ZEN.sign()` output now includes `v` — a recovery bit (0 or 1). This all
 ```js
 const pair = await ZEN.pair();
 const sig  = await ZEN.sign("hello", pair);
-// sig is a JSON string: { m, s, v }  (v is new)
+// sig format:
+// secp256k1: <86 base62 sig><v>:<message>
+// p256:      <86 base62 sig><v>/p256:<message>
 
 const pub = await ZEN.recover(sig);
 console.log(pub === pair.pub);  // true
@@ -351,22 +353,17 @@ ZEN ships an MCP (Model Context Protocol) server that turns any IDE into a full 
 
 No ZEN installation needed — `npx` fetches `@akaoio/zen` automatically.
 
-**Available tools (1:1 ZEN API mapping):**
+**Available tools:**
 
 | Tool | Description |
 |------|-------------|
-| `get` | Read a value from the graph |
-| `put` | Write a value to the graph |
-| `on` | Read current state of a key |
-| `pair` | Generate a key pair (secp256k1 or P-256, optional seed) |
-| `sign` | Sign data with a private key |
-| `verify` | Verify a signed value |
-| `encrypt` | Encrypt data with a public key |
-| `decrypt` | Decrypt data with a private key |
-| `secret` | ECDH shared secret |
-| `hash` | Hash data (SHA-256, KECCAK-256, PBKDF2, HKDF, or mining) |
-| `certify` | Issue a write-access certificate |
-| `recover` | Recover signer public key from a signature |
+| `graph` | Raw graph `get` / `put` / `set` operations with optional `pairId`, `cert`, and `pow` |
+| `crypto` | Static crypto methods: `pair`, `sign`, `verify`, `encrypt`, `decrypt`, `secret`, `hash`, `certify`, `recover`, `pen`, `candle` |
+| `identity` | Return the MCP server public identity (`self`) |
+| `protocol` | High-level ZACP operations: souls, channel lifecycle, DM send/read |
+
+The current server exposes a single built-in signing identity alias: `pairId: "self"`.
+Raw private keys are rejected by the MCP process.
 
 See [Ch 9 — MCP](docs/ch09-mcp.md) for full details.
 
@@ -449,7 +446,7 @@ npm run buildRelease # buildZEN + uglify all lib adapters
 npm start            # start example relay (examples/zen-http.js)
 ```
 
-Current baseline: **422 passing, 10 pending** (across PEN unit + ZEN unit + core suites).
+Current baseline: **557 passing**.
 
 ---
 

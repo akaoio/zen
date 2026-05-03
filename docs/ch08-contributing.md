@@ -286,7 +286,7 @@ npm test                  # run full test suite
 node test/panic/holy-grail.js  # run correctness tests
 ```
 
-All 443 tests must pass before submitting a pull request (80 PEN + 171 ZEN unit + 192 core).
+Current baseline: `557 passing` via `npm test`. Keep that green before submitting a pull request.
 
 ---
 

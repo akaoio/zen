@@ -1,36 +1,45 @@
-# Hardware Identity Module
+# Identity Module
 
 ## Overview
 
-The `lib/identity.js` module provides **hardware-derived, deterministic identity generation** for ZEN servers and MCP instances running on the same hardware.
+The `lib/identity.js` module provides deterministic identity generation for ZEN servers and MCP instances.
+It supports both portable seed-based identities and machine-locked hardware-derived identities.
 
 ## Features
 
-- **Deterministic**: Same keypair on every restart
-- **Hardware-bound**: Derived from `/etc/machine-id`, MAC address, and hostname
-- **Shared**: Server and MCP use the same identity on the same machine
-- **Runtime-only**: Identity calculated on demand, never persisted to disk
+- **Deterministic**: Same input entropy yields the same keypair
+- **Portable mode**: Explicit seed or identity file works across machines
+- **Hardware mode**: Derived from `/etc/machine-id`, MAC address, and hostname
+- **Shared**: Server and MCP can derive the same identity on the same machine
+- **Runtime-only**: Identity calculated on demand, never persisted by this module
 - **Secure**: Private keys and seed exist only in process memory
 
 ## API
 
 ### `getOrCreateIdentity()`
 
-Returns a hardware-derived identity by calculating it from hardware entropy.
+Returns a deterministic identity using the following priority order:
+
+1. `opt.seed`
+2. `ZEN_IDENTITY_SEED`
+3. `--identity-file <path>` from `process.argv`
+4. `opt.identityFile`
+5. hardware fingerprint fallback
 
 ```javascript
 import { getOrCreateIdentity } from "./lib/identity.js";
 
 const identity = await getOrCreateIdentity();
-// → { pair: { pub, priv, epub, epriv }, seed, hwid }
+// → { pair: { pub, priv, address, curve }, seed, hwid, mode }
 ```
 
 **Returns:**
-- `pair`: Full keypair (signing + encryption keys)
-- `seed`: Base62-encoded SHA-256 hash of hardware ID
-- `hwid`: Raw hardware ID string (machine-id|MAC|hostname)
+- `pair`: `{ curve, pub, priv, address }`
+- `seed`: Base62-encoded SHA-256 hash of the selected input entropy
+- `hwid`: Raw hardware identity string in hardware mode, else `null`
+- `mode`: `"seed"` or `"hardware"`
 
-**Returns `null` if hardware entropy is unavailable** (e.g., in containers without machine-id).
+**Returns `null`** if no seed source is provided and hardware entropy is unavailable.
 
 **Security:** Identity is calculated fresh on every call. Nothing is persisted to disk.
 
@@ -47,7 +56,7 @@ const identity = await getIdentity();
 
 ## Usage
 
-### In ZEN Server (`script/server.js`)
+### In a ZEN server
 
 ```javascript
 import { getOrCreateIdentity } from "../lib/identity.js";
@@ -55,7 +64,7 @@ import { getOrCreateIdentity } from "../lib/identity.js";
 const identity = await getOrCreateIdentity();
 if (identity) {
   zen = new ZEN({ pid: identity.pair.pub, ... });
-  // Use identity.pair for signing/encryption
+   // Use identity.pair for authenticated operations
 }
 ```
 
@@ -64,17 +73,26 @@ if (identity) {
 ```javascript
 import { getOrCreateIdentity } from "./identity.js";
 
-const hwIdentity = await getOrCreateIdentity();
-if (hwIdentity) {
-  zenOpt.pid = hwIdentity.pair.pub;
-  // Store in pairStore with special "hw" ID
-  pairStore.set("hw", hwIdentity.pair);
+const localIdentity = await getOrCreateIdentity();
+if (localIdentity) {
+   zenOpt.pid = localIdentity.pair.pub;
+   pairStore.set("self", localIdentity.pair);
 }
 ```
 
-MCP users can then use `pairId: "hw"` in crypto/graph operations to sign with the hardware identity.
+MCP users can then use `pairId: "self"` in crypto/graph/protocol operations to sign with the local MCP identity.
 
-## Hardware Entropy Sources
+## Seed sources and hardware fallback
+
+Identity resolution order:
+
+1. explicit `opt.seed`
+2. `ZEN_IDENTITY_SEED`
+3. `--identity-file`
+4. `opt.identityFile`
+5. hardware fingerprint
+
+When the module falls back to hardware mode, the hardware ID is derived from:
 
 The hardware ID is derived from (in order of priority):
 
@@ -93,7 +111,7 @@ The hardware ID is derived from (in order of priority):
 
 Format: `machine-id|MAC|hostname` (joined with `|`)
 
-## Key Derivation
+## Key derivation
 
 ```
 hwid() → "96e66a7085...|00:0d:3a:9a:da:5b|hostname"
@@ -104,18 +122,16 @@ seed = "03EdUg7H7Y9bhcPj7XU2OWerQQ6hvdD7iFl04WEDuvsJ"
    ↓
 ZEN.pair(null, { seed })
    ↓
-{ pub, priv, epub, epriv }
+{ pub, priv, address, curve }
 ```
 
-The seed is hashed with curve-specific labels before scalar derivation:
-- `"ZEN|secp256k1|sign|"` → signing private key
-- `"ZEN|secp256k1|encrypt|"` → encryption private key
+The resulting seed is passed into `ZEN.pair(null, { seed })`, which derives the signing keypair according to the current curve implementation.
 
 ## Security Model
 
-**No disk persistence whatsoever.**
+**This module does not persist identity state.**
 
-- Identity is calculated fresh from hardware entropy on every call
+- Identity is calculated fresh from the chosen seed source on every call
 - Private keys exist only in process memory during execution
 - Seed (base62-encoded hash) exists only in memory
 - Public keys are never written to disk
@@ -127,7 +143,8 @@ This approach eliminates entire classes of attacks:
 - No permission issues with key storage
 - Keys cannot be moved to another machine
 
-The identity is hardware-bound and ephemeral by design.
+In hardware mode, the identity is machine-bound by design.
+In seed mode, the identity is portable by design.
 
 ## Testing
 

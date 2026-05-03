@@ -128,8 +128,7 @@ ZEN ships a full cryptographic runtime. The static methods on `ZEN` work without
 const pair = await ZEN.pair();
 // pair.pub   — 45-character secp256k1 public key (base62 compressed)
 // pair.priv  — private key (keep this secret!)
-// pair.epub  — ephemeral public key (for ECDH)
-// pair.epriv — ephemeral private key
+// pair.address — optional address/view format for some conversions
 // pair.curve — "secp256k1"
 
 console.log(pair.pub.length);  // 45
@@ -146,8 +145,8 @@ console.log(data);  // "hello world"
 Encrypt and decrypt:
 
 ```js
-const enc = await ZEN.encrypt("secret message", pair);
-const dec = await ZEN.decrypt(enc, pair);
+const enc = await ZEN.encrypt("secret message", pair.pub);
+const dec = await ZEN.decrypt(enc, pair.priv);
 console.log(dec);  // "secret message"
 ```
 

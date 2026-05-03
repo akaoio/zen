@@ -188,15 +188,15 @@ const data = await ZEN.verify(signed, pub);
 
 ### `ZEN.encrypt(data, key)`
 
-Encrypts `data` using AES-GCM. Returns a compact ciphertext string `<ct_b64url>:<iv_b64url>:<s_b64url>`.
+Encrypts `data` using AES-GCM. Returns a compact ciphertext string `<ct_base62>.<iv_base62_21>.<salt_base62_13>`.
 
 ```js
-const enc = await ZEN.encrypt("secret", pair);
-// "aB3xY...:kM2nP...:rQ7wS..."
+const enc = await ZEN.encrypt("secret", pair.pub);
+// "7Tj2...Q.03Bf7wQbP8bBYlL6V3P8B.0A9Vwyv9N6YvP"
 ```
 
 **`data` can be any valid JS value** (same as sign). **`key`** can be:
-- Your own `pair` (self-encryption using `pair.pub`/`pair.priv`)
+- Your own `pub` for self-encryption
 - Another user's `pub` for shared-key mode (see §3.4)
 
 ### `ZEN.decrypt(enc, key)`
@@ -204,10 +204,10 @@ const enc = await ZEN.encrypt("secret", pair);
 Decrypts a ciphertext string. Returns the original data, or `undefined` if the key is wrong.
 
 ```js
-const dec = await ZEN.decrypt(enc, pair);
+const dec = await ZEN.decrypt(enc, pair.priv);
 // "secret"
 
-const wrong = await ZEN.decrypt(enc, otherPair).catch(() => undefined);
+const wrong = await ZEN.decrypt(enc, otherPair.priv).catch(() => undefined);
 // undefined
 ```
 
@@ -215,8 +215,8 @@ Round-trip with a stringified object:
 
 ```js
 const original = JSON.stringify({ msg: "hello" });
-const enc = await ZEN.encrypt(original, pair);
-const dec = await ZEN.decrypt(enc, pair);
+const enc = await ZEN.encrypt(original, pair.pub);
+const dec = await ZEN.decrypt(enc, pair.priv);
 // { msg: "hello" }  ← automatically parsed back
 ```
 
@@ -391,7 +391,7 @@ const cert = await ZEN.certify(bob.pub, "inbox", alice);
 
 **`policy`** is a string path, e.g. `"inbox"`, `"messages"`.
 
-**Returns:** a JSON string `{ m, s }` (signed by the authority). The certificate can be verified:
+**Returns:** a compact signed string in the same wire format as `ZEN.sign()`. The certificate can be verified:
 
 ```js
 const data = await ZEN.verify(cert, alice.pub);

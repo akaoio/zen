@@ -53,12 +53,16 @@ The spec is a plain object describing what the policy should enforce. The compil
 
 ---
 
-## 7.3 `ZEN.run(bytecode, regs)` — evaluate a policy
+## 7.3 `pen.run(bytecode, regs)` — evaluate a policy core
 
-`ZEN.run(bytecode, regs)` evaluates a compiled bytecode string against a set of register values. Returns `true` or `false`.
+The low-level evaluator is `pen.run(bytecode, regs)` from `src/pen.js`. It evaluates a compiled bytecode string against a set of register values and returns `true` or `false`.
+
+Application code normally compiles souls with `ZEN.pen(spec)` and lets the security bridge invoke `pen.run(...)` during writes.
 
 ```js
-const allow = ZEN.run(bytecode, ["key", "value"]);
+import pen from "../src/pen.js";
+
+const allow = pen.run(bytecode, ["key", "value"]);
 // regs[0] = key, regs[1] = value
 ```
 
@@ -247,9 +251,9 @@ The first byte is always `0x01` (version 1). The root expression follows immedia
 
 ---
 
-## 7.9 Host extension opcodes
+## 7.9 Policy tail opcodes
 
-The range `0xC0–0xDF` is reserved for host-specific opcodes. When PEN Core encounters an opcode in this range, it calls back to the host (the ZEN bridge) to handle it.
+The range `0xC0–0xDF` is reserved for ZEN policy tail opcodes appended by the bridge after the expression bytecode. These bytes are interpreted by `src/pen.js`, not by the standalone WASM evaluator.
 
 The ZEN bridge defines:
 
@@ -258,9 +262,9 @@ The ZEN bridge defines:
 | `0xC0` | SGN | Require a valid ECDSA signature from the writer |
 | `0xC1` | CRT | Require a certificate signed by a specific public key |
 | `0xC3` | NOA | Open write — no authentication required |
-| `0xC4` | POW | Proof-of-work — reads nonce from R[7] (`msg.put["^"]`), reconstructs the canonical block `JSON.stringify({"#":soul,".": key,":":val,">": state})`, verifies `SHA-256(block + ":" + nonce)` meets the required difficulty |
+| `0xC4` | POW | Require proof-of-work over the canonical block using nonce register `R[7]` |
 
-These are used when `ZEN.pen()` compiles a policy that requires authentication or PoW.
+These are emitted when `ZEN.pen()` compiles a policy with `sign`, `cert`, `open`, or `pow` fields. The bridge peels them off, enforces them in JavaScript, and only then calls `pen.run(...)` on the pure predicate bytecode.
 
 ---
 
@@ -341,7 +345,7 @@ zen.get("~" + pair.pub).get("protected").get("data").put(
 );
 ```
 
-The ZEN security middleware calls `ZEN.run(policy, registers)` before accepting the write. If it returns `false`, the write is rejected with an error.
+The ZEN security middleware calls `pen.run(policy, registers)` through the bridge in `src/pen.js` before accepting the write. If it returns `false`, the write is rejected with an error.
 
 ---
 
