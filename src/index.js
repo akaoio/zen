@@ -85,7 +85,7 @@ function mirrorChain(target, source) {
   });
 }
 
-const BOOT = ["wss://peer0.akao.io", "wss://peer1.akao.io"];
+const BOOT = ["wss://zen.akao.io", "wss://peer1.akao.io"];
 
 class ZEN {
   constructor(opt = {}) {

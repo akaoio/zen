@@ -8282,7 +8282,7 @@ defmod('./src/index.js', function(module, exp){
     });
   }
 
-  const BOOT = ["wss://peer0.akao.io", "wss://peer1.akao.io"];
+  const BOOT = ["wss://zen.akao.io", "wss://peer1.akao.io"];
 
   class ZEN {
     constructor(opt = {}) {

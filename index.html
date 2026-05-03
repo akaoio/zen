@@ -1,10 +1,1131 @@
 <!doctype html>
-<head>
-  <script type="module">
-    const { default: ZEN } = await import("/zen.min.js");
-    const zen = new ZEN({
-      peers: [`${location.origin}/zen`]
-    });
-    globalThis.zen = zen
-  </script>
-</head>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZEN Browser Landing</title>
+    <style>
+      :root {
+        --bg: #f4efe4;
+        --bg-soft: #fffaf0;
+        --ink: #171717;
+        --muted: #5b564d;
+        --line: rgba(23, 23, 23, 0.12);
+        --card: rgba(255, 250, 240, 0.78);
+        --brand: #0f766e;
+        --brand-2: #d97706;
+        --brand-3: #0f172a;
+        --ok: #166534;
+        --warn: #9a3412;
+        --shadow: 0 20px 80px rgba(15, 23, 42, 0.12);
+        --radius-xl: 28px;
+        --radius-lg: 20px;
+        --radius-md: 14px;
+        --font-display: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+        --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+        --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: var(--font-body);
+        background:
+          radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 26%),
+          radial-gradient(circle at top right, rgba(217, 119, 6, 0.16), transparent 22%),
+          linear-gradient(180deg, #fcfbf7 0%, var(--bg) 38%, #efe8d9 100%);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.22;
+        background-image:
+          linear-gradient(rgba(23, 23, 23, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(23, 23, 23, 0.04) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(180deg, black 50%, transparent 100%);
+      }
+
+      a {
+        color: inherit;
+      }
+
+      code,
+      pre,
+      textarea,
+      input {
+        font-family: var(--font-mono);
+      }
+
+      .shell {
+        position: relative;
+        width: min(1240px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 24px 0 96px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 10px 0 26px;
+      }
+
+      .wordmark {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font: 700 1rem var(--font-display);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .wordmark-mark {
+        display: inline-grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        color: white;
+        background: linear-gradient(135deg, var(--brand) 0%, var(--brand-3) 100%);
+        box-shadow: var(--shadow);
+      }
+
+      .top-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .top-links a,
+      .mini-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        text-decoration: none;
+        font-size: 0.92rem;
+        backdrop-filter: blur(14px);
+      }
+
+      .hero {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1.2fr 0.92fr;
+        gap: 22px;
+        align-items: stretch;
+        margin-bottom: 24px;
+      }
+
+      .hero-panel,
+      .panel,
+      .callout,
+      .runtime-card {
+        position: relative;
+        border: 1px solid rgba(23, 23, 23, 0.1);
+        border-radius: var(--radius-xl);
+        background: var(--card);
+        backdrop-filter: blur(16px);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .hero-copy {
+        padding: 34px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.1);
+        color: var(--brand-3);
+        font-size: 0.82rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        font-family: var(--font-display);
+        line-height: 0.96;
+      }
+
+      h1 {
+        margin-top: 18px;
+        font-size: clamp(3rem, 7vw, 5.8rem);
+      }
+
+      .hero-copy p {
+        max-width: 58ch;
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 1.03rem;
+        line-height: 1.7;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .button,
+      button {
+        cursor: pointer;
+        border: 0;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: 700 0.95rem var(--font-display);
+        transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+      }
+
+      .button:hover,
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary,
+      button {
+        color: white;
+        background: linear-gradient(135deg, var(--brand-3) 0%, var(--brand) 100%);
+        box-shadow: 0 14px 34px rgba(15, 118, 110, 0.28);
+      }
+
+      .button-secondary {
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid var(--line);
+      }
+
+      .hero-meta {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 26px;
+      }
+
+      .hero-stat {
+        padding: 14px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.56);
+        border: 1px solid rgba(23, 23, 23, 0.08);
+      }
+
+      .hero-stat strong {
+        display: block;
+        font: 700 1.3rem var(--font-display);
+      }
+
+      .hero-stat span {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .hero-runtime {
+        padding: 24px;
+        background:
+          radial-gradient(circle at top right, rgba(15, 118, 110, 0.18), transparent 28%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(247, 241, 227, 0.92));
+      }
+
+      .runtime-grid,
+      .feature-grid,
+      .demo-grid,
+      .faq-grid,
+      .config-grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .runtime-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 18px;
+      }
+
+      .runtime-card {
+        padding: 16px;
+        border-radius: 22px;
+        min-height: 128px;
+      }
+
+      .runtime-card strong {
+        display: block;
+        font: 700 1.1rem var(--font-display);
+      }
+
+      .runtime-card p,
+      .panel-copy,
+      .callout p,
+      .faq-answer {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(23, 23, 23, 0.08);
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--ok);
+      }
+
+      .section {
+        margin-top: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+
+      .section-head h2 {
+        font-size: clamp(1.8rem, 3vw, 2.6rem);
+      }
+
+      .section-head p {
+        max-width: 60ch;
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .feature-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .panel {
+        padding: 22px;
+      }
+
+      .panel h3 {
+        font-size: 1.35rem;
+      }
+
+      .demo-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+      }
+
+      .callout {
+        margin-top: 16px;
+        padding: 22px;
+      }
+
+      .callout strong {
+        display: block;
+        font: 700 1rem var(--font-display);
+        letter-spacing: 0.02em;
+      }
+
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        border: 1px solid rgba(23, 23, 23, 0.14);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--ink);
+        padding: 12px 14px;
+        font-size: 0.95rem;
+      }
+
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .checkboxes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .checkbox {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(23, 23, 23, 0.08);
+        font-size: 0.9rem;
+      }
+
+      .checkbox input {
+        width: auto;
+        margin: 0;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .status {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(23, 23, 23, 0.08);
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.5;
+      }
+
+      .status strong {
+        color: var(--ink);
+      }
+
+      .output,
+      pre {
+        margin: 0;
+        padding: 16px;
+        border-radius: 18px;
+        background: #111827;
+        color: #f8fafc;
+        overflow: auto;
+        font-size: 0.86rem;
+        line-height: 1.55;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .mini-title {
+        margin-bottom: 8px;
+        font: 700 0.9rem var(--font-display);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .faq-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .faq-item {
+        padding: 22px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(23, 23, 23, 0.08);
+      }
+
+      .faq-item h3 {
+        font-size: 1.2rem;
+      }
+
+      .footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 24px;
+        padding: 16px 0 0;
+        color: var(--muted);
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(18px);
+        animation: reveal 700ms ease forwards;
+      }
+
+      .reveal:nth-child(2) { animation-delay: 90ms; }
+      .reveal:nth-child(3) { animation-delay: 180ms; }
+      .reveal:nth-child(4) { animation-delay: 270ms; }
+
+      @keyframes reveal {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 1040px) {
+        .hero,
+        .demo-grid,
+        .feature-grid,
+        .faq-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .runtime-grid,
+        .split,
+        .hero-meta {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .shell {
+          width: min(100vw - 20px, 100%);
+          padding-top: 12px;
+        }
+
+        .topbar,
+        .section-head,
+        .footer {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .hero-copy,
+        .hero-runtime,
+        .panel,
+        .callout,
+        .faq-item {
+          padding: 18px;
+        }
+
+        .runtime-grid,
+        .split,
+        .hero-meta {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar reveal">
+        <div class="wordmark">
+          <span class="wordmark-mark">Z</span>
+          <span>ZEN Browser Runtime</span>
+        </div>
+        <nav class="top-links">
+          <a href="#demos">Interactive Demos</a>
+          <a href="#browser-runtime">Browser Stack</a>
+          <a href="#faq">Browser Notes</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <article class="hero-panel hero-copy reveal">
+          <span class="eyebrow">Landing page + living browser example</span>
+          <h1>ZEN in the browser, fully loaded.</h1>
+          <p>
+            This page is both a product showcase and a runnable reference for how to use ZEN from the browser with graph sync, crypto, PEN policy souls, WebRTC, Radisk/Radix internals, OPFS persistence, and AXE loaded as a browser addon.
+          </p>
+          <p>
+            The point is not a toy snippet. The point is a page another project can inspect, lift, and adapt as a real starting point.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#demos">Open the live demos</a>
+            <a class="button button-secondary" href="#faq">Understand AXE in browser</a>
+          </div>
+          <div class="hero-meta">
+            <div class="hero-stat">
+              <strong>Graph + CRDT</strong>
+              <span>Realtime `get`, `put`, `on`, and peer-ready state.</span>
+            </div>
+            <div class="hero-stat">
+              <strong>Crypto + PEN</strong>
+              <span>Pair, sign, recover, encrypt, certify, and compile policy souls.</span>
+            </div>
+            <div class="hero-stat">
+              <strong>Browser adapters</strong>
+              <span>AXE, WebRTC, Radisk/Radix, and OPFS all visible in one place.</span>
+            </div>
+          </div>
+        </article>
+
+        <aside class="hero-panel hero-runtime reveal" id="browser-runtime">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Runtime map</span>
+              <h2>What this browser bundle loads</h2>
+            </div>
+          </div>
+          <div class="runtime-grid" id="runtime-grid"></div>
+          <div class="callout">
+              <strong>Important: AXE is not baked into `zen.min.js`.</strong>
+            <p>
+              In browser usage, AXE is an add-on module, not part of the core bundle. This page now loads it explicitly through <code>browser.js</code>. You still need a real <code>/zen</code> relay endpoint if you want to see relay-assisted clustering behavior rather than local-only startup.
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section reveal">
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">Why this page exists</span>
+            <h2>A browser-first showcase, not just a README stub</h2>
+          </div>
+          <p>
+            Use this page to explain ZEN to humans, inspect config patterns, and verify interactive behavior directly in the browser. Each demo below also prints the code shape it is using so other projects can copy the same structure.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="panel">
+            <h3>Graph demo</h3>
+            <p class="panel-copy">Create a browser node, write values, subscribe to live updates, and inspect the exact constructor options used.</p>
+          </article>
+          <article class="panel">
+            <h3>Crypto lab</h3>
+            <p class="panel-copy">Generate a pair, sign text, recover the signer pub, verify it, then encrypt and decrypt inside one browser session.</p>
+          </article>
+          <article class="panel">
+            <h3>PEN soul lab</h3>
+            <p class="panel-copy">Compile real policy souls with `sign`, `cert`, `open`, and PoW so developers can see how browser-side policy specs are shaped.</p>
+          </article>
+          <article class="panel">
+            <h3>Addon visibility</h3>
+            <p class="panel-copy">Show which addons are live here and explain what each changes in a browser runtime.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="demos">
+        <div class="section-head reveal">
+          <div>
+            <span class="eyebrow">Interactive demos</span>
+            <h2>Learn the browser API by touching it</h2>
+          </div>
+          <p>
+            These panels intentionally stay close to raw ZEN APIs. They are not framework wrappers. What you see here is the shape another browser app can start from.
+          </p>
+        </div>
+
+        <div class="demo-grid">
+          <article class="panel reveal">
+            <span class="eyebrow">Demo 1</span>
+            <h3>Spin up a browser node</h3>
+            <p class="panel-copy">Choose peers and browser persistence, then create one live ZEN instance that the other demos reuse.</p>
+            <div class="stack" style="margin-top: 16px;">
+              <label>
+                Peer list, comma separated
+                <input id="peer-input" />
+              </label>
+              <div class="checkboxes">
+                <label class="checkbox"><input id="opt-opfs" type="checkbox" checked /> Prefer OPFS when available</label>
+                <label class="checkbox"><input id="opt-localstorage" type="checkbox" /> Force localStorage fallback</label>
+                <label class="checkbox"><input id="opt-axe" type="checkbox" /> Pass `axe: true` hint</label>
+                <label class="checkbox"><input id="opt-rtc" type="checkbox" checked /> Enable WebRTC hint</label>
+              </div>
+              <div class="actions">
+                <button id="create-instance">Create browser instance</button>
+                <button class="button-secondary" id="destroy-instance" type="button">Reset view</button>
+              </div>
+              <div class="status" id="instance-status">No instance created yet.</div>
+              <div>
+                <div class="mini-title">Constructor preview</div>
+                <pre id="instance-code"></pre>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel reveal">
+            <span class="eyebrow">Demo 2</span>
+            <h3>Graph write + read + live subscribe</h3>
+            <p class="panel-copy">Use the active browser instance to write a value, read it back, and watch live updates on the same key.</p>
+            <div class="stack" style="margin-top: 16px;">
+              <label>
+                Soul
+                <input id="graph-soul" value="landing/demo" />
+              </label>
+              <label>
+                Key
+                <input id="graph-key" value="headline" />
+              </label>
+              <label>
+                Value
+                <textarea id="graph-value">ZEN browser landing page is live.</textarea>
+              </label>
+              <div class="actions">
+                <button id="graph-subscribe">Subscribe</button>
+                <button id="graph-put">Put value</button>
+                <button class="button-secondary" id="graph-read" type="button">Read once</button>
+              </div>
+              <div>
+                <div class="mini-title">Live log</div>
+                <pre id="graph-log"></pre>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel reveal">
+            <span class="eyebrow">Demo 3</span>
+            <h3>Crypto browser lab</h3>
+            <p class="panel-copy">Generate a pair, sign a message, recover the signer pub, verify it, then encrypt and decrypt another message.</p>
+            <div class="stack" style="margin-top: 16px;">
+              <label>
+                Message to sign
+                <textarea id="crypto-sign-input">hello from the browser runtime</textarea>
+              </label>
+              <label>
+                Message to encrypt
+                <textarea id="crypto-encrypt-input">confidential browser payload</textarea>
+              </label>
+              <div class="actions">
+                <button id="crypto-run">Run crypto demo</button>
+              </div>
+              <div>
+                <div class="mini-title">Crypto output</div>
+                <pre id="crypto-output"></pre>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel reveal">
+            <span class="eyebrow">Demo 4</span>
+            <h3>PEN policy soul builder</h3>
+            <p class="panel-copy">Toggle the parts of a browser policy and compile the soul immediately so app developers can see the actual spec and output.</p>
+            <div class="stack" style="margin-top: 16px;">
+              <label>
+                Path fragment
+                <input id="pen-path" value="proj/demo/chan/general" />
+              </label>
+              <label>
+                Candle size in ms
+                <input id="pen-window" type="number" min="1000" step="1000" value="3600000" />
+              </label>
+              <div class="checkboxes">
+                <label class="checkbox"><input id="pen-sign" type="checkbox" checked /> Require signature</label>
+                <label class="checkbox"><input id="pen-open" type="checkbox" /> Open writes</label>
+                <label class="checkbox"><input id="pen-pow" type="checkbox" checked /> Require PoW</label>
+              </div>
+              <label>
+                Cert pub, optional
+                <input id="pen-cert" placeholder="owner pub for cert-gated writes" />
+              </label>
+              <div class="actions">
+                <button id="pen-build">Compile soul</button>
+              </div>
+              <div class="split">
+                <div>
+                  <div class="mini-title">Spec</div>
+                  <pre id="pen-spec"></pre>
+                </div>
+                <div>
+                  <div class="mini-title">Soul</div>
+                  <pre id="pen-output"></pre>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section reveal" id="faq">
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">Browser notes</span>
+            <h2>The AXE question, answered directly</h2>
+          </div>
+          <p>
+            You asked whether AXE is already inside ZEN in the browser. The short answer is still no: AXE is an optional add-on, not part of `zen.min.js`. But it can now be imported in the browser path again; the remaining requirement is a real relay endpoint if you want live AXE peering behavior.
+          </p>
+        </div>
+        <div class="faq-grid">
+          <article class="faq-item">
+            <h3>Is AXE already inside `zen.min.js`?</h3>
+            <p class="faq-answer">
+              No. Core ZEN and AXE are separate. You enable AXE by adding the AXE module on top of ZEN. This page does exactly that through `browser.js`, so the browser bundle shows the intended addon pattern explicitly.
+            </p>
+          </article>
+          <article class="faq-item">
+            <h3>Then how do I use AXE in browser code?</h3>
+            <p class="faq-answer">
+              Pattern: import ZEN, import `lib/axe.js` or `lib/axe.min.js`, then construct `new ZEN({ peers, axe: true })` when you want AXE clustering behavior. To see real peering rather than local-only startup, point `peers` at an actual relay endpoint that serves `/zen` and `/peers`.
+            </p>
+          </article>
+          <article class="faq-item">
+            <h3>What about WebRTC, Radisk, Radix, and OPFS?</h3>
+            <p class="faq-answer">
+              Same model: they are separate browser-side modules that extend or activate runtime behavior. This page imports them all in one browser entrypoint so another project can copy one module and get the same browser stack.
+            </p>
+          </article>
+          <article class="faq-item">
+            <h3>Can another project use this page as a starting point?</h3>
+            <p class="faq-answer">
+              Yes. The page is intentionally structured around raw `new ZEN(...)`, `get`, `put`, `on`, `pair`, `sign`, `verify`, `recover`, `encrypt`, `decrypt`, and `ZEN.pen(...)` flows rather than hiding them behind framework abstractions.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <footer class="footer reveal">
+        <div>ZEN browser landing page: showcase + reference implementation.</div>
+        <div id="footer-note">Waiting for your first live interaction.</div>
+      </footer>
+    </div>
+
+    <script type="module">
+      import ZEN, { BROWSER_RUNTIME } from "/browser.js";
+
+      const runtimeCards = [
+        {
+          name: "ZEN Core",
+          status: BROWSER_RUNTIME.core,
+          text: "Graph, crypto, PEN compiler, realtime chain API.",
+        },
+        {
+          name: "AXE",
+          status: BROWSER_RUNTIME.axe,
+          text: BROWSER_RUNTIME.notes.axe,
+        },
+        {
+          name: "WebRTC",
+          status: BROWSER_RUNTIME.webrtc,
+          text: "Browser-to-browser transport addon for peer mesh expansion.",
+        },
+        {
+          name: "Radisk + Radix",
+          status: BROWSER_RUNTIME.radisk && BROWSER_RUNTIME.radix,
+          text: "Persistence/indexing internals available in this browser runtime bundle.",
+        },
+        {
+          name: "OPFS",
+          status: BROWSER_RUNTIME.opfs,
+          text: "Origin Private File System support detected in this browser.",
+        },
+        {
+          name: "Browser globals",
+          status: !!globalThis.ZEN,
+          text: "`browser.js` also exposes `globalThis.ZEN` for quick experiments.",
+        },
+      ];
+
+      const els = {
+        runtimeGrid: document.getElementById("runtime-grid"),
+        peerInput: document.getElementById("peer-input"),
+        optOpfs: document.getElementById("opt-opfs"),
+        optLocalStorage: document.getElementById("opt-localstorage"),
+        optAxe: document.getElementById("opt-axe"),
+        optRtc: document.getElementById("opt-rtc"),
+        createInstance: document.getElementById("create-instance"),
+        destroyInstance: document.getElementById("destroy-instance"),
+        instanceStatus: document.getElementById("instance-status"),
+        instanceCode: document.getElementById("instance-code"),
+        graphSoul: document.getElementById("graph-soul"),
+        graphKey: document.getElementById("graph-key"),
+        graphValue: document.getElementById("graph-value"),
+        graphSubscribe: document.getElementById("graph-subscribe"),
+        graphPut: document.getElementById("graph-put"),
+        graphRead: document.getElementById("graph-read"),
+        graphLog: document.getElementById("graph-log"),
+        cryptoSignInput: document.getElementById("crypto-sign-input"),
+        cryptoEncryptInput: document.getElementById("crypto-encrypt-input"),
+        cryptoRun: document.getElementById("crypto-run"),
+        cryptoOutput: document.getElementById("crypto-output"),
+        penPath: document.getElementById("pen-path"),
+        penWindow: document.getElementById("pen-window"),
+        penSign: document.getElementById("pen-sign"),
+        penOpen: document.getElementById("pen-open"),
+        penPow: document.getElementById("pen-pow"),
+        penCert: document.getElementById("pen-cert"),
+        penBuild: document.getElementById("pen-build"),
+        penSpec: document.getElementById("pen-spec"),
+        penOutput: document.getElementById("pen-output"),
+        footerNote: document.getElementById("footer-note"),
+      };
+
+      const defaultPeers = "";
+      els.peerInput.value = defaultPeers;
+      els.optAxe.disabled = !BROWSER_RUNTIME.axe;
+
+      const state = {
+        zen: null,
+        subscription: false,
+      };
+
+      function pretty(value) {
+        if (value instanceof Error) {
+          return `${value.name}: ${value.message}`;
+        }
+        if (typeof value === "string") {
+          return value;
+        }
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (_) {
+          return String(value);
+        }
+      }
+
+      function renderRuntime() {
+        els.runtimeGrid.innerHTML = runtimeCards
+          .map(
+            (card) => `
+              <article class="runtime-card">
+                <div class="badge-row">
+                  <span class="badge"><span class="dot" style="background:${card.status ? "var(--ok)" : "var(--warn)"};"></span>${card.status ? "Loaded" : "Unavailable"}</span>
+                </div>
+                <strong>${card.name}</strong>
+                <p>${card.text}</p>
+              </article>
+            `,
+          )
+          .join("");
+      }
+
+      function buildInstanceOptions() {
+        const peers = els.peerInput.value
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean);
+        const opt = {
+          peers,
+          localStorage: !els.optLocalStorage.checked ? false : true,
+        };
+        if (!els.optOpfs.checked) {
+          opt.opfs = false;
+        }
+        if (els.optAxe.checked) {
+          opt.axe = true;
+        }
+        if (els.optRtc.checked) {
+          opt.rtc = { max: 3 };
+        }
+        return opt;
+      }
+
+      function renderInstanceOptions(opt) {
+        els.instanceCode.textContent = [
+          'import ZEN from "/browser.js";',
+          "",
+          `const zen = new ZEN(${JSON.stringify(opt, null, 2)});`,
+        ].join("\n");
+      }
+
+      function requireInstance() {
+        if (state.zen) {
+          return state.zen;
+        }
+        throw new Error("Create a browser instance first.");
+      }
+
+      function setStatus(text, strong) {
+        els.instanceStatus.innerHTML = `<strong>${strong}</strong> ${text}`;
+        els.footerNote.textContent = text;
+      }
+
+      function logGraph(title, payload) {
+        const time = new Date().toLocaleTimeString();
+        const line = `[${time}] ${title}\n${pretty(payload)}\n\n`;
+        els.graphLog.textContent = line + els.graphLog.textContent;
+      }
+
+      function peersText(peers) {
+        if (!peers || !peers.length) {
+          return "Browser instance created in local-first mode and exposed as window.zen.";
+        }
+        return `Browser instance created with ${peers.length} peer${peers.length > 1 ? "s" : ""} and exposed as window.zen.`;
+      }
+
+      async function createInstance() {
+        const opt = buildInstanceOptions();
+        const snapshot = JSON.parse(JSON.stringify(opt));
+        renderInstanceOptions(snapshot);
+        state.zen = new ZEN(opt);
+        globalThis.zen = state.zen;
+        setStatus(peersText(opt.peers), "Ready.");
+        logGraph("instance", snapshot);
+      }
+
+      function resetView() {
+        state.zen = null;
+        state.subscription = false;
+        els.graphLog.textContent = "";
+        els.cryptoOutput.textContent = "";
+        els.penOutput.textContent = "";
+        els.penSpec.textContent = "";
+        els.instanceCode.textContent = "";
+        els.instanceStatus.textContent = "No instance created yet.";
+        els.footerNote.textContent = "View reset. Create a fresh browser instance any time.";
+      }
+
+      function subscribeGraph() {
+        const zen = requireInstance();
+        const soul = els.graphSoul.value.trim();
+        const key = els.graphKey.value.trim();
+        zen.get(soul).get(key).on((data) => {
+          logGraph(`subscription ${soul}/${key}`, data);
+        });
+        state.subscription = true;
+        logGraph("subscription armed", { soul, key });
+      }
+
+      async function putGraph() {
+        const zen = requireInstance();
+        const soul = els.graphSoul.value.trim();
+        const key = els.graphKey.value.trim();
+        const raw = els.graphValue.value;
+        let value = raw;
+        try {
+          value = JSON.parse(raw);
+        } catch (_) {}
+        await new Promise((resolve, reject) => {
+          zen.get(soul).get(key).put(value, (ack) => {
+            if (ack && ack.err) {
+              reject(new Error(ack.err));
+              return;
+            }
+            resolve(ack || { ok: true });
+          });
+        });
+        logGraph("put", { soul, key, value });
+      }
+
+      async function readGraph() {
+        const zen = requireInstance();
+        const soul = els.graphSoul.value.trim();
+        const key = els.graphKey.value.trim();
+        const value = await new Promise((resolve) => {
+          zen.get(soul).get(key).once((data) => resolve(data));
+        });
+        logGraph("read", { soul, key, value });
+      }
+
+      async function runCrypto() {
+        const signMessage = els.cryptoSignInput.value;
+        const secretMessage = els.cryptoEncryptInput.value;
+        const pair = await ZEN.pair();
+        const signed = await ZEN.sign(signMessage, pair);
+        const recovered = await ZEN.recover(signed);
+        const verified = await ZEN.verify(signed, pair.pub);
+        const encrypted = await ZEN.encrypt(secretMessage, pair);
+        const decrypted = await ZEN.decrypt(encrypted, pair);
+
+        els.cryptoOutput.textContent = pretty({
+          pair: {
+            curve: pair.curve,
+            pub: pair.pub,
+            address: pair.address,
+          },
+          signed,
+          recovered,
+          verified,
+          encrypted,
+          decrypted,
+        });
+        els.footerNote.textContent = "Crypto demo ran inside the browser runtime.";
+      }
+
+      function buildPen() {
+        const spec = {
+          path: els.penPath.value.trim(),
+          key: ZEN.candle({
+            seg: 0,
+            sep: ":",
+            size: Number(els.penWindow.value) || 3600000,
+            back: 2,
+            fwd: 0,
+          }),
+        };
+        if (els.penSign.checked) {
+          spec.sign = true;
+        }
+        if (els.penOpen.checked) {
+          spec.open = true;
+        }
+        if (els.penPow.checked) {
+          spec.pow = { unit: "0", difficulty: 1 };
+        }
+        if (els.penCert.value.trim()) {
+          spec.cert = els.penCert.value.trim();
+        }
+        const soul = ZEN.pen(spec);
+        els.penSpec.textContent = pretty(spec);
+        els.penOutput.textContent = soul;
+        els.footerNote.textContent = "PEN soul compiled from browser-side policy spec.";
+      }
+
+      async function guarded(action) {
+        try {
+          await action();
+        } catch (error) {
+          const message = error && error.message ? error.message : String(error);
+          els.footerNote.textContent = message;
+          logGraph("error", message);
+        }
+      }
+
+      renderRuntime();
+      renderInstanceOptions(buildInstanceOptions());
+      buildPen();
+      els.graphLog.textContent = "Create a browser instance, then write or subscribe here.";
+      els.cryptoOutput.textContent = "Run the crypto demo to inspect pair/sign/recover/encrypt/decrypt output.";
+
+      els.createInstance.addEventListener("click", () => guarded(createInstance));
+      els.destroyInstance.addEventListener("click", resetView);
+      els.graphSubscribe.addEventListener("click", () => guarded(subscribeGraph));
+      els.graphPut.addEventListener("click", () => guarded(putGraph));
+      els.graphRead.addEventListener("click", () => guarded(readGraph));
+      els.cryptoRun.addEventListener("click", () => guarded(runCrypto));
+      els.penBuild.addEventListener("click", buildPen);
+      els.peerInput.addEventListener("input", () => renderInstanceOptions(buildInstanceOptions()));
+      els.optOpfs.addEventListener("change", () => renderInstanceOptions(buildInstanceOptions()));
+      els.optLocalStorage.addEventListener("change", () => renderInstanceOptions(buildInstanceOptions()));
+      els.optAxe.addEventListener("change", () => renderInstanceOptions(buildInstanceOptions()));
+      els.optRtc.addEventListener("change", () => renderInstanceOptions(buildInstanceOptions()));
+      els.penPath.addEventListener("input", buildPen);
+      els.penWindow.addEventListener("input", buildPen);
+      els.penSign.addEventListener("change", buildPen);
+      els.penOpen.addEventListener("change", buildPen);
+      els.penPow.addEventListener("change", buildPen);
+      els.penCert.addEventListener("input", buildPen);
+    </script>
+  </body>
+</html>
