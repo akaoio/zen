@@ -35,6 +35,8 @@ settings.pack = function (d, cb, k, n, s) {
         ">": d[">"] || (Zen.state && Zen.state.is ? Zen.state.is(n, k) : 0),
       },
       s: sig,
+      v: (meta || "").v,
+      c: (meta || "").c,
     });
   });
 };
@@ -330,7 +332,7 @@ check.auth = function (msg, no, authenticator, done) {
           }
           var mObj = typeof data.m === "string" ? JSON.parse(data.m) : data.m;
           var parsed = settings.unpack(mObj);
-          msg.put[":"] = { ":": parsed, "~": data.s };
+          msg.put[":"] = { ":": parsed, "~": data.s, v: data.v, c: data.c };
           msg.put["="] = parsed;
           done(parsed);
         })
@@ -353,7 +355,7 @@ check.auth = function (msg, no, authenticator, done) {
         }
         var mObj = typeof sigData.m === "string" ? JSON.parse(sigData.m) : sigData.m;
         var parsed = settings.unpack(mObj);
-        msg.put[":"] = { ":": parsed, "~": sigData.s };
+        msg.put[":"] = { ":": parsed, "~": sigData.s, v: sigData.v, c: sigData.c };
         msg.put["="] = parsed;
         done(parsed);
       },

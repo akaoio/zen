@@ -1,0 +1,10 @@
+<!doctype html>
+<head>
+  <script type="module">
+    const { default: ZEN } = await import("/zen.min.js");
+    const zen = new ZEN({
+      peers: [`${location.origin}/zen`]
+    });
+    globalThis.zen = zen
+  </script>
+</head>

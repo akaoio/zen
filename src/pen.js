@@ -535,7 +535,7 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
   // Handles sign (SGN/0xC0), cert (CRT/0xC1), open (NOA/0xC3), and no-policy.
   // PoW (0xC4) is handled in penStage before calling applypolicy.
 
-  function applypolicy(policy, ctx, reject) {
+  function applypolicy(policy, ctx, reject, writer) {
     var eve = ctx.eve,
       msg = ctx.msg,
       at = ctx.at;
@@ -547,25 +547,33 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
         raw = JSON.parse(ctx.val) || {};
       } catch (e) {}
       if (!raw["+"]) return reject("PEN: cert required");
-      runtime.opt.pack(msg.put, function (packed) {
-        runtime.recover(packed).then(function (signerPub) {
-          chk.$vfy(
-            eve,
-            msg,
-            ctx.key,
-            ctx.soul,
-            policy.cert,
-            reject,
-            raw["+"],
-            signerPub,
-            function () {
-              chk.next(eve, msg, reject);
-            },
-          );
-        }).catch(function () {
-          reject("PEN: cannot recover signer pub for cert verification");
+      function verifyCert(signerPub) {
+        if (!signerPub) return reject("PEN: cannot recover signer pub for cert verification");
+        chk.$vfy(
+          eve,
+          msg,
+          ctx.key,
+          ctx.soul,
+          policy.cert,
+          reject,
+          raw["+"],
+          signerPub,
+          function () {
+            chk.next(eve, msg, reject);
+          },
+        );
+      }
+      if (writer) {
+        // Writer pub is already known (new write with authenticator)
+        verifyCert(writer);
+      } else {
+        // Peer re-propagation: recover from packed write signature
+        runtime.opt.pack(msg.put, function (packed) {
+          runtime.recover(packed).then(verifyCert).catch(function () {
+            reject("PEN: cannot recover signer pub for cert verification");
+          });
         });
-      });
+      }
       return;
     }
 
@@ -582,6 +590,14 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
   // ── penStage: pipeline stage for !-soul validation ────────────────────────────
 
   function penStage(ctx, next, reject) {
+    // Cache-miss re-propagation: data was already verified on original write.
+    // The PoW nonce is stripped by ham(), so re-verification would fail anyway.
+    // This mirrors the faith fast-path that security.js uses for ~/* souls.
+    var msgCtx = ctx.msg && ctx.msg._;
+    var isMiss = msgCtx && msgCtx.miss;
+    if (isMiss) {
+      return next();
+    }
     var soul = ctx.soul;
     var slashIdx = soul.indexOf("/");
     var pencode = slashIdx >= 0 ? soul.slice(1, slashIdx) : soul.slice(1);
@@ -681,13 +697,13 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
               var prefix = punit.repeat(pdiff);
               if ((hash || "").indexOf(prefix) !== 0)
                 return reject("PEN: PoW insufficient");
-              applypolicy(policy, ctx, reject);
+              applypolicy(policy, ctx, reject, writer);
             },
             { name: "SHA-256", encode: "hex" },
           );
         }
 
-        applypolicy(policy, ctx, reject);
+        applypolicy(policy, ctx, reject, writer);
       });
     }
 
@@ -697,6 +713,7 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
     if (policy.sign) {
       var chk = runtime.check;
       var msg = ctx.msg;
+
       if (sec.authenticator) {
         // New write: sign first, check.auth updates msg.put[":"] and msg.put["="]
         chk.auth(msg, reject, sec.authenticator, function (parsed) {
@@ -706,8 +723,31 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
         });
         return;
       }
-      // Peer re-propagation: verify existing signature then unpack
+      // Peer re-propagation: verify existing signature then unpack.
+      // If check.auth already ran (new-write path), msg.put[":"] is an object
+      // with a "~" signature field — use it directly without recovery.
+      var putVal = ctx.put[":"];
+      if (putVal && typeof putVal === "object" && putVal["~"]) {
+        ctx.val = putVal[":"];
+        policy._verified = true;
+        mineIfNeeded(runPredicate);
+        return;
+      }
       runtime.opt.pack(ctx.put, function (packed) {
+        // If settings.pack returned {m, s}, the value was previously auth-processed
+        // and stored as JSON {":": val, "~": sig} by check.next on the original write.
+        // Trust the stored format for re-propagation (miss=true cache-miss path from
+        // radisk/locstore). Nonce is not stored to disk so skip PoW re-verification.
+        if (packed && packed.m && packed.s) {
+          var storedVal = packed.m[":"];
+          ctx.put[":"] = { ":": storedVal, "~": packed.s || "" };
+          ctx.put["="] = storedVal;
+          ctx.val = storedVal;
+          policy._verified = true;
+          applypolicy(policy, ctx, reject, writer);
+          return;
+        }
+        // Fallback: raw signed string in the put — try public key recovery.
         runtime.recover(packed).then(function (signerPub) {
           runtime.verify(packed, signerPub || sec.upub || null, function (data) {
             data = runtime.opt.unpack(data);

@@ -4,9 +4,14 @@ import assert from "assert";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MCP_BIN   = join(__dirname, "../lib/mcp.js");
+// Use a fresh temp dir for each test run so stale MCP data never triggers
+// the null-auth re-propagation path in penStage.
+const MCP_TEST_XDG = mkdtempSync(join(tmpdir(), "zen-mcp-test-"));
 
 // ─── McpSession ───────────────────────────────────────────────────────────────
 // Maintains a single subprocess; correlates responses by id; supports
@@ -23,9 +28,10 @@ class McpSession {
   start() {
     this._proc = spawn(process.execPath, [MCP_BIN], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ZEN_SILENCE_TEST_WARNINGS: "1" },
+      env: { ...process.env, ZEN_SILENCE_TEST_WARNINGS: "1", XDG_DATA_HOME: MCP_TEST_XDG },
     });
     this._proc.stdout.setEncoding("utf8");
+    this._proc.stderr && this._proc.stderr.on("data", d => process.stderr.write(d));
     this._proc.stdout.on("data", d => {
       this._buf += d;
       const lines = this._buf.split("\n");
@@ -133,13 +139,13 @@ describe("MCP — tools/list", function () {
     });
   });
 
-  it("exposes exactly 3 tools", function () {
-    assert.strictEqual(tools.length, 3);
+  it("exposes exactly 4 tools", function () {
+    assert.strictEqual(tools.length, 4);
   });
 
-  it("tool names are graph, crypto, identity", function () {
+  it("tool names are graph, crypto, identity, protocol", function () {
     const names = tools.map(t => t.name);
-    assert.deepStrictEqual(names, ["graph", "crypto", "identity"]);
+    assert.deepStrictEqual(names, ["graph", "crypto", "identity", "protocol"]);
   });
 
   it("graph requires soul and op", function () {
@@ -396,6 +402,119 @@ describe("MCP — authenticated graph write", function () {
       assert.deepStrictEqual(content(putRes), { ok: true });
       assert.strictEqual(content(getRes), "auth-write");
     });
+  });
+});
+
+// ─── protocol tool ───────────────────────────────────────────────────────────
+// All protocol tests share ONE session so pairStore persists across calls.
+
+describe("MCP — protocol tool", function () {
+  this.timeout(30000);
+
+  let s;
+  let selfPub;
+  before(async function () {
+    s = new McpSession().start();
+    await s.init();
+    selfPub = content(await s.tool("identity", {})).pub;
+  });
+  after(function () { s.end(); });
+
+  // ── soul computation (pure, no graph) ──────────────────────────────────────
+
+  it("inbox_soul returns a ! soul for a pub", async function () {
+    const res = content(await s.tool("protocol", { op: "inbox_soul", pub: selfPub }));
+    assert.ok(typeof res.soul === "string");
+    assert.ok(res.soul.startsWith("!"));
+  });
+
+  it("inbox_soul is deterministic", async function () {
+    const r1 = content(await s.tool("protocol", { op: "inbox_soul", pub: selfPub }));
+    const r2 = content(await s.tool("protocol", { op: "inbox_soul", pub: selfPub }));
+    assert.strictEqual(r1.soul, r2.soul);
+  });
+
+  it("chan_soul returns a ! soul", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "chan_soul", proj_id: "p1", chan_id: "c1", owner_pub: selfPub,
+    }));
+    assert.ok(res.soul.startsWith("!"));
+  });
+
+  it("dm_soul returns a ! soul", async function () {
+    const res = content(await s.tool("protocol", { op: "dm_soul", recipient_pub: selfPub }));
+    assert.ok(res.soul.startsWith("!"));
+  });
+
+  it("missing pairId on create_channel returns error", async function () {
+    const res = await s.tool("protocol", { op: "create_channel", proj_id: "p1", chan_id: "c1" });
+    assert.ok(res.error);
+    assert.ok(res.error.message.includes("pairId"));
+  });
+
+  // ── channel lifecycle ──────────────────────────────────────────────────────
+  // Uses unique proj/chan IDs to avoid CRDT conflicts across test runs.
+
+  let chanPub;
+  let memberCert;
+  const PROJ = "test_" + Date.now();
+  const CHAN  = "general";
+
+  it("create_channel stores meta and wrapped key", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "create_channel", proj_id: PROJ, chan_id: CHAN, pairId: "self",
+    }));
+    assert.ok(res.chan_pub, "should return chan_pub");
+    assert.strictEqual(res.version, 1);
+    assert.ok(res.soul.startsWith("!"));
+    chanPub = res.chan_pub;
+  });
+
+  it("invite self as member returns cert and chan_pub", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "invite", proj_id: PROJ, chan_id: CHAN, member_pub: selfPub, pairId: "self",
+    }));
+    assert.ok(typeof res.cert === "string" && res.cert.length > 0, "cert should be a string");
+    assert.strictEqual(res.chan_pub, chanPub);
+    memberCert = res.cert;
+  });
+
+  it("send_channel encrypts and writes message", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "send_channel",
+      proj_id: PROJ, chan_id: CHAN, owner_pub: selfPub,
+      message: "hello channel",
+      cert: memberCert,
+      pairId: "self",
+    }));
+    assert.deepStrictEqual(res, { ok: true });
+  });
+
+  it("kick bumps version and returns new chan_pub", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "kick", proj_id: PROJ, chan_id: CHAN, remaining: [], pairId: "self",
+    }));
+    assert.strictEqual(res.version, 2);
+    assert.ok(res.chan_pub !== chanPub, "new chan_pub should differ after rotation");
+  });
+
+  // ── DM ─────────────────────────────────────────────────────────────────────
+
+  it("send_dm to self returns ok", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "send_dm", recipient_pub: selfPub, message: "hello dm", pairId: "self",
+    }));
+    assert.deepStrictEqual(res, { ok: true });
+  });
+
+  it("read_dms returns array (with self-DM decrypted)", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "read_dms", pairId: "self", limit: 10,
+    }));
+    assert.ok(Array.isArray(res));
+    const found = res.find(m => m.plaintext === "hello dm");
+    assert.ok(found, "self-DM plaintext should appear in read_dms");
+    assert.strictEqual(found.sender_pub, selfPub);
   });
 });
 

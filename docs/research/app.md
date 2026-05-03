@@ -1,417 +1,322 @@
-# ZEN App Primitives — Kế hoạch phát triển
+# ZEN App Primitives & ZACP — Design Spec
 
-> Research/vision doc — brainstorm và thảo luận, chưa phải spec chính thức.
-> Cập nhật lần cuối: 2026-05-03
+> Cập nhật lần cuối: 2026-05-02
 
 ---
 
-## 1. Tổng quan hệ thống primitives hiện tại
-
-ZEN hiện có đủ các building block cốt lõi:
+## 1. Primitive Overview
 
 | Soul type | Pattern | Ý nghĩa |
 |-----------|---------|---------|
-| Shard namespace | `~` hoặc `~/path` | Hierarchical namespace theo path |
 | User namespace | `~<pub>` | Owner-only write, signed data |
-| Content address | `#<hash>` | Nội dung bất biến, tự xác thực |
-| PEN policy | `!<bytecode>` | Write có điều kiện qua bytecode VM |
-| Open node | `<any>` | Không kiểm soát quyền ghi |
+| Content address | `#<hash>` | Immutable, self-authenticating |
+| PEN policy | `!<bytecode>` | Write conditions enforced by WASM VM on every peer |
+| Open node | `<any>` | Không kiểm soát |
 
-Các primitive crypto:
-- `ZEN.pair()` — sinh key (secp256k1 / p256), seed-based, additive derivation. Schema: `{curve, pub, priv, address}`
+Crypto API (v1.0.9):
+- `ZEN.pair(cb, {curve?, seed?, pub?})` → `{curve, pub, priv, address}`
 - `ZEN.sign/verify` — ECDSA compact wire format
-- `ZEN.encrypt/decrypt` — AES-GCM + ECDH, dùng `pub`/`priv` trực tiếp
-- `ZEN.certify` — uỷ quyền write, trả về compact signed string
-- `ZEN.hash` — SHA-256 / KECCAK-256, mining PoW
-- `ZEN.pen()` — biên dịch policy spec → soul string `!<base62>`
-- `ZEN.candle()` — temporal window expression để nhúng vào pen spec
-
-**Pair schema đã thay đổi (v1.0.9)**: Không còn `epub`/`epriv`. Encrypt/decrypt dùng `pair.pub`/`pair.priv` trực tiếp. `pair.address` = EVM checksum address.
-
-**Vấn đề**: Các primitive đã đủ mạnh nhưng chưa có lớp application xây lên trên. Developer phải tự lắp ghép, không có pattern rõ ràng cho các use case phổ biến.
+- `ZEN.encrypt(data, pub)` / `ZEN.decrypt(enc, pair)` — AES-GCM + ECDH
+- `ZEN.secret(peer_pub, pair)` → base62 ECDH shared secret
+- `ZEN.certify(recipient_pub, policy, issuer_pair, cb, {expiry?})` → compact signed string
+- `ZEN.hash(data, cb, cb, {name?, encode?, pow?})`
+- `ZEN.pen(spec)` → `"!" + pack(bytecode)` — compile policy spec to soul prefix
+- `ZEN.candle({seg, sep, size, back, fwd})` → key expression (dùng trong `spec.key`)
 
 ---
 
-## 2. Vision: ZEN MCP cho AI Agent Ecosystem
-
-### Bài toán
-
-AI agents hiện nay:
-- Bị khoá trong một IDE / một session — không có persistent memory xuyên suốt
-- Không giao tiếp được với agent khác (đa IDE, đa provider)
-- Khi offline thì mất hết context
-- Không có cơ chế identity — không biết agent nào đang nói chuyện
-
-### ZEN MCP giải quyết được gì
+## 2. Architecture Layers
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│  AI Agent A (VS Code)  ←──── ZEN graph ────→  AI Agent B (Cursor) │
-│                                    ↕                           │
-│                            AI Agent C (Claude)                 │
-│                              + Human peers                     │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  lib/mcp.js — thin MCP tool wrapper (stdio JSON-RPC) │
+│  Chỉ: input validation, key resolution, tool dispatch │
+├─────────────────────────────────────────────────────┤
+│  lib/protocol.js — ZACP business logic (NEW)         │
+│  project/channel/inbox/dm helpers                    │
+├─────────────────────────────────────────────────────┤
+│  lib/identity.js — agent identity (enhanced)         │
+│  hardware fingerprint + seed-based portable mode     │
+├─────────────────────────────────────────────────────┤
+│  zen.js (src/) — ZEN graph + crypto primitives       │
+│  Không thay đổi core                                 │
+└─────────────────────────────────────────────────────┘
 ```
 
-- **Offline-first**: Agent ghi vào local graph, sync khi online — không mất dữ liệu
-- **Persistent identity**: Hardware-derived keypair, cùng identity trên cùng machine qua `lib/identity.js`
-- **Authenticity**: Mọi message đều có thể verify được bằng `ZEN.verify`
-- **Real-time sync**: Graph CRDT tự resolve conflict khi nhiều agent ghi đồng thời
-
-### Ứng dụng lớn hơn
-
-Nếu tích hợp IPFS hoặc hệ lưu trữ lớn: ZEN có thể trở thành lớp đồng bộ knowledge toàn cầu giữa các AI agent — mọi insight được verify và persist bất kể agent nào viết.
-
-Các hệ như [OpenClaw](https://github.com/openclaw/openclaw) và các multi-agent framework khác có thể dùng ZEN MCP như transport layer chung, thay thế cho memory ad-hoc không đồng bộ.
+**Nguyên tắc**: Logic ở đúng layer. `lib/mcp.js` không chứa business logic — chỉ delegate sang `lib/protocol.js`. `src/` không thay đổi.
 
 ---
 
-## 3. Inbox `@<pub>` — P2P Messaging không cần Certify
+## 3. Inbox — P2P Messaging không cần Certify
 
-### Vấn đề hiện tại
+### Vấn đề key overflow
 
-Cách duy nhất để peer B gửi message cho peer A là:
-1. A cấp certificate cho B (`ZEN.certify`) để B được write vào `~<A_pub>/inbox`
-2. Hoặc dùng open node — không có bảo mật
+Soul đơn giản `@<pub>` với SGN: peer độc hại flood bằng keys có timestamp cũ — graph chết khi key space phát nổ. Convention-only không đủ vì peer khác propagate mọi write hợp lệ về mặt CRDT.
 
-Cả hai đều không tự nhiên. Certificate yêu cầu handshake trước, open node thì bị spam.
+**Giải pháp**: PEN soul với candle constraint, enforced bởi WASM VM trên mọi peer.
 
-### Vấn đề key overflow (mới — quan trọng)
-
-Nếu thiết kế đơn giản: soul `@<alice.pub>` với SGN requirement, key = `#<hash(content)>` — thì vấn đề xảy ra:
-- Mỗi message là một key mới trên cùng một soul
-- Sau N tháng: soul có hàng ngàn keys
-- Graph engine phải load tất cả keys khi query node
-- **Database chết** khi đủ lớn — đây là vấn đề thực sự
-
-**Convention-only solution không đủ**: Nếu chỉ quy ước "client chỉ ghi vào candle hiện tại", peer độc hại có thể bỏ qua quy ước và flood 1 triệu keys với timestamps cũ. Peer honest sẽ reject (theo convention), nhưng peer storage vẫn nhận write từ peer khác theo protocol ZEN.
-
-**Giải pháp**: Soul phải được tạo từ `ZEN.pen()` với candle expression nhúng vào bytecode. PEN WASM VM chạy trên **mọi peer** khi nhận write — không có peer nào có thể bypass. Đây là lý do bắt buộc phải dùng PEN soul.
-
-### Kiến trúc: PEN Soul với Candle Constraint
-
-#### `ZEN.candle(opts)` — cơ chế
-
-`ZEN.candle()` trả về một **expression object** (không phải số) để dùng trong `spec.key` của `ZEN.pen()`. Expression này khi compile sang bytecode sẽ validate: *số segment đầu tiên của key phải nằm trong cửa sổ thời gian hiện tại.*
-
-```
-candle_segment = Math.floor(Date.now() / size)
-```
-
-Ví dụ với `size: 3600000` (1 giờ): vào lúc 2026-05-03 14:xx UTC:
-```
-candle_segment = Math.floor(1746274000000 / 3600000) = 485076
-```
-
-Key hợp lệ: `485076.abc123`, `485075.xyz789` (back=1)
-Key bị PEN reject: `485070.old` (quá cũ), `485090.future` (tương lai)
-
-#### Soul architecture
-
-```
-Soul = "!" + pen.pack(bytecode)  +  "/" + alice.pub
-         ↑ encoded policy                ↑ path component
-
-PEN registers khi validate:
-  R[0] = key         ("485076.abc123hash")
-  R[2] = full soul   ("!<bytecode>/alice45charPub...")
-  R[5] = writer pub  (bob.pub — ai đang ghi)
-  R[6] = path        ("alice45charPub..." — extracted từ soul)
-  R[7] = PoW nonce   (nếu có)
-
-Bytecode validates:
-  AND(
-    EQ(R[6], alice.pub),           ← path constraint: đây là inbox của alice
-    candle_expr(R[0]),             ← key phải trong cửa sổ thời gian hiện tại
-    [SGN 0xC0]                     ← phải ký (tail byte, không vào WASM)
-  )
-```
-
-#### Soul computation — deterministic từ alice.pub
+### Soul Spec
 
 ```js
-// Standard inbox candle parameters (protocol constant)
-const INBOX_CANDLE = { seg: 0, sep: ".", size: 3600000, back: 2, fwd: 0 }
-// back:2 = chấp nhận 2 candle windows trước (2 giờ trước)
-// fwd:0  = không chấp nhận timestamp tương lai
+// Standard inbox candle (protocol constant)
+// ZEN.candle() default sep là "_" — phải truyền rõ sep: ":"
+const INBOX_CANDLE = { seg: 0, sep: ":", size: 3600000, back: 2, fwd: 0 }
 
-// Tính inbox soul của alice — deterministic, không cần prior contact
+// aliceInboxSoul = "!<bytecode>" — deterministic từ alice.pub
+// Write soul thực tế: aliceInboxSoul + "/" + alice.pub
+// penStage: pathpart = soul.slice(firstSlash + 1) = alice.pub → R[6]
+// Bytecode: AND( EQ(R[6], alice.pub), candle_expr(R[0]) ) + SGN tail
 const aliceInboxSoul = ZEN.pen({
-  path: alice.pub,                    // R[6] phải bằng alice.pub
-  key: ZEN.candle(INBOX_CANDLE),      // key phải trong candle window hiện tại
-  sign: true,                         // phải ký (SGN opcode 0xC0)
+  path: alice.pub,
+  key: ZEN.candle(INBOX_CANDLE),
+  sign: true,
 })
-// aliceInboxSoul = "!<base62bytecode>" — cùng input → cùng output
-// Bất kỳ peer nào cũng tính được kết quả này từ alice.pub
-
-// Soul path khi write:
-const inboxPath = aliceInboxSoul + "/" + alice.pub
-// = "!abc123.../alice45charPub..."
 ```
 
-#### Key format
+### Key format
 
 ```
-key = <candle_segment> + "." + <hash(content)>
+key = <candle_segment>:<sha256_of_content_prefix>
 
-Ví dụ: "485076.7kNmQpRsTvXw..."
-  - "485076"  = Math.floor(Date.now() / 3600000) — hourly segment
-  - ".7kNm..."= hash của nội dung để dedup
+candle_segment = Math.floor(Date.now() / 3600000)
 ```
 
-Trong cùng một candle window, mỗi unique content là một key khác nhau. PEN kiểm tra segment đầu (trước dấu `.`) phải nằm trong `[current-2, current]`.
+PEN validate: `tonum(seg(key, ":", 0))` ∈ `[current - back, current + fwd]`
 
-#### Ví dụ đầy đủ
+### Usage
 
 ```js
-// Standard parameters (dùng trong cả client và server)
-const INBOX_CANDLE = { seg: 0, sep: ".", size: 3600000, back: 2, fwd: 0 }
+// Bob gửi cho Alice
+const soul    = ZEN.pen({ path: alice.pub, key: ZEN.candle(INBOX_CANDLE), sign: true })
+const enc     = await ZEN.encrypt(message, alice.pub)
+const seg     = Math.floor(Date.now() / INBOX_CANDLE.size)
+const keyHash = (await ZEN.hash(enc, null, null, { name: "SHA-256", encode: "base62" })).slice(0, 16)
+const key     = seg + ":" + keyHash
+zen.get(soul + "/" + alice.pub).get(key).put(enc, null, { authenticator: bob_pair })
 
-// Bob gửi private message cho Alice
-async function sendInbox(bob, alice, message) {
-  // Tính inbox soul của alice (deterministic)
-  const soul = ZEN.pen({
-    path: alice.pub,
-    key: ZEN.candle(INBOX_CANDLE),
-    sign: true,
-  })
+// Alice đọc
+zen.get(soul + "/" + alice.pub).map().on(async (val, key) => {
+  const plaintext = await ZEN.decrypt(val, alice_pair)
+  const senderPub = await ZEN.recover(val)   // nếu val là signed blob
+})
+```
 
-  // Encrypt nội dung bằng alice.pub (chỉ alice.priv mới decrypt được)
-  const encrypted = await ZEN.encrypt(message, alice.pub)  // ← dùng pub, không phải epub
+### Anti-spam levels
 
-  // Tính key = <candle>.<hash>
-  const segment = Math.floor(Date.now() / INBOX_CANDLE.size)
-  const contentHash = await ZEN.hash(encrypted, null, null, { name: "SHA-256" })
-  const key = segment + "." + contentHash.slice(0, 16)
+| Level | Spec thêm | Chi phí spammer |
+|-------|-----------|----------------|
+| 1 (default) | `sign: true` | Cần keypair, lộ danh tính |
+| 2 | + `pow: { unit: "0", difficulty: 1 }` | ~50ms/msg |
+| 3 | + `pow: { unit: "0", difficulty: 2 }` | ~500ms/msg |
 
-  // Write — PEN tự động validate trên mọi peer
-  zen.get(soul + "/" + alice.pub).get(key).put(encrypted, null, {
-    authenticator: bob   // ← ký bằng bob.priv, prove danh tính sender
-  })
+Alice publish preferred policy tại `~<alice.pub>/@` để peer biết level nào.
+
+**Lưu ý sender privacy**: SGN lưu signature trong graph → `ZEN.recover(val)` lấy được `bob.pub`. Metadata "bob wrote to alice" là public. Nếu cần ẩn danh: thay SGN bằng PoW.
+
+---
+
+## 4. ZACP — ZEN Agent Collaboration Protocol
+
+### 4.1 Entity Model
+
+```
+Agent      = MCP instance. Identity = keypair (pub public, priv ẩn trong MCP)
+Project    = Namespace chung. owner + members + roles
+Channel    = Message stream trong project
+Role       = owner | admin | member | observer
+```
+
+### 4.2 Soul Naming
+
+```
+# Project data — owner-only (user namespace, security.js enforce)
+~<owner_pub>/proj/<proj_id>/meta
+~<owner_pub>/proj/<proj_id>/roles                           → { <member_pub>: role }
+~<owner_pub>/proj/<proj_id>/chan/<chan_id>/meta
+~<owner_pub>/proj/<proj_id>/chan/<chan_id>/keys/<member_pub> → wrapped channel key
+
+# Channel messages — PEN soul, unique per channel (path hardcoded in bytecode)
+!<pen_bytecode>/proj/<proj_id>/chan/<chan_id>
+  key = <candle_seg>:<hash>
+  val = { a: author_pub, m: <encrypted_blob> }
+
+# DM 1:1 — PEN soul, unique per recipient
+!<pen_bytecode>/dm/<recipient_pub>
+  key = <candle_seg>:<hash>
+  val = { a: sender_pub, m: <encrypted_blob> }
+```
+
+### 4.3 PEN Soul per Channel/DM
+
+```js
+// Channel soul — cert-gated, unique per (proj_id, chan_id)
+// path hardcode trong bytecode → bytecode khác nhau → soul khác nhau
+const chanSoul = ZEN.pen({
+  path: "proj/" + proj_id + "/chan/" + chan_id,
+  key:  ZEN.candle({ seg: 0, sep: ":", size: 3600000, back: 2, fwd: 0 }),
+  sign: true,
+  cert: owner_pub,
+  // pow: { unit: "0", difficulty: 1 }  // bật cho public channel
+})
+// Write: zen.get(chanSoul + "/proj/" + proj_id + "/chan/" + chan_id).get(key).put(...)
+// R[6] = "proj/<proj_id>/chan/<chan_id>" ← matches EQ in bytecode ✓
+
+// DM soul — SGN + PoW, unique per recipient
+const dmSoul = ZEN.pen({
+  path: "dm/" + recipient_pub,
+  key:  ZEN.candle({ seg: 0, sep: ":", size: 3600000, back: 2, fwd: 0 }),
+  sign: true,
+  pow: { unit: "0", difficulty: 1 },  // khuyến nghị — không có cert → cần PoW chặn flood
+})
+// Write: zen.get(dmSoul + "/dm/" + recipient_pub).get(key).put(...)
+// R[6] = "dm/<recipient_pub>" ← matches EQ in bytecode ✓
+```
+
+### 4.4 Group Encryption
+
+**Yêu cầu**: Nội dung channel private chỉ member decrypt được, dù mọi peer lưu graph.
+
+**`owner_priv` không bao giờ lộ ra ngoài MCP process.** Agent chỉ gọi tool `createChannel(proj_id, chan_id)` — không biết và không cần biết `owner_priv`. Code dưới đây chạy bên trong `lib/protocol.js`, truy cập `pairStore` nội bộ của MCP:
+
+```js
+// Trong lib/protocol.js — chạy bên trong MCP, không phải agent code
+// owner_pair được lấy từ pairStore[pairId] — không lộ ra ngoài
+async function createChannel(proj_id, chan_id, version, owner_pair, members, zen) {
+  // ❌ SAI: seed public → chan_pair.priv tính được bởi bất kỳ ai
+  // const chan_pair = await ZEN.pair(null, { seed: proj_id + "/" + chan_id + "/v" + version })
+
+  // ✓ ĐÚNG: seed chỉ owner tính được vì owner_pair.priv là bí mật nằm trong pairStore
+  const chan_seed = await ZEN.hash(
+    owner_pair.priv + proj_id + chan_id + "v" + version, null, null,
+    { name: "SHA-256", encode: "base62" }
+  )
+  const chan_pair = await ZEN.pair(null, { seed: chan_seed })
+  // ...
 }
-
-// Alice đọc inbox
-async function readInbox(alice) {
-  const soul = ZEN.pen({
-    path: alice.pub,
-    key: ZEN.candle(INBOX_CANDLE),
-    sign: true,
-  })
-
-  zen.get(soul + "/" + alice.pub).map().on(async (val, key) => {
-    if (!val) return
-    const message = await ZEN.decrypt(val, alice.priv)  // ← dùng priv, không phải epriv
-    // Biết ai gửi: recover từ signature
-    const senderPub = await ZEN.recover(val)    // nếu val là signed string
-    console.log("From:", senderPub, "→", message)
-  })
-}
 ```
 
-### Tại sao cần PEN (không phải chỉ convention)
+**Key distribution (owner → member)**:
+```js
+// ECDH: shared chỉ tính được bởi người có member.priv hoặc chan_pair.priv (secret)
+const shared  = await ZEN.secret(member.pub, chan_pair)
+const wrapped = await ZEN.encrypt(chan_pair.priv, { priv: shared })
+// Lưu: ~<owner_pub>/proj/<pid>/chan/<cid>/keys/<member.pub> = wrapped
+```
 
-| | Convention-only `@<pub>` | PEN soul `!<bytecode>/<pub>` |
-|--|--|--|
-| Peer honest tuân thủ? | Có | Có — PEN enforce |
-| Peer độc hại bypass? | **Có thể** — flood old keys | **Không thể** — PEN reject ở write time |
-| Cần tất cả peer hiểu? | Không enforce | Tự động — WASM chạy ở mọi peer |
-| Key space bounded? | Không (nếu bị attack) | Có — tối đa `back+1+fwd` windows writable |
-| Implementation phức tạp? | Đơn giản hơn | Cần ZEN.pen + ZEN.candle — nhưng đã có sẵn |
+**Member giải mã**:
+```js
+// ECDH ngược = cùng shared secret
+const shared    = await ZEN.secret(chan_pair.pub, member_pair)
+const chan_priv = await ZEN.decrypt(wrapped, { priv: shared })
+const plaintext = await ZEN.decrypt(msg.m, { priv: chan_priv })
+```
 
-### Soul `@<pub>` cũ vs soul mới
-
-`security.js` hiện tại có guard: `if ("@" === (s[0] || "")[0]) return;` trong `settings.pub()` — `@`-prefixed souls fall through sang `check.pipe.any` (open, không auth). Soul mới với format `!<bytecode>/<alice.pub>` không có vấn đề này — được route qua PEN pipeline (`check.plugins`).
-
-Không cần implement `check.pipe.inbox` nữa. PEN đã handle hoàn toàn.
-
-### Câu hỏi còn mở
-
-- **Anti-spam layer 2 — PoW**: Thêm `pow: { unit: "0", difficulty: 1 }` vào pen spec? Với difficulty 1 (~100ms/message), flood 1000 messages/giờ mất ~100 giây CPU. Reasonable cho legitimate users, đắt cho spammer. Có nên bật default không?
-
-- **Metadata privacy**: Khi SGN bật, signature lưu lại trong graph — bất kỳ ai cũng `ZEN.recover()` được bob.pub từ message. Tức metadata "bob wrote to alice" là public. Nếu cần sender anonymity: không dùng SGN, chỉ dùng PoW. Tradeoff: mất accountability.
-
-- **Key window size**: Hourly (3600000ms) → tối đa ~3h backlog. Nếu agent offline 4h thì miss window. Daily (86400000ms)? 5-minute (300000ms)? Tuỳ use case.
-
-- **Pruning old data**: CRDT không delete, nhưng sau khi candle window đóng, messages vẫn readable mãi. Application layer có muốn TTL? ZEN đã có `<?<seconds>` soul suffix cho forget policy — có thể stack lên.
-
-- **Discovery nếu alice dùng custom params**: Nếu alice muốn khác standard INBOX_CANDLE (vd: daily candle, PoW required), cần publish soul spec tại `~<alice.pub>/@`. Bob phải lookup trước. Với standard params thì không cần lookup.
-
----
-
-## 4. Wallet Address (EVM / BTC)
-
-### Status: Đã implement trong v1.0.9
-
-`pair.address` trong schema mới chính là EVM checksum address, tự động có khi gọi `ZEN.pair()`. Không cần `format` option thêm nữa.
+### 4.5 DM Encryption
 
 ```js
-const p = await ZEN.pair()
-console.log(p.address)  // "0xAbCdEf..." — EVM checksum address
-// p = { curve, pub, priv, address }
-// Không có epub, epriv — encrypt/decrypt dùng pub/priv trực tiếp
+// Alice → Bob (tính trong MCP của alice, priv không lộ ra ngoài)
+const shared = await ZEN.secret(bob.pub, alice_pair)
+const enc    = await ZEN.encrypt(message, { priv: shared })
+
+// Bob giải mã (tính trong MCP của bob)
+const shared = await ZEN.secret(alice.pub, bob_pair)
+const msg    = await ZEN.decrypt(enc, { priv: shared })
 ```
 
-Không còn `epub`/`epriv` trong schema. Tất cả crypto operations dùng `pub`/`priv`:
+### 4.6 Cert & Key Rotation
+
+**Cert expiry thay revocation list**: `$vfy` kiểm tra `cert.e` nhưng không check revocation list ở protocol level. Giải pháp sạch: cấp cert với expiry ngắn — khi kick không renew, cert tự hết hạn.
 
 ```js
-// Encrypt cho alice
-const enc = await ZEN.encrypt(message, alice.pub)   // ← pub (không phải epub)
-
-// Decrypt bởi alice
-const msg = await ZEN.decrypt(enc, alice.priv)       // ← priv (không phải epriv)
+// Cấp cert với expiry 30 ngày
+const cert = await ZEN.certify(
+  member_pub,
+  "proj/" + proj_id + "/chan/" + chan_id,   // write policy khớp pathpart
+  owner_pair, null,
+  { expiry: Date.now() + 30 * 24 * 3600000 }
+)
 ```
 
-### Identity bridge
+**Key rotation khi kick** (forward secrecy từ thời điểm kick):
+```
+1. Tạo chan_seed_v(N+1) = hash(owner_priv + proj_id + chan_id + "v" + (N+1))
+2. Tạo chan_pair từ seed mới
+3. Re-encrypt chan_pair.priv mới cho các member còn lại
+4. Ghi chan meta: { pub: chan_pair.pub, version: N+1, since: Date.now() }
+5. Không renew cert cho kicked member — cert cũ hết hạn tự nhiên
+```
 
-Mỗi ZEN identity tự nhiên có EVM address tương ứng. Có thể sign Ethereum transaction bằng cùng secp256k1 key đã dùng trong ZEN. Bridge giữa ZEN graph và on-chain state là tự nhiên, không cần conversion layer.
+Kicked member đọc được message cũ (đã biết key cũ — intentional, không thể ngăn). Không đọc/ghi được message mới.
+
+### 4.7 Agent Identity
+
+| Mode | Source | Portable | Config |
+|------|--------|----------|--------|
+| Hardware (default) | `lib/identity.js` fingerprint | Không | Zero-config |
+| Seed-based | Passphrase / BIP39 | Có | Seed từ env/file/stdin |
+
+```bash
+ZEN_IDENTITY_SEED="passphrase"   node lib/mcp.js
+node lib/mcp.js --identity-file  ~/.zen/identity   # chmod 600, ngoài project dir
+```
+
+Logic seed loading thuộc `lib/identity.js` — không phải `lib/mcp.js`. MCP chỉ gọi `getOrCreateIdentity(opt)`.
+
+### 4.8 Known Tradeoffs
+
+| Issue | Decision | Ghi chú |
+|-------|----------|---------|
+| Sender metadata public (SGN) | Intentional | Dùng PoW thay SGN nếu cần ẩn danh |
+| Member list visible | Acceptable | Keys được encrypt riêng từng member |
+| Old messages readable after kick | Intentional | Forward secrecy không retroactive |
+| DM flood (no cert) | PoW mitigates | `difficulty: 1` recommended |
 
 ---
 
-## 5. Anti-Spam / DDoS — Phân lớp bảo vệ
+## 5. Code Placement
 
-Ba lớp bảo vệ, từ nhẹ đến nặng, stack lên nhau:
+| Code | Nơi | Lý do |
+|------|-----|-------|
+| `ZEN.pen/candle/certify/secret` | `src/` | Đã có, không thay đổi |
+| `INBOX_CANDLE` constant | `lib/protocol.js` | Shared constant |
+| Soul name computation | `lib/protocol.js` | Reusable, không phụ thuộc MCP |
+| Channel key wrap/unwrap | `lib/protocol.js` | Crypto logic, không phải transport |
+| Project/channel/dm helpers | `lib/protocol.js` | Business logic |
+| Seed-based identity | `lib/identity.js` | Identity concern |
+| MCP tool handlers | `lib/mcp.js` | Thin wrapper, delegate sang protocol.js |
 
-| Lớp | Cơ chế | Cost for spammer | Overhead cho user thật |
-|-----|--------|-----------------|----------------------|
-| Candle window | PEN enforce time-bounded keys | Phải mine trong window | Tự nhiên — key có timestamp |
-| SGN | Phải ký — lộ danh tính | Phải có keypair | Rất thấp (~1ms) |
-| POW | Proof of Work | CPU time per write | ~100ms/msg (difficulty 1) |
-| Quota | Max N writes/hour per pub | Cần nhiều key | Trung bình |
-
-**Candle là lớp nền quan trọng nhất**: Không có nó, mọi lớp khác đều có thể bypass bằng cách flood keys cũ (SGN + timestamp cũ vẫn technically valid trong CRDT). Với PEN candle, peer không thể nhồi old-dated keys vào graph.
-
-### Combination đề xuất cho inbox
-
+**lib/protocol.js** exports cần có:
 ```js
-// Level 1: Minimum viable (SGN only — không anonymous, free)
-ZEN.pen({
-  path: alice.pub,
-  key: ZEN.candle({ seg: 0, sep: ".", size: 3600000, back: 2, fwd: 0 }),
-  sign: true,
-})
-
-// Level 2: Anti-spam (SGN + light PoW — ~100ms/msg)
-ZEN.pen({
-  path: alice.pub,
-  key: ZEN.candle({ seg: 0, sep: ".", size: 3600000, back: 2, fwd: 0 }),
-  sign: true,
-  pow: { unit: "0", difficulty: 1 },
-})
-
-// Level 3: High security (SGN + heavy PoW — ~10s/msg)
-ZEN.pen({
-  path: alice.pub,
-  key: ZEN.candle({ seg: 0, sep: ".", size: 86400000, back: 1, fwd: 0 }),
-  sign: true,
-  pow: { unit: "0", difficulty: 2 },
-})
+export function inboxSoul(pub, opts?)          // → soul string
+export function chanSoul(proj_id, chan_id, owner_pub, opts?)  // → soul string
+export function dmSoul(recipient_pub, opts?)   // → soul string
+export async function wrapChanKey(chan_pair, members)   // → { [member_pub]: wrapped }
+export async function unwrapChanKey(chan_pair_pub, owner_pub, proj_id, chan_id, version, member_pair, zen)
+export async function chanSeed(owner_priv, proj_id, chan_id, version)  // → base62 seed
 ```
-
-Alice có thể publish preferred policy tại `~<alice.pub>/@`. Bob đọc để biết dùng spec nào trước khi gửi.
 
 ---
 
-## 6. Storage Limits — Candle giải quyết key overflow
-
-**Vấn đề cốt lõi**: Graph engine khi load một soul phải enumerate tất cả keys. Soul với N=10,000 keys sẽ gây OOM hoặc timeout. Đây là attack vector thực sự, không chỉ là lý thuyết.
-
-**Candle giải quyết ở protocol level**:
-- PEN candle constraint → chỉ keys có timestamp trong cửa sổ `[current-back, current+fwd]` được accept
-- Old candle windows đóng lại: không có writes mới, không có key space explosion
-- Key count per soul = `(back + 1 + fwd) × (messages per window)` — bounded
-
-**Ví dụ**: Inbox với hourly candle, back=2:
-- Tại bất kỳ thời điểm nào, tối đa 3 candle windows là writable
-- Nếu user nhận 100 messages/giờ: tối đa ~300 active keys
-- Historical messages vẫn readable nhưng space được capped về phía trước
-
-**Các vấn đề còn lại**:
-
-| Problem | Status | Giải pháp |
-|---------|--------|-----------|
-| Key overflow | ✅ PEN candle giải quyết | Enforced at write time |
-| Storage full disk | ⬜ Chưa có | LRU eviction, per-node quota |
-| Flood during window | ⬜ Partial | PoW tăng cost per write |
-| Data bất tử (CRDT no-delete) | ⬜ Chưa có | TTL suffix `<?<ms>` (đã có code) |
-
-**TTL pattern** (`<soul><?<seconds>` format, đã có trong codebase):
-```js
-// Soul expire sau 7 ngày không access
-zen.get("!<bytecode>/<alice.pub><?604800").get(key).put(...)
-```
-
-Cân nhắc default TTL cho inbox: 30 ngày? 90 ngày? Application-configurable.
-
----
-
-## 7. MCP Tool Extensions (cần cho AI Agent)
-
-### `subscribe` tool
-
-Hiện tại MCP là request-response. AI agent không nhận được notification khi có message mới vào inbox.
-
-**Hướng A — Polling**: Agent tự poll `@<pub>` mỗi N giây. Đơn giản, không cần thay đổi server.
-
-**Hướng B — SSE (push)**: MCP server stream JSON events qua stdout khi graph thay đổi. Cần thêm notification protocol vào JSON-RPC handler. Phức tạp hơn nhưng real-time thật sự.
-
-```json
-{ "jsonrpc": "2.0", "method": "notifications/graph",
-  "params": { "soul": "@alice_pub", "key": "#abc", "value": "..." } }
-```
-
-### `list` tool
-
-List các keys trong một soul — hiện tại chỉ có `get` (single key) và implicit `map` qua graph API.
-
-```json
-{ "soul": "@alice_pub", "limit": 20, "after": "#lastKey" }
-→ [{ "key": "#abc", "state": 1234567890 }, ...]
-```
-
-### `identity` tool improvements
-
-- Trả về `address` (EVM) cùng với `pub`/`priv` — đã có trong pair schema mới
-- Support rotate identity (generate new pair, link về pub cũ)
-
----
-
-## 8. Long-term: IPFS Integration
-
-ZEN graph nodes là content-addressed (`#hash`) — tự nhiên tương thích với IPFS CID.
-
-**Hướng tích hợp**:
-- `rfs.js` / `radisk.js` → thêm IPFS adapter tương tự `rs3.js`
-- Node có thể pin/unpin theo demand thay vì lưu tất cả local
-- `#<hash>` souls tự động resolve qua IPFS nếu không có local
-
-**Tiềm năng**: AI agent memory được persist lên IPFS → immutable, verifiable, accessible từ bất kỳ đâu trên mạng. Kết hợp với ZEN identity và signature, có thể xây knowledge graph toàn cầu không cần server trung tâm.
-
----
-
-## 9. Roadmap đề xuất
+## 6. Roadmap
 
 ```
-Near-term (v1.1.x):
-  [ ] Inbox PEN soul — implement ZEN.inbox(pub, opts) helper function
-      → ZEN.pen({ path: pub, key: ZEN.candle(INBOX_CANDLE), sign: true })
-      → Return soul + write helpers
-  [ ] Test suite cho inbox soul (candle validation, SGN, key dedup)
-  [ ] Standard INBOX_CANDLE constant trong src/index.js
+v1.1.x:
+  [ ] lib/protocol.js — ZACP helpers (inboxSoul, chanSoul, dmSoul, wrapChanKey, unwrapChanKey, chanSeed)
+  [ ] lib/identity.js — seed-based mode (ZEN_IDENTITY_SEED / --identity-file / stdin)
+  [ ] lib/mcp.js — add "protocol" tool delegating to lib/protocol.js
+  [ ] Test suite cho inbox soul + ZACP group encryption
 
-Mid-term:
-  [ ] MCP list tool (enumerate keys in soul)
-  [ ] MCP subscribe tool (polling mode trước, SSE sau)
-  [ ] Per-inbox TTL policy via soul suffix
-  [ ] Doc: update ch04 với inbox pattern + candle architecture
-  [ ] Doc: ch09 update với ZEN.inbox() MCP usage
+v1.2.x:
+  [ ] Cert expiry support trong MCP certify tool
+  [ ] Channel key rotation trong lib/protocol.js
+  [ ] MCP list tool (enumerate keys trong một soul)
+  [ ] MCP subscribe tool (polling mode)
 
 Long-term:
-  [ ] MCP subscribe tool (SSE/push mode)
-  [ ] IPFS storage adapter
-  [ ] Cross-agent knowledge sync protocol
-  [ ] On-chain bridge (sign ZEN data = sign ETH tx)
-  [ ] OpenClaw / multi-IDE integration guide
-  [ ] PoW difficulty auto-calibration (based on network congestion)
+  [ ] IPFS storage adapter (pattern như rs3.js)
+  [ ] MCP subscribe SSE push mode
+  [ ] On-chain bridge (secp256k1 = ETH key, sign ZEN data = sign ETH tx)
+  [ ] BIP39 mnemonic support trong lib/identity.js
 ```
 
 ### Đã hoàn thành (v1.0.9)
@@ -420,9 +325,11 @@ Long-term:
 [x] Compact wire format — signed/encrypted strings không wrap JSON
 [x] Pair schema: {curve, pub, priv, address} — không còn epub/epriv
 [x] EVM address tích hợp vào pair (pair.address)
+[x] Base62 encrypt format (thay base64url)
+[x] Legacy GUN backward compat removed
 [x] Certify trả về compact signed string trực tiếp
-[x] PEN WASM VM + candle helper sẵn sàng sử dụng
-[x] 503/503 tests passing
+[x] PEN WASM VM + candle helper sẵn sàng
+[x] Cross-format encrypt/decrypt (zen ↔ evm)
 ```
 
 ---
