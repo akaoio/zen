@@ -79,6 +79,15 @@ describe("testZEN", function () {
     assert.strictEqual(nested.data, 1);
   });
 
+  it("awaits put ack without losing read-then semantics", async function () {
+    var zen = makeZEN("put-then");
+    var node = zen.get("profile").get("status");
+    var write = await node.put("ready");
+    assert.strictEqual(typeof write, "object");
+    var read = await node;
+    assert.strictEqual(read, "ready");
+  });
+
   it("iterates set members through map on the same ZEN instance", async function () {
     var zen = makeZEN("set-map");
     var alice = zen.get("users/alice");

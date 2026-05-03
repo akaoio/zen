@@ -16,6 +16,7 @@
     "prepublishOnly": "npm run verifyRelease",
     "clean": "node clean.js",
     "test": "npm run buildZEN && npm run test:all",
+    "test:repeat": "node script/retest.js 20",
     "test:browser": "playwright test",
     "test:browser:setup": "playwright install chromium",
     "test:browser:setup:deps": "playwright install chromium --with-deps",

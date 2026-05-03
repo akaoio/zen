@@ -11,10 +11,25 @@ import "./websocket.js";
 import "./locstore.js";
 import ZEN from "./root.js";
 
+function consumeAsyncResult(zen) {
+  var at = zen && zen._,
+    async = at && at.asyncResult,
+    p = async && async.promise;
+  if (!p) {
+    return;
+  }
+  delete at.asyncResult;
+  return p;
+}
+
 if (!ZEN.chain.then) {
   ZEN.chain.then = function (cb, opt) {
-    var zen = this;
-    var p = new Promise(function (res) {
+    var zen = this,
+      p = consumeAsyncResult(zen);
+    if (p) {
+      return cb ? p.then(cb) : p;
+    }
+    p = new Promise(function (res) {
       zen.once(res, opt);
     });
     return cb ? p.then(cb) : p;

@@ -6375,11 +6375,11 @@ defmod('./src/put.js', function(module, exp){
       root = at.root;
     opt = options(opt);
     as = as || context(zen, data, cb);
+    attachWritePromise(as, zen, cb);
     if (opt.acks != null && as.acks == null) { as.acks = opt.acks; }
     as.root = at.root;
     as.run || (as.run = root.once);
     stun(as, at.id); // set a flag for reads to check if this chain is writing.
-    as.ack = as.ack || cb;
     as.via = as.via || zen;
     as.data = as.data || data;
     as.soul || (as.soul = at.soul || ("string" == typeof cb && cb));
@@ -6541,6 +6541,48 @@ defmod('./src/put.js', function(module, exp){
     ctx.ack = cb;
     ctx.via = zen;
     return ctx;
+  }
+
+  function attachWritePromise(as, zen, cb) {
+    var ack = as.ack || cb,
+      at = zen && zen._,
+      p;
+    if (!as.writePromise) {
+      p = new Promise(function (resolve, reject) {
+        as.writeResolve = resolve;
+        as.writeReject = reject;
+      });
+      p.catch(noop);
+      as.writePromise = p;
+      if (at) {
+        at.asyncResult = { promise: p, kind: "write" };
+      }
+    }
+    if (as.writeWrapped) {
+      return;
+    }
+    as.writeWrapped = 1;
+    as.ack = function (msg, eve) {
+      try {
+        if (ack) {
+          ack.call(this, msg, eve);
+        }
+      } finally {
+        settleWritePromise(as, zen, msg);
+      }
+    };
+  }
+
+  function settleWritePromise(as, zen, ack) {
+    if (as.writeDone) {
+      return;
+    }
+    as.writeDone = 1;
+    if (ack && ack.err) {
+      as.writeReject(new Error(ack.err));
+      return;
+    }
+    as.writeResolve({ ref: zen, ack: ack });
   }
 
   function options(opt) {
@@ -8168,10 +8210,25 @@ defmod('./src/graph.js', function(module, exp){
   reqmod('./src/websocket.js');
   reqmod('./src/locstore.js');
   var ZEN = reqmod('./src/root.js').default;
+  function consumeAsyncResult(zen) {
+    var at = zen && zen._,
+      async = at && at.asyncResult,
+      p = async && async.promise;
+    if (!p) {
+      return;
+    }
+    delete at.asyncResult;
+    return p;
+  }
+
   if (!ZEN.chain.then) {
     ZEN.chain.then = function (cb, opt) {
-      var zen = this;
-      var p = new Promise(function (res) {
+      var zen = this,
+        p = consumeAsyncResult(zen);
+      if (p) {
+        return cb ? p.then(cb) : p;
+      }
+      p = new Promise(function (res) {
         zen.once(res, opt);
       });
       return cb ? p.then(cb) : p;
