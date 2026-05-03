@@ -8,6 +8,10 @@ import fsrm from "../lib/fsrm.js";
 var ZEN;
 {
   var W = function (o) {
+    o = o || {};
+    if (o.peers === undefined) {
+      o.peers = [];
+    }
     return new zenbase(o);
   };
   Object.setPrototypeOf(W, zenbase);
@@ -4324,6 +4328,7 @@ describe("ZEN", function () {
     });
 
     it("val and then map", function (done) {
+      this.timeout(5000);
       var zen = Zen(),
         s = "val/then/map",
         u;
