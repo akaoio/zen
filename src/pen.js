@@ -537,8 +537,7 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
 
   function applypolicy(policy, ctx, reject, writer) {
     var eve = ctx.eve,
-      msg = ctx.msg,
-      at = ctx.at;
+      msg = ctx.msg;
     var chk = runtime.check;
 
     if (policy.cert) {
@@ -718,7 +717,6 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
         // New write: sign first, check.auth updates msg.put[":"] and msg.put["="]
         chk.auth(msg, reject, sec.authenticator, function (parsed) {
           ctx.val = parsed;
-          policy._verified = true;
           mineIfNeeded(runPredicate);
         });
         return;
@@ -729,34 +727,19 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
       var putVal = ctx.put[":"];
       if (putVal && typeof putVal === "object" && putVal["~"]) {
         ctx.val = putVal[":"];
-        policy._verified = true;
         mineIfNeeded(runPredicate);
         return;
       }
       runtime.opt.pack(ctx.put, function (packed) {
-        // If settings.pack returned {m, s}, the value was previously auth-processed
-        // and stored as JSON {":": val, "~": sig} by check.next on the original write.
-        // Trust the stored format for re-propagation (miss=true cache-miss path from
-        // radisk/locstore). Nonce is not stored to disk so skip PoW re-verification.
-        if (packed && packed.m && packed.s) {
-          var storedVal = packed.m[":"];
-          ctx.put[":"] = { ":": storedVal, "~": packed.s || "" };
-          ctx.put["="] = storedVal;
-          ctx.val = storedVal;
-          policy._verified = true;
-          applypolicy(policy, ctx, reject, writer);
-          return;
-        }
         // Fallback: raw signed string in the put — try public key recovery.
         runtime.recover(packed).then(function (signerPub) {
           runtime.verify(packed, signerPub || sec.upub || null, function (data) {
             data = runtime.opt.unpack(data);
             if (data === void 0) return reject("PEN: valid signature required");
             var sig = (packed && packed.s) || "";
-            ctx.put[":"] = { ":": data, "~": sig };
+            ctx.put[":"] = { ":": data, "~": sig, v: packed && packed.v, c: packed && packed.c };
             ctx.put["="] = data;
             ctx.val = data;
-            policy._verified = true;
             mineIfNeeded(runPredicate);
           });
         }).catch(function () {
