@@ -357,7 +357,7 @@ v1.2.x:
   [ ] End-to-end messaging tests: sendInbox→readInbox, sendToChannel→readChannel, sendDM→readDMs round-trip
   [ ] MCP list tool (enumerate keys trong một soul, cursor/limit/prefix, xem graph.list note)
   [ ] MCP subscribe tool — polling mode trước (stdio-compatible)
-  [ ] MCP SSE transport — lib/mcp-sse.js (xem §7 Streaming)
+  [ ] MCP SSE transport — flag `--sse` trong `lib/mcp.js`, cùng process với stdio mode (xem §7 Streaming)
 
 Long-term:
   [ ] IPFS storage adapter (pattern như rs3.js)
@@ -379,7 +379,14 @@ Long-term:
 **HTTP + SSE transport** (MCP spec 2024-11-05) — server push:
 - Server giữ ZEN `.on()` subscription sống
 - Mỗi khi ZEN fire event → push SSE frame xuống client
-- `lib/mcp-sse.js` triển khai riêng, không thay thế `lib/mcp.js` (stdio)
+- - `lib/mcp-sse.js` **không tồn tại** — SSE mode được tích hợp trong `lib/mcp.js` qua flag `--sse`:
+
+```bash
+node lib/mcp.js           # stdio mode (mặc định, dùng với Claude Desktop)
+node lib/mcp.js --sse     # HTTP+SSE mode (port: ZEN_MCP_PORT hoặc 8421)
+```
+
+Cùng một process, cùng `pairStore`, cùng `zen` instance:
 
 | Kiến trúc | Transport | Push | Storage | Phù hợp |
 |-----------|-----------|------|---------|----------|
@@ -393,9 +400,12 @@ Long-term:
 ZEN chạy hoàn toàn in-memory — không radisk, không localStorage:
 
 ```js
-// lib/mcp-sse.js — hai instance tách biệt
+// lib/mcp.js — cùng file, detect mode qua --sse flag
+const SSE_MODE = process.argv.includes("--sse");
 const zen          = new ZEN({ file: "radata", peers: [...] })   // persisted
 const ephemeralZen = new ZEN({ localStorage: false })             // RAM only, mất khi restart
+// subscriptionStore chỉ active trong SSE mode
+const subscriptionStore = new Map(); // Map<stream_id, { off, res }>
 ```
 
 Kết hợp PEN candle cực hẹp để tự expire write policy:
@@ -421,7 +431,7 @@ const presenceSoul = ZEN.pen({
 └───────────────┬─────────────────────────────────────────┘
                 │ SSE frames: data: { key, val, soul }\n\n
 ┌───────────────▼─────────────────────────────────────────┐
-│  lib/mcp-sse.js                                          │
+│  lib/mcp.js (--sse flag)                                 │
 │  subscriptionStore: Map<stream_id, { off, res }>         │
 │  on subscribe: zen.get(soul).map().on(cb) → push SSE     │
 │  on disconnect: off() cleanup                            │
@@ -442,13 +452,13 @@ const presenceSoul = ZEN.pen({
 | `typing/<chan>` | ephemeral | Indicator tạm thời |
 | `cursor/<room>` | ephemeral | Live cursor position |
 
-Logic routing thuộc `lib/mcp-sse.js` — kiểm tra prefix soul để chọn đúng instance.
+Logic routing thuộc `lib/mcp.js` (SSE path) — kiểm tra prefix soul để chọn đúng instance.
 
 ### Tradeoffs
 
 | Issue | Decision |
 |-------|----------|
-| stdio vs SSE | Hai file riêng — `mcp.js` (stdio) và `mcp-sse.js` (HTTP+SSE). Không trộn lẫn. |
+| stdio vs SSE | Cùng `lib/mcp.js`, detect qua `--sse` flag. Stdio mode không bị ảnh hưởng. |
 | Ephemeral data mất khi restart | Intentional — đó là mục đích. Client phải re-subscribe. |
 | SSE connection limit | Mỗi stream_id = 1 HTTP connection. Scale theo process, không phải thread. |
 | Decryption trên SSE | SSE chỉ push ciphertext. Client tự decrypt — priv không đi qua network. |
