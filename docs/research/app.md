@@ -1,6 +1,6 @@
 # ZEN App Primitives & ZACP — Design Spec
 
-> Cập nhật lần cuối: 2026-05-02
+> Cập nhật lần cuối: 2026-05-03
 
 ---
 
@@ -299,25 +299,161 @@ export async function chanSeed(owner_priv, proj_id, chan_id, version)  // → ba
 
 ## 6. Roadmap
 
+### MCP Priorities (2026-05-03)
+
+**Must have**
+
+- [x] `protocol.read_inbox` — expose inbox read path through MCP
+- [x] `protocol.read_channel` — expose channel read path through MCP
+- [x] `protocol.send_inbox` — inbox round-trip testability / usability through MCP
+- [x] `initialize.serverInfo.version` must reflect package version, not hardcoded stale value
+- [x] Project meta / roles ops (`proj/<id>/meta`, `proj/<id>/roles`) through MCP protocol surface
+- [x] Stable read result schema across inbox / channel / DM (`{ key, plaintext, sender_pub }`) — `readInbox`, `readChannel`, `readDMs` all return this shape
+- [ ] Graph enumeration surface designed for large datasets
+- [ ] Graph subscribe / polling surface
+
+**Later**
+
+- [ ] Identity seed via stdin in `lib/identity.js`
+- [ ] BIP39 mnemonic support in `lib/identity.js`
+- [ ] Cert renewal / lifecycle helpers above raw `certify`
+- [ ] SSE push subscribe mode after polling mode is stable
+- [ ] IPFS adapter and longer-term transport/storage work
+
+**graph.list note**
+
+`graph.list` is intentionally deferred. A naive implementation that reads the whole soul every call is not acceptable. ZEN already has chunked / partial read behavior through graph traversal and LEX-oriented access patterns, so any list API should be designed around:
+
+- cursor / continuation tokens
+- bounded result windows (`limit`)
+- prefix / range filters
+- compatibility with partial / incremental loading rather than full materialization
+
+`Book` from `src/book.js` is relevant here, but only as an internal building block. It already implements a paged in-memory key/value index with page splitting, exact lookup, and bounded page reads, so it can help as:
+
+- an in-memory page buffer for one `graph.list` window
+- a continuation/cursor backing structure after data has already been narrowed by range/prefix
+- a local cache for incremental reads over large result sets
+
+`Book` should not be the public `graph.list` contract by itself:
+
+- it does not define network/storage traversal semantics
+- current range/prefix matching belongs more naturally to LEX/Radix-style access patterns
+- `Book` still has TODOs around non-exact / radix-like lookup behavior
+
+Until that design is clear, MCP should not ship a misleading `graph.list` that behaves like an eager full scan.
+
 ```
 v1.1.x:
-  [ ] lib/protocol.js — ZACP helpers (inboxSoul, chanSoul, dmSoul, wrapChanKey, unwrapChanKey, chanSeed)
-  [ ] lib/identity.js — seed-based mode (ZEN_IDENTITY_SEED / --identity-file / stdin)
-  [ ] lib/mcp.js — add "protocol" tool delegating to lib/protocol.js
-  [ ] Test suite cho inbox soul + ZACP group encryption
+  [x] lib/protocol.js — ZACP helpers (inboxSoul, chanSoul, dmSoul, wrapChanKey, unwrapChanKey, chanSeed)
+  [x] lib/identity.js — seed-based mode (ZEN_IDENTITY_SEED / --identity-file / stdin)
+  [x] lib/mcp.js — add "protocol" tool delegating to lib/protocol.js
+  [x] Test suite cho inbox soul + ZACP group encryption (29 tests passing)
+  [x] src/meta.js — Zen.chain.meta(cb) / await .meta() — signature metadata API
 
 v1.2.x:
   [ ] Cert expiry support trong MCP certify tool
   [ ] Channel key rotation trong lib/protocol.js
-  [ ] MCP list tool (enumerate keys trong một soul)
-  [ ] MCP subscribe tool (polling mode)
+  [ ] End-to-end messaging tests: sendInbox→readInbox, sendToChannel→readChannel, sendDM→readDMs round-trip
+  [ ] MCP list tool (enumerate keys trong một soul, cursor/limit/prefix, xem graph.list note)
+  [ ] MCP subscribe tool — polling mode trước (stdio-compatible)
+  [ ] MCP SSE transport — lib/mcp-sse.js (xem §7 Streaming)
 
 Long-term:
   [ ] IPFS storage adapter (pattern như rs3.js)
-  [ ] MCP subscribe SSE push mode
   [ ] On-chain bridge (secp256k1 = ETH key, sign ZEN data = sign ETH tx)
   [ ] BIP39 mnemonic support trong lib/identity.js
+  [ ] Identity seed via stdin trong lib/identity.js
 ```
+
+---
+
+## 7. Streaming Architecture
+
+### MCP transport constraints
+
+**Stdio (hiện tại)** — request/response thuần, không có server push:
+- Polling: client gọi tool định kỳ, nhận snapshot
+- Long-poll: tool block đến timeout hoặc limit đạt, trả batch
+
+**HTTP + SSE transport** (MCP spec 2024-11-05) — server push:
+- Server giữ ZEN `.on()` subscription sống
+- Mỗi khi ZEN fire event → push SSE frame xuống client
+- `lib/mcp-sse.js` triển khai riêng, không thay thế `lib/mcp.js` (stdio)
+
+| Kiến trúc | Transport | Push | Storage | Phù hợp |
+|-----------|-----------|------|---------|----------|
+| Polling | stdio | ❌ | Bình thường | Inbox batch read |
+| Long-poll | stdio | ❌ | Bình thường | Low-freq notification |
+| SSE push | HTTP+SSE | ✅ | Bình thường | Chat, live feed |
+| SSE ephemeral | HTTP+SSE | ✅ | **Không** | Presence, typing indicator |
+
+### Ephemeral ZEN instance
+
+ZEN chạy hoàn toàn in-memory — không radisk, không localStorage:
+
+```js
+// lib/mcp-sse.js — hai instance tách biệt
+const zen          = new ZEN({ file: "radata", peers: [...] })   // persisted
+const ephemeralZen = new ZEN({ localStorage: false })             // RAM only, mất khi restart
+```
+
+Kết hợp PEN candle cực hẹp để tự expire write policy:
+```js
+// Presence: candle 1 phút, không accept message cũ
+const presenceSoul = ZEN.pen({
+  path: agent_pub,
+  key: ZEN.candle({ seg: 0, sep: ":", size: 60000, back: 0, fwd: 0 }),
+  sign: true,
+})
+// Sau 1 phút, PEN từ chối mọi write mới với key cũ
+// Node still has data in graph nhưng không ai write được nữa
+```
+
+### SSE subscribe/unsubscribe pattern
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  MCP Client (LLM agent)                                  │
+│  tool: subscribe({ soul, pairId? }) → { stream_id }     │
+│  GET /sse?stream=<stream_id>  — HTTP SSE connection      │
+│  tool: unsubscribe({ stream_id })                        │
+└───────────────┬─────────────────────────────────────────┘
+                │ SSE frames: data: { key, val, soul }\n\n
+┌───────────────▼─────────────────────────────────────────┐
+│  lib/mcp-sse.js                                          │
+│  subscriptionStore: Map<stream_id, { off, res }>         │
+│  on subscribe: zen.get(soul).map().on(cb) → push SSE     │
+│  on disconnect: off() cleanup                            │
+└───────────────┬─────────────────────────────────────────┘
+                │ ZEN .on() — realtime graph events
+┌───────────────▼─────────────────────────────────────────┐
+│  ZEN graph (persisted hoặc ephemeral tuỳ soul)           │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Routing: persisted vs ephemeral
+
+| Soul prefix | ZEN instance | Lý do |
+|-------------|-------------|-------|
+| `!<pen>/<pub>` inbox/channel | persisted | Message phải tồn tại qua restart |
+| `~<pub>/...` | persisted | Owner-signed data |
+| `presence/<pub>` | ephemeral | Không cần lưu, mất là được |
+| `typing/<chan>` | ephemeral | Indicator tạm thời |
+| `cursor/<room>` | ephemeral | Live cursor position |
+
+Logic routing thuộc `lib/mcp-sse.js` — kiểm tra prefix soul để chọn đúng instance.
+
+### Tradeoffs
+
+| Issue | Decision |
+|-------|----------|
+| stdio vs SSE | Hai file riêng — `mcp.js` (stdio) và `mcp-sse.js` (HTTP+SSE). Không trộn lẫn. |
+| Ephemeral data mất khi restart | Intentional — đó là mục đích. Client phải re-subscribe. |
+| SSE connection limit | Mỗi stream_id = 1 HTTP connection. Scale theo process, không phải thread. |
+| Decryption trên SSE | SSE chỉ push ciphertext. Client tự decrypt — priv không đi qua network. |
+
+---
 
 ### Đã hoàn thành (v1.0.9)
 

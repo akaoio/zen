@@ -6,6 +6,7 @@ import "./get.js";
 import "./on.js";
 import "./map.js";
 import "./set.js";
+import "./meta.js";
 import "./mesh.js";
 import "./websocket.js";
 import "./locstore.js";

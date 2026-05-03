@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import pkg from "../package.json" with { type: "json" };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MCP_BIN   = join(__dirname, "../lib/mcp.js");
@@ -121,6 +122,7 @@ describe("MCP — initialize", function () {
       const res = await s.init();
       assert.strictEqual(res.result.protocolVersion, "2024-11-05");
       assert.strictEqual(res.result.serverInfo.name, "zen");
+      assert.strictEqual(res.result.serverInfo.version, pkg.version);
       assert.ok(res.result.capabilities.tools);
     });
   });
@@ -460,6 +462,46 @@ describe("MCP — protocol tool", function () {
   const PROJ = "test_" + Date.now();
   const CHAN  = "general";
 
+  it("set_project_meta stores owner project metadata", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "set_project_meta",
+      proj_id: PROJ,
+      meta: { name: "Project Alpha", visibility: "private" },
+      pairId: "self",
+    }));
+    assert.deepStrictEqual(res, { ok: true });
+  });
+
+  it("get_project_meta returns stored metadata", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "get_project_meta",
+      proj_id: PROJ,
+      owner_pub: selfPub,
+    }));
+    assert.strictEqual(res.name, "Project Alpha");
+    assert.strictEqual(res.visibility, "private");
+  });
+
+  it("set_project_role stores a member role", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "set_project_role",
+      proj_id: PROJ,
+      member_pub: selfPub,
+      role: "owner",
+      pairId: "self",
+    }));
+    assert.deepStrictEqual(res, { ok: true });
+  });
+
+  it("get_project_roles returns stored role map", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "get_project_roles",
+      proj_id: PROJ,
+      owner_pub: selfPub,
+    }));
+    assert.strictEqual(res[selfPub], "owner");
+  });
+
   it("create_channel stores meta and wrapped key", async function () {
     const res = content(await s.tool("protocol", {
       op: "create_channel", proj_id: PROJ, chan_id: CHAN, pairId: "self",
@@ -479,6 +521,23 @@ describe("MCP — protocol tool", function () {
     memberCert = res.cert;
   });
 
+  it("send_inbox to self returns ok", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "send_inbox", recipient_pub: selfPub, message: "hello inbox", pairId: "self",
+    }));
+    assert.deepStrictEqual(res, { ok: true });
+  });
+
+  it("read_inbox returns array (with self inbox plaintext)", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "read_inbox", pairId: "self", limit: 10,
+    }));
+    assert.ok(Array.isArray(res));
+    const found = res.find(m => m.plaintext === "hello inbox");
+    assert.ok(found, "self inbox plaintext should appear in read_inbox");
+    assert.strictEqual(found.sender_pub, selfPub);
+  });
+
   it("send_channel encrypts and writes message", async function () {
     const res = content(await s.tool("protocol", {
       op: "send_channel",
@@ -488,6 +547,16 @@ describe("MCP — protocol tool", function () {
       pairId: "self",
     }));
     assert.deepStrictEqual(res, { ok: true });
+  });
+
+  it("read_channel returns array (with decrypted channel plaintext)", async function () {
+    const res = content(await s.tool("protocol", {
+      op: "read_channel", proj_id: PROJ, chan_id: CHAN, owner_pub: selfPub, pairId: "self", limit: 10,
+    }));
+    assert.ok(Array.isArray(res));
+    const found = res.find(m => m.plaintext === "hello channel");
+    assert.ok(found, "channel plaintext should appear in read_channel");
+    assert.strictEqual(found.sender_pub, selfPub);
   });
 
   it("kick bumps version and returns new chan_pub", async function () {

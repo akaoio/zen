@@ -519,7 +519,7 @@ src/                  — runtime source (source of truth)
   buffer.js           — buffer utilities
   array.js            — array utilities
   ask.js              — query handling
-  book.js             — peer registry
+  book.js             — paged key-value index used by RAD-style lookups
   graph.js            — graph utilities
   locstore.js         — local storage adapter
   runtime.js          — runtime detection
