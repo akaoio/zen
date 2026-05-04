@@ -140,23 +140,11 @@ Zen.chain.get = function (key, cb, as) {
         }
         root.pass[id + at.id] = 1;
       }
-      if (opt.on) {
-        opt.ok.call(at.$, data, at.get, msg, eve || any);
-        return;
-      } // TODO: Also consider breaking `this` since a lot of people do `=>` these days and `.call(` has slower performance.
       if (opt.v2020) {
         opt.ok(msg, eve || any);
         return;
       }
-      Object.keys(msg).forEach(
-        function (k) {
-          tmp[k] = msg[k];
-        },
-        (tmp = {}),
-      );
-      msg = tmp;
-      msg.put = data; // 2019 COMPATIBILITY! TODO: GET RID OF THIS!
-      opt.ok.call(opt.as, msg, eve || any); // is this the right
+      opt.ok.call(at.$, data, at.get, msg, eve || any);
     }
     any.at = cat;
     //(cat.any||(cat.any=function(msg){ setTimeout.each(Object.keys(cat.any||''), function(act){ (act = cat.any[act]) && act(msg) },0,99) }))[id = String.random(7)] = any; // maybe switch to this in future?
@@ -262,7 +250,7 @@ function soul(zen, cb, opt, as) {
           );
       } //);
     },
-    { out: { get: { ".": true } } },
+    { out: { get: { ".": true } }, v2020: true },
   );
   return zen;
 }

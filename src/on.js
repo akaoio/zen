@@ -92,6 +92,9 @@ Zen.chain.once = function (cb, opt) {
         return;
       }
       if ("string" == typeof tmp) {
+        clearTimeout((cat.one || "")[id]);
+        clearTimeout(one[id]);
+        one[id] = setTimeout(once, opt.wait || 99);
         return;
       }
       clearTimeout((cat.one || "")[id]); // clear "not found" since they only get set on cat.
@@ -105,13 +108,17 @@ Zen.chain.once = function (cb, opt) {
           tmp = ((msg.$$ || "")._ || "").put;
         }
         if ("string" == typeof Zen.valid(tmp)) {
-          tmp = root.$.get(tmp)._.put;
+          var linkAt = root.$.get(tmp)._;
+          tmp = linkAt.put;
           if (tmp === u && !f) {
             one[id] = setTimeout(function () {
               once(1);
             }, opt.wait || 99); // TODO: Quick fix. Maybe use ack count for more predictable control?
             return;
           }
+          // Merge linked node's raw put into at so msg.put reflects destination node,
+          // but preserve at.get (original key) so callback key arg stays correct.
+          at = { get: at.get, put: linkAt.put, soul: linkAt.soul, has: linkAt.has };
         }
         if (!f && tmp && "object" == typeof tmp && Object.keys(tmp).length === 1 && "_" in tmp) {
           one[id] = setTimeout(function () {
@@ -130,7 +137,7 @@ Zen.chain.once = function (cb, opt) {
         if (cat.soul || cat.has) {
           eve.off();
         } // TODO: Plural chains? // else { ?.off() } // better than one check?
-        cb.call($, tmp, at.get);
+        cb.call($, tmp, at.get, msg);
         clearTimeout(one[id]); // clear "not found" since they only get set on cat. // TODO: This was hackily added, is it necessary or important? Probably not, in future try removing this. Was added just as a safety for the `&& !f` check.
       }
     },

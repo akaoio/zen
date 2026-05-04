@@ -27,6 +27,7 @@ class McpSession {
   }
 
   start() {
+    this._notifListeners = []; // [{method, resolve, timer}]
     this._proc = spawn(process.execPath, [MCP_BIN], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ZEN_SILENCE_TEST_WARNINGS: "1", XDG_DATA_HOME: MCP_TEST_XDG },
@@ -46,6 +47,16 @@ class McpSession {
             this._pending.delete(msg.id);
             clearTimeout(timer);
             resolve(msg);
+          } else if (msg.id == null && msg.method) {
+            // Notification — deliver to waiting listeners
+            for (let i = this._notifListeners.length - 1; i >= 0; i--) {
+              const { method, resolve, timer } = this._notifListeners[i];
+              if (!method || method === msg.method) {
+                this._notifListeners.splice(i, 1);
+                clearTimeout(timer);
+                resolve(msg);
+              }
+            }
           }
         } catch (_) {}
       }
@@ -87,6 +98,18 @@ class McpSession {
   /** Call a tool and return the raw JSON-RPC response. */
   async tool(name, args, timeout = 15000) {
     return this.send("tools/call", { name, arguments: args }, timeout);
+  }
+
+  /** Wait for the next notification with the given method (or any if omitted). */
+  waitForNotification(method, timeout = 8000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const idx = this._notifListeners.findIndex(l => l.resolve === resolve);
+        if (idx !== -1) this._notifListeners.splice(idx, 1);
+        reject(new Error("Timeout waiting for notification: " + (method || "*")));
+      }, timeout);
+      this._notifListeners.push({ method: method || null, resolve, timer });
+    });
   }
 }
 
@@ -160,9 +183,9 @@ describe("MCP — tools/list", function () {
     assert.ok(g.inputSchema.properties.opt);
   });
 
-  it("graph op enum is [get, put, set]", function () {
+  it("graph op enum is [get, put, set, subscribe, unsubscribe]", function () {
     const g = tools.find(t => t.name === "graph");
-    assert.deepStrictEqual(g.inputSchema.properties.op.enum, ["get", "put", "set"]);
+    assert.deepStrictEqual(g.inputSchema.properties.op.enum, ["get", "put", "set", "subscribe", "unsubscribe"]);
   });
 
   it("crypto requires method and allows additionalProperties", function () {
@@ -598,6 +621,151 @@ describe("MCP — notifications", function () {
       s.notify("notifications/initialized");
       const res = await s.send("tools/list", {});
       assert.ok(Array.isArray(res.result.tools));
+    });
+  });
+});
+
+// ─── certify expiry ───────────────────────────────────────────────────────────
+
+describe("MCP — certify expiry", function () {
+  this.timeout(20000);
+
+  let s, selfPub;
+  before(async function () {
+    s = new McpSession().start();
+    await s.init();
+    selfPub = content(await s.tool("identity", {})).pub;
+  });
+  after(function () { s.end(); });
+
+  it("certify with plain-string write path returns a cert string", async function () {
+    const cert = content(await s.tool("crypto", {
+      method: "certify", pairId: "self", pub: selfPub, policy: "inbox/*",
+    }));
+    assert.ok(typeof cert === "string" && cert.length > 0, "cert should be a non-empty string");
+  });
+
+  it("certify with expiry embeds cert.e in payload", async function () {
+    const expiry = Date.now() + 86400000;
+    const cert = content(await s.tool("crypto", {
+      method: "certify", pairId: "self", pub: selfPub, policy: "inbox/*", expiry,
+    }));
+    assert.ok(typeof cert === "string" && cert.length > 0);
+    // Verify the cert and inspect the payload
+    const payload = content(await s.tool("crypto", { method: "verify", signed: cert, pub: selfPub }));
+    const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+    assert.strictEqual(parsed.e, expiry, "cert payload should contain the expiry timestamp");
+    assert.strictEqual(parsed.w, "inbox/*");
+    assert.strictEqual(parsed.c, selfPub);
+  });
+
+  it("certify without expiry has no cert.e in payload", async function () {
+    const cert = content(await s.tool("crypto", {
+      method: "certify", pairId: "self", pub: selfPub, policy: "inbox/*",
+    }));
+    const payload = content(await s.tool("crypto", { method: "verify", signed: cert, pub: selfPub }));
+    const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+    assert.strictEqual(parsed.e, undefined, "no expiry → cert.e should be absent");
+  });
+
+  it("certify with JSON-string policy object works", async function () {
+    const cert = content(await s.tool("crypto", {
+      method: "certify", pairId: "self", pub: selfPub,
+      policy: JSON.stringify({ write: "chan/*" }),
+      expiry: Date.now() + 3600000,
+    }));
+    assert.ok(typeof cert === "string" && cert.length > 0);
+    const payload = content(await s.tool("crypto", { method: "verify", signed: cert, pub: selfPub }));
+    const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+    assert.strictEqual(parsed.w, "chan/*");
+  });
+
+  it("certify with policy object (not string) works", async function () {
+    const cert = content(await s.tool("crypto", {
+      method: "certify", pairId: "self", pub: selfPub,
+      policy: { write: "proj/*/chan/*" },
+    }));
+    assert.ok(typeof cert === "string" && cert.length > 0);
+    const payload = content(await s.tool("crypto", { method: "verify", signed: cert, pub: selfPub }));
+    const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+    assert.strictEqual(parsed.w, "proj/*/chan/*");
+  });
+
+  it("certify missing pairId returns error", async function () {
+    const res = await s.tool("crypto", { method: "certify", pub: selfPub, policy: "inbox/*" });
+    assert.ok(res.error);
+    assert.ok(res.error.message.includes("pairId"));
+  });
+});
+
+// ─── graph subscribe / unsubscribe ───────────────────────────────────────────
+
+describe("MCP — graph subscribe / unsubscribe", function () {
+  this.timeout(20000);
+
+  it("subscribe returns a sub_id string", async function () {
+    await withSession(async s => {
+      const soul = "sub_test_" + Date.now();
+      const res = content(await s.tool("graph", { soul, op: "subscribe" }));
+      assert.ok(typeof res.sub_id === "string" && res.sub_id.startsWith("sub_"));
+    });
+  });
+
+  it("subscribe → put → notification arrives", async function () {
+    await withSession(async s => {
+      const soul = "sub_notify_" + Date.now();
+      // Subscribe first
+      const { sub_id } = content(await s.tool("graph", { soul, op: "subscribe" }));
+      // Start waiting for notification before writing
+      const notifP = s.waitForNotification("notifications/message");
+      // Write a value
+      await s.tool("graph", { soul, op: "put", path: ["x"], value: "hello-sub" });
+      // Wait for the notification
+      const notif = await notifP;
+      assert.strictEqual(notif.method, "notifications/message");
+      const data = JSON.parse(notif.params.data);
+      assert.strictEqual(data.sub_id, sub_id);
+      assert.strictEqual(data.soul, soul);
+      assert.ok(data.key != null);
+    });
+  });
+
+  it("unsubscribe stops further notifications", async function () {
+    await withSession(async s => {
+      const soul = "sub_unsub_" + Date.now();
+      const { sub_id } = content(await s.tool("graph", { soul, op: "subscribe" }));
+      // Unsubscribe
+      const unsubRes = content(await s.tool("graph", { soul, op: "unsubscribe", opt: { sub_id } }));
+      assert.deepStrictEqual(unsubRes, { ok: true });
+      // Writing after unsubscribe should not produce a notification
+      await s.tool("graph", { soul, op: "put", path: ["x"], value: "after-unsub" });
+      // Expect no notification within a short window
+      await assert.rejects(
+        s.waitForNotification("notifications/message", 1000),
+        /Timeout/,
+        "no notification expected after unsubscribe"
+      );
+    });
+  });
+
+  it("unsubscribe with unknown sub_id returns error", async function () {
+    const res = await call("graph", { soul: "x", op: "unsubscribe", opt: { sub_id: "sub_bad999" } });
+    assert.ok(res.error);
+    assert.ok(res.error.message.includes("Unknown sub_id"));
+  });
+
+  it("unsubscribe without sub_id returns error", async function () {
+    const res = await call("graph", { soul: "x", op: "unsubscribe" });
+    assert.ok(res.error);
+    assert.ok(res.error.message.includes("sub_id"));
+  });
+
+  it("graph op enum includes subscribe and unsubscribe", async function () {
+    await withSession(async s => {
+      const res = await s.send("tools/list", {});
+      const g = res.result.tools.find(t => t.name === "graph");
+      assert.ok(g.inputSchema.properties.op.enum.includes("subscribe"));
+      assert.ok(g.inputSchema.properties.op.enum.includes("unsubscribe"));
     });
   });
 });

@@ -1645,10 +1645,7 @@ describe("ZEN", function () {
               .get("u/m/mutate")
               .map()
               .get("name")
-              .get(function (at, ev) {
-                var e = at.err,
-                  v = at.put,
-                  f = at.get;
+              .get(function (v, f) {
                 //console.log("****************", f,v);
                 check[v] = f;
                 count[v] = (count[v] || 0) + 1;
@@ -1697,10 +1694,7 @@ describe("ZEN", function () {
               .get("u/m/mutate/n")
               .map()
               .get("name")
-              .get(function (at, ev) {
-                var e = at.err,
-                  v = at.put,
-                  f = at.get;
+              .get(function (v, f) {
                 check[v] = f;
                 count[v] = (count[v] || 0) + 1;
                 //console.log("************", f,v);
@@ -3548,22 +3542,22 @@ describe("ZEN", function () {
         );
       setTimeout(function () {
         //console.debug.i=1;console.log('---------------');
-        zen.get(function (at) {
-          //console.log("*", at.put);//return;
-          done.app = done.app || at.put.alias;
+        zen.get(function (data) {
+          //console.log("*", data);//return;
+          done.app = done.app || (data && data.alias);
         });
         zen
           .back(-1)
           .get("pub")
-          .get(function (at) {
-            //console.log("**", at.put.auth);
-            done.pub = done.pub || at.put.auth;
+          .get(function (data) {
+            //console.log("**", data && data.auth);
+            done.pub = done.pub || (data && data.auth);
           });
         zen
           .get("alias")
-          .get(function (at) {
-            //console.log("***", at);
-            done.alias = done.alias || at.put.mark;
+          .get(function (data) {
+            //console.log("***", data);
+            done.alias = done.alias || (data && data.mark);
             //!console.debug.i&&(console.debug.i=1)&&console.log("---------------------");
           })
           .get("mark")
@@ -3652,10 +3646,7 @@ describe("ZEN", function () {
             .get("parallel")
             .get("bob")
             .get("age")
-            .get(function (at, ev) {
-              var err = at.err,
-                data = at.put,
-                field = at.get;
+            .get(function (data, field) {
               //console.log("*****", field, data);return;
               expect(data).to.be(29);
               expect(field).to.be("age");
@@ -3666,10 +3657,7 @@ describe("ZEN", function () {
             .get("parallel")
             .get("bob")
             .get("name")
-            .get(function (at, ev) {
-              var err = at.err,
-                data = at.put,
-                field = at.get;
+            .get(function (data, field) {
               //console.log("***********", field, data);return;
               expect(data).to.be("Bob!");
               expect(field).to.be("name");
@@ -3696,10 +3684,7 @@ describe("ZEN", function () {
             .get("parallel/later")
             .get("bob")
             .get("age")
-            .get(function (at, ev) {
-              var err = at.err,
-                data = at.put,
-                field = at.get;
+            .get(function (data, field) {
               //console.log("*****", field, data); return;
               expect(data).to.be(29);
               expect(field).to.be("age");
@@ -3710,10 +3695,7 @@ describe("ZEN", function () {
               .get("parallel/later")
               .get("bob")
               .get("name")
-              .get(function (at, ev) {
-                var err = at.err,
-                  data = at.put,
-                  field = at.get;
+              .get(function (data, field) {
                 //console.log("***********", field, data); return;
                 expect(data).to.be("Bob!");
                 expect(field).to.be("name");
@@ -3735,10 +3717,7 @@ describe("ZEN", function () {
         .get("parallel/not")
         .get("bob")
         .get("age")
-        .get(function (at, ev) {
-          var err = at.err,
-            data = at.put,
-            field = at.get;
+        .get(function (data, field) {
           //console.log("***** age", data);
           expect(data).to.be(undefined);
           expect(field).to.be("age");
@@ -3748,10 +3727,7 @@ describe("ZEN", function () {
         .get("parallel/not")
         .get("bob")
         .get("name")
-        .get(function (at, ev) {
-          var err = at.err,
-            data = at.put,
-            field = at.get;
+        .get(function (data, field) {
           //console.log("*********** name", data);
           expect(data).to.be(undefined);
           expect(field).to.be("name");
@@ -3770,10 +3746,7 @@ describe("ZEN", function () {
         .get("parallel/not/later")
         .get("bob")
         .get("age")
-        .get(function (at, ev) {
-          var err = at.err,
-            data = at.put,
-            field = at.get;
+        .get(function (data, field) {
           //console.log("***** age", data);
           expect(data).to.be(undefined);
           expect(field).to.be("age");
@@ -3785,10 +3758,7 @@ describe("ZEN", function () {
           .get("parallel/not/later")
           .get("bob")
           .get("name")
-          .get(function (at, ev) {
-            var err = at.err,
-              data = at.put,
-              field = at.get;
+          .get(function (data, field) {
             //console.log("*********** name", field, data);
             expect(data).to.be(undefined);
             expect(field).to.be("name");
@@ -3811,19 +3781,13 @@ describe("ZEN", function () {
         },
         "full",
         function () {
-          zen.get("full").get(function (at, ev) {
-            var err = at.err,
-              data = at.$._.put || at.put,
-              field = at.get;
-            //console.log("*****1", data, field);return;
+          zen.get("full").get(function (data) {
+            //console.log("*****1", data);return;
             expect(data.hello).to.be("world");
             expect(data.goodbye).to.be("mars");
           });
-          zen.get("full").get(function (at, ev) {
-            var err = at.err,
-              data = at.$._.put || at.put,
-              field = at.get;
-            //console.log("*****2", data, field);return;
+          zen.get("full").get(function (data) {
+            //console.log("*****2", data);return;
             expect(data.hello).to.be("world");
             expect(data.goodbye).to.be("mars");
             if (done.c) {
@@ -3844,20 +3808,14 @@ describe("ZEN", function () {
         },
         "full/later",
         function () {
-          zen.get("full/later").get(function (at, ev) {
-            var err = at.err,
-              data = at.$._.put || at.put,
-              field = at.get;
+          zen.get("full/later").get(function (data) {
             //console.log("*****", data);
             expect(data.hello).to.be("world");
             expect(data.goodbye).to.be("mars");
           });
           setTimeout(function () {
-            zen.get("full/later").get(function (at, ev) {
-              var err = at.err,
-                data = at.$._.put || at.put,
-                field = at.get;
-              //console.log("*****2", field, data);
+            zen.get("full/later").get(function (data) {
+              //console.log("*****2", data);
               expect(data.hello).to.be("world");
               expect(data.goodbye).to.be("mars");
               if (done.c) {
@@ -4592,12 +4550,11 @@ describe("ZEN", function () {
           var app = zen.get("nl/app").get("bar");
 
           app.get(function (d) {
-            //d = (d.$$||d.$)._.put;
-            if (!d || !d.put || !d.put.wat) {
+            if (!d || !d.wat) {
               return;
             }
-            //console.log('************ should be called: {wat:1}=', d.put);
-            expect(d.put.wat).to.be(1);
+            //console.log('************ should be called: {wat:1}=', d);
+            expect(d.wat).to.be(1);
             done.a = 1;
             if (!done.u) {
               return;
@@ -5146,17 +5103,11 @@ describe("ZEN", function () {
 		});*/
 
     it("get any any none", function (done) {
-      zen.get("full/none").get(function (at, ev) {
-        var err = at.err,
-          data = at.put,
-          field = at.get;
+      zen.get("full/none").get(function (data) {
         //console.log("*****", data);
         expect(data).to.be(undefined);
       });
-      zen.get("full/none").get(function (at, ev) {
-        var err = at.err,
-          data = at.put,
-          field = at.get;
+      zen.get("full/none").get(function (data) {
         //console.log("*****2", data);
         expect(data).to.be(undefined);
         if (done.c) {
@@ -5168,18 +5119,12 @@ describe("ZEN", function () {
     });
 
     it("get any any none later", function (done) {
-      zen.get("full/none/later").get(function (at, ev) {
-        var err = at.err,
-          data = at.put,
-          field = at.get;
+      zen.get("full/none/later").get(function (data) {
         //console.log("*****", data);
         expect(data).to.be(undefined);
       });
       setTimeout(function () {
-        zen.get("full/none/later").get(function (at, ev) {
-          var err = at.err,
-            data = at.put,
-            field = at.get;
+        zen.get("full/none/later").get(function (data) {
           //console.log("*****2", data);
           expect(data).to.be(undefined);
           nopasstun(done, zen);
@@ -5196,7 +5141,6 @@ describe("ZEN", function () {
             .get("parallel/get/get")
             .get("bob")
             .get(function (data) {
-              data = data.put;
               //console.log("***** 1", data);
               expect(data.age).to.be(29);
               expect(data.name).to.be("Bob!");
@@ -5205,7 +5149,6 @@ describe("ZEN", function () {
             .get("parallel/get/get")
             .get("bob")
             .get(function (data) {
-              data = data.put;
               //console.log("***** 2", data);
               expect(data.age).to.be(29);
               expect(data.name).to.be("Bob!");

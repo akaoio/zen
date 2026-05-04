@@ -486,7 +486,10 @@ Expose higher-level ZACP collaboration helpers from `lib/protocol.js`.
 - `kick`
 - `send_channel`
 - `send_dm`
+- `send_inbox`
 - `read_dms`
+- `read_inbox`
+- `read_channel`
 
 The soul-only operations do not require `pairId`.
 All other operations require `pairId: "self"`.
@@ -663,6 +666,70 @@ Example response:
 ]
 ```
 
+### `send_inbox`
+
+Send a message to a recipient's public inbox. Uses ECDH shared secret with the recipient for encryption.
+
+```json
+{
+  "op": "send_inbox",
+  "recipient_pub": "<pub>",
+  "message": "hello via inbox",
+  "pairId": "self"
+}
+```
+
+Returns `{ "ok": true }`.
+
+The inbox soul enforces `sign: true` (no cert required). The hourly candle key window provides time-based expiry. Add `pow` to the `opt` argument for anti-spam:
+
+```json
+{ "op": "send_inbox", "recipient_pub": "<pub>", "message": "hello", "pairId": "self", "pow": { "unit": "0", "difficulty": 1 } }
+```
+
+### `read_inbox`
+
+Read messages from the caller's own inbox soul. Decrypts each using ECDH shared secret with sender.
+
+```json
+{
+  "op": "read_inbox",
+  "pairId": "self",
+  "limit": 20
+}
+```
+
+Response format matches `read_dms`:
+
+```json
+[
+  { "key": "493827:0csoYMXjUpczthM5", "plaintext": "hello via inbox", "sender_pub": "<pub>" }
+]
+```
+
+### `read_channel`
+
+Read messages from a channel soul. Requires the caller to have their wrapped channel key in the graph (i.e. they were invited via `invite`).
+
+```json
+{
+  "op": "read_channel",
+  "proj_id": "demo",
+  "chan_id": "general",
+  "owner_pub": "<owner pub>",
+  "pairId": "self",
+  "limit": 50
+}
+```
+
+Response format:
+
+```json
+[
+  { "key": "493827:0csoYMXjUpczthM5", "plaintext": "hello from channel", "sender_pub": "<pub>" }
+]
+```
+
 ---
 
 ## 9.12 A real end-to-end session
@@ -712,3 +779,153 @@ It is not designed to be a general wallet server that accepts arbitrary private 
 - Use Chapter 4 for how authenticated writes and certificates are enforced.
 - Use Chapter 7 for how PEN souls used by `inbox_soul`, `chan_soul`, and `dm_soul` are compiled and checked.
 - Use Chapter 8 when modifying `lib/mcp.js`, `lib/protocol.js`, or the build/test workflow around them.
+
+---
+
+## 9.15 Relay RPC mode — cross-machine MCP without HTTP
+
+When the MCP server has an identity, it automatically starts a **relay RPC listener** on the same WebSocket mesh that ZEN uses for graph sync.
+
+```
+Agent process (any machine, any network)
+  └── ZenMcpClient (lib/mcp/client.js)
+        └── mesh.relay(serverPub, encryptedRequest)
+              ↓  DAM relay routing (multi-hop, XOR-distance)
+              ↓
+MCP server (lib/mcp.js, any machine)
+  └── mesh.onRelay → decrypt → dispatchRelay → encrypt → mesh.relay back
+```
+
+**Properties:**
+- No HTTP server, no open ports — both sides only need outbound WebSocket
+- All messages encrypted with ECDH shared secret (`ZEN.secret(pub, pair)` + `ZEN.encrypt`)
+- Server auto-publishes a discovery soul: `~<serverPub>/mcp/info`
+- Relay mode starts automatically 500ms after ZEN connects to peers (if identity exists)
+- Relay mode is unavailable without an identity (`self` key in `pairStore`)
+
+**Discovery soul** — read before connecting to confirm the server is reachable:
+
+```js
+const info = await ZenMcpClient.discover(serverPub, zen, 2000);
+// info = { name: "zen-mcp", version: "1.0.x", pub: serverPub, relay: true }
+// info = null if server not reachable within 2 seconds
+```
+
+---
+
+## 9.16 `ZenMcpClient` — JavaScript relay client
+
+`lib/mcp/client.js` provides a `ZenMcpClient` class for making MCP calls to a relay-mode server from any JavaScript environment (Node, browser, or another ZEN agent).
+
+### Import
+
+```js
+import { ZenMcpClient } from "./lib/mcp/client.js";
+// or
+import ZenMcpClient from "./lib/mcp/client.js";
+```
+
+### Constructor
+
+```js
+const client = new ZenMcpClient(serverPub, zen, myPair, { timeout: 10000, ttl: 5 });
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `serverPub` | string | Target MCP server's public key |
+| `zen` | ZEN | A live ZEN instance with WebSocket peers |
+| `myPair` | object | Caller's key pair `{ pub, priv }` |
+| `opt.timeout` | number | Default request timeout in ms (default: 10000) |
+| `opt.ttl` | number | DAM relay hop limit (default: 5) |
+
+### Methods
+
+#### `await client.ready()`
+
+Wire up the relay listener. Must be called once before making requests.
+
+#### `await client.initialize()`
+
+Send the MCP `initialize` handshake. Returns `{ protocolVersion, serverInfo, capabilities }`.
+
+#### `await client.listTools()`
+
+Returns an array of tool descriptors matching `tools/list`.
+
+#### `await client.call(name, args, timeout?)`
+
+Call a tool by name. Returns the parsed tool result.
+
+```js
+const info = await client.call("identity", {});
+// { pub: "0TSE..." }
+
+const signed = await client.call("crypto", {
+  method: "sign",
+  data: "hello",
+  pairId: "self",
+});
+
+const data = await client.call("graph", {
+  soul: "demo/node",
+  path: ["status"],
+  op: "get",
+});
+```
+
+#### `await client.request(method, params, timeout?)`
+
+Send a raw JSON-RPC request and return the full response object `{ jsonrpc, id, result?, error? }`.
+
+#### `client.close()`
+
+Stop the relay listener and reject all pending requests.
+
+### Full example
+
+```js
+import ZEN from "./zen.js";
+import { ZenMcpClient } from "./lib/mcp/client.js";
+
+const myPair = await ZEN.pair();
+const zen    = new ZEN({ peers: ["wss://peer0.akao.io"] });
+
+// Discover the server
+const serverPub = "0TSEiscYykziuDXSIv0zcIc2Av4yJoZXViu5G6wkWqKI1";
+const info = await ZenMcpClient.discover(serverPub, zen);
+if (!info) throw new Error("server not found");
+
+// Connect and use
+const client = new ZenMcpClient(serverPub, zen, myPair);
+await client.ready();
+await client.initialize();
+
+const result = await client.call("protocol", {
+  op: "send_dm",
+  recipient_pub: serverPub,
+  message: "hello from relay client",
+  pairId: "self",
+});
+
+client.close();
+```
+
+---
+
+## 9.17 SSE transport mode
+
+The MCP server supports an HTTP + Server-Sent Events transport via the `--sse` flag:
+
+```bash
+node lib/mcp.js           # stdio mode (default, use with Claude Desktop and VS Code)
+node lib/mcp.js --sse     # HTTP + SSE mode (port: ZEN_MCP_PORT env var or 8421)
+```
+
+Both modes run in the same process, sharing the same `pairStore`, `zen` instance, and tool dispatch logic. Stdio mode is unaffected when `--sse` is active.
+
+**SSE mode is intended for:**
+- Browser-based agents that cannot spawn child processes
+- Workflows where multiple clients share one ZEN peer
+
+**SSE mode is not a replacement for relay mode.** Relay mode (§9.15) works across any network with only outbound WebSocket. SSE mode requires the client to reach the HTTP port.

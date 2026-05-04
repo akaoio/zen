@@ -1793,6 +1793,7 @@ defmod('./src/base62.js', function(module, exp){
 });
 
 defmod('./src/settings.js', function(module, exp){
+  var base62 = reqmod('./src/base62.js').default;
   const settings = {};
   settings.pbkdf2 = { hash: { name: "SHA-256" }, iter: 100000, ks: 64 };
   settings.ecdsa = {
@@ -1850,16 +1851,17 @@ defmod('./src/settings.js', function(module, exp){
     }
     // Signed: check first
     if (t.length >= 88 && _SIG_HEAD.test(t)) {
+      const decodeMsg = (b62) => new TextDecoder().decode(base62.b62CtToBuf(b62));
       if (t[87] === ":") {
-        // secp256k1
-        return { s: t.slice(0, 86), v: parseInt(t[86]), m: t.slice(88) };
+        // secp256k1: message is base62-encoded
+        return { s: t.slice(0, 86), v: parseInt(t[86]), m: decodeMsg(t.slice(88)) };
       }
       if (t[87] === "/") {
-        // non-secp256k1: <sig86><v>/<curve>:<msg>
+        // non-secp256k1: <sig86><v>/<curve>:<msg_b62>
         const rest = t.slice(88);
         const ci = rest.indexOf(":");
         if (ci !== -1) {
-          return { s: t.slice(0, 86), v: parseInt(t[86]), c: rest.slice(0, ci), m: rest.slice(ci + 1) };
+          return { s: t.slice(0, 86), v: parseInt(t[86]), c: rest.slice(0, ci), m: decodeMsg(rest.slice(ci + 1)) };
         }
       }
     }
@@ -2877,10 +2879,11 @@ defmod('./src/sign.js', function(module, exp){
         const sig = c.concatBytes(c.bigIntToBytes(r, 32), c.bigIntToBytes(s, 32));
         const sigB62 = c.base62.bufToB62Fixed(sig, 86);
         const msgStr = typeof msg === "string" ? msg : await c.shim.stringify(msg);
+        const msgB62 = c.base62.bufToB62Ct(new c.shim.TextEncoder().encode(msgStr));
         const out =
           c.curve !== "secp256k1"
-            ? sigB62 + v + "/" + c.curve + ":" + msgStr
-            : sigB62 + v + ":" + msgStr;
+            ? sigB62 + v + "/" + c.curve + ":" + msgB62
+            : sigB62 + v + ":" + msgB62;
         return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
       }
       throw new Error("Failed to sign");
@@ -6863,23 +6866,11 @@ defmod('./src/get.js', function(module, exp){
           }
           root.pass[id + at.id] = 1;
         }
-        if (opt.on) {
-          opt.ok.call(at.$, data, at.get, msg, eve || any);
-          return;
-        } // TODO: Also consider breaking `this` since a lot of people do `=>` these days and `.call(` has slower performance.
         if (opt.v2020) {
           opt.ok(msg, eve || any);
           return;
         }
-        Object.keys(msg).forEach(
-          function (k) {
-            tmp[k] = msg[k];
-          },
-          (tmp = {}),
-        );
-        msg = tmp;
-        msg.put = data; // 2019 COMPATIBILITY! TODO: GET RID OF THIS!
-        opt.ok.call(opt.as, msg, eve || any); // is this the right
+        opt.ok.call(at.$, data, at.get, msg, eve || any);
       }
       any.at = cat;
       //(cat.any||(cat.any=function(msg){ setTimeout.each(Object.keys(cat.any||''), function(act){ (act = cat.any[act]) && act(msg) },0,99) }))[id = String.random(7)] = any; // maybe switch to this in future?
@@ -6985,7 +6976,7 @@ defmod('./src/get.js', function(module, exp){
             );
         } //);
       },
-      { out: { get: { ".": true } } },
+      { out: { get: { ".": true } }, v2020: true },
     );
     return zen;
   }
@@ -7108,6 +7099,9 @@ defmod('./src/on.js', function(module, exp){
           return;
         }
         if ("string" == typeof tmp) {
+          clearTimeout((cat.one || "")[id]);
+          clearTimeout(one[id]);
+          one[id] = setTimeout(once, opt.wait || 99);
           return;
         }
         clearTimeout((cat.one || "")[id]); // clear "not found" since they only get set on cat.
@@ -7121,13 +7115,17 @@ defmod('./src/on.js', function(module, exp){
             tmp = ((msg.$$ || "")._ || "").put;
           }
           if ("string" == typeof Zen.valid(tmp)) {
-            tmp = root.$.get(tmp)._.put;
+            var linkAt = root.$.get(tmp)._;
+            tmp = linkAt.put;
             if (tmp === u && !f) {
               one[id] = setTimeout(function () {
                 once(1);
               }, opt.wait || 99); // TODO: Quick fix. Maybe use ack count for more predictable control?
               return;
             }
+            // Merge linked node's raw put into at so msg.put reflects destination node,
+            // but preserve at.get (original key) so callback key arg stays correct.
+            at = { get: at.get, put: linkAt.put, soul: linkAt.soul, has: linkAt.has };
           }
           if (!f && tmp && "object" == typeof tmp && Object.keys(tmp).length === 1 && "_" in tmp) {
             one[id] = setTimeout(function () {
@@ -7146,7 +7144,7 @@ defmod('./src/on.js', function(module, exp){
           if (cat.soul || cat.has) {
             eve.off();
           } // TODO: Plural chains? // else { ?.off() } // better than one check?
-          cb.call($, tmp, at.get);
+          cb.call($, tmp, at.get, msg);
           clearTimeout(one[id]); // clear "not found" since they only get set on cat. // TODO: This was hackily added, is it necessary or important? Probably not, in future try removing this. Was added just as a safety for the `&& !f` check.
         }
       },
@@ -7445,6 +7443,27 @@ defmod('./src/meta.js', function(module, exp){
 defmod('./src/mesh.js', function(module, exp){
   reqmod('./src/shim.js');
   var jsonAsync = reqmod('./src/json.js').default;
+  var __base62 = reqmod('./src/base62.js').default;
+  // Build reverse-lookup map from the canonical alphabet in base62.js.
+  var B62M = (function (a) {
+    var m = {};
+    for (var i = 0; i < a.length; i++) m[a[i]] = i;
+    return m;
+  })(__base62.ALPHA);
+  function b62bi(s) {
+    // Decode any-length base62 string to BigInt (null on invalid input).
+    // Note: base62.b62ToBI enforces exactly 44 chars and throws — pub keys are
+    // 45 chars (33-byte secp256k1), so we need a length-agnostic variant here.
+    if (typeof s !== "string" || !s.length) return null;
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var c = B62M[s[i]];
+      if (c === undefined) return null;
+      n = n * 62n + BigInt(c);
+    }
+    return n;
+  }
+
   var noop = function () {};
   var pair = jsonAsync.createJsonPair(function (d) {
     return json.sucks(d);
@@ -7929,7 +7948,7 @@ defmod('./src/mesh.js', function(module, exp){
         opt.peers[peer.url || peer.id] = peer;
       } else {
         tmp = peer.id = peer.id || peer.url || String.random(9);
-        mesh.say({ dam: "?", pid: root.opt.pid }, (opt.peers[tmp] = peer));
+        mesh.say({ dam: "?", pid: root.opt.pid, pub: opt.pub || "" }, (opt.peers[tmp] = peer));
         dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
       }
       if (!peer.met) {
@@ -7966,13 +7985,118 @@ defmod('./src/mesh.js', function(module, exp){
         if (!peer.pid) {
           peer.pid = msg.pid;
         }
+        if (msg.pub && !peer.pub) {
+          peer.pub = msg.pub;
+        }
         if (msg["@"]) {
           return;
         }
       }
-      mesh.say({ dam: "?", pid: opt.pid, "@": msg["#"] }, peer);
+      mesh.say({ dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] }, peer);
       dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
     };
+    mesh.hear["ping"] = function (msg, peer) {
+      mesh.say({ dam: "pong", t: msg.t, "@": msg["#"] }, peer);
+    };
+    mesh.hear["pong"] = function (msg, peer) {
+      if (!msg.t) return;
+      var rtt = +new Date() - msg.t;
+      peer.rtt = peer.rtt !== undefined ? (peer.rtt + rtt) / 2 : rtt;
+    };
+    mesh.ping = function (peer) {
+      if (!peer || !peer.wire) return;
+      mesh.say({ dam: "ping", t: +new Date() }, peer);
+    };
+    mesh.xor = function (a, b) {
+      if (!a || !b) return null;
+      var na = b62bi(a), nb = b62bi(b);
+      if (na === null || nb === null) return null;
+      return na ^ nb;
+    };
+    mesh.closer = function (target, a, b) {
+      if (!target || !a || !b) return null;
+      var t = b62bi(target), na = b62bi(a), nb = b62bi(b);
+      if (t === null || na === null || nb === null) return null;
+      return (t ^ na) <= (t ^ nb) ? a : b;
+    };
+
+    // ── relay: multi-hop ephemeral message routing ───────────────────────────
+    // Subscribers receive { from, data } when a relay message is addressed to us.
+    mesh._relay_handlers = [];
+    mesh.onRelay = function (fn) {
+      mesh._relay_handlers.push(fn);
+      return function off() {
+        var i = mesh._relay_handlers.indexOf(fn);
+        if (i >= 0) { mesh._relay_handlers.splice(i, 1); }
+      };
+    };
+
+    // Find the best next-hop peer toward targetPub by XOR distance.
+    // Optionally skip one peer (e.g. the message sender) to avoid loops.
+    // Returns a peer object { pub, wire, … } or null.
+    mesh.route = function (targetPub, skip) {
+      if (!targetPub) { return null; }
+      var best = null, bestDist = null;
+      var peers = opt.peers || {};
+      for (var k in peers) {
+        var p = peers[k];
+        if (!p || !p.pub || !p.wire || p === skip) { continue; }
+        var d = mesh.xor(targetPub, p.pub);
+        if (d === null) { continue; }
+        if (bestDist === null || d < bestDist) { bestDist = d; best = p; }
+      }
+      return best;
+    };
+
+    // Send an ephemeral multi-hop relay message to a target pub key.
+    // opt_: { ttl: <number> } — defaults to 5 hops.
+    mesh.relay = function (to, data, opt_) {
+      if (!to) { return; }
+      var msg = {
+        dam: "relay",
+        to: to,
+        from: opt.pub || "",
+        ttl: (opt_ && typeof opt_.ttl === "number") ? opt_.ttl : 5,
+        data: data,
+      };
+      // Direct delivery if target is already a connected peer.
+      var peers = opt.peers || {};
+      for (var k in peers) {
+        var p = peers[k];
+        if (p && p.pub === to && p.wire) { mesh.say(msg, p); return; }
+      }
+      // Fall back to XOR-closest peer.
+      var next = mesh.route(to);
+      if (next) { mesh.say(msg, next); }
+    };
+
+    // Multi-hop relay message handler.
+    // Decrements TTL, drops at 0, delivers locally or forwards toward target.
+    mesh.hear["relay"] = function (msg, peer) {
+      if (!msg.to || !msg.from) { return; }
+      var ttl = typeof msg.ttl === "number" ? msg.ttl - 1 : -1;
+      if (ttl < 0) { return; } // TTL expired — drop silently.
+      // Deliver locally if we are the addressed target.
+      if (opt.pub && msg.to === opt.pub) {
+        var payload = { from: msg.from, data: msg.data };
+        for (var i = 0; i < mesh._relay_handlers.length; i++) {
+          mesh._relay_handlers[i](payload);
+        }
+        return;
+      }
+      // Preserve original msg # so dedup prevents loops across the mesh.
+      var fwd = { dam: "relay", "#": msg["#"], to: msg.to, from: msg.from, ttl: ttl, data: msg.data };
+      // Direct forward if target is a connected peer.
+      var peers = opt.peers || {};
+      for (var k in peers) {
+        var p = peers[k];
+        if (p && p.pub === msg.to && p.wire) { mesh.say(fwd, p); return; }
+      }
+      // Route via XOR-closest peer, skipping the message sender.
+      var next = mesh.route(msg.to, peer);
+      if (next) { mesh.say(fwd, next); }
+    };
+
     mesh.hear["mob"] = function (msg, peer) {
       // NOTE: AXE will overload this with better logic.
       if (!msg.peers) {

@@ -85,24 +85,32 @@ const btcPair = await ZEN.pair(null, {
 
 ### `ZEN.sign(data, pair)`
 
-Signs `data` with a private key. Returns a **compact string** in the format `<86-char base62 signature><v>:<message>` where `v` is the ECDSA recovery bit (`0` or `1`).
+Signs `data` with a private key. Returns a **compact string** in the format:
+
+```
+<86-char base62 signature><v>:<base62(utf8(json_message))>
+```
+
+where `v` is the ECDSA recovery bit (`0` or `1`) and the message part is **base62-encoded UTF-8 bytes** of the JSON representation of the original data.
 
 ```js
 const signed = await ZEN.sign("hello", pair);
-// '<86 base62 chars>0:"hello"'
+// '<86 base62 chars>0:<base62 encoded message>'
 // signed[86] → '0' or '1'  (recovery bit)
 // signed[87] → ':'          (secp256k1 separator)
-// signed.slice(88) → '"hello"'  (JSON-encoded message)
+// signed.slice(88) → base62-encoded UTF-8 bytes of '"hello"'
 ```
+
+> **Why base62-encode the message?** The compact format uses positional parsing — characters 0–85 are the signature, char 86 is the recovery bit, char 87 is the separator (`:` or `/`). A raw JSON string as the message part could contain these characters and break format detection. Encoding the message as base62 guarantees the message is always a safe alphanumeric string with no ambiguity.
 
 For non-secp256k1 curves (e.g. P-256), the curve name is embedded after a `/`:
 
 ```js
 const p256pair = await ZEN.pair(null, { curve: "p256" });
 const signed   = await ZEN.sign("hello", p256pair);
-// '<86 base62 chars>0/p256:"hello"'
+// '<86 base62 chars>0/p256:<base62 encoded message>'
 // signed[87] → '/'  — marks a curve tag
-// signed.slice(88) → 'p256:"hello"'
+// signed.slice(88) → 'p256:<base62 encoded message>'
 ```
 
 The recovery bit enables public-key recovery from the signature — any party can determine who signed the data without being told the public key upfront (see `ZEN.recover`).
@@ -130,8 +138,8 @@ const data = await ZEN.verify(signed, pair.pub);
 const bad = await ZEN.verify(signed, otherPair.pub);
 // undefined — wrong key
 
-// Tamper by replacing message part (chars 88+):
-const tampered = signed.slice(0, 88) + '"evil"';
+// Tampering by replacing chars 88+ (the base62-encoded message) will cause signature mismatch:
+const tampered = signed.slice(0, 88) + "evXdW";  // replace message part with garbage base62
 const result   = await ZEN.verify(tampered, pair.pub);
 // undefined — signature mismatch
 ```

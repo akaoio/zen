@@ -1,3 +1,5 @@
+import base62 from "./base62.js";
+
 const settings = {};
 settings.pbkdf2 = { hash: { name: "SHA-256" }, iter: 100000, ks: 64 };
 settings.ecdsa = {
@@ -55,16 +57,17 @@ settings.parse = async function (t) {
   }
   // Signed: check first
   if (t.length >= 88 && _SIG_HEAD.test(t)) {
+    const decodeMsg = (b62) => new TextDecoder().decode(base62.b62CtToBuf(b62));
     if (t[87] === ":") {
-      // secp256k1
-      return { s: t.slice(0, 86), v: parseInt(t[86]), m: t.slice(88) };
+      // secp256k1: message is base62-encoded
+      return { s: t.slice(0, 86), v: parseInt(t[86]), m: decodeMsg(t.slice(88)) };
     }
     if (t[87] === "/") {
-      // non-secp256k1: <sig86><v>/<curve>:<msg>
+      // non-secp256k1: <sig86><v>/<curve>:<msg_b62>
       const rest = t.slice(88);
       const ci = rest.indexOf(":");
       if (ci !== -1) {
-        return { s: t.slice(0, 86), v: parseInt(t[86]), c: rest.slice(0, ci), m: rest.slice(ci + 1) };
+        return { s: t.slice(0, 86), v: parseInt(t[86]), c: rest.slice(0, ci), m: decodeMsg(rest.slice(ci + 1)) };
       }
     }
   }

@@ -98,6 +98,22 @@ zen.get("~" + pub).get("username").once(function(data) {
 
 ZEN automatically unpacks the signed wrapper and gives you the raw value.
 
+**Verifying authorship on read** — use `.meta()` to get both the value and the signer's public key:
+
+```js
+zen.get("~" + pub).get("username").meta(function(info) {
+  console.log(info.val);  // "alice"
+  console.log(info.pub);  // pub key of the writer — compare with expected pub to verify
+  console.log(info.sig);  // ECDSA signature
+});
+
+// Or with async/await:
+const info = await zen.get("~" + pub).get("username").meta();
+if (info.pub !== trustedPub) throw new Error("unexpected signer");
+```
+
+See §2.13 for the full `.meta()` API reference.
+
 ---
 
 ## 4.5 Registering a public key (bootstrap)

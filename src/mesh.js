@@ -1,5 +1,26 @@
 import "./shim.js";
 import jsonAsync from "./json.js";
+import __base62 from "./base62.js";
+
+// Build reverse-lookup map from the canonical alphabet in base62.js.
+var B62M = (function (a) {
+  var m = {};
+  for (var i = 0; i < a.length; i++) m[a[i]] = i;
+  return m;
+})(__base62.ALPHA);
+function b62bi(s) {
+  // Decode any-length base62 string to BigInt (null on invalid input).
+  // Note: base62.b62ToBI enforces exactly 44 chars and throws — pub keys are
+  // 45 chars (33-byte secp256k1), so we need a length-agnostic variant here.
+  if (typeof s !== "string" || !s.length) return null;
+  var n = 0n;
+  for (var i = 0; i < s.length; i++) {
+    var c = B62M[s[i]];
+    if (c === undefined) return null;
+    n = n * 62n + BigInt(c);
+  }
+  return n;
+}
 
 var noop = function () {};
 var pair = jsonAsync.createJsonPair(function (d) {
@@ -485,7 +506,7 @@ function Mesh(root) {
       opt.peers[peer.url || peer.id] = peer;
     } else {
       tmp = peer.id = peer.id || peer.url || String.random(9);
-      mesh.say({ dam: "?", pid: root.opt.pid }, (opt.peers[tmp] = peer));
+      mesh.say({ dam: "?", pid: root.opt.pid, pub: opt.pub || "" }, (opt.peers[tmp] = peer));
       dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
     }
     if (!peer.met) {
@@ -522,13 +543,118 @@ function Mesh(root) {
       if (!peer.pid) {
         peer.pid = msg.pid;
       }
+      if (msg.pub && !peer.pub) {
+        peer.pub = msg.pub;
+      }
       if (msg["@"]) {
         return;
       }
     }
-    mesh.say({ dam: "?", pid: opt.pid, "@": msg["#"] }, peer);
+    mesh.say({ dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] }, peer);
     dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
   };
+  mesh.hear["ping"] = function (msg, peer) {
+    mesh.say({ dam: "pong", t: msg.t, "@": msg["#"] }, peer);
+  };
+  mesh.hear["pong"] = function (msg, peer) {
+    if (!msg.t) return;
+    var rtt = +new Date() - msg.t;
+    peer.rtt = peer.rtt !== undefined ? (peer.rtt + rtt) / 2 : rtt;
+  };
+  mesh.ping = function (peer) {
+    if (!peer || !peer.wire) return;
+    mesh.say({ dam: "ping", t: +new Date() }, peer);
+  };
+  mesh.xor = function (a, b) {
+    if (!a || !b) return null;
+    var na = b62bi(a), nb = b62bi(b);
+    if (na === null || nb === null) return null;
+    return na ^ nb;
+  };
+  mesh.closer = function (target, a, b) {
+    if (!target || !a || !b) return null;
+    var t = b62bi(target), na = b62bi(a), nb = b62bi(b);
+    if (t === null || na === null || nb === null) return null;
+    return (t ^ na) <= (t ^ nb) ? a : b;
+  };
+
+  // ── relay: multi-hop ephemeral message routing ───────────────────────────
+  // Subscribers receive { from, data } when a relay message is addressed to us.
+  mesh._relay_handlers = [];
+  mesh.onRelay = function (fn) {
+    mesh._relay_handlers.push(fn);
+    return function off() {
+      var i = mesh._relay_handlers.indexOf(fn);
+      if (i >= 0) { mesh._relay_handlers.splice(i, 1); }
+    };
+  };
+
+  // Find the best next-hop peer toward targetPub by XOR distance.
+  // Optionally skip one peer (e.g. the message sender) to avoid loops.
+  // Returns a peer object { pub, wire, … } or null.
+  mesh.route = function (targetPub, skip) {
+    if (!targetPub) { return null; }
+    var best = null, bestDist = null;
+    var peers = opt.peers || {};
+    for (var k in peers) {
+      var p = peers[k];
+      if (!p || !p.pub || !p.wire || p === skip) { continue; }
+      var d = mesh.xor(targetPub, p.pub);
+      if (d === null) { continue; }
+      if (bestDist === null || d < bestDist) { bestDist = d; best = p; }
+    }
+    return best;
+  };
+
+  // Send an ephemeral multi-hop relay message to a target pub key.
+  // opt_: { ttl: <number> } — defaults to 5 hops.
+  mesh.relay = function (to, data, opt_) {
+    if (!to) { return; }
+    var msg = {
+      dam: "relay",
+      to: to,
+      from: opt.pub || "",
+      ttl: (opt_ && typeof opt_.ttl === "number") ? opt_.ttl : 5,
+      data: data,
+    };
+    // Direct delivery if target is already a connected peer.
+    var peers = opt.peers || {};
+    for (var k in peers) {
+      var p = peers[k];
+      if (p && p.pub === to && p.wire) { mesh.say(msg, p); return; }
+    }
+    // Fall back to XOR-closest peer.
+    var next = mesh.route(to);
+    if (next) { mesh.say(msg, next); }
+  };
+
+  // Multi-hop relay message handler.
+  // Decrements TTL, drops at 0, delivers locally or forwards toward target.
+  mesh.hear["relay"] = function (msg, peer) {
+    if (!msg.to || !msg.from) { return; }
+    var ttl = typeof msg.ttl === "number" ? msg.ttl - 1 : -1;
+    if (ttl < 0) { return; } // TTL expired — drop silently.
+    // Deliver locally if we are the addressed target.
+    if (opt.pub && msg.to === opt.pub) {
+      var payload = { from: msg.from, data: msg.data };
+      for (var i = 0; i < mesh._relay_handlers.length; i++) {
+        mesh._relay_handlers[i](payload);
+      }
+      return;
+    }
+    // Preserve original msg # so dedup prevents loops across the mesh.
+    var fwd = { dam: "relay", "#": msg["#"], to: msg.to, from: msg.from, ttl: ttl, data: msg.data };
+    // Direct forward if target is a connected peer.
+    var peers = opt.peers || {};
+    for (var k in peers) {
+      var p = peers[k];
+      if (p && p.pub === msg.to && p.wire) { mesh.say(fwd, p); return; }
+    }
+    // Route via XOR-closest peer, skipping the message sender.
+    var next = mesh.route(msg.to, peer);
+    if (next) { mesh.say(fwd, next); }
+  };
+
   mesh.hear["mob"] = function (msg, peer) {
     // NOTE: AXE will overload this with better logic.
     if (!msg.peers) {

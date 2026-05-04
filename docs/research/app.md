@@ -1,6 +1,6 @@
 # ZEN App Primitives & ZACP — Design Spec
 
-> Cập nhật lần cuối: 2026-05-03
+> Cập nhật lần cuối: 2026-05-04
 
 ---
 
@@ -352,12 +352,13 @@ v1.1.x:
   [x] src/meta.js — Zen.chain.meta(cb) / await .meta() — signature metadata API
 
 v1.2.x:
-  [ ] Cert expiry support trong MCP certify tool
-  [ ] Channel key rotation trong lib/protocol.js
-  [ ] End-to-end messaging tests: sendInbox→readInbox, sendToChannel→readChannel, sendDM→readDMs round-trip
+  [x] Cert expiry support trong MCP certify tool — certify nhận plain string / JSON string / object policy; expiry embeds cert.e; 6 tests
+  [x] Channel key rotation trong lib/protocol.js — rotateChannel / kick op
+  [x] End-to-end messaging tests: sendInbox→readInbox, sendToChannel→readChannel, sendDM→readDMs round-trip
+  [x] MCP subscribe tool — graph op:"subscribe" / op:"unsubscribe"; server push via notifications/message; 6 tests
+  [x] DAM multi-hop relay — dam:"relay"; mesh.relay(), mesh.route(), mesh.onRelay(); XOR routing; TTL loop prevention; 22 tests (257 total)
+  [x] ZEN-native relay RPC transport — ZenMcpClient + startRelayMode() trong mcp.js; ECDH encrypted relay; discover via ~pub/mcp/info; 15 tests
   [ ] MCP list tool (enumerate keys trong một soul, cursor/limit/prefix, xem graph.list note)
-  [ ] MCP subscribe tool — polling mode trước (stdio-compatible)
-  [ ] MCP SSE transport — flag `--sse` trong `lib/mcp.js`, cùng process với stdio mode (xem §7 Streaming)
 
 Long-term:
   [ ] IPFS storage adapter (pattern như rs3.js)
@@ -368,100 +369,265 @@ Long-term:
 
 ---
 
-## 7. Streaming Architecture
+## 7. ZEN-native MCP Transport
 
-### MCP transport constraints
+### MCP server là một ZEN relay
 
-**Stdio (hiện tại)** — request/response thuần, không có server push:
-- Polling: client gọi tool định kỳ, nhận snapshot
-- Long-poll: tool block đến timeout hoặc limit đạt, trả batch
+`lib/mcp.js` **là một ZEN relay** — nó chạy một ZEN instance đầy đủ (`file: "radata"`, `peers: [...]`), sync data với network, lưu trữ local. Điểm khác biệt duy nhất so với `lib/server.js`: nó còn expose MCP interface cho LLM agents.
 
-**HTTP + SSE transport** (MCP spec 2024-11-05) — server push:
-- Server giữ ZEN `.on()` subscription sống
-- Mỗi khi ZEN fire event → push SSE frame xuống client
-- - `lib/mcp-sse.js` **không tồn tại** — SSE mode được tích hợp trong `lib/mcp.js` qua flag `--sse`:
-
-```bash
-node lib/mcp.js           # stdio mode (mặc định, dùng với Claude Desktop)
-node lib/mcp.js --sse     # HTTP+SSE mode (port: ZEN_MCP_PORT hoặc 8421)
+```
+lib/server.js  =  ZEN relay thuần
+lib/mcp.js     =  ZEN relay  +  MCP interface
 ```
 
-Cùng một process, cùng `pairStore`, cùng `zen` instance:
+Đặc điểm của relay này: IP động, sau NAT, không có domain, có thể offline lúc bất kỳ. Đây là điều kiện bình thường của mọi ZEN peer — không phải ngoại lệ.
 
-| Kiến trúc | Transport | Push | Storage | Phù hợp |
-|-----------|-----------|------|---------|----------|
-| Polling | stdio | ❌ | Bình thường | Inbox batch read |
-| Long-poll | stdio | ❌ | Bình thường | Low-freq notification |
-| SSE push | HTTP+SSE | ✅ | Bình thường | Chat, live feed |
-| SSE ephemeral | HTTP+SSE | ✅ | **Không** | Presence, typing indicator |
+Agent (nếu dùng ZEN SDK) cũng là một peer như vậy. Hai peer liên lạc qua graph — không cần biết IP nhau, không cần HTTP.
 
-### Ephemeral ZEN instance
+### Tại sao HTTP transport không phù hợp
 
-ZEN chạy hoàn toàn in-memory — không radisk, không localStorage:
+Mọi HTTP transport (Streamable HTTP, HTTP+SSE) đều giả định **server có IP/domain ổn định và port mở**. Thực tế của ZEN peers:
 
-```js
-// lib/mcp.js — cùng file, detect mode qua --sse flag
-const SSE_MODE = process.argv.includes("--sse");
-const zen          = new ZEN({ file: "radata", peers: [...] })   // persisted
-const ephemeralZen = new ZEN({ localStorage: false })             // RAM only, mất khi restart
-// subscriptionStore chỉ active trong SSE mode
-const subscriptionStore = new Map(); // Map<stream_id, { off, res }>
+| Thực tế | HTTP transport | ZEN-native |
+|---------|---------------|-----------|
+| MCP server sau NAT | ❌ không reach được | ✅ connect outbound |
+| IP động | ❌ không có địa chỉ | ✅ dùng pub key làm địa chỉ |
+| Không có domain | ❌ cần domain/IP | ✅ relay xử lý routing |
+| Agent cũng sau NAT | ❌ cả hai cần port mở | ✅ cả hai chỉ cần outbound |
+| Phân tán | ❌ tạo hub trung tâm | ✅ không có điểm trung tâm |
+
+**Kết luận**: `--sse` / Streamable HTTP giải quyết sai vấn đề. ZEN đã có transport rồi — đó chính là ZEN graph.
+
+### ZEN-native RPC: graph là transport
+
+Cả agent lẫn MCP server đều là ZEN peers — connect **outbound** tới relay network. Không cần inbound connection, không cần IP ổn định, không cần domain.
+
+```
+LLM Agent peer (IP động, sau NAT)   MCP server peer (IP động, sau NAT)
+  ZEN instance + agent logic          ZEN instance (relay) + MCP interface
+    │  WebSocket outbound                │  WebSocket outbound
+    ▼                                    ▼
+ZEN relay A ◄──────────────────► ZEN relay B ◄──► ZEN relay C
+    │                   sync (P2P)                      │
+    └───────────────────────────────────────────────────┘
+                         ZEN P2P graph (shared state)
 ```
 
-Kết hợp PEN candle cực hẹp để tự expire write policy:
+**Địa chỉ là pub key**, không phải IP:
+- MCP server được identify bằng `server_pub` (pair của ZEN instance đó)
+- Agent tìm server bằng pub key — không cần biết IP, không cần DNS
+
+### Giao thức RPC qua ZEN graph
+
+#### Request soul
+
+Agent write request vào soul thuộc về chính nó, tagged bằng server pub:
+
+```
+Soul: ~<agent_pub>/mcp/<server_pub>/<nonce>
+Data: { method, params }   ← ký bằng agent pair
+```
+
+Chỉ agent có thể write vào `~<agent_pub>/...` (ZEN security). Server sub `.on()` vào soul này.
+
+#### Response soul
+
+Server write response vào soul thuộc về chính nó, tagged bằng agent pub:
+
+```
+Soul: ~<server_pub>/mcp/<agent_pub>/<nonce>
+Data: { result } hoặc { error }   ← ký bằng server pair
+```
+
+Chỉ server có thể write vào `~<server_pub>/...`. Agent sub `.on()` để nhận kết quả.
+
+#### Flow
+
+```
+Agent                           ZEN graph                    MCP server (lib/mcp.js)
+  │                                  │                              │
+  │  zen.get(reqSoul).put(req)        │                              │
+  │  ──────────────────────────────► │                              │
+  │                                  │  .on(reqSoul) fires          │
+  │                                  │ ──────────────────────────► │
+  │                                  │                              │  xử lý tool call
+  │                                  │  zen.get(resSoul).put(res)   │
+  │                                  │ ◄────────────────────────── │
+  │  .on(resSoul) fires              │                              │
+  │ ◄────────────────────────────── │                              │
+  │  nhận kết quả                    │                              │
+```
+
+#### Timeout tự động qua PEN candle
+
 ```js
-// Presence: candle 1 phút, không accept message cũ
-const presenceSoul = ZEN.pen({
-  path: agent_pub,
-  key: ZEN.candle({ seg: 0, sep: ":", size: 60000, back: 0, fwd: 0 }),
+// Request tự expire sau 30 giây — không cần cleanup thủ công
+const reqSoul = ZEN.pen({
+  soul: `~${agent_pub}/mcp/${server_pub}`,
+  key:  ZEN.candle({ size: 30000, back: 0, fwd: 0 }),
   sign: true,
 })
-// Sau 1 phút, PEN từ chối mọi write mới với key cũ
-// Node still has data in graph nhưng không ai write được nữa
 ```
 
-### SSE subscribe/unsubscribe pattern
+PEN từ chối write vào key cũ sau 30s — request cũ tự nhiên không thể replay.
+
+### Streaming response
+
+#### Giới hạn cơ bản: ZEN graph không có true delete
+
+ZEN là CRDT — "xoá" chỉ là tombstone (null + HAM state) tồn tại mãi mãi. Các cơ chế hiện có đều chỉ là local filters:
+
+| Cơ chế | Hoạt động | Giới hạn |
+|--------|-----------|---------|
+| `forget.js` | Local instance không lưu soul đã đánh dấu | Relay trung gian vẫn lưu |
+| `erase.js` | Khi nhận null → xoá khỏi in-memory local | Tombstone vẫn sync đi khắp network |
+| PEN candle | Block write mới sau time window | Không xoá data đã tồn tại |
+| `dam` messages | Non-persistent peer signaling | Chỉ direct peer, không multi-hop relay |
+
+Viết nhiều chunks vào graph = tích luỹ permanent storage trên relay. Không có network-wide ephemeral messaging trong ZEN hiện tại.
+
+#### stdio: streaming qua MCP notifications (không dùng graph)
+
+MCP spec cho phép server push `notifications/` không đồng bộ trước khi trả response cuối. Server sub ZEN `.on()` → mỗi event đẩy thẳng ra stdout — **không có graph write nào**:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  MCP Client (LLM agent)                                  │
-│  tool: subscribe({ soul, pairId? }) → { stream_id }     │
-│  GET /sse?stream=<stream_id>  — HTTP SSE connection      │
-│  tool: unsubscribe({ stream_id })                        │
-└───────────────┬─────────────────────────────────────────┘
-                │ SSE frames: data: { key, val, soul }\n\n
-┌───────────────▼─────────────────────────────────────────┐
-│  lib/mcp.js (--sse flag)                                 │
-│  subscriptionStore: Map<stream_id, { off, res }>         │
-│  on subscribe: zen.get(soul).map().on(cb) → push SSE     │
-│  on disconnect: off() cleanup                            │
-└───────────────┬─────────────────────────────────────────┘
-                │ ZEN .on() — realtime graph events
-┌───────────────▼─────────────────────────────────────────┐
-│  ZEN graph (persisted hoặc ephemeral tuỳ soul)           │
-└─────────────────────────────────────────────────────────┘
+Agent (Claude Desktop)            lib/mcp.js (stdout)
+  │  tools/call "subscribe"            │
+  │ ──────────────────────────────►   │
+  │                                    │  zen.get(soul).map().on(cb)
+  │ ◄──────────────────────────────   │  notifications/message {key, val}
+  │ ◄──────────────────────────────   │  notifications/message {key, val}
+  │  tools/call "unsubscribe"          │
+  │ ──────────────────────────────►   │  off() → stop
+  │ ◄──────────────────────────────   │  {ok:true}
 ```
 
-### Routing: persisted vs ephemeral
+Ephemeral hoàn toàn. Không tốn storage. **Giới hạn**: phụ thuộc vào MCP host có xử lý unsolicited notifications không — Claude Desktop làm được, một số client khác chưa.
 
-| Soul prefix | ZEN instance | Lý do |
-|-------------|-------------|-------|
-| `!<pen>/<pub>` inbox/channel | persisted | Message phải tồn tại qua restart |
-| `~<pub>/...` | persisted | Owner-signed data |
-| `presence/<pub>` | ephemeral | Không cần lưu, mất là được |
-| `typing/<chan>` | ephemeral | Indicator tạm thời |
-| `cursor/<room>` | ephemeral | Live cursor position |
+#### ZEN-native RPC (cross-machine): không có streaming hiệu quả
 
-Logic routing thuộc `lib/mcp.js` (SSE path) — kiểm tra prefix soul để chọn đúng instance.
+Mọi data write vào graph đều persist. Lựa chọn thực tế:
 
-### Tradeoffs
+**Single write** — serialize toàn bộ kết quả, một lần duy nhất:
+```js
+const result = await processToolCall(method, params);
+zen.get(resSoul).put(JSON.stringify(result), null, { authenticator: serverPair });
+```
+`opt.max` ≈ 90MB — đủ cho hầu hết tool responses.
 
-| Issue | Decision |
-|-------|----------|
-| stdio vs SSE | Cùng `lib/mcp.js`, detect qua `--sse` flag. Stdio mode không bị ảnh hưởng. |
-| Ephemeral data mất khi restart | Intentional — đó là mục đích. Client phải re-subscribe. |
-| SSE connection limit | Mỗi stream_id = 1 HTTP connection. Scale theo process, không phải thread. |
-| Decryption trên SSE | SSE chỉ push ciphertext. Client tự decrypt — priv không đi qua network. |
+**Pagination** — cursor-based, mỗi page là một RPC round-trip:
+```
+Agent              MCP server
+  req { page:0 } ──►
+               ◄── res { data:[...], next:1 }
+  req { page:1 } ──►
+               ◄── res { data:[...], next:null }
+```
+
+**Giảm thiểu relay pollution**: nonce souls (`~pub/mcp/counterpart/nonce`) không bao giờ reuse → relay tự evict theo `opt.max`. Dùng `forget.js` trên cả hai đầu để không tích luỹ local.
+
+#### Tóm tắt theo transport
+
+| Transport | Streaming | Cơ chế | Storage cost |
+|-----------|-----------|--------|-------------|
+| stdio | ✅ có | MCP `notifications/` → stdout | Không có |
+| ZEN-native RPC | ❌ không | Single write hoặc pagination | Persist trên relay |
+
+#### DAM multi-hop relay (đã triển khai — v1.2.x)
+
+`src/mesh.js` nay có `dam: "relay"` — ephemeral message routing không lưu vào graph:
+
+```
+Message: { dam: "relay", to: target_pub, from: sender_pub, ttl: 5, data: <payload> }
+```
+
+**Cơ chế routing**:
+1. Relay nhận `dam: "relay"` → giảm TTL, drop nếu ≤ 0
+2. Dedup bằng `msg["#"]` (cùng ID không xử lý hai lần → loop prevention tự nhiên)
+3. Nếu `to === opt.pub` → deliver local qua `mesh.onRelay(fn)` callback
+4. Nếu `to` là connected peer trực tiếp → forward thẳng
+5. Fallback: `mesh.route(to, skip)` — tìm peer có XOR distance nhỏ nhất đến `to`, skip sender
+
+**API**:
+```js
+// Gửi ephemeral message
+mesh.relay(targetPub, data, { ttl: 5 })
+
+// Nhận (trên node là target)
+const off = mesh.onRelay(function({ from, data }) { ... })
+off() // hủy đăng ký
+
+// Routing utils
+mesh.route(targetPub, skipPeer)  // → closest peer | null
+mesh.xor(pubA, pubB)             // → BigInt XOR distance
+mesh.closer(target, pubA, pubB)  // → pubA | pubB
+```
+
+**Đặc điểm**:
+- Hoàn toàn ephemeral — không ghi vào ZEN graph, không persist trên relay
+- Loop prevention tự nhiên qua DAM dup table (`msg["#"]` dedup)
+- TTL mặc định 5 hops
+- Routing greedy XOR (Kademlia-style) — không cần routing table đầy đủ
+- Foundation cho ZEN-native RPC streaming (gửi chunks mà không tốn storage)
+
+**Giới hạn hiện tại**:
+- Không đảm bảo delivery (best-effort, no ACK)
+- Không encrypt tự động (caller chịu trách nhiệm encrypt `data` nếu cần)
+- Routing chỉ tốt khi pub keys phân bố đều — sparse network có thể không tìm được route
+
+22 tests mới trong `test/mesh/dam.js` (từ 235 → 257).
+
+### Discovery: tìm MCP server
+
+Không có domain, không có IP — agent tìm server bằng pub key qua ZEN graph:
+
+```js
+// Server publish capability tại well-known soul
+const discoverySoul = `~${server_pub}/mcp/info`;
+zen.get(discoverySoul).put({
+  name: "my-mcp-server",
+  version: "1.0",
+  tools: ["zen_put", "zen_get", "zen_sign", ...],
+  pub: server_pub,
+}, null, { authenticator: serverPair });
+
+// Agent discover: biết pub → get info
+zen.get(discoverySoul).once(info => {
+  // info.tools, info.pub verified bởi ZEN security (signed bởi server_pub)
+});
+```
+
+Agent có thể nhận `server_pub` qua QR code, link, hay channel message — không cần URL.
+
+### stdio vẫn là mặc định
+
+```bash
+node lib/mcp.js           # stdio — Claude Desktop, CLI agents (cùng máy)
+```
+
+stdio hoạt động hoàn hảo cho use case **agent chạy trên cùng máy với MCP relay** (Claude Desktop + local ZEN node). Đây là trường hợp phổ biến nhất — agent không phải ZEN peer độc lập, nó chỉ là process con giao tiếp qua stdio.
+
+ZEN-native RPC dành cho **agent là ZEN peer độc lập** chạy trên máy khác, hoặc LLM service bên ngoài (API) có thể embed ZEN SDK.
+
+| Mode | Khi nào dùng | Transport |
+|------|-------------|-----------|
+| stdio | Agent cùng máy với MCP relay | OS pipes |
+| ZEN-native RPC | Agent là ZEN peer riêng biệt, khác máy | ZEN P2P graph |
+
+Không có HTTP server. ZEN relay (`lib/server.js`) vẫn là relay thuần — không chạy MCP logic.
+
+### Vì sao tốt hơn HTTP transport
+
+| Yêu cầu | HTTP (Streamable/SSE) | ZEN-native RPC |
+|---------|-----------------------|----------------|
+| Server cần IP ổn định | ✅ bắt buộc | ❌ không cần |
+| NAT traversal | ❌ cần port forward | ✅ tự nhiên |
+| Authentication | Cần thêm layer (JWT, API key) | ZEN pair tích hợp sẵn |
+| Replay attack | Cần nonce/timestamp riêng | PEN candle tự xử lý |
+| Resumability | SSE event ID + Last-Event-ID | ZEN HAM state tự nhiên |
+| Streaming | SSE chunked | `.map().on()` |
+| Discovery | Cần DNS / service registry | ZEN pub key |
+| Phân tán | Hub-and-spoke | Thuần P2P |
 
 ---
 
