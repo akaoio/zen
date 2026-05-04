@@ -152,10 +152,10 @@ function vprs(peer) {
 
 describe("vprs() URL validation", function () {
   it("accepts ws://host:port/path", function () {
-    assert.ok(vprs("ws://peer1.akao.io:8420/zen"));
+    assert.ok(vprs("ws://zen.akao.io:8420/zen"));
   });
   it("accepts wss://host:port/path", function () {
-    assert.ok(vprs("wss://peer1.akao.io:8420/zen"));
+    assert.ok(vprs("wss://zen.akao.io:8420/zen"));
   });
   it("accepts ws://[::1]:8420/zen (bracket IPv6)", function () {
     assert.ok(vprs("ws://[::1]:8420/zen"));
