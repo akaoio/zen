@@ -1,6 +1,6 @@
 # ZEN App Primitives & ZACP — Design Spec
 
-> Cập nhật lần cuối: 2026-05-04
+> Cập nhật lần cuối: 2026-05-04 (sync với thực tế code)
 
 ---
 
@@ -29,13 +29,15 @@ Crypto API (v1.0.9):
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  lib/mcp.js — thin MCP tool wrapper (stdio JSON-RPC) │
+│  lib/mcp/server.js — MCP tool dispatch (stdio)       │
+│  lib/mcp/client.js — ZenMcpClient (relay client)     │
+│  lib/mcp.js        — thin shim (5 lines, re-export)  │
 │  Chỉ: input validation, key resolution, tool dispatch │
 ├─────────────────────────────────────────────────────┤
-│  lib/protocol.js — ZACP business logic (NEW)         │
+│  lib/protocol.js — ZACP business logic               │
 │  project/channel/inbox/dm helpers                    │
 ├─────────────────────────────────────────────────────┤
-│  lib/identity.js — agent identity (enhanced)         │
+│  lib/identity.js — agent identity                    │
 │  hardware fingerprint + seed-based portable mode     │
 ├─────────────────────────────────────────────────────┤
 │  zen.js (src/) — ZEN graph + crypto primitives       │
@@ -43,7 +45,7 @@ Crypto API (v1.0.9):
 └─────────────────────────────────────────────────────┘
 ```
 
-**Nguyên tắc**: Logic ở đúng layer. `lib/mcp.js` không chứa business logic — chỉ delegate sang `lib/protocol.js`. `src/` không thay đổi.
+**Nguyên tắc**: Logic ở đúng layer. `lib/mcp/server/server.js` không chứa business logic — chỉ delegate sang `lib/protocol.js`. `src/` không thay đổi.
 
 ---
 
@@ -283,7 +285,9 @@ Logic seed loading thuộc `lib/identity.js` — không phải `lib/mcp.js`. MCP
 | Channel key wrap/unwrap | `lib/protocol.js` | Crypto logic, không phải transport |
 | Project/channel/dm helpers | `lib/protocol.js` | Business logic |
 | Seed-based identity | `lib/identity.js` | Identity concern |
-| MCP tool handlers | `lib/mcp.js` | Thin wrapper, delegate sang protocol.js |
+| MCP tool dispatch | `lib/mcp/server.js` | Thin wrapper, delegate sang protocol.js |
+| MCP relay client | `lib/mcp/client.js` | ZenMcpClient — kết nối relay từ JS |
+| MCP CLI shim | `lib/mcp.js` | 5 dòng, chỉ re-export `start` từ `lib/mcp/server.js` |
 
 **lib/protocol.js** exports cần có:
 ```js
@@ -309,15 +313,15 @@ export async function chanSeed(owner_priv, proj_id, chan_id, version)  // → ba
 - [x] `initialize.serverInfo.version` must reflect package version, not hardcoded stale value
 - [x] Project meta / roles ops (`proj/<id>/meta`, `proj/<id>/roles`) through MCP protocol surface
 - [x] Stable read result schema across inbox / channel / DM (`{ key, plaintext, sender_pub }`) — `readInbox`, `readChannel`, `readDMs` all return this shape
+- [x] Graph subscribe / polling surface — `graph` tool `op:"subscribe"` / `op:"unsubscribe"`; server push via `notifications/message`
 - [ ] Graph enumeration surface designed for large datasets
-- [ ] Graph subscribe / polling surface
 
 **Later**
 
 - [ ] Identity seed via stdin in `lib/identity.js`
 - [ ] BIP39 mnemonic support in `lib/identity.js`
 - [ ] Cert renewal / lifecycle helpers above raw `certify`
-- [ ] SSE push subscribe mode after polling mode is stable
+- [ ] SSE push transport mode (intentionally deferred — relay mode covers the P2P use case; see §7)
 - [ ] IPFS adapter and longer-term transport/storage work
 
 **graph.list note**

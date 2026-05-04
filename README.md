@@ -23,7 +23,7 @@ This repository is documented as a structured book. Read it in order or jump to 
 | [Ch 3 — Cryptography](docs/ch03-crypto.md) | `pair`, `sign`, `verify`, `encrypt`, `decrypt`, `secret`, `hash`, `certify` |
 | [Ch 4 — Authenticated Data](docs/ch04-authenticated-data.md) | Owned namespaces, signing writes, certificates, security pipeline |
 | [Ch 5 — Storage Adapters](docs/ch05-storage.md) | Radisk, filesystem, IndexedDB, OPFS, S3, writing your own |
-| [Ch 6 — Networking](docs/ch06-networking.md) | Mesh, peers, WebSocket, WebRTC, message protocol |
+| [Ch 6 — Networking](docs/ch06-networking.md) | Mesh, peers, WebSocket, `zen.push()` ephemeral relay, DAM ping/RTT, AXE clustering |
 | [Ch 7 — PEN Policy VM](docs/ch07-pen.md) | WASM bytecode engine, opcodes, `ZEN.pen()`, bridge/runtime policy enforcement |
 | [Ch 8 — Contributing](docs/ch08-contributing.md) | Build system, test suite, adding chain methods, adding adapters |
 | [Ch 9 — MCP (AI Integration)](docs/ch09-mcp.md) | IDE peer, stdio server, tools, Cursor/VSCode config |
@@ -97,6 +97,7 @@ Once your relay is running it finds other peers automatically — no seed peers 
 2. **PEX** — each new connection immediately shares its peer list; new discoveries are forwarded to all existing connections
 3. **Backoff** — empty scan cycles back off from 10 m → 20 m → 40 m → capped at 2 h; resets immediately on any discovery
 4. **Upstream cap** — at most 10 outbound connections from scan; inbound excess redirected by AXE MOB
+5. **RTT-aware pruning** — when MOB must redirect a peer, the highest-latency inbound is chosen first; auto-ping keeps RTT measurements fresh every 30 s
 
 ### POSIX / XDG Base Directory layout
 
@@ -231,7 +232,28 @@ zen.once(cb)        // read once
 zen.map()           // iterate a set
 zen.set(data)       // add to a set (unordered collection)
 zen.back(n)         // navigate up the chain
+zen.meta(cb)        // subscribe + receive full signature metadata
+zen.push(pub, data) // send an ephemeral P2P message to a peer (not stored)
 ```
+
+### `.meta()` — signature metadata
+
+`zen.get(soul).get(key).meta(cb)` fires the callback on every update and passes a metadata object:
+
+```js
+zen.get("~" + pair.pub).get("profile").meta(function(m) {
+  console.log(m.val);    // verified plaintext value
+  console.log(m.pub);    // public key of the writer
+  console.log(m.sig);    // 86-char base62 ECDSA signature (or null if unsigned)
+  console.log(m.state);  // HAM state timestamp (ms)
+  console.log(m.soul);   // node soul
+});
+
+// Promise variant
+const m = await zen.get("~" + pair.pub).get("profile").meta();
+```
+
+For unsigned data `pub`, `sig`, and `v` are `null`. For `~pub` namespaces the soul owner is returned as `pub` when no other signer can be determined. For `!pen` souls the pub key is recovered asynchronously from the embedded signature.
 
 ### Crypto (static + instance mirror)
 
@@ -349,7 +371,7 @@ ZEN ships an MCP (Model Context Protocol) server that turns any IDE into a full 
 ```
 
 - Cursor: `~/.cursor/mcp.json` (or project `.cursor/mcp.json`)
-- VSCode Copilot: `~/.copilot/mcp-config.json`
+- VSCode Copilot: `~/.vscode/mcp.json` (or project `.vscode/mcp.json`)
 
 No ZEN installation needed — `npx` fetches `@akaoio/zen` automatically.
 
@@ -357,13 +379,41 @@ No ZEN installation needed — `npx` fetches `@akaoio/zen` automatically.
 
 | Tool | Description |
 |------|-------------|
-| `graph` | Raw graph `get` / `put` / `set` operations with optional `pairId`, `cert`, and `pow` |
-| `crypto` | Static crypto methods: `pair`, `sign`, `verify`, `encrypt`, `decrypt`, `secret`, `hash`, `certify`, `recover`, `pen`, `candle` |
+| `graph` | Graph `get` / `put` / `set` / `subscribe` / `unsubscribe` — optional `pairId`, `cert`, `pow` |
+| `crypto` | Static crypto: `pair`, `sign`, `verify`, `encrypt`, `decrypt`, `secret`, `hash`, `certify`, `recover`, `pen`, `candle` |
 | `identity` | Return the MCP server public identity (`self`) |
-| `protocol` | High-level ZACP operations: souls, channel lifecycle, DM send/read |
+| `protocol` | ZACP high-level ops — souls, project meta/roles, channel lifecycle, E2E messaging, DMs |
 
-The current server exposes a single built-in signing identity alias: `pairId: "self"`.
+The `graph` tool's `subscribe` op streams real-time updates back as MCP `notifications/message` events (one per key change). Use `unsubscribe` with the same `sub_id` to stop.
+
+The `protocol` tool exposes 16 operations:
+`inbox_soul`, `chan_soul`, `dm_soul`,
+`set_project_meta`, `get_project_meta`, `set_project_role`, `get_project_roles`,
+`create_channel`, `invite`, `kick`, `rotate`,
+`send_channel`, `read_channel`,
+`send_inbox`, `read_inbox`,
+`send_dm`, `read_dms`.
+
+The server exposes a single built-in signing identity alias: `pairId: "self"`.
 Raw private keys are rejected by the MCP process.
+
+### Relay RPC — `ZenMcpClient`
+
+Beyond stdio, the MCP server doubles as a **DAM relay RPC endpoint** reachable by any ZEN peer over the existing P2P mesh (no new port, no HTTP).
+
+```js
+import ZEN from "@akaoio/zen";
+import ZenMcpClient from "@akaoio/zen/lib/mcp/client";
+
+const zen = new ZEN({ file: "data" });
+const client = await ZenMcpClient.discover(serverPub, zen);
+
+const tools = await client.listTools();
+const result = await client.call("crypto", { method: "pair" });
+```
+
+Transport is ECDH end-to-end encrypted DAM messages — no credentials leave the mesh.
+See [Ch 9 — MCP §9.8](docs/ch09-mcp.md) for full relay protocol details.
 
 See [Ch 9 — MCP](docs/ch09-mcp.md) for full details.
 
@@ -446,7 +496,7 @@ npm run buildRelease # buildZEN + uglify all lib adapters
 npm start            # start example relay (examples/zen-http.js)
 ```
 
-Current baseline: **557 passing**.
+Current baseline: **632 passing**.
 
 ---
 
@@ -549,7 +599,10 @@ lib/                 — storage adapters, extensions, build scripts
   
   # Extensions & utilities
   lib/axe.js         — automatic peering / DHT
-  mcp.js             — MCP stdio server (IDE-as-ZEN-peer, AI integration)
+  mcp.js             — 5-line shim (re-exports start from lib/mcp/server.js)
+  mcp/server.js      — full MCP stdio + relay RPC server (IDE-as-ZEN-peer)
+  mcp/client.js      — ZenMcpClient — JS library for relay RPC
+  protocol.js        — ZACP business logic (inbox, DM, channels, project meta)
   webrtc.js          — WebRTC transport
   promise.js         — Promise API
   then.js            — Promise chaining
@@ -559,7 +612,9 @@ lib/                 — storage adapters, extensions, build scripts
 
 test/
   bench/             — micro-benchmark harness + 7 suites
-  zen/               — ZEN unit tests (instance, crypto, multicurve, certify)
+  zen/               — ZEN unit tests (instance, crypto, multicurve, certify, meta)
+  mcp/               — MCP test modules (protocol.js, relay.js)
+  mesh/              — DAM ping/pong, XOR routing, relay tests
   pen.js             — PEN unit tests
   zen.js             — core graph integration tests
   rad/               — RAD storage tests

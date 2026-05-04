@@ -180,22 +180,104 @@ When `msg.nts` or `msg.NTS` is set on a message, `universe()` skips the `out` br
 
 ## 6.9 AXE — automatic peer clustering
 
-`lib/axe.js` implements distributed hash table (DHT) clustering for automatic peer discovery and load balancing. It is an optional add-on loaded by the server entry point.
+`lib/axe.js` implements automatic peer discovery, load balancing, and connection quality management. It is an optional add-on loaded by the server entry point.
 
 ```js
 const zen = new ZEN({ axe: true });
 ```
 
 AXE handles:
-- Peer discovery via DHT
-- Automatic routing to the peers that hold specific data
-- Load balancing across peer clusters
+
+- **Peer discovery** — scans sibling domains (`peer1.akao.io` → probes `peer0`, `peer2`, …) and receives peer lists from PEX on each new connection
+- **MOB** — redirects excess inbound connections to other peers; configurable via `opt.mob` (default: effectively unlimited; set to e.g. `10` to keep at most 10 inbound)
+- **RTT-weighted pruning** — when MOB must redirect a peer, the one with the highest rolling-average RTT is chosen first, keeping the best-latency peers alive
+- **Auto-ping** — immediately after an inbound peer is registered in `axe.up`, AXE sends a DAM `ping` message and repeats every **30 s**; this populates `peer.rtt` so RTT-weighted pruning has real data to work with
+
+```js
+// axe.up: map of pid → peer for upstream (inbound) connections
+// peer.rtt: rolling-average round-trip time in ms (populated by ping/pong)
+```
 
 See `lib/axe.js` for configuration options.
 
 ---
 
-## 6.10 WebRTC
+## 6.10 DAM relay — `zen.push()`
+
+ZEN includes a lightweight **ephemeral messaging** layer built on top of the DAM (Directed Acyclic Mesh) protocol. Messages are XOR-routed hop-by-hop toward the target public key and **never written to the graph** — no CRDT, no persistence, no broadcast.
+
+### `zen.push(targetPub, data, opt)`
+
+Send an ephemeral message to any peer identified by its public key:
+
+```js
+// Sender
+zen.push(pair.pub, "hello!");
+
+// with options
+zen.push(pair.pub, { type: "invite", room: "general" }, { ttl: 3 });
+```
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `targetPub` | string | 45-char base62 compressed public key of the recipient |
+| `data` | any | Payload (string, object, etc.) |
+| `opt.ttl` | number | Max hops before the message is dropped (default: **5**) |
+
+`push()` returns the chain instance so it is chainable:
+
+```js
+zen.push(pub, "ping").push(pub2, "also ping");
+```
+
+### Receiving pushed messages
+
+Subscribe with `mesh.onRelay()` — returns an `off()` function to unsubscribe:
+
+```js
+const root = zen._;
+const mesh = root.opt.mesh;
+
+const off = mesh.onRelay(function(payload) {
+  console.log("received:", payload);
+});
+
+// later
+off();
+```
+
+### How routing works
+
+When `zen.push(to, data)` is called, the mesh:
+
+1. Checks if `to` is a directly connected peer — delivers immediately
+2. Otherwise calls `mesh.route(to)` which selects the connected peer with the **smallest XOR distance** to `to` (greedy closest-hop)
+3. Forwards with `ttl - 1`; the receiving peer repeats until the message arrives or TTL reaches 0
+4. When the target peer receives a relay message addressed to its own pub key, `onRelay` subscribers are notified
+
+```
+A ──push(D)──► B  (B is XOR-closer to D)
+               B ──relay──► C  (C is even closer)
+                             C ──relay──► D  ✓
+```
+
+This is best-effort delivery — the sender does not receive a delivery confirmation. Use the graph (`zen.put`) when persistence or acknowledgement is required.
+
+### DAM ping/pong and RTT
+
+The mesh tracks round-trip time for each connected peer via `ping`/`pong` messages. AXE automatically pings each inbound peer on connect and every 30 s:
+
+```js
+// Internal — you do not call this directly. AXE handles it.
+mesh.ping(peer);  // sends { dam: "ping", t: Date.now() }
+// peer.rtt is updated on pong: exponential moving average (α = 0.5)
+```
+
+`peer.rtt` is used by AXE MOB pruning to evict the highest-latency peer first when the connection limit is reached.
+
+---
+
+## 6.11 WebRTC
 
 `lib/webrtc.js` adds browser-to-browser WebRTC connections:
 
@@ -211,7 +293,7 @@ WebRTC peers use `put(pid, cb, null, { acks: rtc.max })` internally to track con
 
 ---
 
-## 6.11 Multicast (LAN discovery)
+## 6.12 Multicast (LAN discovery)
 
 `lib/multicast.js` provides UDP multicast for automatic peer discovery on a local network:
 
@@ -224,7 +306,7 @@ Useful for local-network deployments (IoT, offline-first apps).
 
 ---
 
-## 6.12 Faith mode
+## 6.13 Faith mode
 
 The server entry point sets `root.opt.faith = true` automatically. In faith mode, ack messages (`msg["@"]` present, `msg.put` absent) are immediately rebroadcast to peers without re-processing. This reduces redundant computation on relay nodes.
 
@@ -236,7 +318,7 @@ root.opt.super = true;  // also set; marks this as a "super peer"
 
 ---
 
-## 6.13 Self-discovery (`lib/discover.js`)
+## 6.14 Self-discovery (`lib/discover.js`)
 
 A relay peer needs to know its own domain or IP to announce itself to the network and to build correct self-URLs (`wss://peer1.akao.io:8420/zen`). `lib/discover.js` finds this offline-first:
 
@@ -259,7 +341,7 @@ The domain is persisted to `DOMF` (`~/.config/zen/domain`) on first discovery so
 
 ---
 
-## 6.14 Smart domain scanning (`lib/scan.js`)
+## 6.15 Smart domain scanning (`lib/scan.js`)
 
 Given a known peer domain like `peer1.akao.io`, ZEN automatically scans for sibling peers by detecting the numeric index in the leftmost label and probing all candidates:
 
@@ -296,7 +378,7 @@ Discovery resets backoff to 10 min immediately.
 
 ---
 
-## 6.15 Peer Exchange (PEX)
+## 6.16 Peer Exchange (PEX)
 
 When a new peer connects, the relay immediately sends it the full list of known peers via a DAM `"pex"` message — a direct peer-to-peer exchange that does not touch the public graph:
 

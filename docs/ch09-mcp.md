@@ -272,6 +272,8 @@ Execute raw graph operations against a local ZEN instance.
 - `get`
 - `put`
 - `set`
+- `subscribe`
+- `unsubscribe`
 
 ### Input schema
 
@@ -279,12 +281,13 @@ Execute raw graph operations against a local ZEN instance.
 {
   "soul": "string",
   "path": ["optional", "key", "segments"],
-  "op": "get | put | set",
+  "op": "get | put | set | subscribe | unsubscribe",
   "value": "any JSON value",
   "opt": {
     "pairId": "self",
     "cert": "optional certificate string",
-    "pow": { "unit": "0", "difficulty": 1 }
+    "pow": { "unit": "0", "difficulty": 1 },
+    "sub_id": "sub_1"
   }
 }
 ```
@@ -303,6 +306,8 @@ Then it executes:
 - `node.once(...)` for `get`
 - `node.put(...)` for `put`
 - `node.set(...)` for `set`
+- `node.map().on(...)` for `subscribe`
+- removes the listener for `unsubscribe`
 
 ### Security behavior
 
@@ -340,6 +345,53 @@ Authenticated write:
   }
 }
 ```
+
+### Live subscriptions
+
+`subscribe` attaches a `map().on()` listener to the soul and returns a `sub_id`. For every change the server emits a JSON-RPC notification to the client:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/message",
+  "params": {
+    "level": "info",
+    "logger": "zen/subscribe",
+    "data": "{\"sub_id\":\"sub_1\",\"soul\":\"demo/node\",\"key\":\"status\",\"val\":\"updated\"}"
+  }
+}
+```
+
+Subscribe:
+
+```json
+{
+  "name": "graph",
+  "arguments": {
+    "soul": "demo/node",
+    "op": "subscribe"
+  }
+}
+```
+
+Response: `{ "sub_id": "sub_1" }`
+
+Unsubscribe:
+
+```json
+{
+  "name": "graph",
+  "arguments": {
+    "soul": "demo/node",
+    "op": "unsubscribe",
+    "opt": { "sub_id": "sub_1" }
+  }
+}
+```
+
+Response: `{ "ok": true }`
+
+Subscriptions are process-scoped and do not persist across server restarts. This feature works in stdio mode. HTTP/SSE push mode is planned but not yet implemented.
 
 ---
 
@@ -481,6 +533,10 @@ Expose higher-level ZACP collaboration helpers from `lib/protocol.js`.
 - `inbox_soul`
 - `chan_soul`
 - `dm_soul`
+- `get_project_meta`
+- `get_project_roles`
+- `set_project_meta`
+- `set_project_role`
 - `create_channel`
 - `invite`
 - `kick`
@@ -491,8 +547,8 @@ Expose higher-level ZACP collaboration helpers from `lib/protocol.js`.
 - `read_inbox`
 - `read_channel`
 
-The soul-only operations do not require `pairId`.
-All other operations require `pairId: "self"`.
+Soul-only operations (`inbox_soul`, `chan_soul`, `dm_soul`) and read-only operations (`get_project_meta`, `get_project_roles`) do not require `pairId`.
+All write/send/create operations require `pairId: "self"`.
 
 ### `inbox_soul`
 
@@ -517,6 +573,68 @@ Compile the PEN soul for a direct-message inbox.
 ```json
 { "op": "dm_soul", "recipient_pub": "<pub>" }
 ```
+
+### `get_project_meta`
+
+Read project metadata stored by the project owner.
+
+```json
+{ "op": "get_project_meta", "proj_id": "demo", "owner_pub": "<owner pub>" }
+```
+
+Response:
+
+```json
+{ "name": "Demo Project", "description": "...", "version": 1 }
+```
+
+### `get_project_roles`
+
+Read the role map for a project. Keys are member public keys, values are role strings.
+
+```json
+{ "op": "get_project_roles", "proj_id": "demo", "owner_pub": "<owner pub>" }
+```
+
+Response (example):
+
+```json
+{
+  "0TSEisc...": "owner",
+  "0GFuf6J...": "member"
+}
+```
+
+### `set_project_meta`
+
+Write project metadata. Requires `pairId: "self"` — the caller becomes the project owner (stored under `zacp/<owner_pub>/<proj_id>/meta`).
+
+```json
+{
+  "op": "set_project_meta",
+  "proj_id": "demo",
+  "meta": { "name": "Demo Project", "description": "An example" },
+  "pairId": "self"
+}
+```
+
+Returns `{ "ok": true }`.
+
+### `set_project_role`
+
+Assign a role to a member inside a project.
+
+```json
+{
+  "op": "set_project_role",
+  "proj_id": "demo",
+  "member_pub": "<member pub>",
+  "role": "member",
+  "pairId": "self"
+}
+```
+
+Returns `{ "ok": true }`.
 
 ### `create_channel`
 
@@ -913,19 +1031,21 @@ client.close();
 
 ---
 
-## 9.17 SSE transport mode
+## 9.17 SSE transport mode (planned)
 
-The MCP server supports an HTTP + Server-Sent Events transport via the `--sse` flag:
+> **Not yet implemented.** The `--sse` flag does not exist in the current codebase. This section describes the planned design.
+
+The planned SSE transport would expose the MCP server over HTTP + Server-Sent Events so that browser-based agents and multi-client workflows can connect without spawning a child process.
 
 ```bash
 node lib/mcp.js           # stdio mode (default, use with Claude Desktop and VS Code)
-node lib/mcp.js --sse     # HTTP + SSE mode (port: ZEN_MCP_PORT env var or 8421)
+node lib/mcp.js --sse     # planned: HTTP + SSE mode (port: ZEN_MCP_PORT env var or 8421)
 ```
 
-Both modes run in the same process, sharing the same `pairStore`, `zen` instance, and tool dispatch logic. Stdio mode is unaffected when `--sse` is active.
+When implemented, both modes would run in the same process, sharing the same `pairStore`, `zen` instance, and tool dispatch logic.
 
-**SSE mode is intended for:**
+**Intended use cases:**
 - Browser-based agents that cannot spawn child processes
 - Workflows where multiple clients share one ZEN peer
 
-**SSE mode is not a replacement for relay mode.** Relay mode (§9.15) works across any network with only outbound WebSocket. SSE mode requires the client to reach the HTTP port.
+**Relationship to relay mode:** Relay mode (§9.15) is the current solution for cross-machine MCP access. It works across any network with only outbound WebSocket and requires no open HTTP port. SSE mode would complement relay mode for local network / intranet scenarios where HTTP reachability is guaranteed.

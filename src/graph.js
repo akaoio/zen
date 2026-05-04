@@ -37,6 +37,21 @@ if (!ZEN.chain.then) {
   };
 }
 
+// zen.push(targetPub, data, opt) — ephemeral targeted relay message.
+// Routes via DAM multi-hop XOR relay to the peer with matching pub key.
+// Not persisted, not replicated, no CRDT. Target must be online within TTL hops.
+// opt: { ttl: number } — max hops (default 5)
+if (!ZEN.chain.push) {
+  ZEN.chain.push = function (to, data, opt) {
+    var at = this._;
+    var mesh = at && at.root && at.root.opt && at.root.opt.mesh;
+    if (mesh && mesh.relay) {
+      mesh.relay(to, data, opt);
+    }
+    return this;
+  };
+}
+
 const graph = {
   core: ZEN,
   chain: ZEN.chain,

@@ -85,8 +85,9 @@ npm run test:core       # Core graph tests (test/zen.js, test/rad/*, etc.)
 | Suite | Files | What it tests |
 |-------|-------|---------------|
 | `testPEN:unit` | `test/pen.js` | PEN bytecode, pack/unpack, policy execution |
-| `testZEN:unit` | `test/zen/instance.js`, `secp256k1.js`, `crypto.js`, `multicurve.js`, `certify.js`, `recover.js` | ZEN instance API, crypto primitives |
+| `testZEN:unit` | `test/zen/instance.js`, `secp256k1.js`, `crypto.js`, `multicurve.js`, `certify.js`, `recover.js`, `push.js`, `meta.js` | ZEN instance API, crypto primitives, chain methods |
 | `test:core` | `test/abc.js`, `test/rad/rad.js`, `test/radix.js`, `test/zen.js` | Graph operations, Radisk, core behavior |
+| `test:mesh` (standalone) | `test/mesh/dam.js` | DAM ping/pong RTT, XOR routing, relay multi-hop |
 
 ### Clean data before testing
 
