@@ -207,12 +207,25 @@ if (main && cluster.isPrimary) {
   }
 
   // ── /peers JSON endpoint (CORS-enabled, consumed by browser AXE) ─────────
+  // Peers are sorted by RTT (ascending) so browsers connect to the lowest-
+  // latency relay first.  Peers with no RTT data sort to the end.
+  function rttOf(url) {
+    const at = zen && zen._graph && zen._graph._;
+    if (!at || !at.axe) return Infinity;
+    for (const pid in at.axe.up) {
+      const p = at.axe.up[pid];
+      if (p && p.url === url && p.rtt > 0) return p.rtt;
+    }
+    return Infinity;
+  }
+
   let srv;
   function hndl(req, res) {
     ldom(req);
     if (req.method === "GET" && (req.url === "/peers" || req.url === "/peers/")) {
       res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
-      res.end(JSON.stringify([...kprs]));
+      const sorted = [...kprs].sort((a, b) => rttOf(a) - rttOf(b));
+      res.end(JSON.stringify(sorted));
       return;
     }
     srv(req, res);
