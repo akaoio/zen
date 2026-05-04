@@ -182,6 +182,15 @@ if (main && cluster.isPrimary) {
     env.HTTPS_CERT = env.HTTPS_CERT || dcrt;
   }
 
+  // Auto-load IPv6 cert if present alongside the primary cert (no env vars needed).
+  // ssl.sh writes the IPv6 cert here automatically when --auto-ip6 fires.
+  const dkey2 = path.join(cfgd, "ip6-key.pem");
+  const dcrt2 = path.join(cfgd, "ip6-cert.pem");
+  if (fs.existsSync(dcrt2)) {
+    env.HTTPS_KEY2 = env.HTTPS_KEY2 || dkey2;
+    env.HTTPS_CERT2 = env.HTTPS_CERT2 || dcrt2;
+  }
+
   // Latch domain from first incoming request Host header if still unknown
   let dlat = !!domain;
   function ldom(req) {

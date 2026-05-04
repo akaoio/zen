@@ -22,6 +22,7 @@ RELOAD_CMD=""
 AUTO_UPGRADE=true
 STANDALONE=false
 IS_IPV6=false
+AUTO_IP6=true
 DNS_MODE=false
 DNS_PROVIDER=""
 DNS_API_KEY=""
@@ -61,6 +62,7 @@ OPTIONAL:
     --force                    Force reinstallation of acme.sh
     --staging                  Use Let's Encrypt staging environment (for testing)
     --no-auto-upgrade          Disable automatic acme.sh upgrades
+    --no-auto-ip6              Skip automatic IPv6 certificate (when --domain is a hostname)
     --dry-run                  Show what would be done without executing
     -h, --help                 Show this help message
 
@@ -186,6 +188,10 @@ while [[ $# -gt 0 ]]; do
             AUTO_UPGRADE=false
             shift
             ;;
+        --no-auto-ip6)
+            AUTO_IP6=false
+            shift
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -201,6 +207,25 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Discover the outbound global IPv6 of this machine (bash only, no Node)
+discover_local_ip6() {
+    local ip6
+    # Prefer route-based discovery (most reliable)
+    ip6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null \
+          | grep -oP '(?<=src )([0-9a-fA-F:]+)' | head -1)
+    if [[ -n "$ip6" ]] && is_ipv6_address "$ip6"; then
+        echo "$ip6"; return 0
+    fi
+    # Fallback: first global unicast address from ip -6 addr
+    ip6=$(ip -6 addr show scope global 2>/dev/null \
+          | grep -oP '(?<=inet6 )([0-9a-fA-F:]+)(?=/)' \
+          | grep -v '^fe80' | head -1)
+    if [[ -n "$ip6" ]] && is_ipv6_address "$ip6"; then
+        echo "$ip6"; return 0
+    fi
+    return 1
+}
 
 # Detect if a string is a raw IPv6 address
 is_ipv6_address() {
@@ -534,6 +559,60 @@ verify_certificate() {
     fi
 }
 
+# Issue and install a certificate for the local IPv6 address
+# Called automatically after the domain cert when AUTO_IP6=true
+issue_ip6_cert() {
+    local ip6="$1"
+    log_info "Auto-issuing certificate for local IPv6: $ip6"
+
+    local ip6_key="$ZEN_CONFIG_DIR/ip6-key.pem"
+    local ip6_cert="$ZEN_CONFIG_DIR/ip6-cert.pem"
+
+    # Check port 80 (IPv6)
+    if ss -tlnp 2>/dev/null | grep -q '\[::\]:80\|:::80'; then
+        log_warn "Port 80 (IPv6) busy — skipping IPv6 cert auto-issue. Run manually after freeing port 80."
+        return 0
+    fi
+
+    local ip6_acme_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt \
+--issue -d \"$ip6\" --keylength ec-256 --standalone --listen-v6"
+
+    if [[ "$STAGING" == "true" ]]; then
+        ip6_acme_cmd="$ip6_acme_cmd --staging"
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would issue IPv6 cert: $ip6_acme_cmd"
+        log_info "[DRY RUN] Would install IPv6 cert → $ip6_key / $ip6_cert"
+        return 0
+    fi
+
+    log_debug "Executing IPv6 cert: $ip6_acme_cmd"
+    if bash -c "$ip6_acme_cmd"; then
+        log_info "IPv6 certificate issued"
+    else
+        log_warn "IPv6 cert issuance failed (non-fatal). You can retry manually:"
+        log_warn "  $0 --domain $ip6 --email $EMAIL --key-file $ip6_key --cert-file $ip6_cert"
+        return 0  # non-fatal — domain cert is already installed
+    fi
+
+    # Install IPv6 cert to predictable path; register reload hook for renewal
+    local ip6_install_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" \
+--install-cert -d \"$ip6\" --ecc \
+--key-file \"$ip6_key\" --fullchain-file \"$ip6_cert\""
+
+    if [[ -n "$RELOAD_CMD" ]]; then
+        ip6_install_cmd="$ip6_install_cmd --reloadcmd \"$RELOAD_CMD\""
+    fi
+
+    if bash -c "$ip6_install_cmd"; then
+        log_info "IPv6 certificate installed → $ip6_key"
+        log_info "IPv6 certificate installed → $ip6_cert"
+    else
+        log_warn "IPv6 cert install step failed. Retry: $ip6_install_cmd"
+    fi
+}
+
 # Show renewal information
 show_renewal_info() {
     log_info "Certificate renewal information:"
@@ -632,10 +711,23 @@ main() {
     install_certificate
     verify_certificate
     show_renewal_info
-    
+
+    # Auto-issue cert for local IPv6 when domain cert was requested
+    # (not when we were already issuing for a raw IPv6 address)
+    if [[ "$AUTO_IP6" == "true" && "$IS_IPV6" == "false" ]]; then
+        local detected_ip6
+        detected_ip6=$(discover_local_ip6 2>/dev/null || true)
+        if [[ -n "$detected_ip6" && "$detected_ip6" != "$DOMAIN" ]]; then
+            log_info "Local IPv6 detected: $detected_ip6 — requesting certificate"
+            issue_ip6_cert "$detected_ip6"
+        else
+            log_info "No global IPv6 address found on this machine — skipping IPv6 cert"
+        fi
+    fi
+
     # Disable error trap on success
     trap - ERR
-    
+
     log_info "SSL certificate setup completed successfully!"
 }
 
