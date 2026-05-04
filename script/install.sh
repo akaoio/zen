@@ -32,7 +32,12 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 confirm() {
-    read -r -p "$1 [y/N] " response
+    local response
+    if [[ -e /dev/tty ]]; then
+        read -r -p "$1 [y/N] " response </dev/tty
+    else
+        read -r -p "$1 [y/N] " response
+    fi
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
@@ -350,14 +355,14 @@ main() {
         confirm "Directory $INSTALL_DIR is not empty. Continue?" || { log_info "Cancelled"; exit 0; }
     fi
 
-    # Interactive prompts when running in a terminal (no --skip-service means we're doing a real install)
-    if [[ -t 0 ]] && [[ "$SKIP_SERVICE" != "true" ]]; then
+    # Interactive prompts — use /dev/tty so this works with curl|bash too
+    if [[ -e /dev/tty ]] && [[ "$SKIP_SERVICE" != "true" ]]; then
         if [[ -z "$DOMAIN" ]]; then
-            read -rp "$(echo -e '\033[1;34m[ZEN]\033[0m') Your public domain or IP (e.g. peer1.example.com) [leave blank to auto-detect]: " _dom
+            read -rp "$(echo -e '\033[1;34m[ZEN]\033[0m') Your public domain or IP (e.g. peer1.example.com) [leave blank to auto-detect]: " _dom </dev/tty
             DOMAIN="${_dom:-}"
         fi
         if [[ "$PORT" == "8420" ]]; then
-            read -rp "$(echo -e '\033[1;34m[ZEN]\033[0m') Server port [8420]: " _port
+            read -rp "$(echo -e '\033[1;34m[ZEN]\033[0m') Server port [8420]: " _port </dev/tty
             PORT="${_port:-8420}"
             if [[ ! "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
                 log_error "Invalid port: $PORT"; exit 1
