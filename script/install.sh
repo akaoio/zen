@@ -321,7 +321,7 @@ install_autoupdate() {
     log_info "Auto-update timer enabled (checks every hour, restarts only on new commits)"
 }
 
-
+rollback() {
     log_warn "Installation failed, rolling back..."
     if [[ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]]; then
         $SUDO systemctl stop "$SERVICE_NAME" 2>/dev/null || true
