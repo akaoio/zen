@@ -2,6 +2,7 @@ node_modules
 npm-debug.log
 yarn.lock
 package-lock.json
+stats.mcp
 *data.json
 *data*
 !docs/**
