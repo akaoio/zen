@@ -21,6 +21,7 @@ STAGING=false
 RELOAD_CMD=""
 AUTO_UPGRADE=true
 STANDALONE=false
+IS_IPV6=false
 DNS_MODE=false
 DNS_PROVIDER=""
 DNS_API_KEY=""
@@ -84,6 +85,9 @@ EXAMPLES:
 
     # Manual DNS validation (IPv6-only servers)
     $0 --domain example.com --email admin@example.com --dns
+
+    # Raw IPv6 address certificate (uses standalone --listen-v6, requires port 80 free)
+    $0 --domain 2a02:c207:2327:7266::1 --email admin@example.com
 
     # Certificate with custom webroot and reload command
     $0 -d example.com -e admin@example.com -w /var/www/html --reload-cmd "systemctl reload nginx"
@@ -198,9 +202,21 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Detect if a string is a raw IPv6 address
+is_ipv6_address() {
+    local d="$1"
+    # Strip brackets if present: [2001:db8::1] -> 2001:db8::1
+    d="${d#[}"; d="${d%]}"
+    [[ "$d" =~ ^[0-9a-fA-F:]+$ && "$d" == *:*:* ]]
+}
+
 # Input validation functions
 validate_domain() {
     local domain="$1"
+    # Allow raw IPv6 addresses — validated separately
+    if is_ipv6_address "$domain"; then
+        return 0
+    fi
     # Basic domain validation - RFC compliant
     if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
         log_error "Invalid domain format: $domain"
@@ -252,6 +268,18 @@ get_acme_domain_dir() {
         return 0
     fi
 
+    # acme.sh may encode colons in IPv6 dirs (some versions use underscores)
+    local escaped_domain
+    escaped_domain="${DOMAIN//:/_}"
+    if [[ -d "$ACME_DIR/${escaped_domain}_ecc" ]]; then
+        echo "$ACME_DIR/${escaped_domain}_ecc"
+        return 0
+    fi
+    if [[ -d "$ACME_DIR/$escaped_domain" ]]; then
+        echo "$ACME_DIR/$escaped_domain"
+        return 0
+    fi
+
     return 1
 }
 
@@ -274,6 +302,16 @@ if [[ -z "$EMAIL" ]]; then
     log_error "Email is required. Use --email or set EMAIL environment variable."
     show_help
     exit 1
+fi
+
+# Auto-detect raw IPv6 address — force standalone + listen-v6 mode
+if is_ipv6_address "$DOMAIN"; then
+    IS_IPV6=true
+    STANDALONE=true
+    # Strip brackets if user passed [2001:db8::1]
+    DOMAIN="${DOMAIN#[}"
+    DOMAIN="${DOMAIN%]}"
+    log_info "Raw IPv6 address detected — using standalone --listen-v6 mode"
 fi
 
 # Validate inputs
@@ -360,8 +398,13 @@ issue_certificate() {
 
     # Build acme.sh command
     if [[ "$STANDALONE" == "true" ]]; then
-        ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone"
-        log_info "Using standalone mode (temporary web server on port 80)"
+        if [[ "$IS_IPV6" == "true" ]]; then
+            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone --listen-v6"
+            log_info "Using standalone IPv6 mode (temporary web server on port 80, IPv6)"
+        else
+            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone"
+            log_info "Using standalone mode (temporary web server on port 80)"
+        fi
     elif [[ "$DNS_MODE" == "true" ]]; then
         # Setup DNS provider environment variables
         if [[ "$DNS_PROVIDER" == "cloudflare" ]]; then
@@ -541,9 +584,16 @@ main() {
     # Pre-flight checks
     if [[ "$STANDALONE" == "true" ]]; then
         # Check if port 80 is available for standalone mode
-        if ss -tlnp | grep -q ':80 '; then
-            log_error "Port 80 is already in use. Stop other services or use webroot mode"
-            exit 1
+        if [[ "$IS_IPV6" == "true" ]]; then
+            if ss -tlnp | grep -q '\[::\]:80\|:::80'; then
+                log_error "Port 80 (IPv6) is already in use. Stop other services or use DNS mode"
+                exit 1
+            fi
+        else
+            if ss -tlnp | grep -q ':80 '; then
+                log_error "Port 80 is already in use. Stop other services or use webroot mode"
+                exit 1
+            fi
         fi
     fi
     

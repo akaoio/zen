@@ -362,23 +362,20 @@ if (main && cluster.isPrimary) {
   if (surl) kprs.add(surl); // include self in /peers responses
 
   // ── IPv6 self-URL discovery ───────────────────────────────────────────────
-  // Advertise IPv6 self-URL only when running plain HTTP (no TLS).
-  // Raw IPs cannot get a certificate from any public CA — advertising a raw
-  // IPv6 address under wss:// causes browser cert errors for all clients that
-  // try to connect to it.  When HTTPS is active the domain-based surl above
-  // already covers IPv6 (dual-stack listener on "::" handles both families).
+  // Discover our own IPv6 address and build a second self-URL for advertisement.
+  // Let's Encrypt (via acme.sh --standalone --listen-v6) can issue certs for
+  // raw IPv6 addresses, so wss:// is valid when the server has TLS configured.
   let surl6 = null;
-  if (!opt.key) {
-    disc({ noSave: true }).then((di) => {
-      if (di.ip6) {
-        surl6 = "ws://[" + di.ip6 + "]:" + port + "/zen";
-        kprs.add(surl6);
-        console.log("IPv6 self-URL (plain ws, no TLS):", surl6);
-      }
-    }).catch((err) => {
-      console.log("IPv6 discovery failed:", err && err.message || err);
-    });
-  }
+  disc({ noSave: true }).then((di) => {
+    if (di.ip6) {
+      const scheme = opt.key ? "wss" : "ws";
+      surl6 = scheme + "://[" + di.ip6 + "]:" + port + "/zen";
+      kprs.add(surl6);
+      console.log("IPv6 self-URL:", surl6);
+    }
+  }).catch((err) => {
+    console.log("IPv6 discovery failed:", err && err.message || err);
+  });
 
   const root = zen._graph._;
 
