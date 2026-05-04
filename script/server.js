@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import http from "http";
 import https from "https";
+import tls from "tls";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import ZEN from "../index.js";
@@ -158,6 +159,24 @@ if (main && cluster.isPrimary) {
     }
   }
 
+  if (env.HTTPS_KEY2) {
+    try {
+      env.HTTPS_KEY2 = vpath(env.HTTPS_KEY2);
+    } catch (err) {
+      console.error("HTTPS_KEY2 validation failed:", err.message);
+      process.exit(1);
+    }
+  }
+
+  if (env.HTTPS_CERT2) {
+    try {
+      env.HTTPS_CERT2 = vpath(env.HTTPS_CERT2);
+    } catch (err) {
+      console.error("HTTPS_CERT2 validation failed:", err.message);
+      process.exit(1);
+    }
+  }
+
   if (fs.existsSync(dcrt)) {
     env.HTTPS_KEY = env.HTTPS_KEY || dkey;
     env.HTTPS_CERT = env.HTTPS_CERT || dcrt;
@@ -291,6 +310,43 @@ if (main && cluster.isPrimary) {
     } catch (err) {
       console.error("SSL Certificate Error:", err.message);
       process.exit(1);
+    }
+
+    // ── SNI: load second cert (e.g. raw IPv6) and route by servername ────────
+    // Set HTTPS_KEY2 + HTTPS_CERT2 env vars pointing to the second key/cert.
+    // SNICallback is invoked for every TLS handshake — picks the matching cert
+    // by servername, falls back to the primary cert for unknown/empty names
+    // (raw-IP clients send no SNI extension, so fallback covers them only when
+    // the primary cert is also valid for that IP, which is not the case here).
+    // The correct long-term approach is a dedicated subdomain for the IPv6 addr.
+    if (
+      env.HTTPS_KEY2 &&
+      env.HTTPS_CERT2 &&
+      fs.existsSync(env.HTTPS_KEY2) &&
+      fs.existsSync(env.HTTPS_CERT2)
+    ) {
+      let kd2, cd2;
+      try {
+        kd2 = fs.readFileSync(env.HTTPS_KEY2, "utf8");
+        cd2 = fs.readFileSync(env.HTTPS_CERT2, "utf8");
+        if (!kd2.includes("BEGIN") || !kd2.includes("PRIVATE KEY")) throw new Error("Invalid private key format (KEY2)");
+        if (!cd2.includes("BEGIN CERTIFICATE")) throw new Error("Invalid certificate format (CERT2)");
+      } catch (err) {
+        console.error("SSL Certificate2 Error:", err.message);
+        process.exit(1);
+      }
+
+      const ctx1 = tls.createSecureContext({ key: kd, cert: cd });
+      const ctx2 = tls.createSecureContext({ key: kd2, cert: cd2 });
+
+      // Raw-IP connections send no SNI extension (servername is empty/null).
+      // Named-domain connections send their hostname as servername.
+      // Route accordingly: empty → IP cert (ctx2), named → domain cert (ctx1).
+      opt.SNICallback = (servername, cb) => {
+        cb(null, servername ? ctx1 : ctx2);
+      };
+
+      console.log("SNI enabled: primary cert (domain) + secondary cert (IP/KEY2/CERT2)");
     }
 
     srv = ZEN.serve(__dirname);
