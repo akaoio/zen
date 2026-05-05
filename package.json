@@ -26,6 +26,7 @@
     "test:mcp": "cross-env GUN_TEST_TMP=1 ZEN_SILENCE_TEST_WARNINGS=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/mcp.js test/mcp/protocol.js test/mcp/relay.js --timeout 30000",
     "test:core": "npm run clean && cross-env GUN_TEST_TMP=1 ZEN_SILENCE_TEST_WARNINGS=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/abc.js test/rad/rad.js test/radix.js test/zen.js",
     "test:mesh": "npm run clean && cross-env GUN_TEST_TMP=1 ZEN_TEST=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/mesh/dam.js --timeout 10000",
+    "test:dht": "cross-env GUN_TEST_TMP=1 ZEN_TEST=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/dht/kbucket.js --timeout 10000",
     "testZEN:unit": "npm run clean && cross-env GUN_TEST_TMP=1 ZEN_TEST=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/zen/instance.js test/zen/bootstrap.js test/zen/secp256k1.js test/zen/crypto.js test/zen/multicurve.js test/zen/certify.js test/zen/recover.js test/zen/push.js test/zen/status.js test/mesh/dam.js",
     "testZEN": "npm run buildZEN && npm run testZEN:unit",
     "e2e": "mocha e2e/distributed.js",

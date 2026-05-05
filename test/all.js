@@ -6,6 +6,7 @@ const suites = [
   { name: "core",          args: ["run", "test:core"] },
   { name: "discover",      args: ["run", "test:discover"] },
   { name: "MCP",           args: ["run", "test:mcp"] },
+  { name: "DHT",           args: ["run", "test:dht"] },
 ];
 
 var totalPassing = 0;
