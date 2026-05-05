@@ -12,7 +12,7 @@ var ZEN;
 }
 import xpect from '../expect.js';
 import radisk from '../../lib/radisk.js';
-import booklib from '../../lib/book.js';
+import booklib from '../../src/book.js';
 import rfs from '../../lib/rfs.js';
 var root;
 var Zen;
