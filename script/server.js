@@ -214,9 +214,11 @@ if (main && cluster.isPrimary) {
   }
 
   // ── /status signed endpoint (CORS-enabled, consumed by AXE and agents) ────
-  // Returns a compact ZEN signed string. Client: ZEN.recover(str) → pub,
-  // ZEN.verify(str, pub) → JSON → { name, version, pub, peers, ip4, ip6, ... }
-  // Peers sorted by RTT (ascending) — lowest latency first.
+  // Returns a pre-computed compact ZEN signed string (cached, refreshed on a
+  // schedule). Signing (ECDSA) runs in the background — requests are served
+  // synchronously from cachedStatus, no per-request crypto work.
+  // Client: ZEN.recover(str) → pub, ZEN.verify(str, pub) → JSON payload.
+  // Peers: only fully-qualified relay URLs ending in '/zen' (RTT-sorted).
   function rttOf(url) {
     const at = zen && zen._graph && zen._graph._;
     if (!at || !at.axe) return Infinity;
@@ -227,24 +229,29 @@ if (main && cluster.isPrimary) {
     return Infinity;
   }
 
-  let srv;
-  function hndl(req, res) {
-    ldom(req);
-    if (req.method === "GET" && (req.url === "/status" || req.url === "/status/")) {
-      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
-      if (!identity) { res.end(""); return; }
+  let cachedStatus = null;
+  async function refreshStatus() {
+    if (!identity) return;
+    try {
       const payload = buildStatus({
         pub: identity.pair.pub,
         domain,
         ip4: discResult ? (discResult.ip || null) : null,
         ip6: discResult ? (discResult.ip6 || null) : null,
         port,
-        peers: [...kprs].sort((a, b) => rttOf(a) - rttOf(b)),
+        peers: [...kprs].filter(u => /^wss?:\/\//.test(u) && u.endsWith("/zen")).sort((a, b) => rttOf(a) - rttOf(b)),
         mcp: false,
       });
-      signStatus(payload, identity.pair)
-        .then(function(str) { res.end(str); })
-        .catch(function() { res.end(""); });
+      cachedStatus = await signStatus(payload, identity.pair);
+    } catch {}
+  }
+
+  let srv;
+  function hndl(req, res) {
+    ldom(req);
+    if (req.method === "GET" && (req.url === "/status" || req.url === "/status/")) {
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
+      res.end(cachedStatus || "");
       return;
     }
     srv(req, res);
@@ -476,13 +483,16 @@ if (main && cluster.isPrimary) {
           console.log("IPv6 self-URL:", surl6);
         }
       }
+      refreshStatus(); // rebuild status after IPs are updated
     }).catch((err) => {
       console.log("IP discovery failed:", err && err.message || err);
     });
   }
 
-  refreshDisc();
-  setInterval(refreshDisc, 10 * 60 * 1000); // refresh every 10 min
+  refreshStatus();                                    // initial cache (no IP yet)
+  refreshDisc();                                       // async: updates IPs then re-caches
+  setInterval(refreshDisc, 10 * 60 * 1000);            // refresh IPs every 10 min
+  setInterval(refreshStatus, 30 * 1000);               // keep timestamp + peers fresh
 
   const root = zen._graph._;
 

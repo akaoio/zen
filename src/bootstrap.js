@@ -1,4 +1,4 @@
-const BOOT = ["wss://zen.akao.io", "wss://peer0.akao.io", "wss://peer1.akao.io"];
+const BOOT = ["https://zen.akao.io:8420/zen", "https://peer0.akao.io:8420/zen", "https://peer1.akao.io:8420/zen"];
 
 function parseFlag(value) {
   if (typeof value !== "string") return null;

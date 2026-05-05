@@ -12,34 +12,34 @@ describe("bootstrap peer resolution", function () {
   });
 
   it("merges configured peers with bootstrap peers without duplicates", function () {
-    const configured = ["wss://peer1.akao.io", "wss://custom.akao.io:8420/zen"];
+    const configured = ["https://peer1.akao.io:8420/zen", "wss://custom.akao.io:8420/zen"];
     assert.deepStrictEqual(resolveBootstrapPeers(configured), [
-      "wss://zen.akao.io",
-      "wss://peer0.akao.io",
-      "wss://peer1.akao.io",
+      "https://zen.akao.io:8420/zen",
+      "https://peer0.akao.io:8420/zen",
+      "https://peer1.akao.io:8420/zen",
       "wss://custom.akao.io:8420/zen",
     ]);
   });
 
   it("supports isolated deployments by disabling bootstrap peers explicitly", function () {
     assert.deepStrictEqual(
-      resolveBootstrapPeers(["wss://custom.akao.io:8420/zen"], {
+      resolveBootstrapPeers(["https://custom.akao.io:8420/zen"], {
         includeBootstrap: false,
       }),
-      ["wss://custom.akao.io:8420/zen"],
+      ["https://custom.akao.io:8420/zen"],
     );
   });
 
   it("dedupes merged peer lists while preserving first-seen order", function () {
     assert.deepStrictEqual(
       mergePeers(
-        [" wss://zen.akao.io ", "wss://peer0.akao.io"],
-        ["wss://peer0.akao.io", "wss://custom.akao.io:8420/zen"],
+        [" https://zen.akao.io ", "https://peer0.akao.io"],
+        ["https://peer0.akao.io", "https://custom.akao.io:8420/zen"],
       ),
       [
-        "wss://zen.akao.io",
-        "wss://peer0.akao.io",
-        "wss://custom.akao.io:8420/zen",
+        "https://zen.akao.io",
+        "https://peer0.akao.io",
+        "https://custom.akao.io:8420/zen",
       ],
     );
   });

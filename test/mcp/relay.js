@@ -129,12 +129,12 @@ describe("ZenMcpClient.discover()", function () {
     assert.strictEqual(info, null);
   });
 
-  it("reads info published to graph soul ~<serverPub>/mcp/info", async function () {
+  it("reads info published to graph soul ~<serverPub>/status", async function () {
     // Server publishes discovery info to graph
-    const soul = "~" + serverPair.pub + "/mcp/info";
+    const soul = "~" + serverPair.pub + "/status";
     await new Promise((resolve, reject) => {
       serverZen.get(soul).put(
-        { name: "relay-test-server", pub: serverPair.pub, relay: true },
+        { name: "zen", pub: serverPair.pub, mcp: true },
         (ack) => { if (ack && ack.err) reject(new Error(ack.err)); else resolve(); },
         { authenticator: serverPair },
       );
@@ -142,7 +142,7 @@ describe("ZenMcpClient.discover()", function () {
     const info = await ZenMcpClient.discover(serverPair.pub, serverZen);
     assert.ok(info, "should find discovery info");
     assert.strictEqual(info.pub, serverPair.pub);
-    assert.strictEqual(info.relay, true);
+    assert.strictEqual(info.mcp, true);
   });
 });
 
