@@ -277,6 +277,7 @@ if (main && cluster.isPrimary) {
     if (kprs.has(url)) return;
     kprs.add(url);
     fic = true;
+    refreshStatus(); // update cached status immediately on new peer discovery
     console.log("Discovered peer:", url);
     const r = zen && zen._graph && zen._graph._;
     // Connect only if under upstream limit (prevents full mesh / bandwidth waste)
