@@ -85,6 +85,22 @@ rollback() {
     exit 1
 }
 
+restart_service() {
+    if [[ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]]; then
+        run $SUDO systemctl restart "$SERVICE_NAME"
+        if [[ "$DRY_RUN" != "true" ]]; then
+            sleep 2
+            if systemctl is-active --quiet "$SERVICE_NAME"; then
+                log_info "Service restarted successfully"
+            else
+                log_warn "Service may have failed. Check: journalctl -u $SERVICE_NAME -n 50"
+            fi
+        fi
+    else
+        log_warn "Service '$SERVICE_NAME' not found — skipping restart"
+    fi
+}
+
 trap rollback ERR
 
 log_info "Updating ZEN at $INSTALL_DIR..."
@@ -100,8 +116,12 @@ NEW_COMMIT=$(git -C "$INSTALL_DIR" rev-parse HEAD)
 
 if [[ "$PREV_COMMIT" == "$NEW_COMMIT" ]]; then
     log_info "Already up to date ($(git -C "$INSTALL_DIR" log -1 --format='%h %s'))"
+    log_info "Restarting service to apply current code/config..."
+    restart_service
     trap - ERR
-    log_info "ZEN update completed (no changes)."
+    log_info "ZEN update completed!"
+    log_info "  No code changes; service was restarted anyway."
+    log_info "  Logs: journalctl -u $SERVICE_NAME -f"
     exit 0
 fi
 
@@ -112,19 +132,7 @@ log_info "$(git -C "$INSTALL_DIR" log -1 --format='  %s (%cr)' HEAD)"
 run npm --prefix "$INSTALL_DIR" install --omit=dev
 
 # Restart service
-if [[ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]]; then
-    run $SUDO systemctl restart "$SERVICE_NAME"
-    if [[ "$DRY_RUN" != "true" ]]; then
-        sleep 2
-        if systemctl is-active --quiet "$SERVICE_NAME"; then
-            log_info "Service restarted successfully"
-        else
-            log_warn "Service may have failed. Check: journalctl -u $SERVICE_NAME -n 50"
-        fi
-    fi
-else
-    log_warn "Service '$SERVICE_NAME' not found — skipping restart"
-fi
+restart_service
 
 trap - ERR
 
