@@ -17,6 +17,7 @@ import * as xdg from "../lib/xdg.js";
 import { disc, hwid, DOMF, PORTF } from "../lib/discover.js";
 import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
 import { getOrCreateIdentity } from "../lib/identity.js";
+import { buildStatus, signStatus } from "../lib/status.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -212,9 +213,10 @@ if (main && cluster.isPrimary) {
     }
   }
 
-  // ── /peers JSON endpoint (CORS-enabled, consumed by browser AXE) ─────────
-  // Peers are sorted by RTT (ascending) so browsers connect to the lowest-
-  // latency relay first.  Peers with no RTT data sort to the end.
+  // ── /status signed endpoint (CORS-enabled, consumed by AXE and agents) ────
+  // Returns a compact ZEN signed string. Client: ZEN.recover(str) → pub,
+  // ZEN.verify(str, pub) → JSON → { name, version, pub, peers, ip4, ip6, ... }
+  // Peers sorted by RTT (ascending) — lowest latency first.
   function rttOf(url) {
     const at = zen && zen._graph && zen._graph._;
     if (!at || !at.axe) return Infinity;
@@ -228,10 +230,21 @@ if (main && cluster.isPrimary) {
   let srv;
   function hndl(req, res) {
     ldom(req);
-    if (req.method === "GET" && (req.url === "/peers" || req.url === "/peers/")) {
-      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
-      const sorted = [...kprs].sort((a, b) => rttOf(a) - rttOf(b));
-      res.end(JSON.stringify(sorted));
+    if (req.method === "GET" && (req.url === "/status" || req.url === "/status/")) {
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
+      if (!identity) { res.end(""); return; }
+      const payload = buildStatus({
+        pub: identity.pair.pub,
+        domain,
+        ip4: discResult ? (discResult.ip || null) : null,
+        ip6: discResult ? (discResult.ip6 || null) : null,
+        port,
+        peers: [...kprs].sort((a, b) => rttOf(a) - rttOf(b)),
+        mcp: false,
+      });
+      signStatus(payload, identity.pair)
+        .then(function(str) { res.end(str); })
+        .catch(function() { res.end(""); });
       return;
     }
     srv(req, res);
@@ -445,21 +458,31 @@ if (main && cluster.isPrimary) {
 
   if (surl) kprs.add(surl); // include self in /peers responses
 
-  // ── IPv6 self-URL discovery ───────────────────────────────────────────────
-  // Discover our own IPv6 address and build a second self-URL for advertisement.
-  // Let's Encrypt (via acme.sh --standalone --listen-v6) can issue certs for
-  // raw IPv6 addresses, so wss:// is valid when the server has TLS configured.
+  // ── IP discovery (IPv4 + IPv6) ────────────────────────────────────────────
+  // Single source of truth for IP info: cached in discResult, refreshed every
+  // 10 min (relays often have dynamic IPs). Used by /status and kprs.
   let surl6 = null;
-  disc({ noSave: true }).then((di) => {
-    if (di.ip6) {
-      const scheme = opt.key ? "wss" : "ws";
-      surl6 = scheme + "://[" + di.ip6 + "]:" + port + "/zen";
-      kprs.add(surl6);
-      console.log("IPv6 self-URL:", surl6);
-    }
-  }).catch((err) => {
-    console.log("IPv6 discovery failed:", err && err.message || err);
-  });
+  let discResult = null;
+
+  function refreshDisc() {
+    disc({ noSave: true }).then((di) => {
+      discResult = di;
+      if (di.ip6) {
+        const scheme = opt.key ? "wss" : "ws";
+        const newSurl6 = scheme + "://[" + di.ip6 + "]:" + port + "/zen";
+        if (newSurl6 !== surl6) {
+          surl6 = newSurl6;
+          kprs.add(surl6);
+          console.log("IPv6 self-URL:", surl6);
+        }
+      }
+    }).catch((err) => {
+      console.log("IP discovery failed:", err && err.message || err);
+    });
+  }
+
+  refreshDisc();
+  setInterval(refreshDisc, 10 * 60 * 1000); // refresh every 10 min
 
   const root = zen._graph._;
 
