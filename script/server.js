@@ -229,6 +229,34 @@ if (main && cluster.isPrimary) {
     return Infinity;
   }
 
+  // Dedup peer list: domain > ip6 > ip4.
+  // If any domain URL exists at port P, drop all [ipv6] and raw ipv4 URLs at
+  // the same port (they are the same machines, just different address forms).
+  function dedupeByDomain(urls) {
+    const domainPorts = new Set();
+    urls.forEach(u => {
+      try {
+        const h = new URL(u).hostname;
+        // hostname is a domain if it's not a bracketed IPv6 and not a raw IPv4
+        if (!/^\[/.test(h) && !/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
+          domainPorts.add(new URL(u).port);
+        }
+      } catch {}
+    });
+    if (!domainPorts.size) return urls;
+    return urls.filter(u => {
+      try {
+        const parsed = new URL(u);
+        // Drop bracketed IPv6 and raw IPv4 URLs on ports covered by domain URLs
+        if (domainPorts.has(parsed.port)) {
+          if (/^\[/.test(parsed.hostname)) return false; // [ipv6]
+          if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname)) return false; // ipv4
+        }
+      } catch {}
+      return true;
+    });
+  }
+
   let cachedStatus = null;
   async function refreshStatus() {
     if (!identity) return;
@@ -239,7 +267,7 @@ if (main && cluster.isPrimary) {
         ip4: discResult ? (discResult.ip || null) : null,
         ip6: discResult ? (discResult.ip6 || null) : null,
         port,
-        peers: [...kprs].filter(u => /^wss?:\/\//.test(u) && u.endsWith("/zen")).sort((a, b) => rttOf(a) - rttOf(b)),
+        peers: dedupeByDomain([...kprs].filter(u => /^wss?:\/\//.test(u) && u.endsWith("/zen"))).sort((a, b) => rttOf(a) - rttOf(b)),
         mcp: false,
       });
       cachedStatus = await signStatus(payload, identity.pair);
@@ -479,8 +507,10 @@ if (main && cluster.isPrimary) {
         const scheme = opt.key ? "wss" : "ws";
         const newSurl6 = scheme + "://[" + di.ip6 + "]:" + port + "/zen";
         if (newSurl6 !== surl6) {
+          if (surl6) kprs.delete(surl6); // remove stale IPv6 entry
           surl6 = newSurl6;
-          kprs.add(surl6);
+          // Only advertise IPv6 URL if no domain URL — avoids duplicate entries
+          if (!surl) kprs.add(surl6);
           console.log("IPv6 self-URL:", surl6);
         }
       }
@@ -541,7 +571,8 @@ if (main && cluster.isPrimary) {
           try { mesh.say({ dam: "pex", peers: [surl] }, peer); } catch {}
         }, 700);
       }
-      if (surl6) {
+      // Only advertise IPv6 URL when no domain URL — avoids duplicate peer entries
+      if (surl6 && !surl) {
         setTimeout(() => {
           try { mesh.say({ dam: "pex", peers: [surl6] }, peer); } catch {}
         }, 750);
