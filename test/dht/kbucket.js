@@ -284,3 +284,45 @@ describe("mesh.route() — DHT-aware routing", function () {
     assert.strictEqual(result, null, "should return null when no peer is reachable");
   });
 });
+
+// ── 5. mesh.hear["?"] populates buckets after handshake ───────────────────
+
+describe("DHT bucket population via mesh.hear[\"?\"]", function () {
+  it("adds peer to bucket when ? message arrives with pub + url", function () {
+    const selfPub = fakePub();
+    const { dht, mesh } = makeDHT(selfPub);
+    if (!dht) { return; }
+
+    const peerPub = fakePub();
+    const peerUrl = "wss://remote.example.com:8420/zen";
+    const peer    = { id: "p1", url: peerUrl };
+
+    // Simulate the ? handshake message arriving (as mesh.hear["?"] receives it).
+    // After our hook calls prevHearQ, peer.pub may or may not be set by prevHearQ
+    // (depends on mesh.js internals). We simulate by setting peer.pub directly
+    // before calling hear["?"] the way mesh.js would — the DHT hook fires after
+    // the previous handler so peer.pub must already be set by the time our code runs.
+    // We achieve this by monkey-patching: call the dht hook with peer.pub preset.
+    const origHear = mesh.hear["?"];
+    // Pre-set peer.pub as mesh.js's hear["?"] would do when msg.pub is present.
+    peer.pub = peerPub;
+    origHear({ dam: "?", pid: String.random(9), pub: peerPub, "#": String.random(9) }, peer);
+
+    const found = dht.closest(peerPub, 5);
+    const entry = found.find(function (e) { return e.pub === peerPub; });
+    assert.ok(entry, "peer should appear in DHT buckets after ? handshake");
+    assert.strictEqual(entry.url, peerUrl, "bucket entry should have correct URL");
+  });
+
+  it("ignores ? messages where peer has no pub", function () {
+    const { dht, mesh } = makeDHT();
+    if (!dht) { return; }
+
+    const sizeBefore = dht.closest(fakePub(), 1000).length;
+    // Peer with no pub — DHT should not throw or add anything.
+    mesh.hear["?"]({ dam: "?", pid: String.random(9), pub: "", "#": String.random(9) },
+                   { id: "p2", url: "wss://nopub.example.com/zen" });
+    const sizeAfter = dht.closest(fakePub(), 1000).length;
+    assert.strictEqual(sizeBefore, sizeAfter, "no-pub peer should not be added to buckets");
+  });
+});
