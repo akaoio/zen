@@ -30,7 +30,7 @@ class McpSession {
     this._notifListeners = []; // [{method, resolve, timer}]
     this._proc = spawn(process.execPath, [MCP_BIN], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ZEN_SILENCE_TEST_WARNINGS: "1", XDG_DATA_HOME: MCP_TEST_XDG },
+      env: { ...process.env, ZEN_SILENCE_TEST_WARNINGS: "1", XDG_DATA_HOME: MCP_TEST_XDG, NO_BOOTSTRAP: "1" },
     });
     this._proc.stdout.setEncoding("utf8");
     this._proc.stderr && this._proc.stderr.on("data", d => process.stderr.write(d));

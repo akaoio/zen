@@ -566,8 +566,9 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
         // Writer pub is already known (new write with authenticator)
         verifyCert(writer);
       } else {
-        // Peer re-propagation: recover from packed write signature
-        runtime.opt.pack(msg.put, function (packed) {
+        // Peer re-propagation: recover from packed write signature.
+        // Use ctx.put (the specific node for this soul/key), not msg.put (the full delta).
+        runtime.opt.pack(ctx.put, function (packed) {
           runtime.recover(packed).then(verifyCert).catch(function () {
             reject("PEN: cannot recover signer pub for cert verification");
           });
