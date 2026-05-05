@@ -8488,6 +8488,52 @@ defmod('./src/graph.js', function(module, exp){
   exp.graph = graph;
 });
 
+defmod('./src/bootstrap.js', function(module, exp){
+  const BOOT = ["wss://zen.akao.io", "wss://peer0.akao.io", "wss://peer1.akao.io"];
+
+  function parseFlag(value) {
+    if (typeof value !== "string") return null;
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["", "0", "false", "no", "off"].includes(normalized)) return false;
+    return null;
+  }
+
+  function bootstrapDisabled(env = {}) {
+    const noBootstrap = parseFlag(env.NO_BOOTSTRAP);
+    if (noBootstrap !== null) return noBootstrap;
+    const bootstrap = parseFlag(env.BOOTSTRAP);
+    if (bootstrap !== null) return !bootstrap;
+    return false;
+  }
+
+  function mergePeers(...lists) {
+    const merged = [];
+    const seen = new Set();
+    lists.flat().forEach((peer) => {
+      if (typeof peer !== "string") return;
+      const normalized = peer.trim();
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      merged.push(normalized);
+    });
+    return merged;
+  }
+
+  function resolveBootstrapPeers(configuredPeers = [], opt = {}) {
+    return mergePeers(opt.includeBootstrap === false ? [] : BOOT, configuredPeers);
+  }
+
+
+
+  exp.default = { BOOT, bootstrapDisabled, mergePeers, resolveBootstrapPeers };
+
+  exp.BOOT = BOOT;
+  exp.bootstrapDisabled = bootstrapDisabled;
+  exp.mergePeers = mergePeers;
+  exp.resolveBootstrapPeers = resolveBootstrapPeers;
+});
+
 defmod('./src/index.js', function(module, exp){
   var PEN = reqmod('./src/pen.js').default;
   var settings = reqmod('./src/settings.js').default;
@@ -8504,6 +8550,7 @@ defmod('./src/index.js', function(module, exp){
   var recover = reqmod('./src/recover.js').default;
   var security = reqmod('./src/security.js').default;
   var graph = reqmod('./src/graph.js').default;
+  var { BOOT } = reqmod('./src/bootstrap.js');
   var hasOwn = Object.prototype.hasOwnProperty;
   var STATIC_SKIP = { length: 1, name: 1, prototype: 1 };
   var CHAIN_SKIP = { constructor: 1 };
@@ -8574,8 +8621,6 @@ defmod('./src/index.js', function(module, exp){
       });
     });
   }
-
-  const BOOT = ["wss://zen.akao.io", "wss://peer0.akao.io", "wss://peer1.akao.io"];
 
   class ZEN {
     constructor(opt = {}) {

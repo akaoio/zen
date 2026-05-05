@@ -9,6 +9,10 @@ import tls from "tls";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import ZEN from "../index.js";
+import {
+  bootstrapDisabled,
+  resolveBootstrapPeers,
+} from "../src/bootstrap.js";
 import * as xdg from "../lib/xdg.js";
 import { disc, hwid, DOMF, PORTF } from "../lib/discover.js";
 import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
@@ -112,16 +116,18 @@ if (main && cluster.isPrimary) {
   });
 } else if (main) {
   (async () => {
-  const env = process.env;
-  let port;
-  let hport;
-  let peers;
-  let domain;
+    const env = process.env;
+    let port;
+    let hport;
+    let peers;
+    let domain;
 
   try {
     port = vport(env.PORT || process.argv[2] || 8420);
     hport = env.HTTPS_PORT ? vport(env.HTTPS_PORT) : null;
-    peers = vprs(env.PEERS);
+    peers = resolveBootstrapPeers(vprs(env.PEERS), {
+      includeBootstrap: !bootstrapDisabled(env),
+    });
     // Domain: env var > XDG config file
     domain = env.DOMAIN || null;
     if (!domain) {

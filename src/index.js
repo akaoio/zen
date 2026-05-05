@@ -13,6 +13,7 @@ import keyid from "./keyid.js";
 import recover from "./recover.js";
 import security from "./security.js";
 import graph from "./graph.js";
+import { BOOT } from "./bootstrap.js";
 
 var hasOwn = Object.prototype.hasOwnProperty;
 var STATIC_SKIP = { length: 1, name: 1, prototype: 1 };
@@ -84,8 +85,6 @@ function mirrorChain(target, source) {
     });
   });
 }
-
-const BOOT = ["wss://zen.akao.io", "wss://peer0.akao.io", "wss://peer1.akao.io"];
 
 class ZEN {
   constructor(opt = {}) {
