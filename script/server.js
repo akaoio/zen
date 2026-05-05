@@ -267,11 +267,20 @@ if (main && cluster.isPrimary) {
         ip4: discResult ? (discResult.ip || null) : null,
         ip6: discResult ? (discResult.ip6 || null) : null,
         port,
-        peers: dedupeByDomain([...kprs].filter(u => /^wss?:\/\//.test(u) && u.endsWith("/zen"))).sort((a, b) => rttOf(a) - rttOf(b)),
+        peers: dedupeByDomain([...kprs.keys()].filter(u => /^wss:\/\//.test(u) && u.endsWith("/zen"))).sort((a, b) => rttOf(a) - rttOf(b)),
         mcp: false,
       });
       cachedStatus = await signStatus(payload, identity.pair);
     } catch {}
+    kprsEvict(); // prune stale peers every refresh cycle
+  }
+
+  // Debounce rapid refreshStatus calls (e.g. 100 MCP nodes joining at once)
+  let _rstTimer = null;
+  function scheduleRefreshStatus() {
+    clearTimeout(_rstTimer);
+    _rstTimer = setTimeout(refreshStatus, 500);
+    if (_rstTimer.unref) _rstTimer.unref();
   }
 
   let srv;
@@ -286,7 +295,38 @@ if (main && cluster.isPrimary) {
   }
 
   // ── peer discovery ────────────────────────────────────────────────────────
-  const kprs  = new Set(peers);  // all URLs ever seen
+  // kprs: Map<url, { seen: number, lastOk: number }>
+  // - seen:   last time this URL was advertised to us via PEX/scan
+  // - lastOk: last time a WebSocket connection to this URL succeeded
+  // Entries with no confirmed connection for KPRS_TTL are evicted.
+  // BOOT/configured peers and self URLs are protected from eviction.
+  const KPRS_TTL = 30 * 60 * 1000;          // 30 min TTL for unconfirmed peers
+  const kprsProtect = new Set(peers);        // BOOT + configured — never evict
+  const kprs = new Map();
+  peers.forEach(u => kprs.set(u, { seen: Date.now(), lastOk: Date.now() }));
+
+  function kprsTouch(url, ok = false) {
+    const entry = kprs.get(url);
+    const now = Date.now();
+    if (entry) {
+      entry.seen = now;
+      if (ok) entry.lastOk = now;
+    } else {
+      kprs.set(url, { seen: now, lastOk: ok ? now : 0 });
+    }
+  }
+
+  function kprsEvict() {
+    const now = Date.now();
+    for (const [url, entry] of kprs) {
+      if (kprsProtect.has(url)) continue;     // never evict BOOT peers
+      if (url === surl || url === surl6) continue; // never evict self
+      if (now - entry.seen > KPRS_TTL && now - entry.lastOk > KPRS_TTL) {
+        kprs.delete(url);
+      }
+    }
+  }
+
   const spat = new Set();       // patterns scanned this cycle
   let stmr     = null;
   let pmsh       = null;            // set after AXE attaches
@@ -303,9 +343,9 @@ if (main && cluster.isPrimary) {
 
   function adp(url) {
     if (kprs.has(url)) return;
-    kprs.add(url);
+    kprsTouch(url);
     fic = true;
-    refreshStatus(); // update cached status immediately on new peer discovery
+    scheduleRefreshStatus(); // debounced — safe even if 1000 nodes join rapidly
     console.log("Discovered peer:", url);
     const r = zen && zen._graph && zen._graph._;
     // Connect only if under upstream limit (prevents full mesh / bandwidth waste)
@@ -492,7 +532,7 @@ if (main && cluster.isPrimary) {
     ? ((opt.key ? "wss" : "ws") + "://" + domain + ":" + port + "/zen")
     : null;
 
-  if (surl) kprs.add(surl); // include self in /peers responses
+  if (surl) kprs.set(surl, { seen: Date.now(), lastOk: Date.now() }); // include self
 
   // ── IP discovery (IPv4 + IPv6) ────────────────────────────────────────────
   // Single source of truth for IP info: cached in discResult, refreshed every
@@ -510,7 +550,7 @@ if (main && cluster.isPrimary) {
           if (surl6) kprs.delete(surl6); // remove stale IPv6 entry
           surl6 = newSurl6;
           // Only advertise IPv6 URL if no domain URL — avoids duplicate entries
-          if (!surl) kprs.add(surl6);
+          if (!surl) kprs.set(surl6, { seen: Date.now(), lastOk: Date.now() });
           console.log("IPv6 self-URL:", surl6);
         }
       }
@@ -543,10 +583,22 @@ if (main && cluster.isPrimary) {
       });
     };
 
-    // On new peer connection: send our full known peer list + browser peer pids
+    // On new peer connection: mark URL as confirmed + send capped peer list
+    // PEX_MAX: cap prevents flooding when 1000+ MCP nodes are in kprs.
+    // Sort: wss:// first (browser-usable), then by RTT ascending.
+    const PEX_MAX = 50;
     root.on("hi", function (peer) {
       this.to.next(peer);
-      const list = Array.from(kprs).filter((u) => u !== surl);
+      if (peer.url) kprsTouch(peer.url, true); // mark connection confirmed
+      const list = Array.from(kprs.keys())
+        .filter(u => u !== surl && /^wss?:\/\//.test(u))
+        .sort((a, b) => {
+          const as = a.startsWith("wss://") ? 0 : 1;
+          const bs = b.startsWith("wss://") ? 0 : 1;
+          if (as !== bs) return as - bs;
+          return rttOf(a) - rttOf(b);
+        })
+        .slice(0, PEX_MAX);
       setTimeout(() => {
         try {
           // browser pids: connected peers that have a pid but no URL (pure browser WS clients)
