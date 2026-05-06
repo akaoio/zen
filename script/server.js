@@ -592,6 +592,13 @@ if (main && cluster.isPrimary) {
     if (!mesh) return;
     pmsh = mesh;
 
+    // Connect to BOOT peers immediately — adp() returns early for pre-seeded kprs entries
+    // so we must call pmsh.hi directly here to establish the initial outbound connections.
+    peers.forEach(url => {
+      const normUrl = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      try { pmsh.hi({ id: normUrl, url: normUrl, retry: 9 }); } catch {}
+    });
+
     // Handle incoming peer lists from other nodes
     mesh.hear["pex"] = function (msg, _peer) {
       if (!Array.isArray(msg.peers)) return;
