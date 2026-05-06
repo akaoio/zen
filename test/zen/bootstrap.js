@@ -3,7 +3,9 @@ import {
   BOOT,
   bootstrapDisabled,
   mergePeers,
+  parsePeerEnv,
   resolveBootstrapPeers,
+  resolveEnvPeers,
 } from "../../src/bootstrap.js";
 
 describe("bootstrap peer resolution", function () {
@@ -49,5 +51,42 @@ describe("bootstrap peer resolution", function () {
     assert.strictEqual(bootstrapDisabled({ NO_BOOTSTRAP: "0" }), false);
     assert.strictEqual(bootstrapDisabled({ BOOTSTRAP: "off" }), true);
     assert.strictEqual(bootstrapDisabled({ BOOTSTRAP: "on" }), false);
+  });
+
+  it("parses PEERS env into a trimmed list", function () {
+    assert.deepStrictEqual(
+      parsePeerEnv(" https://peer1.akao.io:8420/zen, wss://custom.akao.io:8420/zen ,, "),
+      ["https://peer1.akao.io:8420/zen", "wss://custom.akao.io:8420/zen"],
+    );
+  });
+
+  it("resolveEnvPeers leaves peers undefined when env is empty so constructor keeps BOOT", function () {
+    assert.strictEqual(resolveEnvPeers({}), undefined);
+  });
+
+  it("resolveEnvPeers merges explicit PEERS with BOOT by default", function () {
+    assert.deepStrictEqual(
+      resolveEnvPeers({ PEERS: "wss://custom.akao.io:8420/zen" }),
+      [
+        "https://zen.akao.io:8420/zen",
+        "https://peer0.akao.io:8420/zen",
+        "https://peer1.akao.io:8420/zen",
+        "wss://custom.akao.io:8420/zen",
+      ],
+    );
+  });
+
+  it("resolveEnvPeers keeps isolated mode when NO_BOOTSTRAP=1 and PEERS is unset", function () {
+    assert.deepStrictEqual(resolveEnvPeers({ NO_BOOTSTRAP: "1" }), []);
+  });
+
+  it("resolveEnvPeers uses explicit PEERS only when bootstrap is disabled", function () {
+    assert.deepStrictEqual(
+      resolveEnvPeers({
+        NO_BOOTSTRAP: "1",
+        PEERS: "wss://custom.akao.io:8420/zen,https://peer1.akao.io:8420/zen",
+      }),
+      ["wss://custom.akao.io:8420/zen", "https://peer1.akao.io:8420/zen"],
+    );
   });
 });

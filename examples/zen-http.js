@@ -7,6 +7,7 @@ import https from "https";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import ZEN from "../index.js";
+import { resolveEnvPeers } from "../src/bootstrap.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,7 +25,7 @@ if (isMain && cluster.isPrimary) {
   const env = process.env;
   const opt = {
     port: env.PORT || process.argv[2] || 8420,
-    peers: (env.PEERS && env.PEERS.split(",")) || [],
+    peers: resolveEnvPeers(env),
   };
 
   if (fs.existsSync((opt.home = os.homedir()) + "/cert.pem")) {

@@ -33,6 +33,35 @@ function resolveBootstrapPeers(configuredPeers = [], opt = {}) {
   return mergePeers(opt.includeBootstrap === false ? [] : BOOT, configuredPeers);
 }
 
-export { BOOT, bootstrapDisabled, mergePeers, resolveBootstrapPeers };
+function parsePeerEnv(value) {
+  if (typeof value !== "string") return [];
+  return value
+    .split(",")
+    .map((peer) => peer.trim())
+    .filter(Boolean);
+}
 
-export default { BOOT, bootstrapDisabled, mergePeers, resolveBootstrapPeers };
+function resolveEnvPeers(env = {}) {
+  const configuredPeers = parsePeerEnv(env.PEERS);
+  if (bootstrapDisabled(env)) return configuredPeers;
+  if (configuredPeers.length) return resolveBootstrapPeers(configuredPeers);
+  return undefined;
+}
+
+export {
+  BOOT,
+  bootstrapDisabled,
+  mergePeers,
+  parsePeerEnv,
+  resolveBootstrapPeers,
+  resolveEnvPeers,
+};
+
+export default {
+  BOOT,
+  bootstrapDisabled,
+  mergePeers,
+  parsePeerEnv,
+  resolveBootstrapPeers,
+  resolveEnvPeers,
+};
