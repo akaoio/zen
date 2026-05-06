@@ -8293,6 +8293,7 @@ defmod('./src/websocket.js', function(module, exp){
           reconnect(peer);
         };
         wire.onopen = function () {
+          peer._openAt = Date.now(); // track when WS connected (used by reconnect() for fast-close detection)
           opt.mesh.hi(peer);
         };
         wire.onmessage = function (msg) {
@@ -8328,6 +8329,22 @@ defmod('./src/websocket.js', function(module, exp){
         peer._axeGuess = (peer._axeGuess || 0) + 1;
         if (peer._axeGuess >= 5) { peer._noReconnect = true; return; }
         delay = wait * Math.pow(4, peer._axeGuess); // 8s, 32s, 128s, 512s backoff
+      } else if (opt.super && peer.url && peer.pid && peer._openAt && (Date.now() - peer._openAt) < wait * 4) {
+        // Quick close AFTER successful HI — likely AXE drop from remote side (remote keeps our
+        // inbound and closes our outbound from their end). Tombstone this URL after 3 attempts.
+        peer._hiGuess = (peer._hiGuess || 0) + 1;
+        peer._openAt = 0;
+        if (peer._hiGuess >= 3) {
+          peer._noReconnect = true;
+          opt._tombUrls = opt._tombUrls || new Set();
+          var _hu = peer.url;
+          opt._tombUrls.add(_hu);
+          opt._tombUrls.add(_hu.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://'));
+          opt._tombUrls.add(_hu.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://'));
+          __dbg('TOMB-URL', {url: _hu.slice(0,40), reason:'hiGuess-tombstone'});
+          return;
+        }
+        delay = wait * Math.pow(4, peer._hiGuess); // 8s, 32s with backoff
       } else {
         peer._axeGuess = 0; // pid received = real handshake, reset counter
       }
