@@ -1,3 +1,7 @@
+import { appendFileSync as __afs } from 'fs';
+var __DBG = '/tmp/relay-xdbg.log';
+function __dbg(tag, obj) { try { __afs(__DBG, '['+tag+'] '+JSON.stringify(obj)+'\n'); } catch(e){} }
+function __isTest(s) { return s && (s.indexOf('xprop') >= 0 || s.indexOf('xtest') >= 0); }
 const mods = Object.create(null);
 function defmod(id, fn){ mods[id] = { fn: fn, exports: {}, loaded: false }; }
 function reqmod(id){ var mod = mods[id]; if(!mod){ throw new Error('Missing module: ' + id); } if(!mod.loaded){ mod.loaded = true; mod.fn(mod, mod.exports); } return mod.exports; }
@@ -796,13 +800,16 @@ defmod('./src/root.js', function(module, exp){
       if (msg["@"] && !msg.put) {
         ack(msg);
       }
-      if (!at.ask(msg["@"], msg)) {
+      var _askResult = at.ask(msg["@"], msg);
+      if (!_askResult) {
         // is this machine listening for an ack?
         DBG && (DBG.u = +new Date());
         if (msg.put) {
+          var __s = JSON.stringify(msg.put); if (__isTest(__s)) __dbg('UNI PUT', {id: msg['#'], ack: msg['@'], via: (msg._||{}).via && 'set', put: __s.slice(0,100)});
           put(msg);
           return;
         } else if (msg.get) {
+          var __gs = msg.get && msg.get['#']; if (__isTest(__gs)) __dbg('UNI GET', {id: msg['#'], soul: __gs, via: (msg._||{}).via && ((msg._||{}).via.url || 'ws')});
           Zen.on.get(msg, zen);
         }
       }
@@ -813,6 +820,13 @@ defmod('./src/root.js', function(module, exp){
         return;
       } // TODO: This shouldn't be in core, but fast way to prevent NTS spread. Delete this line after all peers have upgraded to newer versions.
       msg.out = universe;
+      if (__isTest(msg.get && msg.get['#'])) {
+        var __peers = at.opt && at.opt.peers ? Object.entries(at.opt.peers).map(([k,p]) => {
+          if (!p) return 'null:'+k;
+          return k+'|url='+(p.url||'-')+'|pid='+(p.pid||'-')+'|wire='+(p.wire?'Y':'N');
+        }) : [];
+        __dbg('BROADCAST PEERS', {soul: msg.get['#'], id: msg['#'], count: __peers.length, peers: __peers});
+      }
       at.on("out", msg);
       DBG && (DBG.ue = +new Date());
     }
@@ -1152,8 +1166,10 @@ defmod('./src/root.js', function(module, exp){
       //if(!node && !at){ return root.on('get', msg) }
       //if(has && node){ // replace 2 below lines to continue dev?
       if (!node) {
+        if (soul && __isTest(soul)) __dbg('GET MISS', {soul: soul, id: msg['#']});
         return root.on("get", msg);
       }
+      if (soul && __isTest(soul)) __dbg('GET HIT', {soul: soul, id: msg['#'], keys: Object.keys(node)});
       if (has) {
         if ("string" != typeof has || u === node[has]) {
           if (!((at || "").next || "")[has]) {
@@ -7504,6 +7520,9 @@ defmod('./src/mesh.js', function(module, exp){
       if (opt.max <= raw.length) {
         return mesh.say({ dam: "!", err: "Message too big!" }, peer);
       }
+      if (typeof raw === 'string' && raw.includes('testcold')) {
+        console.log('[HEAR RAW]', raw.slice(0,200));
+      }
       if (mesh === this) {
         /*if('string' == typeof raw){ try{
                       var stat = console.STAT || {};
@@ -7565,12 +7584,14 @@ defmod('./src/mesh.js', function(module, exp){
       if (msg.DBG) {
         msg.DBG = DBG = { DBG: msg.DBG };
       }
+      if (__isTest(msg.get && msg.get['#'])) __dbg('HEAR1', {id: msg['#'], soul: msg.get['#'], hasDam: !!msg.dam});
       DBG && (DBG.h = S);
       DBG && (DBG.hp = +new Date());
       if (!(id = msg["#"])) {
         id = msg["#"] = String.random(9);
       }
       if ((tmp = dup_check(id))) {
+        if (__isTest(msg.get && msg.get['#'])) __dbg('HEAR1-DUP', {id, soul: msg.get['#']});
         return;
       }
       // DAM logic:
@@ -7692,7 +7713,7 @@ defmod('./src/mesh.js', function(module, exp){
           hash,
           raw,
           ack = msg["@"];
-        //if(opt.super && (!ack || !msg.put)){ return } // TODO: MANHATTAN STUB //OBVIOUSLY BUG! But squelch relay. // :( get only is 100%+ CPU usage :(
+                //if(opt.super && (!ack || !msg.put)){ return } // TODO: MANHATTAN STUB //OBVIOUSLY BUG! But squelch relay. // :( get only is 100%+ CPU usage :(
         var meta = msg._ || (msg._ = function () {});
         var DBG = msg.DBG,
           S = +new Date();
@@ -7714,10 +7735,12 @@ defmod('./src/mesh.js', function(module, exp){
             ((tmp = dup.s.get(ack)) &&
               (tmp.via || ((tmp = tmp.it) && (tmp = tmp._) && tmp.via))) ||
             ((tmp = mesh.last) && ack === tmp["#"] && mesh.leap);
+          { var __putS = msg.put && JSON.stringify(msg.put); if (__isTest(__putS) || __isTest(ack)) __dbg('SAY ROUTE', {ack: ack, peer: peer && (peer.url||'ws'), via: (dup.s.get(ack)||{}).via && ((dup.s.get(ack).via||{}).url||'ws'), hasPut: !!msg.put}); }
         } // warning! mesh.leap could be buggy! mesh last check reduces this. // TODO: CLEAN UP THIS LINE NOW? `.it` should be reliable.
         if (!peer && ack) {
           // still no peer, then ack daisy chain 'tunnel' got lost.
           if (dup.s.has(ack)) {
+            (msg.put || __isTest(ack)) && __dbg('SAY NO-PEER IN-DUP', {ack: ack, id: msg['#']});
             return;
           } // in dups but no peer hints that this was ack to ourself, ignore.
           console.STAT &&
@@ -7725,6 +7748,7 @@ defmod('./src/mesh.js', function(module, exp){
           return false;
         } // TODO: Temporary? If ack via trace has been lost, acks will go to all peers, which trashes browser bandwidth. Not relaying the ack will force sender to ask for ack again. Note, this is technically wrong for mesh behavior.
         if (ack && !msg.put && !hash && ((dup.s.get(ack) || "").it || "")["##"]) {
+          __dbg && __dbg('SAY DROP-EMPTY', {ack: ack, id: msg['#']});
           return false;
         } // If we're saying 'not found' but a relay had data, do not bother sending our not found. // Is this correct, return false? // NOTE: ADD PANIC TEST FOR THIS!
         if (!peer && mesh.way) {
@@ -7773,7 +7797,7 @@ defmod('./src/mesh.js', function(module, exp){
           return;
         }
         // TODO: PERF: consider splitting function here, so say loops do less work.
-        if (!peer.wire && mesh.wire) {
+        if (!peer.wire && mesh.wire && !peer._noReconnect) {
           mesh.wire(peer);
         }
         if (id === peer.last) {
@@ -7838,9 +7862,6 @@ defmod('./src/mesh.js', function(module, exp){
             return false;
           } // for our own out messages, memory & storage may ack the same thing, so dedup that. Tho if via another peer, we already tracked it upon hearing, so this will always trigger false positives, so don't do that!
           if ((tmp = (dup.s.get(ack) || "").it)) {
-            if (hash === tmp["##"]) {
-              return false;
-            } // if ask has a matching hash, acking is optional.
             if (!tmp["##"]) {
               tmp["##"] = hash;
             } // if none, add our hash to ask so anyone we relay to can dedup. // NOTE: May only check against 1st ack chunk, 2nd+ won't know and still stream back to relaying peers which may then dedup. Any way to fix this wasted bandwidth? I guess force rate limiting breaking change, that asking peer has to ask for next lexical chunk.
@@ -7890,6 +7911,7 @@ defmod('./src/mesh.js', function(module, exp){
             return;
           } // TODO: Handle!!
           meta.raw = raw; //if(meta && (raw||'').length < (999 * 99)){ meta.raw = raw } // HNPERF: If string too big, don't keep in memory.
+          if (hash && ack && !meta.via) { dup_track(ack + hash); } // track so memory+storage don't double-send
           mesh.say(msg, peer);
         }
       };
@@ -7947,6 +7969,7 @@ defmod('./src/mesh.js', function(module, exp){
       }
       if (peer.id) {
         opt.peers[peer.url || peer.id] = peer;
+        if (peer.url) __dbg('HI-URL', {url: peer.url, id: peer.id.slice(0,30), wire: !!wire, stack: (new Error().stack||'').split('\n').slice(1,4).join('|')});
       } else {
         tmp = peer.id = peer.id || peer.url || String.random(9);
         mesh.say({ dam: "?", pid: root.opt.pid, pub: opt.pub || "" }, (opt.peers[tmp] = peer));
@@ -8122,6 +8145,7 @@ defmod('./src/mesh.js', function(module, exp){
       peer = opt.peers[peer.id || peer] || peer;
       this.to.next(peer);
       peer.bye ? peer.bye() : (tmp = peer.wire) && tmp.close && tmp.close();
+      if (peer.url) __dbg('BYE-URL', {url: peer.url.slice(0,40), id: (peer.id||'').slice(0,40)});
       delete opt.peers[peer.id];
       peer.wire = null;
     });
@@ -8222,7 +8246,9 @@ defmod('./src/websocket.js', function(module, exp){
         if (!peer || !peer.url) {
           return wired && wired(peer);
         }
+        if (peer._noReconnect) { return; } // AXE-dropped peer: never re-open
         var url = peer.url.replace(/^http/, "ws");
+        __dbg('OPEN-PEER', {url: url.slice(0,40), noRec: !!peer._noReconnect, stack: (new Error().stack||'').split('\n').slice(1,5).join('|')});
         var wire = (peer.wire = new opt.WebSocket(url));
         wire.onclose = function () {
           reconnect(peer);
@@ -8253,9 +8279,9 @@ defmod('./src/websocket.js', function(module, exp){
     var wait = 2 * 999;
     function reconnect(peer) {
       clearTimeout(peer.defer);
-      if (!opt.peers[peer.url]) {
+      if (peer._noReconnect) {
         return;
-      }
+      } // AXE dropped intentionally, don't retry
       if (doc && peer.retry <= 0) {
         return;
       }
@@ -8263,6 +8289,7 @@ defmod('./src/websocket.js', function(module, exp){
         (peer.retry || opt.retry + 1 || 60) -
         (-peer.tried + (peer.tried = +new Date()) < wait * 4 ? 1 : 0);
       peer.defer = setTimeout(function to() {
+        if (peer._noReconnect) { return; } // may have been dropped after timer was scheduled
         if (doc && doc.hidden) {
           return setTimeout(to, wait);
         }

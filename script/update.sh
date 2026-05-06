@@ -116,11 +116,9 @@ NEW_COMMIT=$(git -C "$INSTALL_DIR" rev-parse HEAD)
 
 if [[ "$PREV_COMMIT" == "$NEW_COMMIT" ]]; then
     log_info "Already up to date ($(git -C "$INSTALL_DIR" log -1 --format='%h %s'))"
-    log_info "Restarting service to apply current code/config..."
-    restart_service
+    log_info "  No code changes; skipping restart."
     trap - ERR
-    log_info "ZEN update completed!"
-    log_info "  No code changes; service was restarted anyway."
+    log_info "ZEN update check completed!"
     log_info "  Logs: journalctl -u $SERVICE_NAME -f"
     exit 0
 fi
