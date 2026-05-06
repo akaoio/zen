@@ -7968,6 +7968,13 @@ defmod('./src/mesh.js', function(module, exp){
         return;
       }
       if (peer.id) {
+        // Guard: if this URL is tombstoned by AXE, reject any new wire that slipped through.
+        var tombstone = opt.peers[peer.url || peer.id];
+        if (tombstone && tombstone._noReconnect) {
+          peer._noReconnect = true;
+          if (peer.wire) { try { peer.wire.close(); } catch(e){} peer.wire = null; }
+          return;
+        }
         opt.peers[peer.url || peer.id] = peer;
         if (peer.url) __dbg('HI-URL', {url: peer.url, id: peer.id.slice(0,30), wire: !!wire, stack: (new Error().stack||'').split('\n').slice(1,4).join('|')});
       } else {
@@ -8142,12 +8149,21 @@ defmod('./src/mesh.js', function(module, exp){
     });
 
     root.on("bye", function (peer, tmp) {
+      // Preserve _noReconnect from the passed peer BEFORE lookup overwrite.
+      // AXE sets drop._noReconnect=true then calls mesh.bye(drop). If mesh.hi has since
+      // replaced opt.peers[drop.url] with a fresh peer, the lookup returns that fresh peer
+      // (whose _noReconnect=false), causing the tombstone to be deleted. Use passedNoRec
+      // to carry AXE's intent regardless of what the lookup returns.
+      var passedNoRec = peer._noReconnect;
       peer = opt.peers[peer.id || peer] || peer;
+      var effectiveNoRec = passedNoRec || peer._noReconnect;
       this.to.next(peer);
       peer.bye ? peer.bye() : (tmp = peer.wire) && tmp.close && tmp.close();
-      if (peer.url) __dbg('BYE-URL', {url: peer.url.slice(0,40), id: (peer.id||'').slice(0,40)});
-      // Keep AXE-dropped peers as tombstones so PEX cannot recreate them without _noReconnect.
-      if (!peer._noReconnect) {
+      if (peer.url) __dbg('BYE-URL', {url: peer.url.slice(0,40), id: (peer.id||'').slice(0,40), noRec: effectiveNoRec});
+      if (effectiveNoRec) {
+        // Keep tombstone AND stamp _noReconnect on whatever stored peer we found.
+        peer._noReconnect = true;
+      } else {
         delete opt.peers[peer.id];
       }
       peer.wire = null;
