@@ -7970,7 +7970,8 @@ defmod('./src/mesh.js', function(module, exp){
       if (peer.id) {
         // Guard: if this URL is tombstoned by AXE, reject any new wire that slipped through.
         var tombstone = opt.peers[peer.url || peer.id];
-        if (tombstone && tombstone._noReconnect) {
+        if ((tombstone && tombstone._noReconnect) ||
+            (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id)))) {
           peer._noReconnect = true;
           if (peer.wire) { try { peer.wire.close(); } catch(e){} peer.wire = null; }
           return;
@@ -8163,6 +8164,16 @@ defmod('./src/mesh.js', function(module, exp){
       if (effectiveNoRec) {
         // Keep tombstone AND stamp _noReconnect on whatever stored peer we found.
         peer._noReconnect = true;
+        // Also record in the URL-keyed tombstone set so mesh.say / open() won't
+        // reconnect even if the peer object is later replaced in opt.peers.
+        if (opt.super && peer.url) {
+          opt._tombUrls = opt._tombUrls || new Set();
+          var _tu = peer.url;
+          opt._tombUrls.add(_tu);
+          // Add both https:// and wss:// variants so either form matches.
+          opt._tombUrls.add(_tu.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://'));
+          opt._tombUrls.add(_tu.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://'));
+        }
       } else {
         delete opt.peers[peer.id];
       }
@@ -8269,6 +8280,8 @@ defmod('./src/websocket.js', function(module, exp){
         // Also check if this URL has been tombstoned (peer deleted but URL marked _noReconnect)
         var existingTombstone = opt.peers[peer.url || peer.id];
         if (existingTombstone && existingTombstone._noReconnect) { return; }
+        // Check URL-keyed tombstone set (survives opt.peers deletion).
+        if (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id))) { return; }
         var url = peer.url.replace(/^http/, "ws");
         __dbg('OPEN-PEER', {url: url.slice(0,40), noRec: !!peer._noReconnect, stack: (new Error().stack||'').split('\n').slice(1,5).join('|')});
         var wire = (peer.wire = new opt.WebSocket(url));
