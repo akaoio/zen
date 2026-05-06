@@ -1,7 +1,7 @@
 import { appendFileSync as __afs } from 'fs';
 var __DBG = '/tmp/relay-xdbg.log';
 function __dbg(tag, obj) { try { __afs(__DBG, '['+tag+'] '+JSON.stringify(obj)+'\n'); } catch(e){} }
-function __isTest(s) { return s && (s.indexOf('xprop') >= 0 || s.indexOf('xtest') >= 0); }
+function __isTest(s) { return typeof s === 'string' && (s.indexOf('xprop') >= 0 || s.indexOf('xtest') >= 0); }
 const mods = Object.create(null);
 function defmod(id, fn){ mods[id] = { fn: fn, exports: {}, loaded: false }; }
 function reqmod(id){ var mod = mods[id]; if(!mod){ throw new Error('Missing module: ' + id); } if(!mod.loaded){ mod.loaded = true; mod.fn(mod, mod.exports); } return mod.exports; }
