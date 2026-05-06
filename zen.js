@@ -7968,10 +7968,11 @@ defmod('./src/mesh.js', function(module, exp){
         return;
       }
       if (peer.id) {
-        // Guard: if this URL is tombstoned by AXE, reject any new wire that slipped through.
-        var tombstone = opt.peers[peer.url || peer.id];
-        if ((tombstone && tombstone._noReconnect) ||
-            (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id)))) {
+        // Guard: if this URL is tombstoned by AXE, reject any new outbound wire that slipped through.
+        // Only check for outbound peers (_isOutbound=true) — inbound connections from remote peers
+        // must always be accepted regardless of tombstone (tombstone prevents US from reconnecting).
+        if (peer._isOutbound && ((opt.peers[peer.url || peer.id] || {})._noReconnect ||
+            (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id))))) {
           peer._noReconnect = true;
           if (peer.wire) { try { peer.wire.close(); } catch(e){} peer.wire = null; }
           return;
@@ -8282,6 +8283,7 @@ defmod('./src/websocket.js', function(module, exp){
         if (existingTombstone && existingTombstone._noReconnect) { return; }
         // Check URL-keyed tombstone set (survives opt.peers deletion).
         if (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id))) { return; }
+        peer._isOutbound = true; // mark so mesh.hi tombstone check only applies to outbound peers
         var url = peer.url.replace(/^http/, "ws");
         __dbg('OPEN-PEER', {url: url.slice(0,40), noRec: !!peer._noReconnect, stack: (new Error().stack||'').split('\n').slice(1,5).join('|')});
         var wire = (peer.wire = new opt.WebSocket(url));
