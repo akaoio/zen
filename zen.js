@@ -8307,6 +8307,17 @@ defmod('./src/websocket.js', function(module, exp){
       if (doc && peer.retry <= 0) {
         return;
       }
+      // Relay mode: outbound peer closed with no pid = remote AXE dropped it before handshake.
+      // Use exponential backoff and stop after several fast-fail attempts (prevents AXE cycling
+      // where the remote side (lower PID) keeps closing our outbound before "?" completes).
+      var delay = wait;
+      if (opt.super && peer.url && !peer.pid) {
+        peer._axeGuess = (peer._axeGuess || 0) + 1;
+        if (peer._axeGuess >= 5) { peer._noReconnect = true; return; }
+        delay = wait * Math.pow(4, peer._axeGuess); // 8s, 32s, 128s, 512s backoff
+      } else {
+        peer._axeGuess = 0; // pid received = real handshake, reset counter
+      }
       peer.retry =
         (peer.retry || opt.retry + 1 || 60) -
         (-peer.tried + (peer.tried = +new Date()) < wait * 4 ? 1 : 0);
@@ -8316,7 +8327,7 @@ defmod('./src/websocket.js', function(module, exp){
           return setTimeout(to, wait);
         }
         open(peer);
-      }, wait);
+      }, delay);
     }
     var doc = "" + u !== typeof document && document;
   });
