@@ -8146,7 +8146,10 @@ defmod('./src/mesh.js', function(module, exp){
       this.to.next(peer);
       peer.bye ? peer.bye() : (tmp = peer.wire) && tmp.close && tmp.close();
       if (peer.url) __dbg('BYE-URL', {url: peer.url.slice(0,40), id: (peer.id||'').slice(0,40)});
-      delete opt.peers[peer.id];
+      // Keep AXE-dropped peers as tombstones so PEX cannot recreate them without _noReconnect.
+      if (!peer._noReconnect) {
+        delete opt.peers[peer.id];
+      }
       peer.wire = null;
     });
 
@@ -8247,6 +8250,9 @@ defmod('./src/websocket.js', function(module, exp){
           return wired && wired(peer);
         }
         if (peer._noReconnect) { return; } // AXE-dropped peer: never re-open
+        // Also check if this URL has been tombstoned (peer deleted but URL marked _noReconnect)
+        var existingTombstone = opt.peers[peer.url || peer.id];
+        if (existingTombstone && existingTombstone._noReconnect) { return; }
         var url = peer.url.replace(/^http/, "ws");
         __dbg('OPEN-PEER', {url: url.slice(0,40), noRec: !!peer._noReconnect, stack: (new Error().stack||'').split('\n').slice(1,5).join('|')});
         var wire = (peer.wire = new opt.WebSocket(url));

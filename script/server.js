@@ -134,6 +134,15 @@ if (main && cluster.isPrimary) {
     if (!domain) {
       try { domain = fs.readFileSync(DOMF, "utf8").trim() || null; } catch {}
     }
+    // Filter own URLs from bootstrap peers to prevent self-connection loops.
+    if (domain) {
+      const selfUrls = new Set();
+      for (const scheme of ["https", "http", "wss", "ws"]) {
+        selfUrls.add(`${scheme}://${domain}:${port}/zen`);
+        selfUrls.add(`${scheme}://${domain}/zen`);
+      }
+      peers = peers.filter(p => !selfUrls.has(p));
+    }
   } catch (err) {
     console.error("Configuration Error:", err.message);
     process.exit(1);
@@ -142,6 +151,7 @@ if (main && cluster.isPrimary) {
   const opt = {
     port,
     peers,
+    domain,  // used by axe.js stay-restore to filter self-connections
   };
 
   const cfgd = xdg.config();
@@ -342,7 +352,14 @@ if (main && cluster.isPrimary) {
   }
 
   function adp(url) {
-    if (kprs.has(url)) return;
+    // Normalize protocol to prevent duplicate connections to the same host:
+    // bootstrap uses https://, PEX gossip sends wss:// — they map to the same endpoint.
+    var altUrl = url.startsWith('wss://') ? url.replace('wss://', 'https://')
+               : url.startsWith('ws://')  ? url.replace('ws://', 'http://')
+               : url.startsWith('https://') ? url.replace('https://', 'wss://')
+               : url.startsWith('http://')  ? url.replace('http://', 'ws://')
+               : null;
+    if (kprs.has(url) || (altUrl && kprs.has(altUrl))) return;
     kprsTouch(url);
     fic = true;
     scheduleRefreshStatus(); // debounced — safe even if 1000 nodes join rapidly
@@ -350,12 +367,14 @@ if (main && cluster.isPrimary) {
     const r = zen && zen._graph && zen._graph._;
     // Connect only if under upstream limit (prevents full mesh / bandwidth waste)
     const ups = r && r.axe ? Object.keys(r.axe.up || {}).length : 0;
+    // Normalize wss:// → https:// so DNS-discovered peers share the same key as BOOT peers
+    const normUrl = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
     if (pmsh && ups < MUPS) {
-      try { pmsh.hi({ id: url, url, retry: 9 }); } catch {}
+      try { pmsh.hi({ id: normUrl, url: normUrl, retry: 9 }); } catch {}
     } else if (!pmsh && r && r.opt) {
       // mesh not yet attached — queue in peer list for AXE to connect later
       if (!Array.isArray(r.opt.peers)) r.opt.peers = [];
-      if (!r.opt.peers.includes(url)) r.opt.peers.push(url);
+      if (!r.opt.peers.includes(normUrl)) r.opt.peers.push(normUrl);
     }
     // Broadcast immediately to all currently connected peers
     if (pmsh) {
