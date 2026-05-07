@@ -9,7 +9,10 @@ var root = path.resolve(__dirname, "../..");
 
 var files = {
   "/": path.join(__dirname, "fixtures", "index.html"),
+  "/relay-sync.html": path.join(__dirname, "fixtures", "relay-sync.html"),
   "/zen.js": path.join(root, "zen.js"),
+  "/crypto.wasm": path.join(root, "crypto.wasm"),
+  "/pen.wasm": path.join(root, "pen.wasm"),
   "/lib/opfs.js": path.join(root, "lib", "opfs.js"),
   "/lib/radix.js": path.join(root, "lib", "radix.js"),
   "/lib/radisk.js": path.join(root, "lib", "radisk.js"),
@@ -31,7 +34,7 @@ function type(file) {
 }
 
 var server = http.createServer(function (req, res) {
-  var file = files[req.url];
+  var file = files[req.url.split("?")[0]];
   if (!file) {
     res.writeHead(404);
     res.end("Not found");

@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ZEN Relay Sync Test</title>
+  </head>
+  <body>
+    <div id="ready">loading</div>
+    <div id="relay"></div>
+
+    <script type="module">
+      import ZEN from '/zen.js';
+      import '/lib/yson.js';
+
+      var params = new URLSearchParams(location.search);
+      var relayUrl = params.get('relay') || 'wss://zen.akao.io:8420/zen';
+
+      document.getElementById('relay').textContent = relayUrl;
+
+      var zen = new ZEN({ peers: [relayUrl], localStorage: false });
+
+      window.relayTests = {
+        relay: relayUrl,
+
+        put: function(soul, key, value) {
+          return new Promise(function(res, rej) {
+            var done = false;
+            var to = setTimeout(function() {
+              done = true; rej(new Error('PUT timeout'));
+            }, 10000);
+            zen.get(soul).get(key).put(value, function(ack) {
+              if (done) return;
+              done = true;
+              clearTimeout(to);
+              if (ack && ack.err) rej(new Error(String(ack.err)));
+              else res(ack);
+            });
+          });
+        },
+
+        // Subscribe and wait for a value (realtime)
+        waitFor: function(soul, key, timeout) {
+          timeout = timeout || 12000;
+          return new Promise(function(res, rej) {
+            var done = false;
+            var to = setTimeout(function() {
+              done = true; rej(new Error('waitFor timeout: ' + soul + '.' + key));
+            }, timeout);
+            zen.get(soul).get(key).on(function(val) {
+              if (done || val === undefined || val === null) return;
+              done = true;
+              clearTimeout(to);
+              res(val);
+            });
+          });
+        },
+
+        // One-shot get (for post-propagation checks)
+        get: function(soul, key, timeout) {
+          timeout = timeout || 8000;
+          return new Promise(function(res) {
+            var done = false;
+            var to = setTimeout(function() { done = true; res(null); }, timeout);
+            zen.get(soul).get(key).once(function(val) {
+              if (done) return;
+              done = true;
+              clearTimeout(to);
+              res(val === undefined ? null : val);
+            });
+          });
+        },
+      };
+
+      document.getElementById('ready').textContent = 'ready';
+    </script>
+  </body>
+</html>
