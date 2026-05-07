@@ -16,9 +16,14 @@
     },
     "zen": {
       "type": "stdio",
-      "command": "node",
-      "args": ["./lib/mcp.js"],
-      "env": {},
+      "command": "./script/mcp.sh",
+      "env": { "ZEN_NET": "mainnet" },
+      "tools": ["*"]
+    },
+    "zen-testnet": {
+      "type": "stdio",
+      "command": "./script/mcp.sh",
+      "env": { "ZEN_NET": "testnet" },
       "tools": ["*"]
     }
   }
