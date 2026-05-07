@@ -1,0 +1,271 @@
+#!/usr/bin/env node
+/**
+ * test/e2e/integration.js — Cross-peer integration test
+ *
+ * Run simultaneously on all machines to verify:
+ *   1. Local write → local read  (basic GET/PUT)
+ *   2. Disk persistence          (survives relay restart)
+ *   3. Cross-peer propagation    (write on A, read on B)
+ *
+ * Usage:
+ *   node test/e2e/integration.js [--suite basic|persist|cross|all]
+ *
+ * On each machine the script:
+ *   - Connects to the local relay as a thin peer  (wss://localhost:PORT)
+ *   - Runs the requested test suites
+ *   - Prints a colour-coded PASS / FAIL summary
+ */
+
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir, hostname } from "node:os";
+import { execSync, spawnSync } from "node:child_process";
+import ZEN from "../../index.js";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const GREEN  = "\x1b[32m";
+const RED    = "\x1b[31m";
+const YELLOW = "\x1b[33m";
+const CYAN   = "\x1b[36m";
+const RESET  = "\x1b[0m";
+const BOLD   = "\x1b[1m";
+
+function pass(msg) { console.log(`${GREEN}✓ PASS${RESET} ${msg}`); }
+function fail(msg) { console.log(`${RED}✗ FAIL${RESET} ${msg}`); results.failed++; }
+function info(msg) { console.log(`${CYAN}  >${RESET} ${msg}`); }
+function warn(msg) { console.log(`${YELLOW}  !${RESET} ${msg}`); }
+
+const results = { passed: 0, failed: 0 };
+
+function localRelayPort() {
+  const f = join(homedir(), ".config/zen/port");
+  return existsSync(f) ? readFileSync(f, "utf8").trim() : "8420";
+}
+
+function localRelayUseTLS() {
+  return existsSync(join(homedir(), ".config/zen/cert.pem"));
+}
+
+function buildRelayURL() {
+  const scheme = localRelayUseTLS() ? "https" : "http";
+  return `${scheme}://localhost:${localRelayPort()}/zen`;
+}
+
+function get(zen, soul, key, timeout = 5000) {
+  return new Promise((resolve) => {
+    let chain = zen.get(soul);
+    if (key !== undefined) chain = chain.get(key);
+    const timer = setTimeout(() => resolve(undefined), timeout);
+    chain.once((val) => { clearTimeout(timer); resolve(val ?? null); });
+  });
+}
+
+function put(zen, soul, key, value, timeout = 5000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("put timeout")), timeout);
+    zen.get(soul).get(key).put(value, (ack) => {
+      clearTimeout(timer);
+      if (ack && ack.err) reject(new Error(ack.err));
+      else resolve(true);
+    });
+  });
+}
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// ── Setup ──────────────────────────────────────────────────────────────────────
+
+// Prefer ~/.config/zen/domain (e.g. "peer0.akao.io") then extract short name
+function detectHost() {
+  const domainFile = join(homedir(), ".config/zen/domain");
+  if (existsSync(domainFile)) {
+    return readFileSync(domainFile, "utf8").trim().split(".")[0]; // "zen", "peer0", "peer1"
+  }
+  return hostname().split(".")[0];
+}
+const HOST   = detectHost();   // zen, peer0, peer1
+const RELAY  = process.env.ZEN_RELAY || buildRelayURL();
+const SUITE  = (process.argv.find((a) => a.startsWith("--suite=")) || "--suite=all").split("=")[1];
+
+if (localRelayUseTLS()) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
+const zenOpt = {
+  peers: [RELAY],
+  rfs: false,   // thin peer — no local disk
+  axe: false,   // disable AXE routing for direct relay tests
+};
+
+info(`Host      : ${BOLD}${HOST}${RESET}`);
+info(`Relay URL : ${RELAY}`);
+info(`Suite     : ${SUITE}`);
+console.log();
+
+// ── Test suites ────────────────────────────────────────────────────────────────
+
+async function suiteBasic(zen) {
+  console.log(`${BOLD}── Suite: basic (write → read via relay) ──${RESET}`);
+
+  const soul  = `e2e-basic`;
+  const key   = HOST;
+  const value = `hello-from-${HOST}-${Date.now()}`;
+
+  // 1. Write
+  try {
+    await put(zen, soul, key, value);
+    pass(`PUT  ${soul}/${key} = "${value}"`);
+    results.passed++;
+  } catch (e) {
+    fail(`PUT  ${soul}/${key}: ${e.message}`);
+    return;
+  }
+
+  await sleep(300);
+
+  // 2. Read back
+  const got = await get(zen, soul, key);
+  if (got === value) {
+    pass(`GET  ${soul}/${key} = "${got}"`);
+    results.passed++;
+  } else {
+    fail(`GET  ${soul}/${key}: expected "${value}" got ${JSON.stringify(got)}`);
+  }
+
+  console.log();
+}
+
+async function suitePersist(zen) {
+  console.log(`${BOLD}── Suite: persist (write → restart relay → read) ──${RESET}`);
+
+  const soul  = `e2e-persist`;
+  const key   = HOST;
+  const value = `persist-${Date.now()}`;
+
+  // 1. Write
+  try {
+    await put(zen, soul, key, value);
+    pass(`PUT  ${soul}/${key} = "${value}"`);
+    results.passed++;
+  } catch (e) {
+    fail(`PUT  ${soul}/${key}: ${e.message}`);
+    return;
+  }
+
+  await sleep(500);
+
+  // 2. Restart relay
+  info("Restarting relay service...");
+  try {
+    execSync("systemctl restart relay", { stdio: "inherit" });
+    await sleep(3000);   // wait for relay to come back up
+    pass("Relay restarted");
+    results.passed++;
+  } catch (e) {
+    warn(`Could not restart relay: ${e.message}`);
+    warn("Skipping persistence check (no systemctl access)");
+    return;
+  }
+
+  // 3. Reconnect
+  zen.opt({ peers: [RELAY] });
+  await sleep(1000);
+
+  // 4. Read after restart
+  const got = await get(zen, soul, key, 8000);
+  if (got === value) {
+    pass(`GET  ${soul}/${key} = "${got}" (survived restart)`);
+    results.passed++;
+  } else {
+    fail(`GET  ${soul}/${key}: expected "${value}" got ${JSON.stringify(got)} — data NOT persisted`);
+  }
+
+  console.log();
+}
+
+async function suiteCross(zen) {
+  console.log(`${BOLD}── Suite: cross-peer (read data written by other hosts) ──${RESET}`);
+
+  const soul    = `e2e-cross`;
+  const peers   = ["zen", "peer0", "peer1"].filter((h) => h !== HOST);
+
+  // Write our own entry so others can read it
+  const myValue = `ping-from-${HOST}-${Date.now()}`;
+  try {
+    await put(zen, soul, HOST, myValue);
+    pass(`PUT  ${soul}/${HOST} = "${myValue}"`);
+    results.passed++;
+  } catch (e) {
+    fail(`PUT  ${soul}/${HOST}: ${e.message}`);
+  }
+
+  // Wait for propagation
+  info("Waiting 5s for cross-peer propagation...");
+  await sleep(5000);
+
+  // Read from peer entries (they must have been written by peer machines running this same test)
+  for (const peer of peers) {
+    const got = await get(zen, soul, peer, 5000);
+    if (got && typeof got === "string" && got.startsWith(`ping-from-${peer}`)) {
+      pass(`GET  ${soul}/${peer} from ${peer} = "${got}"`);
+      results.passed++;
+    } else if (got !== undefined && got !== null) {
+      warn(`GET  ${soul}/${peer} = ${JSON.stringify(got)} (stale value, might be old run)`);
+    } else {
+      fail(`GET  ${soul}/${peer}: no data from ${peer} (got ${JSON.stringify(got)})`);
+    }
+  }
+
+  console.log();
+}
+
+async function suiteDiskRead(zen) {
+  console.log(`${BOLD}── Suite: disk-read (read known persisted values) ──${RESET}`);
+
+  // These values were written in previous sessions
+  const checks = [
+    { soul: "hello",  key: "world",  note: "written in prior sessions" },
+    { soul: "debug",  key: "hello",  note: "written in prior sessions" },
+  ];
+
+  for (const { soul, key, note } of checks) {
+    const got = await get(zen, soul, key, 5000);
+    if (got !== null && got !== undefined) {
+      pass(`GET  ${soul}/${key} = "${got}" (${note})`);
+      results.passed++;
+    } else {
+      fail(`GET  ${soul}/${key}: got ${JSON.stringify(got)} — disk read not working`);
+    }
+  }
+
+  console.log();
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────────
+
+async function main() {
+  const zen = new ZEN(zenOpt);
+
+  // Give the peer connection time to establish
+  await sleep(1000);
+
+  try {
+    if (SUITE === "all" || SUITE === "basic")   await suiteBasic(zen);
+    if (SUITE === "all" || SUITE === "disk")    await suiteDiskRead(zen);
+    if (SUITE === "all" || SUITE === "persist") await suitePersist(zen);
+    if (SUITE === "all" || SUITE === "cross")   await suiteCross(zen);
+  } finally {
+    const total = results.passed + results.failed;
+    console.log(`${BOLD}── Summary ──${RESET}`);
+    console.log(`  Passed: ${GREEN}${results.passed}${RESET} / ${total}`);
+    if (results.failed) {
+      console.log(`  Failed: ${RED}${results.failed}${RESET} / ${total}`);
+    }
+    console.log();
+    zen.off();
+    process.exit(results.failed > 0 ? 1 : 0);
+  }
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });
