@@ -803,7 +803,6 @@ defmod('./src/root.js', function(module, exp){
           put(msg);
           return;
         } else if (msg.get) {
-          if ((msg.get["#"]||"").indexOf("testcold")!==-1 || (msg.get["#"]||"").indexOf("coldtest")!==-1) { console.log("[UNIVERSE GET]", msg.get["#"], msg.get["."]); }
           Zen.on.get(msg, zen);
         }
       }
