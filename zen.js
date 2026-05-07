@@ -7774,7 +7774,7 @@ defmod('./src/mesh.js', function(module, exp){
           return;
         }
         // TODO: PERF: consider splitting function here, so say loops do less work.
-        if (!peer.wire && mesh.wire) {
+        if (!peer.wire && mesh.wire && !peer._noReconnect) {
           mesh.wire(peer);
         }
         if (id === peer.last) {
@@ -7946,6 +7946,17 @@ defmod('./src/mesh.js', function(module, exp){
         mesh.wire((peer.length && { url: peer, id: peer }) || peer);
         return;
       }
+      // For outbound connections, reject if the URL has been tombstoned by AXE.
+      if (peer._isOutbound) {
+        var peerUrl = peer.url || peer.id;
+        var storedPeer = peerUrl && opt.peers[peerUrl];
+        if ((storedPeer && storedPeer._noReconnect) ||
+            (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id)))) {
+          peer._noReconnect = true;
+          if (wire) { try { wire.close(); } catch (e) {} peer.wire = null; }
+          return;
+        }
+      }
       if (peer.id) {
         opt.peers[peer.url || peer.id] = peer;
       } else {
@@ -7972,12 +7983,25 @@ defmod('./src/mesh.js', function(module, exp){
       //Type.obj.native && Type.obj.native(); // dirty place to check if other JS polluted.
     };
     mesh.bye = function (peer) {
+      var passedNoRec = peer._noReconnect;
+      peer = opt.peers[peer.id || peer] || peer;
+      var effectiveNoRec = passedNoRec || peer._noReconnect;
       peer.met && --mesh.near;
       delete peer.met;
       root.on("bye", peer);
       var tmp = +new Date();
       tmp = tmp - (peer.met || tmp);
       mesh.bye.time = ((mesh.bye.time || tmp) + tmp) / 2;
+      if (effectiveNoRec) {
+        // Keep peer as tombstone so PEX cannot re-add it; also record URL.
+        peer._noReconnect = true;
+        if (peer.url) {
+          opt._tombUrls = opt._tombUrls || new Set();
+          opt._tombUrls.add(peer.url);
+          opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
+          opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
+        }
+      }
     };
     mesh.hear["!"] = function (msg, peer) {
       opt.log("Error:", msg.err);
@@ -8223,9 +8247,41 @@ defmod('./src/websocket.js', function(module, exp){
         if (!peer || !peer.url) {
           return wired && wired(peer);
         }
+        // Do not open connections to tombstoned peers.
+        if (peer._noReconnect) { return; }
+        if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
+            opt._tombUrls.has(peer.url.replace(/^https?/, 'ws')))) { return; }
         var url = peer.url.replace(/^http/, "ws");
+        peer._isOutbound = true;
         var wire = (peer.wire = new opt.WebSocket(url));
         wire.onclose = function () {
+          // Exponential backoff for AXE-dropped outbound peers (closed before HI).
+          if (peer._isOutbound && !peer.met) {
+            peer._axeGuess = (peer._axeGuess || 0) + 1;
+            if (peer._axeGuess >= 5) {
+              peer._noReconnect = true;
+              if (peer.url) {
+                opt._tombUrls = opt._tombUrls || new Set();
+                opt._tombUrls.add(peer.url);
+                opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
+                opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
+              }
+            }
+          }
+          // Backoff for peers that accept then quickly close (AXE PID-sort drop).
+          if (peer._isOutbound && peer.met && peer._openAt &&
+              (+new Date() - peer._openAt) < 8000) {
+            peer._hiGuess = (peer._hiGuess || 0) + 1;
+            if (peer._hiGuess >= 3) {
+              peer._noReconnect = true;
+              if (peer.url) {
+                opt._tombUrls = opt._tombUrls || new Set();
+                opt._tombUrls.add(peer.url);
+                opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
+                opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
+              }
+            }
+          }
           reconnect(peer);
           opt.mesh.bye(peer);
         };
@@ -8233,6 +8289,7 @@ defmod('./src/websocket.js', function(module, exp){
           reconnect(peer);
         };
         wire.onopen = function () {
+          peer._openAt = +new Date();
           opt.mesh.hi(peer);
         };
         wire.onmessage = function (msg) {
@@ -8254,7 +8311,11 @@ defmod('./src/websocket.js', function(module, exp){
     var wait = 2 * 999;
     function reconnect(peer) {
       clearTimeout(peer.defer);
-      if (!opt.peers[peer.url]) {
+      if (!opt.peers[peer.url] || peer._noReconnect) {
+        return;
+      }
+      if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
+          opt._tombUrls.has((peer.url || '').replace(/^https?/, 'ws')))) {
         return;
       }
       if (doc && peer.retry <= 0) {

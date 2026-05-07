@@ -330,7 +330,7 @@ function Mesh(root) {
         return;
       }
       // TODO: PERF: consider splitting function here, so say loops do less work.
-      if (!peer.wire && mesh.wire) {
+      if (!peer.wire && mesh.wire && !peer._noReconnect) {
         mesh.wire(peer);
       }
       if (id === peer.last) {
@@ -395,12 +395,11 @@ function Mesh(root) {
           return false;
         } // for our own out messages, memory & storage may ack the same thing, so dedup that. Tho if via another peer, we already tracked it upon hearing, so this will always trigger false positives, so don't do that!
         if ((tmp = (dup.s.get(ack) || "").it)) {
-          if (hash === tmp["##"]) {
-            return false;
-          } // if ask has a matching hash, acking is optional.
           if (!tmp["##"]) {
             tmp["##"] = hash;
           } // if none, add our hash to ask so anyone we relay to can dedup. // NOTE: May only check against 1st ack chunk, 2nd+ won't know and still stream back to relaying peers which may then dedup. Any way to fix this wasted bandwidth? I guess force rate limiting breaking change, that asking peer has to ask for next lexical chunk.
+          // NOTE: removed "hash === tmp['##'] → return false" — this incorrectly dropped the WS client reply
+          // when multicast path ran first (via this.to.next) and set tmp['##'] before the unicast reply path ran.
         }
       }
       if (!msg.dam && !msg["@"]) {
@@ -447,6 +446,7 @@ function Mesh(root) {
           return;
         } // TODO: Handle!!
         meta.raw = raw; //if(meta && (raw||'').length < (999 * 99)){ meta.raw = raw } // HNPERF: If string too big, don't keep in memory.
+        if (hash && ack && !meta.via) { dup_track(ack + hash); } // track so memory+storage don't double-send
         mesh.say(msg, peer);
       }
     };
@@ -502,6 +502,17 @@ function Mesh(root) {
       mesh.wire((peer.length && { url: peer, id: peer }) || peer);
       return;
     }
+    // For outbound connections, reject if the URL has been tombstoned by AXE.
+    if (peer._isOutbound) {
+      var peerUrl = peer.url || peer.id;
+      var storedPeer = peerUrl && opt.peers[peerUrl];
+      if ((storedPeer && storedPeer._noReconnect) ||
+          (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id)))) {
+        peer._noReconnect = true;
+        if (wire) { try { wire.close(); } catch (e) {} peer.wire = null; }
+        return;
+      }
+    }
     if (peer.id) {
       opt.peers[peer.url || peer.id] = peer;
     } else {
@@ -528,12 +539,25 @@ function Mesh(root) {
     //Type.obj.native && Type.obj.native(); // dirty place to check if other JS polluted.
   };
   mesh.bye = function (peer) {
+    var passedNoRec = peer._noReconnect;
+    peer = opt.peers[peer.id || peer] || peer;
+    var effectiveNoRec = passedNoRec || peer._noReconnect;
     peer.met && --mesh.near;
     delete peer.met;
     root.on("bye", peer);
     var tmp = +new Date();
     tmp = tmp - (peer.met || tmp);
     mesh.bye.time = ((mesh.bye.time || tmp) + tmp) / 2;
+    if (effectiveNoRec) {
+      // Keep peer as tombstone so PEX cannot re-add it; also record URL.
+      peer._noReconnect = true;
+      if (peer.url) {
+        opt._tombUrls = opt._tombUrls || new Set();
+        opt._tombUrls.add(peer.url);
+        opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
+        opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
+      }
+    }
   };
   mesh.hear["!"] = function (msg, peer) {
     opt.log("Error:", msg.err);

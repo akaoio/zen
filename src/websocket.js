@@ -33,9 +33,41 @@ Zen.on("opt", function (root) {
       if (!peer || !peer.url) {
         return wired && wired(peer);
       }
+      // Do not open connections to tombstoned peers.
+      if (peer._noReconnect) { return; }
+      if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
+          opt._tombUrls.has(peer.url.replace(/^https?/, 'ws')))) { return; }
       var url = peer.url.replace(/^http/, "ws");
+      peer._isOutbound = true;
       var wire = (peer.wire = new opt.WebSocket(url));
       wire.onclose = function () {
+        // Exponential backoff for AXE-dropped outbound peers (closed before HI).
+        if (peer._isOutbound && !peer.met) {
+          peer._axeGuess = (peer._axeGuess || 0) + 1;
+          if (peer._axeGuess >= 5) {
+            peer._noReconnect = true;
+            if (peer.url) {
+              opt._tombUrls = opt._tombUrls || new Set();
+              opt._tombUrls.add(peer.url);
+              opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
+              opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
+            }
+          }
+        }
+        // Backoff for peers that accept then quickly close (AXE PID-sort drop).
+        if (peer._isOutbound && peer.met && peer._openAt &&
+            (+new Date() - peer._openAt) < 8000) {
+          peer._hiGuess = (peer._hiGuess || 0) + 1;
+          if (peer._hiGuess >= 3) {
+            peer._noReconnect = true;
+            if (peer.url) {
+              opt._tombUrls = opt._tombUrls || new Set();
+              opt._tombUrls.add(peer.url);
+              opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
+              opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
+            }
+          }
+        }
         reconnect(peer);
         opt.mesh.bye(peer);
       };
@@ -43,6 +75,7 @@ Zen.on("opt", function (root) {
         reconnect(peer);
       };
       wire.onopen = function () {
+        peer._openAt = +new Date();
         opt.mesh.hi(peer);
       };
       wire.onmessage = function (msg) {
@@ -64,7 +97,11 @@ Zen.on("opt", function (root) {
   var wait = 2 * 999;
   function reconnect(peer) {
     clearTimeout(peer.defer);
-    if (!opt.peers[peer.url]) {
+    if (!opt.peers[peer.url] || peer._noReconnect) {
+      return;
+    }
+    if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
+        opt._tombUrls.has((peer.url || '').replace(/^https?/, 'ws')))) {
       return;
     }
     if (doc && peer.retry <= 0) {
