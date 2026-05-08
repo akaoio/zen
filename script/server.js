@@ -368,15 +368,19 @@ if (main && cluster.isPrimary) {
                : url.startsWith('http://')  ? url.replace('http://', 'ws://')
                : null;
     if (kprs.has(url) || (altUrl && kprs.has(altUrl))) return;
+    // Skip self-URLs (own hostname or IPv4/IPv6 address)
+    if (url === surl || url === surl6 || (altUrl && (altUrl === surl || altUrl === surl6))) return;
+    // Skip tombstoned peers (AXE-dropped; BOOT-WATCHDOG handles BOOT peers separately)
+    const r = zen && zen._graph && zen._graph._;
+    const tombs = r && r.opt && r.opt._tombUrls;
+    const normUrl = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+    if (tombs && (tombs.has(url) || tombs.has(normUrl) || (altUrl && tombs.has(altUrl)))) return;
     kprsTouch(url);
     fic = true;
     scheduleRefreshStatus(); // debounced — safe even if 1000 nodes join rapidly
     console.log("Discovered peer:", url);
-    const r = zen && zen._graph && zen._graph._;
     // Connect only if under upstream limit (prevents full mesh / bandwidth waste)
     const ups = r && r.axe ? Object.keys(r.axe.up || {}).length : 0;
-    // Normalize wss:// → https:// so DNS-discovered peers share the same key as BOOT peers
-    const normUrl = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
     if (pmsh && ups < MUPS) {
       try { pmsh.hi({ id: normUrl, url: normUrl, retry: 9 }); } catch {}
     } else if (!pmsh && r && r.opt) {
