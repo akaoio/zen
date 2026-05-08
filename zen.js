@@ -7987,6 +7987,13 @@ defmod('./src/mesh.js', function(module, exp){
       var effectiveNoRec = passedNoRec || peer._noReconnect;
       peer.met && --mesh.near;
       delete peer.met;
+      // Log which peer dropped (helps diagnose intermittent disconnect)
+      if (peer.url || peer.pub) {
+        console.log('[BYE] url=' + (peer.url||'inbound') + ' pub=' + (peer.pub||'?').slice(0,8) + ' noRec=' + !!effectiveNoRec);
+      }
+      // Clear the wire immediately so mesh.route() and direct-delivery checks skip
+      // this peer while it is disconnected — prevents routing messages to a closed socket.
+      peer.wire = null;
       root.on("bye", peer);
       var tmp = +new Date();
       tmp = tmp - (peer.met || tmp);
@@ -8117,9 +8124,14 @@ defmod('./src/mesh.js', function(module, exp){
         var p = peers[k];
         if (p && p.pub === msg.to && p.wire) { mesh.say(fwd, p); return; }
       }
-      // Route via XOR-closest peer, skipping the message sender.
-      var next = mesh.route(msg.to, peer);
-      if (next) { mesh.say(fwd, next); }
+      // Flood to all connected peers except the sender.
+      // Single-hop XOR routing is unreliable when routing tables are incomplete
+      // (e.g. inbound-only peers absent from DHT k-buckets). Flooding with TTL
+      // guarantees delivery and dedup (#) prevents true loops.
+      for (var fk in peers) {
+        var fp = peers[fk];
+        if (fp && fp.pub && fp.wire && fp !== peer) { mesh.say(fwd, fp); }
+      }
     };
 
     mesh.hear["mob"] = function (msg, peer) {
@@ -8254,6 +8266,9 @@ defmod('./src/websocket.js', function(module, exp){
         peer._isOutbound = true;
         var wire = (peer.wire = new opt.WebSocket(url));
         wire.onclose = function () {
+          // Stop keepalive ping for this wire.
+          clearInterval(peer._keepalive);
+          peer._keepalive = null;
           // Exponential backoff for AXE-dropped outbound peers (closed before HI).
           if (peer._isOutbound && !peer.met) {
             peer._axeGuess = (peer._axeGuess || 0) + 1;
@@ -8289,6 +8304,16 @@ defmod('./src/websocket.js', function(module, exp){
         };
         wire.onopen = function () {
           peer._openAt = +new Date();
+          // Keepalive: ping every 30s so idle relay connections don't time out at
+          // network/proxy boundaries (typical idle timeout is ~60s).
+          peer._keepalive = setInterval(function () {
+            if (peer.wire === wire && wire.readyState === 1) {
+              opt.mesh.ping(peer);
+            } else {
+              clearInterval(peer._keepalive);
+              peer._keepalive = null;
+            }
+          }, 30 * 1000);
           opt.mesh.hi(peer);
         };
         wire.onmessage = function (msg) {
