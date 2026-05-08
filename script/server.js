@@ -18,6 +18,7 @@ import { disc, hwid, DOMF, PORTF } from "../lib/discover.js";
 import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
 import { getOrCreateIdentity } from "../lib/identity.js";
 import { buildStatus, signStatus } from "../lib/status.js";
+import { attach as attachMcp } from "../lib/mcp/server.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -542,9 +543,16 @@ if (main && cluster.isPrimary) {
   // On Linux '::' is dual-stack (IPV6_V6ONLY=0 by default).
   // On Windows IPV6_V6ONLY=1 by default, so '::' only serves IPv6 — fall back to '0.0.0.0'.
   const bindHost = process.platform === "win32" ? "0.0.0.0" : "::"
-  zen = new ZEN({ web: opt.server.listen(opt.port, bindHost), peers: opt.peers, ...(ppid && { pid: ppid }) });
+  // Use the hardware identity pub directly for XOR routing.
+  // Since MCP is now embedded in the relay (same process), there is no separate MCP peer
+  // to cause a self-connection, so the old /relay-routing derivation is no longer needed.
+  const relayPub = identity && identity.pair && identity.pair.pub ? identity.pair.pub : null;
+  zen = new ZEN({ web: opt.server.listen(opt.port, bindHost), peers: opt.peers, ...(ppid && { pid: ppid }), ...(relayPub && { pub: relayPub }) });
   console.log("Relay peer started on port " + opt.port + " with /zen (" + bindHost + ")");
 
+  // Embed MCP server on this ZEN instance — exposes IPC socket for local IDE/agent connections.
+  // This eliminates the need for a second ZEN peer process when MCP is used on the same machine.
+  attachMcp(zen, { hwIdentity: identity, ipc: true });
   // ── PEX: peer exchange via direct DAM message (not public graph) ──────────
   // mesh.hear["pex"] + root.on("hi") — only shared with already-connected peers
   const surl = domain
