@@ -637,18 +637,23 @@ if (main && cluster.isPrimary) {
         const m = peer.url.match(/(?:wss?:\/\/|https?:\/\/)([^:/[\]]+)/);
         if (m) udpAddr = m[1];
       }
-      if (udpAddr) {
-        udpPeerMap[udpAddr] = peer;
-        peer.udpAddr = udpAddr;
-        peer.udpSay = (fwd) => {
-          try {
-            const raw = JSON.stringify(fwd);
-            const buf = Buffer.from(raw, 'utf8');
-            udpSock.send(buf, 0, buf.length, peer.udpPort, udpAddr, () => {});
-          } catch(e) {}
-        };
-        console.log(`[UDP] Fast path for ${(peer.pub||'?').slice(0,8)} → ${udpAddr}:${peer.udpPort}`);
-      }
+      // Skip IPv6 addresses: udp4 socket cannot send to IPv6 and dgram.send fails
+      // silently in the callback.  The relay flood loop does NOT fall back to WS
+      // when udpSay is set, so a silent failure there causes message loss.
+      if (!udpAddr || udpAddr.includes(':')) return;
+      // Don't overwrite an existing live entry for the same IP.
+      if (udpPeerMap[udpAddr] && udpPeerMap[udpAddr] !== peer) return;
+      udpPeerMap[udpAddr] = peer;
+      peer.udpAddr = udpAddr;
+      peer.udpSay = (fwd) => {
+        try {
+          const raw = JSON.stringify(fwd);
+          const buf = Buffer.from(raw, 'utf8');
+          udpSock.send(buf, 0, buf.length, peer.udpPort, udpAddr,
+            (err) => { if (err) console.error('[UDP] send err →', udpAddr, err.message); });
+        } catch(e) {}
+      };
+      console.log(`[UDP] Fast path for ${(peer.pub||'?').slice(0,8)} → ${udpAddr}:${peer.udpPort}`);
     }
 
     // Wrap mesh.hear["?"] to call setupUdpForPeer after the original handler.
