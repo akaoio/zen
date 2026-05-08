@@ -12,7 +12,11 @@ function Dup(opt) {
   };
   var dt = (dup.track = function (id) {
     var it = s.get(id);
-    if (!it) { it = {}; s.set(id, it); }
+    if (!it) {
+      // Evict oldest entry when at capacity (Map is insertion-ordered → first key = oldest).
+      if (s.size >= opt.max) { s.delete(s.keys().next().value); }
+      it = {}; s.set(id, it);
+    }
     it.was = dup.now = +new Date();
     if (!dup.to) {
       dup.to = setTimeout(dup.drop, opt.age + 9);

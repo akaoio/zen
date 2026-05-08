@@ -445,7 +445,7 @@ function Mesh(root) {
         if (err) {
           return;
         } // TODO: Handle!!
-        meta.raw = raw; //if(meta && (raw||'').length < (999 * 99)){ meta.raw = raw } // HNPERF: If string too big, don't keep in memory.
+        if (!raw || raw.length < (999 * 99)) { meta.raw = raw; } // HNPERF: Don't cache large raw strings — prevents OOM under high load with large messages.
         if (hash && ack && !meta.via) { dup_track(ack + hash); } // track so memory+storage don't double-send
         mesh.say(msg, peer);
       }
@@ -551,6 +551,7 @@ function Mesh(root) {
     // Clear the wire immediately so mesh.route() and direct-delivery checks skip
     // this peer while it is disconnected — prevents routing messages to a closed socket.
     peer.wire = null;
+    peer.batch = peer.tail = peer.queue = null; // clear any in-flight message buffers to prevent leaking raw strings.
     root.on("bye", peer);
     var tmp = +new Date();
     tmp = tmp - (peer.met || tmp);
