@@ -283,6 +283,57 @@ async function suiteCross(zen, testPair) {
   console.log();
 }
 
+async function suiteChain() {
+  console.log(`${BOLD}── Suite: chain (multi-hop: clientA→zen → peer0 → peer1→clientB) ──${RESET}`);
+
+  // Topology: zen.akao.io → peer0.akao.io → peer1.akao.io
+  // clientA knows ONLY the chain start, clientB knows ONLY the chain end.
+  // Data must propagate through two relay hops without any direct connection.
+  const CHAIN_START = process.env.CHAIN_START || "https://zen.akao.io:8420/zen";
+  const CHAIN_END   = process.env.CHAIN_END   || "https://peer1.akao.io:8420/zen";
+
+  const pairA = await ZEN.pair();
+  const pairB = await ZEN.pair();
+
+  const clientA = new ZEN({ peers: [CHAIN_START], rfs: false, axe: false, pub: pairA.pub });
+  const clientB = new ZEN({ peers: [CHAIN_END],   rfs: false, axe: false, pub: pairB.pub });
+
+  await sleep(2000);
+
+  const soul  = "e2e-chain";
+  const key   = `${HOST}-${Date.now()}`;
+  const value = `chain-from-${HOST}-${Date.now()}`;
+
+  // clientA writes to chain START
+  try {
+    await put(clientA, soul, key, value);
+    pass(`CHAIN PUT via ${CHAIN_START.replace("https://", "")}: ${soul}/${key}`);
+    results.passed++;
+  } catch (e) {
+    fail(`CHAIN PUT: ${e.message}`);
+    clientA.off(); clientB.off();
+    console.log();
+    return;
+  }
+
+  // Wait for multi-hop propagation: start → peer0 → end
+  info(`Waiting 12s for chain propagation (${CHAIN_START.replace("https://", "")} → ... → ${CHAIN_END.replace("https://", "")})...`);
+  await sleep(12000);
+
+  // clientB reads from chain END — it has NO connection to start or middle
+  const got = await get(clientB, soul, key, 8000);
+  if (got === value) {
+    pass(`CHAIN GET via ${CHAIN_END.replace("https://", "")}: "${got}" ✓ multi-hop propagated`);
+    results.passed++;
+  } else {
+    fail(`CHAIN GET via ${CHAIN_END.replace("https://", "")}: expected "${value}" got ${JSON.stringify(got)}`);
+  }
+
+  clientA.off();
+  clientB.off();
+  console.log();
+}
+
 async function suiteDiskRead(zen) {
   console.log(`${BOLD}── Suite: disk-read (read known persisted values) ──${RESET}`);
 
@@ -321,6 +372,7 @@ async function main() {
     if (SUITE === "all" || SUITE === "disk")    await suiteDiskRead(zen);
     if (SUITE === "all" || SUITE === "persist") await suitePersist(zen);
     if (SUITE === "all" || SUITE === "cross")   await suiteCross(zen, testPair);
+    if (SUITE === "all" || SUITE === "chain")   await suiteChain();
   } finally {
     const total = results.passed + results.failed;
     console.log(`${BOLD}── Summary ──${RESET}`);

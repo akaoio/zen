@@ -1,4 +1,6 @@
-const BOOT = ["https://zen.akao.io:8420/zen", "https://peer0.akao.io:8420/zen", "https://peer1.akao.io:8420/zen"];
+// Bootstrap peers are intentionally empty — each relay/client declares its own
+// peers via PEERS env var or opts.peers. No hardcoded defaults.
+const BOOT = [];
 
 function parseFlag(value) {
   if (typeof value !== "string") return null;
