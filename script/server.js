@@ -628,6 +628,43 @@ if (main && cluster.isPrimary) {
   });
   udpSock.on('error', (e) => console.error('[UDP] Socket error:', e.message));
 
+  // Resolve remote IP and register peer.udpSay once both sides have exchanged
+  // UDP ports.  Called from the mesh.hear["?"] wrapper and the bye handler.
+  // Declared in outer scope so the bye handler (outside setImmediate) can call it.
+  function setupUdpForPeer(peer) {
+    if (!peer || !peer.udpPort || !peer.udpToken || peer.udpSay) return;
+    // Skip self-connections (AXE drops them, but guard early)
+    if (peer.pid === root.opt.pid) return;
+    let udpAddr = null;
+    if (peer.wire && peer.wire._socket) {
+      udpAddr = peer.wire._socket.remoteAddress;
+      if (udpAddr && udpAddr.startsWith('::ffff:')) udpAddr = udpAddr.slice(7);
+    }
+    if (!udpAddr && peer.url) {
+      const m = peer.url.match(/(?:wss?:\/\/|https?:\/\/)([^:/[\]]+)/);
+      if (m) udpAddr = m[1];
+    }
+    // Skip IPv6 addresses: udp4 socket cannot send to IPv6 and dgram.send fails
+    // silently in the callback.  The relay flood loop does NOT fall back to WS
+    // when udpSay is set, so a silent failure there causes message loss.
+    if (!udpAddr || udpAddr.includes(':')) return;
+    // Don't overwrite an existing live entry for the same IP.
+    if (udpPeerMap[udpAddr] && udpPeerMap[udpAddr] !== peer) return;
+    udpPeerMap[udpAddr] = peer;
+    peer.udpAddr = udpAddr;
+    const remoteToken = peer.udpToken; // token the remote relay expects at the start of our packets
+    peer.udpSay = (fwd) => {
+      try {
+        const raw = JSON.stringify(fwd);
+        const buf = Buffer.from(remoteToken + '|' + raw, 'utf8');
+        if (buf.length > 60000) return; // size guard: stay well within UDP MTU limits
+        udpSock.send(buf, 0, buf.length, peer.udpPort, udpAddr,
+          (err) => { if (err) console.error('[UDP] send err →', udpAddr, err.message); });
+      } catch(e) {}
+    };
+    console.log(`[UDP] Fast path for ${(peer.pub||'?').slice(0,8)} → ${udpAddr}:${peer.udpPort}`);
+  }
+
   // Wait for AXE to attach opt.mesh (it runs synchronously but after ZEN init)
   setImmediate(() => {
     const mesh = root.opt && root.opt.mesh;
@@ -635,42 +672,6 @@ if (main && cluster.isPrimary) {
     pmsh = mesh;
     root.opt.udpPort = UDP_PORT;   // mesh includes this in dam:"?" handshakes
     root.opt.udpToken = UDP_TOKEN; // mesh includes this in dam:"?" handshakes
-
-    // Resolve remote IP and register peer.udpSay once both sides have exchanged
-    // UDP ports.  Called from the mesh.hear["?"] wrapper below.
-    function setupUdpForPeer(peer) {
-      if (!peer || !peer.udpPort || !peer.udpToken || peer.udpSay) return;
-      // Skip self-connections (AXE drops them, but guard early)
-      if (peer.pid === root.opt.pid) return;
-      let udpAddr = null;
-      if (peer.wire && peer.wire._socket) {
-        udpAddr = peer.wire._socket.remoteAddress;
-        if (udpAddr && udpAddr.startsWith('::ffff:')) udpAddr = udpAddr.slice(7);
-      }
-      if (!udpAddr && peer.url) {
-        const m = peer.url.match(/(?:wss?:\/\/|https?:\/\/)([^:/[\]]+)/);
-        if (m) udpAddr = m[1];
-      }
-      // Skip IPv6 addresses: udp4 socket cannot send to IPv6 and dgram.send fails
-      // silently in the callback.  The relay flood loop does NOT fall back to WS
-      // when udpSay is set, so a silent failure there causes message loss.
-      if (!udpAddr || udpAddr.includes(':')) return;
-      // Don't overwrite an existing live entry for the same IP.
-      if (udpPeerMap[udpAddr] && udpPeerMap[udpAddr] !== peer) return;
-      udpPeerMap[udpAddr] = peer;
-      peer.udpAddr = udpAddr;
-      const remoteToken = peer.udpToken; // token the remote relay expects at the start of our packets
-      peer.udpSay = (fwd) => {
-        try {
-          const raw = JSON.stringify(fwd);
-          const buf = Buffer.from(remoteToken + '|' + raw, 'utf8');
-          if (buf.length > 60000) return; // size guard: stay well within UDP MTU limits
-          udpSock.send(buf, 0, buf.length, peer.udpPort, udpAddr,
-            (err) => { if (err) console.error('[UDP] send err →', udpAddr, err.message); });
-        } catch(e) {}
-      };
-      console.log(`[UDP] Fast path for ${(peer.pub||'?').slice(0,8)} → ${udpAddr}:${peer.udpPort}`);
-    }
 
     // Wrap mesh.hear["?"] to call setupUdpForPeer after the original handler.
     // At that point peer.udpPort is already stored by the original handler.
@@ -812,7 +813,18 @@ if (main && cluster.isPrimary) {
   let btmr = null;
   root.on("bye", function (peer) {
     this.to.next.apply(this.to, arguments);
-    if (peer && peer.udpAddr) { delete udpPeerMap[peer.udpAddr]; peer.udpSay = null; }
+    if (peer && peer.udpAddr) {
+      delete udpPeerMap[peer.udpAddr];
+      peer.udpSay = null;
+      peer.udpAddr = null;
+      // Re-activate UDP fast path for any surviving peer at the same remote IP.
+      // This handles the AXE conflict case: when outbound is AXE-dropped, the
+      // surviving inbound (in axe.up, keyed by PID) should inherit the fast path.
+      const axeUp = root.axe && root.axe.up;
+      if (axeUp) {
+        for (const pid in axeUp) { setupUdpForPeer(axeUp[pid]); }
+      }
+    }
     clearTimeout(btmr);
     btmr = setTimeout(() => {
       siv = SIV; // reset backoff — need to find replacements
