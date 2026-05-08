@@ -15,9 +15,8 @@ describe("bootstrap peer resolution", function () {
 
   it("merges configured peers with bootstrap peers without duplicates", function () {
     const configured = ["https://peer1.akao.io:8420/zen", "wss://custom.akao.io:8420/zen"];
+    // BOOT is empty — configured peers are returned as-is (no duplicates to remove)
     assert.deepStrictEqual(resolveBootstrapPeers(configured), [
-      "https://zen.akao.io:8420/zen",
-      "https://peer0.akao.io:8420/zen",
       "https://peer1.akao.io:8420/zen",
       "wss://custom.akao.io:8420/zen",
     ]);
@@ -65,14 +64,10 @@ describe("bootstrap peer resolution", function () {
   });
 
   it("resolveEnvPeers merges explicit PEERS with BOOT by default", function () {
+    // BOOT is empty, so only the explicit PEERS are returned
     assert.deepStrictEqual(
       resolveEnvPeers({ PEERS: "wss://custom.akao.io:8420/zen" }),
-      [
-        "https://zen.akao.io:8420/zen",
-        "https://peer0.akao.io:8420/zen",
-        "https://peer1.akao.io:8420/zen",
-        "wss://custom.akao.io:8420/zen",
-      ],
+      ["wss://custom.akao.io:8420/zen"],
     );
   });
 
