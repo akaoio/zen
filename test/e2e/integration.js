@@ -76,6 +76,26 @@ function put(zen, soul, key, value, timeout = 5000) {
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+// Properly close a ZEN instance: explicitly close all WebSocket wires so the
+// relay immediately removes this peer from its routing table, then call off().
+// Plain zen.off() only removes local listeners — it does NOT close the socket,
+// leaving a ghost peer on the relay that can win XOR-routing races.
+function killZen(z) {
+  const r = z && z._graph && z._graph._;
+  if (r && r.opt && r.opt.peers) {
+    for (const k of Object.keys(r.opt.peers)) {
+      const p = r.opt.peers[k];
+      if (p) {
+        p._noReconnect = true;
+        if (p.wire && typeof p.wire.close === "function") {
+          try { p.wire.close(); } catch (_) {}
+        }
+      }
+    }
+  }
+  z.off();
+}
+
 // ── Setup ──────────────────────────────────────────────────────────────────────
 
 // Prefer ~/.config/zen/domain (e.g. "peer0.akao.io") then extract short name
@@ -329,8 +349,62 @@ async function suiteChain() {
     fail(`CHAIN GET via ${CHAIN_END.replace("https://", "")}: expected "${value}" got ${JSON.stringify(got)}`);
   }
 
-  clientA.off();
+  killZen(clientA);
   clientB.off();
+  console.log();
+}
+
+async function suitePush() {
+  console.log(`${BOLD}── Suite: push (zen.push across chain: browserA→zen → peer0 → peer1→browserB) ──${RESET}`);
+
+  // Two isolated "browsers" — no shared relay knowledge, no direct connection.
+  // zen.push(pubB, data) must traverse: zen relay → peer0 relay → peer1 relay → browserB.
+  const CHAIN_START = process.env.CHAIN_START || "https://zen.akao.io:8420/zen";
+  const CHAIN_END   = process.env.CHAIN_END   || "https://peer1.akao.io:8420/zen";
+
+  const pairA = await ZEN.pair();
+  const pairB = await ZEN.pair();
+
+  const browserA = new ZEN({ peers: [CHAIN_START], rfs: false, axe: false, pub: pairA.pub });
+  const browserB = new ZEN({ peers: [CHAIN_END],   rfs: false, axe: false, pub: pairB.pub });
+
+  info(`browserA pub: ${pairA.pub.slice(0, 12)}…  → ${CHAIN_START.replace("https://", "")}`);
+  info(`browserB pub: ${pairB.pub.slice(0, 12)}…  → ${CHAIN_END.replace("https://", "")}`);
+
+  // Trigger WebSocket handshake — ZEN doesn't open the socket until first graph activity.
+  browserA.get("_push-handshake").once(() => {});
+  browserB.get("_push-handshake").once(() => {});
+
+  // Wait for both browsers to complete the handshake with their relay so peer.pub is stored.
+  await sleep(3000);
+
+  // browserB listens for push messages
+  const received = [];
+  const meshB = browserB._opt.mesh;
+  const offRelay = meshB.onRelay(({ from, data }) => {
+    received.push({ from, data });
+  });
+
+  const message = `push-from-${HOST}-${Date.now()}`;
+
+  // browserA pushes to browserB's pub — routes through chain with no direct connection
+  browserA._opt.mesh.relay(pairB.pub, message);
+  info(`PUSH sent → ${pairB.pub.slice(0, 12)}… (zen → peer0 → peer1 → browserB)`);
+
+  info("Waiting 8s for push to traverse chain...");
+  await sleep(8000);
+
+  offRelay();
+
+  if (received.length > 0 && received[0].data === message) {
+    pass(`PUSH received on browserB: "${received[0].data}" (from ${received[0].from.slice(0, 12)}…) ✓`);
+    results.passed++;
+  } else {
+    fail(`PUSH not received on browserB after 8s (got ${received.length} msg(s): ${JSON.stringify(received)})`);
+  }
+
+  browserA.off();
+  browserB.off();
   console.log();
 }
 
@@ -373,6 +447,14 @@ async function main() {
     if (SUITE === "all" || SUITE === "persist") await suitePersist(zen);
     if (SUITE === "all" || SUITE === "cross")   await suiteCross(zen, testPair);
     if (SUITE === "all" || SUITE === "chain")   await suiteChain();
+    if (SUITE === "all" || SUITE === "push") {
+      // Disconnect the main zen client so it doesn't pollute XOR routing on zen relay
+      // (routing must go chain-only: zen relay → peer0 → peer1 → browserB).
+      killZen(zen);
+      // Brief pause for close frames to reach the relay before push test starts.
+      await sleep(500);
+      await suitePush();
+    }
   } finally {
     const total = results.passed + results.failed;
     console.log(`${BOLD}── Summary ──${RESET}`);
@@ -381,7 +463,7 @@ async function main() {
       console.log(`  Failed: ${RED}${results.failed}${RESET} / ${total}`);
     }
     console.log();
-    zen.off();
+    killZen(zen);
     process.exit(results.failed > 0 ? 1 : 0);
   }
 }

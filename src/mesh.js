@@ -544,6 +544,9 @@ function Mesh(root) {
     var effectiveNoRec = passedNoRec || peer._noReconnect;
     peer.met && --mesh.near;
     delete peer.met;
+    // Clear the wire immediately so mesh.route() and direct-delivery checks skip
+    // this peer while it is disconnected — prevents routing messages to a closed socket.
+    peer.wire = null;
     root.on("bye", peer);
     var tmp = +new Date();
     tmp = tmp - (peer.met || tmp);
