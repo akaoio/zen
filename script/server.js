@@ -658,9 +658,15 @@ if (main && cluster.isPrimary) {
 
     // Wrap mesh.hear["?"] to call setupUdpForPeer after the original handler.
     // At that point peer.udpPort is already stored by the original handler.
+    // Also update bootPubMap here: peer.pub is now set (by _origHearQ) for outbound
+    // connections receiving the "@" reply — it was not yet set when on("hi") fired.
     const _origHearQ = mesh.hear["?"];
     mesh.hear["?"] = function(msg, peer) {
       _origHearQ.call(this, msg, peer);
+      if (peer.url && peer.pub) {
+        const nu = peer.url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+        if (kprsProtect.has(nu) || kprsProtect.has(peer.url)) bootPubMap[nu] = peer.pub;
+      }
       setupUdpForPeer(peer);
     };
 
@@ -747,25 +753,26 @@ if (main && cluster.isPrimary) {
   //
   // This watchdog runs every 30s and reconnects any BOOT peer with no live
   // connection:
-  //   - If we've learned the remote pub (from a prior successful hi), we scan
-  //     ALL opt.peers by pub — this catches inbound-only connections where the
-  //     peer object is keyed by random ID (no URL).
+  //   - If we've learned the remote pub (bootPubMap, updated after "?" exchange),
+  //     we scan ALL opt.peers AND axe.up by pub — this catches inbound-only
+  //     connections (AXE keeps inbound after conflict: axe.up[pid] = inbound).
   //   - If pub is unknown yet, we check opt.peers[normUrl].wire (outbound only).
   //   - On reconnect, tombstone + backoff counters are cleared so the WebSocket
   //     open() guard doesn't block the attempt.
-  //
-  // Worst case when AXE keeps an inbound: watchdog reconnects outbound every
-  // 30s → AXE drops outbound again (keeps inbound) → 1 brief connect+bye per
-  // 30s interval.  Acceptable overhead for a relay with a handful of BOOT peers.
   setInterval(() => {
     const opt = root.opt;
     if (!pmsh || !opt) return;
+    const at = zen && zen._graph && zen._graph._;
+    const axeUp = (at && at.axe && at.axe.up) || {};
     for (const url of peers) {
       const norm = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
       const knownPub = bootPubMap[norm];
       if (knownPub) {
-        // Check any peer (outbound or inbound) connected with this pub.
-        const alive = Object.values(opt.peers || {}).some(p => p && p.wire && p.pub === knownPub);
+        // Check opt.peers (outbound keyed by URL) and axe.up (includes inbounds
+        // kept by AXE after conflict — stored without URL, keyed by pid).
+        const alive =
+          Object.values(opt.peers || {}).some(p => p && p.wire && p.pub === knownPub) ||
+          Object.values(axeUp).some(p => p && p.wire && p.pub === knownPub);
         if (alive) continue;
       } else {
         // Pub not yet learned — fall back to outbound URL check.
