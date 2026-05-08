@@ -314,6 +314,11 @@ if (main && cluster.isPrimary) {
   const KPRS_TTL = 30 * 60 * 1000;          // 30 min TTL for unconfirmed peers
   const kprsProtect = new Set(peers);        // BOOT + configured — never evict
   const kprs = new Map();
+  // Maps normalised BOOT URL → remote pub key (learned on first successful connection).
+  // Used by the watchdog to detect inbound-only connections (AXE can keep the inbound
+  // while dropping the outbound, so opt.peers[url].wire may be null even though we ARE
+  // connected to the BOOT peer via an inbound peer object keyed by random ID).
+  const bootPubMap = {};
   peers.forEach(u => kprs.set(u, { seen: Date.now(), lastOk: Date.now() }));
 
   function kprsTouch(url, ok = false) {
@@ -624,6 +629,11 @@ if (main && cluster.isPrimary) {
     root.on("hi", function (peer) {
       this.to.next(peer);
       if (peer.url) kprsTouch(peer.url, true); // mark connection confirmed
+      // Track remote pub so the BOOT watchdog can detect inbound-only connections.
+      if (peer.url && peer.pub) {
+        const nu = peer.url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+        if (kprsProtect.has(nu) || kprsProtect.has(peer.url)) bootPubMap[nu] = peer.pub;
+      }
       const list = Array.from(kprs.keys())
         .filter(u => u !== surl && /^wss?:\/\//.test(u))
         .sort((a, b) => {
@@ -669,6 +679,52 @@ if (main && cluster.isPrimary) {
   // Start scan immediately if domain already known, else wait for first request
   if (domain) { sscan(); schd(); }
   else console.log("Domain not configured — will scan after first request");
+
+  // ── BOOT peer watchdog ────────────────────────────────────────────────────
+  // AXE's PID-sort can drop one direction of a dual-connection (outbound or
+  // inbound) between two relays and tombstone the URL, preventing reconnect.
+  // If the "kept" connection later drops too (peer restart, network blip),
+  // the relay is stranded with no path to the BOOT peer.
+  //
+  // This watchdog runs every 30s and reconnects any BOOT peer with no live
+  // connection:
+  //   - If we've learned the remote pub (from a prior successful hi), we scan
+  //     ALL opt.peers by pub — this catches inbound-only connections where the
+  //     peer object is keyed by random ID (no URL).
+  //   - If pub is unknown yet, we check opt.peers[normUrl].wire (outbound only).
+  //   - On reconnect, tombstone + backoff counters are cleared so the WebSocket
+  //     open() guard doesn't block the attempt.
+  //
+  // Worst case when AXE keeps an inbound: watchdog reconnects outbound every
+  // 30s → AXE drops outbound again (keeps inbound) → 1 brief connect+bye per
+  // 30s interval.  Acceptable overhead for a relay with a handful of BOOT peers.
+  setInterval(() => {
+    const opt = root.opt;
+    if (!pmsh || !opt) return;
+    for (const url of peers) {
+      const norm = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      const knownPub = bootPubMap[norm];
+      if (knownPub) {
+        // Check any peer (outbound or inbound) connected with this pub.
+        const alive = Object.values(opt.peers || {}).some(p => p && p.wire && p.pub === knownPub);
+        if (alive) continue;
+      } else {
+        // Pub not yet learned — fall back to outbound URL check.
+        const p = opt.peers[norm];
+        if (p && p.wire) continue;
+      }
+      // No live connection — clear tombstone + backoff counters and reconnect.
+      if (opt._tombUrls) {
+        opt._tombUrls.delete(norm);
+        opt._tombUrls.delete(norm.replace(/^https?:\/\//, 'wss://'));
+        opt._tombUrls.delete(norm.replace(/^https?:\/\//, 'ws://'));
+      }
+      const p = opt.peers[norm];
+      if (p) { delete p._noReconnect; delete p._hiGuess; delete p._axeGuess; }
+      console.log('[BOOT-WATCHDOG] Reconnecting lost BOOT peer:', norm);
+      try { pmsh.hi({ id: norm, url: norm, retry: 9 }); } catch {}
+    }
+  }, 30 * 1000).unref();
 
   // Reactive rescan: when a peer disconnects, rescan after a 30s debounce
   let btmr = null;
