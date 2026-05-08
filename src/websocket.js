@@ -41,6 +41,9 @@ Zen.on("opt", function (root) {
       peer._isOutbound = true;
       var wire = (peer.wire = new opt.WebSocket(url));
       wire.onclose = function () {
+        // Stop keepalive ping for this wire.
+        clearInterval(peer._keepalive);
+        peer._keepalive = null;
         // Exponential backoff for AXE-dropped outbound peers (closed before HI).
         if (peer._isOutbound && !peer.met) {
           peer._axeGuess = (peer._axeGuess || 0) + 1;
@@ -76,6 +79,16 @@ Zen.on("opt", function (root) {
       };
       wire.onopen = function () {
         peer._openAt = +new Date();
+        // Keepalive: ping every 30s so idle relay connections don't time out at
+        // network/proxy boundaries (typical idle timeout is ~60s).
+        peer._keepalive = setInterval(function () {
+          if (peer.wire === wire && wire.readyState === 1) {
+            opt.mesh.ping(peer);
+          } else {
+            clearInterval(peer._keepalive);
+            peer._keepalive = null;
+          }
+        }, 30 * 1000);
         opt.mesh.hi(peer);
       };
       wire.onmessage = function (msg) {
