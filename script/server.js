@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import cluster from "cluster";
+import crypto from "crypto";
 import dgram from "dgram";
 import fs from "fs";
 import path from "path";
@@ -607,13 +608,19 @@ if (main && cluster.isPrimary) {
   // handler sends the JSON-serialised fwd object via UDP instead of WebSocket.
   // Falls back to WebSocket on any UDP error or if the peer has no UDP endpoint.
   const UDP_PORT = parseInt(process.env.UDP_PORT || '8421');
+  // Random token for this relay session — exchanged over TLS WS in dam:"?" handshake.
+  // Peers must prefix every UDP packet with this token. Prevents injection from unknown sources.
+  const UDP_TOKEN = crypto.randomBytes(16).toString('hex'); // 32 hex chars
   const udpPeerMap = {}; // normalised remote IPv4 → peer object
   const udpSock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   udpSock.bind(UDP_PORT, () => console.log(`[UDP] Listening on :${UDP_PORT}`));
   udpSock.on('message', (buf, rinfo) => {
     if (!pmsh) return;
+    const raw = buf.toString('utf8');
+    // Validate token: packet must start with UDP_TOKEN + '|'
+    if (!raw.startsWith(UDP_TOKEN + '|')) return;
     const peer = udpPeerMap[rinfo.address];
-    if (peer) { try { pmsh.hear(buf.toString('utf8'), peer); } catch(e) {} }
+    if (peer && peer.wire) { try { pmsh.hear(raw.slice(UDP_TOKEN.length + 1), peer); } catch(e) {} }
   });
   udpSock.on('error', (e) => console.error('[UDP] Socket error:', e.message));
 
@@ -622,12 +629,15 @@ if (main && cluster.isPrimary) {
     const mesh = root.opt && root.opt.mesh;
     if (!mesh) return;
     pmsh = mesh;
-    root.opt.udpPort = UDP_PORT; // mesh includes this in dam:"?" handshakes
+    root.opt.udpPort = UDP_PORT;   // mesh includes this in dam:"?" handshakes
+    root.opt.udpToken = UDP_TOKEN; // mesh includes this in dam:"?" handshakes
 
     // Resolve remote IP and register peer.udpSay once both sides have exchanged
     // UDP ports.  Called from the mesh.hear["?"] wrapper below.
     function setupUdpForPeer(peer) {
-      if (!peer || !peer.udpPort || peer.udpSay) return;
+      if (!peer || !peer.udpPort || !peer.udpToken || peer.udpSay) return;
+      // Skip self-connections (AXE drops them, but guard early)
+      if (peer.pid === root.opt.pid) return;
       let udpAddr = null;
       if (peer.wire && peer.wire._socket) {
         udpAddr = peer.wire._socket.remoteAddress;
@@ -645,10 +655,12 @@ if (main && cluster.isPrimary) {
       if (udpPeerMap[udpAddr] && udpPeerMap[udpAddr] !== peer) return;
       udpPeerMap[udpAddr] = peer;
       peer.udpAddr = udpAddr;
+      const remoteToken = peer.udpToken; // token the remote relay expects at the start of our packets
       peer.udpSay = (fwd) => {
         try {
           const raw = JSON.stringify(fwd);
-          const buf = Buffer.from(raw, 'utf8');
+          const buf = Buffer.from(remoteToken + '|' + raw, 'utf8');
+          if (buf.length > 60000) return; // size guard: stay well within UDP MTU limits
           udpSock.send(buf, 0, buf.length, peer.udpPort, udpAddr,
             (err) => { if (err) console.error('[UDP] send err →', udpAddr, err.message); });
         } catch(e) {}

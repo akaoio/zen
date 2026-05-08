@@ -519,6 +519,7 @@ function Mesh(root) {
       tmp = peer.id = peer.id || peer.url || String.random(9);
       var hiMsg = { dam: "?", pid: root.opt.pid, pub: opt.pub || "" };
       if (opt.udpPort) { hiMsg.udp = opt.udpPort; } // advertise our UDP listening port
+      if (opt.udpToken) { hiMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
       mesh.say(hiMsg, (opt.peers[tmp] = peer));
       dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
     }
@@ -583,12 +584,16 @@ function Mesh(root) {
       if (msg.udp && !peer.udpPort) {
         peer.udpPort = msg.udp; // store remote peer's announced UDP port
       }
+      if (msg.udpToken && !peer.udpToken) {
+        peer.udpToken = msg.udpToken; // token we must send in UDP packets to this peer
+      }
       if (msg["@"]) {
         return;
       }
     }
     var replyMsg = { dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] };
     if (opt.udpPort) { replyMsg.udp = opt.udpPort; } // advertise our UDP port in reply
+    if (opt.udpToken) { replyMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
     mesh.say(replyMsg, peer);
     dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
   };
