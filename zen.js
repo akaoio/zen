@@ -7964,7 +7964,9 @@ defmod('./src/mesh.js', function(module, exp){
         opt.peers[peer.url || peer.id] = peer;
       } else {
         tmp = peer.id = peer.id || peer.url || String.random(9);
-        mesh.say({ dam: "?", pid: root.opt.pid, pub: opt.pub || "" }, (opt.peers[tmp] = peer));
+        var hiMsg = { dam: "?", pid: root.opt.pid, pub: opt.pub || "" };
+        if (opt.udpPort) { hiMsg.udp = opt.udpPort; } // advertise our UDP listening port
+        mesh.say(hiMsg, (opt.peers[tmp] = peer));
         dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
       }
       if (!peer.met) {
@@ -8025,11 +8027,16 @@ defmod('./src/mesh.js', function(module, exp){
         if (msg.pub && !peer.pub) {
           peer.pub = msg.pub;
         }
+        if (msg.udp && !peer.udpPort) {
+          peer.udpPort = msg.udp; // store remote peer's announced UDP port
+        }
         if (msg["@"]) {
           return;
         }
       }
-      mesh.say({ dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] }, peer);
+      var replyMsg = { dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] };
+      if (opt.udpPort) { replyMsg.udp = opt.udpPort; } // advertise our UDP port in reply
+      mesh.say(replyMsg, peer);
       dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
     };
     mesh.hear["ping"] = function (msg, peer) {
@@ -8127,7 +8134,10 @@ defmod('./src/mesh.js', function(module, exp){
       var peers = opt.peers || {};
       for (var k in peers) {
         var p = peers[k];
-        if (p && p.pub === msg.to && p.wire) { mesh.say(fwd, p); return; }
+        if (p && p.pub === msg.to && p.wire) {
+          if (p.udpSay) { try { p.udpSay(fwd); return; } catch(e) {} }
+          mesh.say(fwd, p); return;
+        }
       }
       // Flood to all connected peers except the sender.
       // Single-hop XOR routing is unreliable when routing tables are incomplete
@@ -8135,7 +8145,10 @@ defmod('./src/mesh.js', function(module, exp){
       // guarantees delivery and dedup (#) prevents true loops.
       for (var fk in peers) {
         var fp = peers[fk];
-        if (fp && fp.pub && fp.wire && fp !== peer) { mesh.say(fwd, fp); }
+        if (fp && fp.pub && fp.wire && fp !== peer) {
+          if (fp.udpSay) { try { fp.udpSay(fwd); continue; } catch(e) {} }
+          mesh.say(fwd, fp);
+        }
       }
     };
 

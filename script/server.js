@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import cluster from "cluster";
+import dgram from "dgram";
 import fs from "fs";
 import path from "path";
 import http from "http";
@@ -599,11 +600,64 @@ if (main && cluster.isPrimary) {
 
   const root = zen._graph._;
 
+  // ── UDP unicast socket for inter-relay relay message fast path ────────────
+  // VPS relay servers have public IPs — no NAT traversal needed.
+  // Both sides advertise their UDP port in dam:"?" handshake (udp: <port>).
+  // When forwarding relay messages between peers that support UDP, the relay
+  // handler sends the JSON-serialised fwd object via UDP instead of WebSocket.
+  // Falls back to WebSocket on any UDP error or if the peer has no UDP endpoint.
+  const UDP_PORT = parseInt(process.env.UDP_PORT || '8421');
+  const udpPeerMap = {}; // normalised remote IPv4 → peer object
+  const udpSock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  udpSock.bind(UDP_PORT, () => console.log(`[UDP] Listening on :${UDP_PORT}`));
+  udpSock.on('message', (buf, rinfo) => {
+    if (!pmsh) return;
+    const peer = udpPeerMap[rinfo.address];
+    if (peer) { try { pmsh.hear(buf.toString('utf8'), peer); } catch(e) {} }
+  });
+  udpSock.on('error', (e) => console.error('[UDP] Socket error:', e.message));
+
   // Wait for AXE to attach opt.mesh (it runs synchronously but after ZEN init)
   setImmediate(() => {
     const mesh = root.opt && root.opt.mesh;
     if (!mesh) return;
     pmsh = mesh;
+    root.opt.udpPort = UDP_PORT; // mesh includes this in dam:"?" handshakes
+
+    // Resolve remote IP and register peer.udpSay once both sides have exchanged
+    // UDP ports.  Called from the mesh.hear["?"] wrapper below.
+    function setupUdpForPeer(peer) {
+      if (!peer || !peer.udpPort || peer.udpSay) return;
+      let udpAddr = null;
+      if (peer.wire && peer.wire._socket) {
+        udpAddr = peer.wire._socket.remoteAddress;
+        if (udpAddr && udpAddr.startsWith('::ffff:')) udpAddr = udpAddr.slice(7);
+      }
+      if (!udpAddr && peer.url) {
+        const m = peer.url.match(/(?:wss?:\/\/|https?:\/\/)([^:/[\]]+)/);
+        if (m) udpAddr = m[1];
+      }
+      if (udpAddr) {
+        udpPeerMap[udpAddr] = peer;
+        peer.udpAddr = udpAddr;
+        peer.udpSay = (fwd) => {
+          try {
+            const raw = JSON.stringify(fwd);
+            const buf = Buffer.from(raw, 'utf8');
+            udpSock.send(buf, 0, buf.length, peer.udpPort, udpAddr, () => {});
+          } catch(e) {}
+        };
+        console.log(`[UDP] Fast path for ${(peer.pub||'?').slice(0,8)} → ${udpAddr}:${peer.udpPort}`);
+      }
+    }
+
+    // Wrap mesh.hear["?"] to call setupUdpForPeer after the original handler.
+    // At that point peer.udpPort is already stored by the original handler.
+    const _origHearQ = mesh.hear["?"];
+    mesh.hear["?"] = function(msg, peer) {
+      _origHearQ.call(this, msg, peer);
+      setupUdpForPeer(peer);
+    };
 
     // Connect to BOOT peers immediately — adp() returns early for pre-seeded kprs entries
     // so we must call pmsh.hi directly here to establish the initial outbound connections.
@@ -728,8 +782,9 @@ if (main && cluster.isPrimary) {
 
   // Reactive rescan: when a peer disconnects, rescan after a 30s debounce
   let btmr = null;
-  root.on("bye", function () {
+  root.on("bye", function (peer) {
     this.to.next.apply(this.to, arguments);
+    if (peer && peer.udpAddr) { delete udpPeerMap[peer.udpAddr]; peer.udpSay = null; }
     clearTimeout(btmr);
     btmr = setTimeout(() => {
       siv = SIV; // reset backoff — need to find replacements
