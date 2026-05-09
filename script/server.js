@@ -652,6 +652,10 @@ if (main && cluster.isPrimary) {
     if (peer.wire && peer.wire._socket) {
       udpAddr = peer.wire._socket.remoteAddress;
       if (udpAddr && udpAddr.startsWith('::ffff:')) udpAddr = udpAddr.slice(7);
+      // Native IPv6 (not ::ffff: mapped): null it so we fall back to hostname from URL.
+      // udp4 socket cannot send to raw IPv6 addresses; the hostname fallback lets
+      // dgram resolve to IPv4 via DNS.
+      if (udpAddr && udpAddr.includes(':')) udpAddr = null;
     }
     if (!udpAddr && peer.url) {
       const m = peer.url.match(/(?:wss?:\/\/|https?:\/\/)([^:/[\]]+)/);
