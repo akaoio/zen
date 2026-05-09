@@ -636,8 +636,7 @@ if (main && cluster.isPrimary) {
   const udpSock4 = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   let udpSock6 = null;
   try {
-    udpSock6 = dgram.createSocket({ type: 'udp6', reuseAddr: true });
-    udpSock6.setIPv6Only(true); // must be before bind; may throw if platform doesn't support it
+    udpSock6 = dgram.createSocket({ type: 'udp6', reuseAddr: true, ipv6Only: true });
   } catch(e) {
     console.log(`[UDP] IPv6 socket unavailable: ${e.message}`);
     try { udpSock6.close(); } catch(_) {}
