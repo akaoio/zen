@@ -628,18 +628,43 @@ if (main && cluster.isPrimary) {
   // Random token for this relay session — exchanged over TLS WS in dam:"?" handshake.
   // Peers must prefix every UDP packet with this token. Prevents injection from unknown sources.
   const UDP_TOKEN = crypto.randomBytes(16).toString('hex'); // 32 hex chars
-  const udpPeerMap = {}; // normalised remote IPv4 → peer object
-  const udpSock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-  udpSock.bind(UDP_PORT, () => console.log(`[UDP] Listening on :${UDP_PORT}`));
-  udpSock.on('message', (buf, rinfo) => {
+  const udpPeerMap = {}; // remote IP (v4 or v6) → peer object
+
+  // Dual-stack UDP: one udp4 socket for IPv4 peers, one udp6 socket (ipv6Only) for
+  // native IPv6 peers.  Both listen on UDP_PORT.  The OS delivers IPv4 packets to
+  // udpSock4 and native IPv6 packets to udpSock6 without overlap.
+  const udpSock4 = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  let udpSock6 = null;
+  try {
+    udpSock6 = dgram.createSocket({ type: 'udp6', reuseAddr: true });
+    udpSock6.setIPv6Only(true); // must be before bind; may throw if platform doesn't support it
+  } catch(e) {
+    console.log(`[UDP] IPv6 socket unavailable: ${e.message}`);
+    try { udpSock6.close(); } catch(_) {}
+    udpSock6 = null;
+  }
+
+  function onUdpMessage(buf, rinfo) {
     if (!pmsh) return;
     const raw = buf.toString('utf8');
     // Validate token: packet must start with UDP_TOKEN + '|'
     if (!raw.startsWith(UDP_TOKEN + '|')) return;
-    const peer = udpPeerMap[rinfo.address];
+    // Normalize ::ffff:-mapped IPv4 addresses (dual-stack OS delivers them this way)
+    let addr = rinfo.address;
+    if (addr && addr.startsWith('::ffff:')) addr = addr.slice(7);
+    const peer = udpPeerMap[addr];
     if (peer && peer.wire) { try { pmsh.hear(raw.slice(UDP_TOKEN.length + 1), peer); } catch(e) {} }
-  });
-  udpSock.on('error', (e) => console.error('[UDP] Socket error:', e.message));
+  }
+
+  udpSock4.on('message', onUdpMessage);
+  udpSock4.on('error', (e) => console.error('[UDP] v4 error:', e.message));
+  udpSock4.bind(UDP_PORT, () => console.log(`[UDP] Listening on :${UDP_PORT} (v4)`));
+
+  if (udpSock6) {
+    udpSock6.on('message', onUdpMessage);
+    udpSock6.on('error', (e) => { console.error('[UDP] v6 error:', e.message); udpSock6 = null; });
+    udpSock6.bind(UDP_PORT, () => console.log(`[UDP] Listening on :${UDP_PORT} (v6)`));
+  }
 
   // Resolve remote IP and register peer.udpSay once both sides have exchanged
   // UDP ports.  Called from the mesh.hear["?"] wrapper and the bye handler.
@@ -648,38 +673,45 @@ if (main && cluster.isPrimary) {
     if (!peer || !peer.udpPort || !peer.udpToken || peer.udpSay) return;
     // Skip self-connections (AXE drops them, but guard early)
     if (peer.pid === root.opt.pid) return;
+
     let udpAddr = null;
+    let sock = udpSock4; // default to IPv4
+
     if (peer.wire && peer.wire._socket) {
-      udpAddr = peer.wire._socket.remoteAddress;
-      if (udpAddr && udpAddr.startsWith('::ffff:')) udpAddr = udpAddr.slice(7);
-      // Native IPv6 (not ::ffff: mapped): null it so we fall back to hostname from URL.
-      // udp4 socket cannot send to raw IPv6 addresses; the hostname fallback lets
-      // dgram resolve to IPv4 via DNS.
-      if (udpAddr && udpAddr.includes(':')) udpAddr = null;
+      const ra = peer.wire._socket.remoteAddress;
+      if (ra && ra.startsWith('::ffff:')) {
+        udpAddr = ra.slice(7); // IPv4-mapped → strip to plain IPv4, use udpSock4
+      } else if (ra && ra.includes(':')) {
+        // Native IPv6: use udpSock6 if available, otherwise fall through to URL/IPv4
+        if (udpSock6) { udpAddr = ra; sock = udpSock6; }
+      } else if (ra) {
+        udpAddr = ra; // plain IPv4
+      }
     }
     if (!udpAddr && peer.url) {
+      // Hostname fallback: dgram resolves to IPv4 A record via udpSock4
       const m = peer.url.match(/(?:wss?:\/\/|https?:\/\/)([^:/[\]]+)/);
-      if (m) udpAddr = m[1];
+      if (m) { udpAddr = m[1]; sock = udpSock4; }
     }
-    // Skip IPv6 addresses: udp4 socket cannot send to IPv6 and dgram.send fails
-    // silently in the callback.  The relay flood loop does NOT fall back to WS
-    // when udpSay is set, so a silent failure there causes message loss.
-    if (!udpAddr || udpAddr.includes(':')) return;
-    // Don't overwrite an existing live entry for the same IP.
+    if (!udpAddr) return;
+
+    // Don't overwrite an existing live entry for the same address.
     if (udpPeerMap[udpAddr] && udpPeerMap[udpAddr] !== peer) return;
     udpPeerMap[udpAddr] = peer;
     peer.udpAddr = udpAddr;
     const remoteToken = peer.udpToken; // token the remote relay expects at the start of our packets
+    const sendSock = sock; // capture in closure
     peer.udpSay = (fwd) => {
       try {
         const raw = JSON.stringify(fwd);
         const buf = Buffer.from(remoteToken + '|' + raw, 'utf8');
         if (buf.length > 60000) return; // size guard: stay well within UDP MTU limits
-        udpSock.send(buf, 0, buf.length, peer.udpPort, udpAddr,
+        sendSock.send(buf, 0, buf.length, peer.udpPort, udpAddr,
           (err) => { if (err) console.error('[UDP] send err →', udpAddr, err.message); });
       } catch(e) {}
     };
-    console.log(`[UDP] Fast path for ${(peer.pub||'?').slice(0,8)} → ${udpAddr}:${peer.udpPort}`);
+    const family = sock === udpSock6 ? 'v6' : 'v4';
+    console.log(`[UDP] Fast path for ${(peer.pub||'?').slice(0,8)} → ${udpAddr}:${peer.udpPort} (${family})`);
   }
 
   // Wait for AXE to attach opt.mesh (it runs synchronously but after ZEN init)
