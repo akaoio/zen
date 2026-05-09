@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 1: Soul Encoding
-description: Bytecode sống trong Soul ID — format, base62, policy tail, tại sao thiết kế vậy
+name: "PEN — Lớp 1: Soul Encoding"
+description: "Bytecode sống trong Soul ID — format, base62, policy tail, tại sao thiết kế vậy"
 type: project
 ---
 
@@ -76,11 +76,11 @@ graph LR
 
 Bytecode có 3 phần:
 
-| Phần | Nội dung | Ai dùng |
-|------|----------|---------|
-| `[0x01]` | Version byte | Tất cả |
-| Expression tree | Opcodes kiểm tra key/val/path/... | VM (Zig/WASM) thực thi |
-| Policy tail | 1 byte chỉ định auth mode (+ optional pubkey) | `pen.js` đọc trước khi gọi VM |
+| Phần            | Nội dung                                      | Ai dùng                       |
+| --------------- | --------------------------------------------- | ----------------------------- |
+| `[0x01]`        | Version byte                                  | Tất cả                        |
+| Expression tree | Opcodes kiểm tra key/val/path/...             | VM (Zig/WASM) thực thi        |
+| Policy tail     | 1 byte chỉ định auth mode (+ optional pubkey) | `pen.js` đọc trước khi gọi VM |
 
 > **Tại sao tách biệt?** VM chỉ cần biết "data có hợp lệ không?" (true/false). Việc "người này có quyền không?" là câu hỏi khác — được xử lý bởi policy tail *sau khi* VM pass.
 
@@ -102,12 +102,12 @@ Bytecode là binary (bytes 0x00–0xFF). Không thể dùng trực tiếp trong 
 
 Byte cuối cùng của bytecode quyết định **ai được phép ghi**:
 
-| Opcode | Tên | Ý nghĩa | Dùng khi |
-|--------|-----|---------|---------|
-| `0xC0` | SGN | Writer phải ký bằng private key | Profile cá nhân, owned data |
-| `0xC1` | CRT + pubkey | Writer phải có certificate từ owner | Channel thành viên, invite-only |
-| `0xC3` | NOA / OPEN | Không cần auth — ai cũng ghi được | Public data, collaborative spaces |
-| `0xC4` | PoW config | Writer phải mine proof-of-work | Anti-spam inbox, rate limiting |
+| Opcode | Tên          | Ý nghĩa                             | Dùng khi                          |
+| ------ | ------------ | ----------------------------------- | --------------------------------- |
+| `0xC0` | SGN          | Writer phải ký bằng private key     | Profile cá nhân, owned data       |
+| `0xC1` | CRT + pubkey | Writer phải có certificate từ owner | Channel thành viên, invite-only   |
+| `0xC3` | NOA / OPEN   | Không cần auth — ai cũng ghi được   | Public data, collaborative spaces |
+| `0xC4` | PoW config   | Writer phải mine proof-of-work      | Anti-spam inbox, rate limiting    |
 
 > SGN và CRT là về **danh tính** (ai?). PoW là về **nỗ lực** (có bỏ công sức không?). NOA là không hỏi gì cả.
 

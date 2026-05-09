@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 4: Write Validation Pipeline
-description: Luồng đầy đủ từ zen.put() đến storage — decode, scanpolicy, PoW mine, VM run, applypolicy
+name: "PEN — Lớp 4: Write Validation Pipeline"
+description: "Luồng đầy đủ từ zen.put() đến storage — decode, scanpolicy, PoW mine, VM run, applypolicy"
 type: project
 ---
 

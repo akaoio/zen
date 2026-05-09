@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 7: Compiler DSL
-description: ZEN.pen(spec) — high-level JS spec biên dịch thành bytecode, cách viết policy không cần hiểu ISA
+name: "PEN — Lớp 7: Compiler DSL"
+description: "ZEN.pen(spec) — high-level JS spec biên dịch thành bytecode, cách viết policy không cần hiểu ISA"
 type: project
 ---
 

@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 8: ZACP Integration
-description: Protocol (lib/protocol.js) dùng PEN để tạo inbox, channel, DM souls — candle key, soul factories
+name: "PEN — Lớp 8: ZACP Integration"
+description: "Protocol (lib/protocol.js) dùng PEN để tạo inbox, channel, DM souls — candle key, soul factories"
 type: project
 ---
 

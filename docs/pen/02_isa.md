@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 2: ISA (Instruction Set Architecture)
-description: ~40 opcodes chia 8 nhóm — Literals, Control, Compare, Arith, String, Type, Macros, Shortcuts
+name: "PEN — Lớp 2: ISA (Instruction Set Architecture)"
+description: "~40 opcodes chia 8 nhóm — Literals, Control, Compare, Arith, String, Type, Macros, Shortcuts"
 type: project
 ---
 
