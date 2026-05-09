@@ -618,6 +618,42 @@ if (main && cluster.isPrimary) {
 
   const root = zen._graph._;
 
+  // ── In-memory graph GC ────────────────────────────────────────────────────
+  // root.graph is an unbounded in-memory cache of all graph nodes ever seen.
+  // All data is persisted to disk (RAD), so evicting a soul just causes a
+  // cache miss → storage read on next access.  We evict when heap is high,
+  // skipping souls that have active on() listeners (root.next[soul]).
+  const GRAPH_GC_HEAP_MB   = parseInt(process.env.GRAPH_GC_MB   || '400'); // evict above this
+  const GRAPH_GC_INTERVAL  = parseInt(process.env.GRAPH_GC_SEC  || '60') * 1000;
+  const GRAPH_GC_KEEP_SECS = parseInt(process.env.GRAPH_GC_KEEP || '120'); // keep recently-written souls
+  const graphAt = new Map(); // soul → last-write timestamp (ms)
+
+  // Hook into the existing root "put" stream to track write times.
+  root.on('put', function graphGcTrack(msg) {
+    const soul = (msg.put || '')['#'];
+    if (soul) graphAt.set(soul, Date.now());
+    this.to.next(msg);
+  });
+
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    const heapMB = mem.heapUsed / 1048576;
+    if (heapMB < GRAPH_GC_HEAP_MB) return;
+    const graph = root.graph;
+    const next  = root.next || {};
+    const cutoff = Date.now() - GRAPH_GC_KEEP_SECS * 1000;
+    let evicted = 0;
+    for (const soul of Object.keys(graph)) {
+      if (next[soul]) continue;                  // has active on() listener — skip
+      if ((graphAt.get(soul) || 0) > cutoff) continue; // written recently — skip
+      delete graph[soul];
+      graphAt.delete(soul);
+      evicted++;
+    }
+    const after = process.memoryUsage().heapUsed / 1048576;
+    if (evicted) console.log(`[GC] Evicted ${evicted} souls (heap ${heapMB.toFixed(0)}→${after.toFixed(0)} MB)`);
+  }, GRAPH_GC_INTERVAL).unref();
+
   // ── UDP unicast socket for inter-relay relay message fast path ────────────
   // VPS relay servers have public IPs — no NAT traversal needed.
   // Both sides advertise their UDP port in dam:"?" handshake (udp: <port>).
