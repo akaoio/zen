@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 6: Proof-of-Work
-description: Canonical block, SHA-256 mining, anti-replay binding, PoW config encoding
+name: "PEN — Lớp 6: Proof-of-Work"
+description: "Canonical block, SHA-256 mining, anti-replay binding, PoW config encoding"
 type: project
 ---
 

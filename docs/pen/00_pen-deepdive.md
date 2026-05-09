@@ -1,6 +1,6 @@
 ---
-name: PEN Policy VM — Overview & Index
-description: Index cho PEN deep-dive — tổng quan kiến trúc và links đến từng lớp chi tiết
+name: "PEN Policy VM — Overview & Index"
+description: "Index cho PEN deep-dive — tổng quan kiến trúc và links đến từng lớp chi tiết"
 type: project
 ---
 # PEN Policy VM — Overview

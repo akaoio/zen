@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 3: Registers
-description: 8 registers cố định nạp vào VM mỗi lần validate — key, val, soul, state, now, writer, path, nonce
+name: "PEN — Lớp 3: Registers"
+description: "8 registers cố định nạp vào VM mỗi lần validate — key, val, soul, state, now, writer, path, nonce"
 type: project
 ---
 

@@ -1,6 +1,6 @@
 ---
-name: PEN — Lớp 5: Policy Tail
-description: 4 chế độ xác thực — SGN (ECDSA), CRT (certificate), NOA (open), PoW (proof-of-work)
+name: "PEN — Lớp 5: Policy Tail"
+description: "4 chế độ xác thực — SGN (ECDSA), CRT (certificate), NOA (open), PoW (proof-of-work)"
 type: project
 ---
 
