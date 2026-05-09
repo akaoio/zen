@@ -485,3 +485,51 @@ If the UDP send fails, the error is logged but no automatic WS fallback occurs �
 | `UDP_PORT` | `8421` | UDP listen port (relay) |
 
 The relay binds WebSocket on **8420** and UDP on **8421** by default.
+
+---
+
+## 6.18 `root.graph` GC — in-memory cache eviction
+
+`root.graph` is an in-memory cache of every graph node the relay has ever processed. It grows without bound, creating an OOM risk on long-running relay nodes.
+
+Since all data is persisted to disk (RAD), evicting a soul from the in-memory cache only causes a cache miss on the next access — the data is safely read back from storage.
+
+### How it works
+
+The relay tracks the last write time for each soul via a `root.on('put', fn)` middleware hook, then periodically evicts souls from `root.graph` when heap usage exceeds a threshold:
+
+```js
+// Middleware: track write time for each soul
+root.on('put', function graphGcTrack(msg) {
+  const soul = msg.put?.['#'];
+  if (soul) graphAt.set(soul, Date.now());
+  this.to.next(msg);  // required to continue the middleware chain
+});
+
+// Periodic eviction
+setInterval(() => {
+  const heapMB = process.memoryUsage().heapUsed / 1048576;
+  if (heapMB < GRAPH_GC_HEAP_MB) return;
+
+  for (const soul of Object.keys(root.graph)) {
+    if (root.next[soul]) continue;          // active on() listener — skip
+    if (graphAt.get(soul) > cutoff) continue; // written recently — skip
+    delete root.graph[soul];
+    graphAt.delete(soul);
+  }
+}, GRAPH_GC_INTERVAL).unref();
+```
+
+Two guards prevent evicting important souls:
+- `root.next[soul]` — soul has an active `on()` listener; evicting would break live subscriptions
+- `graphAt.get(soul) > cutoff` — soul was written recently (default 120 s); gives new data time to propagate to peers before falling off cache
+
+### Configuration
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `GRAPH_GC_MB` | `400` | Heap (MB) that triggers eviction |
+| `GRAPH_GC_SEC` | `60` | GC interval in seconds |
+| `GRAPH_GC_KEEP` | `120` | Keep souls written in the last N seconds |
+
+The timer uses `.unref()` so it does not prevent the process from exiting if everything else has settled.

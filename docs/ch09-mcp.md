@@ -1049,3 +1049,59 @@ When implemented, both modes would run in the same process, sharing the same `pa
 - Workflows where multiple clients share one ZEN peer
 
 **Relationship to relay mode:** Relay mode (§9.15) is the current solution for cross-machine MCP access. It works across any network with only outbound WebSocket and requires no open HTTP port. SSE mode would complement relay mode for local network / intranet scenarios where HTTP reachability is guaranteed.
+
+---
+
+## 9.18 Relay-embedded MCP — `attach()` and the IPC transport
+
+When the relay service (`script/server.js`) is running, MCP is embedded directly into the relay process via `attach()`. No second ZEN instance is created — the relay's own ZEN graph is exposed to AI clients.
+
+### Architecture
+
+```
+relay process (cluster worker)
+  ├── ZEN graph instance          ← shared between relay and MCP
+  ├── WebSocket server (port 8420)
+  ├── UDP fast path (port 8421)
+  └── MCP IPC server (Unix socket: ~/.local/share/zen/mcp.sock)
+        └── client connects via lib/mcp.js bridge
+              ├── reads requests from agent's stdin
+              └── forwards over socket to relay's MCP handler
+```
+
+The key call in `script/server.js`:
+
+```js
+attachMcp(zen, { hwIdentity: identity, ipc: true });
+```
+
+This mounts the MCP tool surface (graph, crypto, identity, protocol) onto the relay's `zen` instance and starts a Unix domain socket server at `mcp.sock`. Any MCP client (`node lib/mcp.js`) that detects the socket bridges its stdio over the socket instead of booting a new ZEN peer.
+
+### Why no stdio in cluster workers
+
+The relay uses Node.js `cluster` — the actual relay logic runs in a **worker** process (not the master). In cluster workers:
+
+- `process.stdin` is not a TTY (`process.stdin.isTTY === false`)
+- The worker's stdin is `/dev/null`
+- A `readable.once("end", cb)` listener on `/dev/null` fires **immediately**
+
+The MCP stdio transport has a guard:
+
+```js
+// lib/mcp/server.js
+if (!process.stdin.isTTY && !cluster.isWorker) {
+  process.stdin.once("end", () => process.exit(0));
+}
+```
+
+Without `!cluster.isWorker`, the `process.exit(0)` call was fired milliseconds after the worker started, causing a crash loop (`Worker died with code 0 and signal null`). The IPC transport (Unix socket) remains active in workers and is not affected by this guard.
+
+### Singleton guarantee
+
+- Only one process can bind TCP port 8420 — the relay is a natural singleton.
+- The IPC socket path (`mcp.sock`) is overwritten on relay start and cleaned up on exit.
+- All AI client sessions share the single relay ZEN instance — zero data duplication, zero extra peers.
+
+### Fallback when relay is not running
+
+If the relay is not running, `lib/mcp.js` detects the absent socket and starts its own ZEN instance in standalone mode (`boot()`). In this case the unique `pid = hash(hwPub + "/mcp/" + process.pid)` ensures no AXE conflict with other concurrent standalone MCP processes.

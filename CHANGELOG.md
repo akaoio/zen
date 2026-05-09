@@ -1,6 +1,12 @@
 # CHANGELOG
 
-## 1.0.9
+## 1.0.10
+
+- **`root.graph` GC eviction** (`script/server.js`): relay now evicts in-memory graph nodes when heap exceeds `GRAPH_GC_MB` (default 400 MB). Eviction skips souls with active `on()` listeners (`root.next[soul]`) and souls written in the last `GRAPH_GC_KEEP` seconds (default 120 s). All data remains on disk (RAD); eviction only causes cache misses. Configurable via `GRAPH_GC_MB`, `GRAPH_GC_SEC`, `GRAPH_GC_KEEP` env vars.
+- **Fix: cluster worker crash loop** (`lib/mcp/server.js`): the MCP stdio transport registered a `process.stdin.once("end", process.exit)` handler to clean up on stdin close. In cluster workers, `process.stdin` is `/dev/null` — not a TTY and not a real pipe — so the `end` event fired immediately, killing the worker with `code 0`. Fixed by adding `!cluster.isWorker` to the stdio activation guard. The IPC (Unix socket) transport continues to work in workers.
+- **UDP throughput benchmark** (`script/bench.js`): new benchmark script for the relay mesh. Connects a sender and receiver to a relay, sends N messages via `mesh.relay()` (which uses the UDP fast path when available), and reports throughput and RTT percentiles. Usage: `node script/bench.js [relay_url] [n_messages] [batch_size]`. Baseline: 2109 msg/s, p50=18 ms, p99=101 ms, 0% loss over localhost.
+
+
 
 **Breaking changes** — compact wire format replaces JSON-wrapper format for all signed/encrypted values.
 
