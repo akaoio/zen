@@ -321,6 +321,9 @@ if (main && cluster.isPrimary) {
   // while dropping the outbound, so opt.peers[url].wire may be null even though we ARE
   // connected to the BOOT peer via an inbound peer object keyed by random ID).
   const bootPubMap = {};
+  // bootPidMap: BOOT url → peer.pid (AXE PID, used as axe.up key).
+  // Fallback when peer.pub is not set (empty for relays without SEA user auth).
+  const bootPidMap = {};
   peers.forEach(u => kprs.set(u, { seen: Date.now(), lastOk: Date.now() }));
 
   function kprsTouch(url, ok = false) {
@@ -558,7 +561,7 @@ if (main && cluster.isPrimary) {
   // Since MCP is now embedded in the relay (same process), there is no separate MCP peer
   // to cause a self-connection, so the old /relay-routing derivation is no longer needed.
   const relayPub = identity && identity.pair && identity.pair.pub ? identity.pair.pub : null;
-  zen = new ZEN({ web: opt.server.listen(opt.port, bindHost), peers: opt.peers, ...(ppid && { pid: ppid }), ...(relayPub && { pub: relayPub }) });
+  zen = new ZEN({ web: opt.server.listen(opt.port, bindHost), peers: opt.peers, ...(domain && { domain }), ...(ppid && { pid: ppid }), ...(relayPub && { pub: relayPub }) });
   console.log("Relay peer started on port " + opt.port + " with /zen (" + bindHost + ")");
 
   // Embed MCP server on this ZEN instance — exposes IPC socket for local IDE/agent connections.
@@ -571,6 +574,16 @@ if (main && cluster.isPrimary) {
     : null;
 
   if (surl) kprs.set(surl, { seen: Date.now(), lastOk: Date.now() }); // include self
+
+  // Pre-populate kprs with all configured boot peers so adp() skips them
+  // and avoids creating duplicate outbound connections on top of what the
+  // ZEN constructor already establishes.
+  for (const pu of peers) {
+    const hn = pu.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+    const hw = pu.replace(/^https?:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
+    kprs.set(hn, { seen: Date.now(), lastOk: 0 });
+    kprs.set(hw, { seen: Date.now(), lastOk: 0 });
+  }
 
   // ── IP discovery (IPv4 + IPv6) ────────────────────────────────────────────
   // Single source of truth for IP info: cached in discResult, refreshed every
@@ -675,14 +688,18 @@ if (main && cluster.isPrimary) {
 
     // Wrap mesh.hear["?"] to call setupUdpForPeer after the original handler.
     // At that point peer.udpPort is already stored by the original handler.
-    // Also update bootPubMap here: peer.pub is now set (by _origHearQ) for outbound
-    // connections receiving the "@" reply — it was not yet set when on("hi") fired.
+    // Also update bootPubMap/bootPidMap here: peer.pub/pid are set (by _origHearQ) for
+    // outbound connections receiving the "@" reply — not yet set when on("hi") fired.
     const _origHearQ = mesh.hear["?"];
     mesh.hear["?"] = function(msg, peer) {
       _origHearQ.call(this, msg, peer);
-      if (peer.url && peer.pub) {
+      if (peer.url) {
         const nu = peer.url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
-        if (kprsProtect.has(nu) || kprsProtect.has(peer.url)) bootPubMap[nu] = peer.pub;
+        const isBootPeer = kprsProtect.has(nu) || kprsProtect.has(peer.url);
+        if (isBootPeer) {
+          if (peer.pub) bootPubMap[nu] = peer.pub;
+          if (peer.pid) bootPidMap[nu] = peer.pid;
+        }
       }
       setupUdpForPeer(peer);
     };
@@ -723,16 +740,26 @@ if (main && cluster.isPrimary) {
 
     // Connect to BOOT peers immediately — adp() returns early for pre-seeded kprs entries
     // so we must call pmsh.hi directly here to establish the initial outbound connections.
+    // IMPORTANT: reuse the peer object already in opt.peers (created by ZEN constructor)
+    // rather than creating a new object. This ensures opt.peers[url].wire is set
+    // synchronously, preventing mesh.say from calling open() on the wireless ctor peer
+    // (which would create a second outbound connection to the same URL).
+    const _initOpt = zen._graph && zen._graph._ && zen._graph._.opt;
     peers.forEach(url => {
       const normUrl = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
-      try { pmsh.hi({ id: normUrl, url: normUrl, retry: 9 }); } catch {}
+      const existing = _initOpt && _initOpt.peers && _initOpt.peers[normUrl];
+      if (existing && existing.wire) return; // already wired
+      const peerObj = existing || { id: normUrl, url: normUrl, retry: 9 };
+      if (existing) existing.retry = 9;
+      try { pmsh.hi(peerObj); } catch {}
     });
 
     // Handle incoming peer lists from other nodes
     mesh.hear["pex"] = function (msg, _peer) {
       if (!Array.isArray(msg.peers)) return;
       msg.peers.forEach((url) => {
-        if (typeof url === "string" && /^wss?:\/\//.test(url) && url !== surl) {
+        if (typeof url === "string" && /^wss?:\/\//.test(url) &&
+            url !== surl && url !== surl6) {
           adp(url);
         }
       });
@@ -745,10 +772,14 @@ if (main && cluster.isPrimary) {
     root.on("hi", function (peer) {
       this.to.next(peer);
       if (peer.url) kprsTouch(peer.url, true); // mark connection confirmed
-      // Track remote pub so the BOOT watchdog can detect inbound-only connections.
-      if (peer.url && peer.pub) {
+      // Track remote pub/pid so the BOOT watchdog can detect inbound-only connections.
+      if (peer.url && (peer.pub || peer.pid)) {
         const nu = peer.url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
-        if (kprsProtect.has(nu) || kprsProtect.has(peer.url)) bootPubMap[nu] = peer.pub;
+        const isBootPeer = kprsProtect.has(nu) || kprsProtect.has(peer.url);
+        if (isBootPeer) {
+          if (peer.pub) bootPubMap[nu] = peer.pub;
+          if (peer.pid) bootPidMap[nu] = peer.pid;
+        }
       }
       const list = Array.from(kprs.keys())
         .filter(u => u !== surl && /^wss?:\/\//.test(u))
@@ -805,9 +836,9 @@ if (main && cluster.isPrimary) {
   // This watchdog runs every 30s and reconnects any BOOT peer with no live
   // connection:
   //   - If we've learned the remote pub (bootPubMap, updated after "?" exchange),
-  //     we scan ALL opt.peers AND axe.up by pub — this catches inbound-only
+  //     we scan ALL opt.peers AND axe.up by pub or pid — this catches inbound-only
   //     connections (AXE keeps inbound after conflict: axe.up[pid] = inbound).
-  //   - If pub is unknown yet, we check opt.peers[normUrl].wire (outbound only).
+  //   - If pub+pid are unknown yet, we check opt.peers[normUrl].wire (outbound only).
   //   - On reconnect, tombstone + backoff counters are cleared so the WebSocket
   //     open() guard doesn't block the attempt.
   setInterval(() => {
@@ -818,15 +849,21 @@ if (main && cluster.isPrimary) {
     for (const url of peers) {
       const norm = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
       const knownPub = bootPubMap[norm];
-      if (knownPub) {
+      const knownPid = bootPidMap[norm];
+      if (knownPub || knownPid) {
         // Check opt.peers (outbound keyed by URL) and axe.up (includes inbounds
         // kept by AXE after conflict — stored without URL, keyed by pid).
+        // Relays typically have empty pub (no SEA user), so knownPub may be "".
+        // Use knownPid (AXE PID = axe.up key) as the primary fallback.
         const alive =
-          Object.values(opt.peers || {}).some(p => p && p.wire && p.pub === knownPub) ||
-          Object.values(axeUp).some(p => p && p.wire && p.pub === knownPub);
+          (knownPub && (
+            Object.values(opt.peers || {}).some(p => p && p.wire && p.pub === knownPub) ||
+            Object.values(axeUp).some(p => p && p.wire && p.pub === knownPub)
+          )) ||
+          (knownPid && axeUp[knownPid] && axeUp[knownPid].wire);
         if (alive) continue;
       } else {
-        // Pub not yet learned — fall back to outbound URL check.
+        // Pub+pid not yet learned — fall back to outbound URL check.
         const p = opt.peers[norm];
         if (p && p.wire) continue;
       }

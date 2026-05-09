@@ -7996,10 +7996,12 @@ defmod('./src/mesh.js', function(module, exp){
       delete peer.met;
       // Log which peer dropped (helps diagnose intermittent disconnect)
       if (peer.url || peer.pub) {
-        console.log('[BYE] url=' + (peer.url||'inbound') + ' pub=' + (peer.pub||'?').slice(0,8) + ' noRec=' + !!effectiveNoRec);
+        var byeStack = new Error().stack.split('\n').slice(1,4).join(' | ').replace(/\s+/g,' ');
+        console.log('[BYE] url=' + (peer.url||'inbound') + ' pub=' + (peer.pub||'?').slice(0,8) + ' noRec=' + !!effectiveNoRec + ' from=' + byeStack);
       }
-      // Clear the wire immediately so mesh.route() and direct-delivery checks skip
-      // this peer while it is disconnected — prevents routing messages to a closed socket.
+      // Save wire reference before nulling — root.on("bye") listener uses it to close the TCP connection.
+      // We null peer.wire first so mesh.route()/say() skip this peer while it's being torn down.
+      peer._preByeWire = peer.wire;
       peer.wire = null;
       peer.batch = peer.tail = peer.queue = null; // clear any in-flight message buffers to prevent leaking raw strings.
       root.on("bye", peer);
@@ -8180,7 +8182,10 @@ defmod('./src/mesh.js', function(module, exp){
     root.on("bye", function (peer, tmp) {
       peer = opt.peers[peer.id || peer] || peer;
       this.to.next(peer);
-      peer.bye ? peer.bye() : (tmp = peer.wire) && tmp.close && tmp.close();
+      // Use _preByeWire saved by mesh.bye (peer.wire is already null by the time this fires).
+      tmp = peer._preByeWire || peer.wire;
+      peer._preByeWire = null;
+      peer.bye ? peer.bye() : tmp && tmp.close && tmp.close(4001, 'bye');
       delete opt.peers[peer.id];
       peer.wire = null;
     });
@@ -8282,13 +8287,20 @@ defmod('./src/websocket.js', function(module, exp){
           return wired && wired(peer);
         }
         // Do not open connections to tombstoned peers.
+        // Normalise to https:// for lookup since tombstones are stored under https/http keys.
         if (peer._noReconnect) { return; }
-        if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
-            opt._tombUrls.has(peer.url.replace(/^https?/, 'ws')))) { return; }
+        if (opt._tombUrls) {
+          var _tu = peer.url;
+          var _tn = _tu.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+          if (opt._tombUrls.has(_tu) || opt._tombUrls.has(_tn) ||
+              opt._tombUrls.has(_tu.replace(/^https?/, 'ws'))) { return; }
+        }
         var url = peer.url.replace(/^http/, "ws");
         peer._isOutbound = true;
+        console.log('[WS-OPEN] new WS to:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, '_noReconnect:', !!peer._noReconnect);
         var wire = (peer.wire = new opt.WebSocket(url));
         wire.onclose = function () {
+          console.log('[WS-CLOSE] WS closed:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, 'duration:', peer._openAt ? (Date.now()-peer._openAt)+'ms' : 'unknown');
           // Stop keepalive ping for this wire.
           clearInterval(peer._keepalive);
           peer._keepalive = null;
@@ -8361,9 +8373,11 @@ defmod('./src/websocket.js', function(module, exp){
       if (!opt.peers[peer.url] || peer._noReconnect) {
         return;
       }
-      if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
-          opt._tombUrls.has((peer.url || '').replace(/^https?/, 'ws')))) {
-        return;
+      if (opt._tombUrls) {
+        var _ru = peer.url || '';
+        var _rn = _ru.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+        if (opt._tombUrls.has(_ru) || opt._tombUrls.has(_rn) ||
+            opt._tombUrls.has(_ru.replace(/^https?/, 'ws'))) { return; }
       }
       if (doc && peer.retry <= 0) {
         return;

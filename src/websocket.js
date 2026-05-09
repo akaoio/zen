@@ -34,13 +34,20 @@ Zen.on("opt", function (root) {
         return wired && wired(peer);
       }
       // Do not open connections to tombstoned peers.
+      // Normalise to https:// for lookup since tombstones are stored under https/http keys.
       if (peer._noReconnect) { return; }
-      if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
-          opt._tombUrls.has(peer.url.replace(/^https?/, 'ws')))) { return; }
+      if (opt._tombUrls) {
+        var _tu = peer.url;
+        var _tn = _tu.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+        if (opt._tombUrls.has(_tu) || opt._tombUrls.has(_tn) ||
+            opt._tombUrls.has(_tu.replace(/^https?/, 'ws'))) { return; }
+      }
       var url = peer.url.replace(/^http/, "ws");
       peer._isOutbound = true;
+      console.log('[WS-OPEN] new WS to:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, '_noReconnect:', !!peer._noReconnect);
       var wire = (peer.wire = new opt.WebSocket(url));
       wire.onclose = function () {
+        console.log('[WS-CLOSE] WS closed:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, 'duration:', peer._openAt ? (Date.now()-peer._openAt)+'ms' : 'unknown');
         // Stop keepalive ping for this wire.
         clearInterval(peer._keepalive);
         peer._keepalive = null;
@@ -113,9 +120,11 @@ Zen.on("opt", function (root) {
     if (!opt.peers[peer.url] || peer._noReconnect) {
       return;
     }
-    if (opt._tombUrls && (opt._tombUrls.has(peer.url) ||
-        opt._tombUrls.has((peer.url || '').replace(/^https?/, 'ws')))) {
-      return;
+    if (opt._tombUrls) {
+      var _ru = peer.url || '';
+      var _rn = _ru.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      if (opt._tombUrls.has(_ru) || opt._tombUrls.has(_rn) ||
+          opt._tombUrls.has(_ru.replace(/^https?/, 'ws'))) { return; }
     }
     if (doc && peer.retry <= 0) {
       return;

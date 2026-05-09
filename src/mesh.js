@@ -549,10 +549,12 @@ function Mesh(root) {
     delete peer.met;
     // Log which peer dropped (helps diagnose intermittent disconnect)
     if (peer.url || peer.pub) {
-      console.log('[BYE] url=' + (peer.url||'inbound') + ' pub=' + (peer.pub||'?').slice(0,8) + ' noRec=' + !!effectiveNoRec);
+      var byeStack = new Error().stack.split('\n').slice(1,4).join(' | ').replace(/\s+/g,' ');
+      console.log('[BYE] url=' + (peer.url||'inbound') + ' pub=' + (peer.pub||'?').slice(0,8) + ' noRec=' + !!effectiveNoRec + ' from=' + byeStack);
     }
-    // Clear the wire immediately so mesh.route() and direct-delivery checks skip
-    // this peer while it is disconnected — prevents routing messages to a closed socket.
+    // Save wire reference before nulling — root.on("bye") listener uses it to close the TCP connection.
+    // We null peer.wire first so mesh.route()/say() skip this peer while it's being torn down.
+    peer._preByeWire = peer.wire;
     peer.wire = null;
     peer.batch = peer.tail = peer.queue = null; // clear any in-flight message buffers to prevent leaking raw strings.
     root.on("bye", peer);
@@ -733,7 +735,10 @@ function Mesh(root) {
   root.on("bye", function (peer, tmp) {
     peer = opt.peers[peer.id || peer] || peer;
     this.to.next(peer);
-    peer.bye ? peer.bye() : (tmp = peer.wire) && tmp.close && tmp.close();
+    // Use _preByeWire saved by mesh.bye (peer.wire is already null by the time this fires).
+    tmp = peer._preByeWire || peer.wire;
+    peer._preByeWire = null;
+    peer.bye ? peer.bye() : tmp && tmp.close && tmp.close(4001, 'bye');
     delete opt.peers[peer.id];
     peer.wire = null;
   });

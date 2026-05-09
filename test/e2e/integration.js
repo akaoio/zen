@@ -378,6 +378,15 @@ async function suitePush() {
   // Wait for both browsers to complete the handshake with their relay so peer.pub is stored.
   await sleep(3000);
 
+  // Debug: show what peers browserA sees (and their wire status)
+  const rA = browserA._graph?._;
+  if (rA && rA.opt && rA.opt.peers) {
+    for (const k of Object.keys(rA.opt.peers)) {
+      const p = rA.opt.peers[k];
+      info(`bA peer: ${k.replace("https://","").slice(0,30)} pub:${p.pub?.slice(0,8)??'none'} wire:${p.wire?'(rs='+p.wire.readyState+')':'NO'}`);
+    }
+  }
+
   // browserB listens for push messages
   const received = [];
   const meshB = browserB._opt.mesh;
