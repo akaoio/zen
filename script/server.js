@@ -687,6 +687,40 @@ if (main && cluster.isPrimary) {
       setupUdpForPeer(peer);
     };
 
+    // UDP-aware message send: prefer UDP fast path for relay peers, fall back to WS.
+    // Adds a random '#' so the dedup layer doesn't reject the packet.
+    function saySmart(msg, peer) {
+      if (peer && peer.udpSay) {
+        try { peer.udpSay({ ...msg, '#': Math.random().toString(36).slice(2) }); return; } catch(e) {}
+      }
+      try { pmsh.say(msg, peer); } catch(e) {}
+    }
+
+    // Override mesh.ping: send ping via UDP fast path when available so peer.rtt
+    // reflects the actual UDP RTT rather than the WebSocket RTT.
+    const _origMeshPing = mesh.ping;
+    mesh.ping = function(peer) {
+      if (peer && peer.udpSay) {
+        try {
+          peer.udpSay({ dam: 'ping', t: +new Date(), '#': Math.random().toString(36).slice(2) });
+          return;
+        } catch(e) {}
+      }
+      _origMeshPing.call(this, peer);
+    };
+
+    // Override ping handler: reply with pong via UDP when fast path is available.
+    const _origHearPing = mesh.hear['ping'];
+    mesh.hear['ping'] = function(msg, peer) {
+      if (peer && peer.udpSay) {
+        try {
+          peer.udpSay({ dam: 'pong', t: msg.t, '#': Math.random().toString(36).slice(2) });
+          return;
+        } catch(e) {}
+      }
+      _origHearPing.call(this, msg, peer);
+    };
+
     // Connect to BOOT peers immediately — adp() returns early for pre-seeded kprs entries
     // so we must call pmsh.hi directly here to establish the initial outbound connections.
     peers.forEach(url => {
@@ -733,12 +767,12 @@ if (main && cluster.isPrimary) {
             .map(p => p.pid);
           const pexMsg = { dam: "pex", peers: list };
           if (bpids.length) pexMsg.bpids = bpids;
-          mesh.say(pexMsg, peer);
+          saySmart(pexMsg, peer); // prefer UDP for relay peers
           // announce this peer's pid to all existing peers so they can WebRTC to it
           if (peer.pid && !peer.url) {
             Object.values(root.opt.peers || {}).forEach(p => {
               if (p && p.wire && p !== peer) {
-                try { mesh.say({ dam: "pex", peers: [], bpids: [peer.pid] }, p); } catch {}
+                saySmart({ dam: "pex", peers: [], bpids: [peer.pid] }, p);
               }
             });
           }
