@@ -404,3 +404,84 @@ ZEN uses two complementary mechanisms to prevent every peer connecting to every 
 | Outbound | **`MUPS = 10`** — scan-initiated `mesh.hi()` capped at 10 upstream connections | `script/server.js` `adp()` |
 
 Checks `root.axe.up` (AXE upstream connection map) before each `mesh.hi()` call. Broadcast (`pex` send) is always allowed regardless of upstream limit — only the actual WebSocket connection is capped.
+
+---
+
+## 6.17 UDP fast path
+
+The relay optionally upgrades peer-to-peer data transfer to **UDP** for lower latency. WebSocket remains the control plane (authentication, peer discovery, handshake). UDP is a data plane shortcut — if it fails, messages fall back to WebSocket silently.
+
+### How it works
+
+On startup the relay creates two UDP sockets:
+
+```js
+const udpSock4 = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+const udpSock6 = dgram.createSocket({ type: 'udp6', reuseAddr: true, ipv6Only: true });
+```
+
+Both bind to `UDP_PORT` (default **8421**). `ipv6Only: true` ensures `udpSock6` only receives native IPv6 packets, avoiding port conflicts with `udpSock4`.
+
+### Handshake
+
+When peer A connects to peer B over WebSocket, each side sends a `dam: "?"` message containing its UDP port and a random 32-char hex token:
+
+```json
+{ "dam": "?", "udpPort": 8421, "udpToken": "<32 hex chars>" }
+```
+
+Once both sides have exchanged tokens, `setupUdpForPeer` creates a `peer.udpSay(fwd)` closure:
+
+```
+peer.wire._socket.remoteAddress  →  socket selection
+  ::ffff:x.x.x.x                →  strip to IPv4, use udpSock4
+  native IPv6 (contains ":")     →  use udpSock6 (if available)
+  hostname / plain IPv4          →  use udpSock4
+```
+
+### Packet format
+
+Every UDP packet is prefixed with the **recipient's** token:
+
+```
+<32-hex-token>|<JSON message>
+```
+
+The receiver validates the token prefix before passing the message to `pmsh.hear()`. Packets from unknown sources or with incorrect tokens are silently dropped.
+
+### Security
+
+- Token is a per-session secret exchanged over TLS-protected WebSocket
+- Each peer gets the _other_ peer's token (the token the other side expects)
+- Replay protection comes from the mesh deduplication layer (`msg.#`)
+
+### Address family selection
+
+WS connections may use IPv6 (RFC 6724 prefers it when both sides have AAAA records). `setupUdpForPeer` selects the matching UDP socket to avoid protocol mismatch:
+
+| WS `remoteAddress` | UDP socket | Notes |
+|--------------------|-----------|-------|
+| `::ffff:1.2.3.4` | udpSock4 | IPv4-mapped — strip prefix |
+| `2001:db8::1` | udpSock6 | Native IPv6 |
+| hostname / `1.2.3.4` | udpSock4 | Hostname or plain IPv4 |
+
+If `udpSock6` creation fails (platform does not support `ipv6Only`), it is set to `null` and all peers fall back to udpSock4 via hostname DNS lookup — no crash, no message loss.
+
+### Relay flood integration
+
+When `peer.udpSay` is set, the relay's flood loop calls it instead of `peer.wire.send()`:
+
+```js
+if (peer.udpSay) peer.udpSay(fwd);
+else if (peer.wire) peer.wire.send(fwd);
+```
+
+If the UDP send fails, the error is logged but no automatic WS fallback occurs — the message is considered delivered (deduplication prevents re-sending on the next WS message from that peer).
+
+### Port
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UDP_PORT` | `8421` | UDP listen port (relay) |
+
+The relay binds WebSocket on **8420** and UDP on **8421** by default.
