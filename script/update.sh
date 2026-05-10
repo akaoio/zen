@@ -1,36 +1,36 @@
-#!/bin/bash
+#!/bin/sh
 
 # ZEN Update Script
 # Pulls latest code and restarts the relay service
 # Usage: ./update.sh [OPTIONS]
 
-# Guard: copy self to tmpfile so bash doesn't re-read a modified script
-# when git pull replaces this file mid-execution (classic bash race).
-if [[ "${BASH_SOURCE[0]}" != /tmp/zen-update.* ]]; then
-    _tmpf=$(mktemp /tmp/zen-update.XXXXXX)
-    cp "${BASH_SOURCE[0]}" "$_tmpf"
-    chmod +x "$_tmpf"
-    exec bash "$_tmpf" "$@"
-fi
+# Guard: copy self to tmpfile so sh doesn't re-read a modified script
+# when git pull replaces this file mid-execution (classic race condition).
+case "$0" in
+    /tmp/zen-update.*)
+        # already running from tmpfile — proceed normally
+        ;;
+    *)
+        _tmpf=$(mktemp /tmp/zen-update.XXXXXX)
+        cp "$0" "$_tmpf"
+        chmod +x "$_tmpf"
+        exec sh "$_tmpf" "$@"
+        ;;
+esac
 
-set -euo pipefail
+set -eu
 
 SERVICE_NAME="zen"
 INSTALL_DIR="$HOME/zen"
 VERSION="main"
 DRY_RUN=false
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_info()  { printf '\033[0;32m[INFO]\033[0m %s\n' "$1"; }
+log_warn()  { printf '\033[1;33m[WARN]\033[0m %s\n' "$1"; }
+log_error() { printf '\033[0;31m[ERROR]\033[0m %s\n' "$1"; }
 
 run() {
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] $*"
         return 0
     fi
@@ -60,8 +60,8 @@ EXAMPLES:
 EOF
 }
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
+while [ $# -gt 0 ]; do
+    case "$1" in
         -d|--dir)       INSTALL_DIR="$2"; shift 2 ;;
         -s|--service)   SERVICE_NAME="$2"; shift 2 ;;
         -v|--version)   VERSION="$2"; shift 2 ;;
@@ -71,14 +71,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ $EUID -eq 0 ]]; then
+if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
 else
-    command -v sudo &>/dev/null || { log_error "sudo required"; exit 1; }
+    command -v sudo >/dev/null 2>&1 || { log_error "sudo required"; exit 1; }
     SUDO="sudo -n"  # non-interactive: fail fast if no sudoers rule instead of hanging
 fi
 
-if [[ ! -d "$INSTALL_DIR/.git" ]]; then
+if [ ! -d "$INSTALL_DIR/.git" ]; then
     log_error "ZEN not found at $INSTALL_DIR. Run install.sh first."
     exit 1
 fi
@@ -95,9 +95,9 @@ rollback() {
 }
 
 restart_service() {
-    if [[ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]]; then
+    if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
         run $SUDO systemctl restart "$SERVICE_NAME"
-        if [[ "$DRY_RUN" != "true" ]]; then
+        if [ "$DRY_RUN" != "true" ]; then
             sleep 2
             if systemctl is-active --quiet "$SERVICE_NAME"; then
                 log_info "Service restarted successfully"
@@ -110,8 +110,6 @@ restart_service() {
     fi
 }
 
-trap rollback ERR
-
 log_info "Updating ZEN at $INSTALL_DIR..."
 log_info "  Branch:  $VERSION"
 log_info "  Service: $SERVICE_NAME"
@@ -123,26 +121,27 @@ run git -C "$INSTALL_DIR" pull origin "$VERSION"
 
 NEW_COMMIT=$(git -C "$INSTALL_DIR" rev-parse HEAD)
 
-if [[ "$PREV_COMMIT" == "$NEW_COMMIT" ]]; then
+if [ "$PREV_COMMIT" = "$NEW_COMMIT" ]; then
     log_info "Already up to date ($(git -C "$INSTALL_DIR" log -1 --format='%h %s'))"
     log_info "  No code changes; skipping restart."
-    trap - ERR
     log_info "ZEN update check completed!"
     log_info "  Logs: journalctl -u $SERVICE_NAME -f"
     exit 0
 fi
 
-log_info "Updated: ${PREV_COMMIT:0:7} → ${NEW_COMMIT:0:7}"
+PREV_SHORT=$(printf '%.7s' "$PREV_COMMIT")
+NEW_SHORT=$(printf '%.7s' "$NEW_COMMIT")
+log_info "Updated: $PREV_SHORT → $NEW_SHORT"
 log_info "$(git -C "$INSTALL_DIR" log -1 --format='  %s (%cr)' HEAD)"
 
 # Resolve npm: system PATH first, then nvm default, then any nvm version
-NPM="$(command -v npm 2>/dev/null || true)"
-if [[ -z "$NPM" ]] && [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+NPM=$(command -v npm 2>/dev/null || true)
+if [ -z "$NPM" ] && [ -s "$HOME/.nvm/nvm.sh" ]; then
     # shellcheck source=/dev/null
     . "$HOME/.nvm/nvm.sh" 2>/dev/null || true
-    NPM="$(command -v npm 2>/dev/null || true)"
+    NPM=$(command -v npm 2>/dev/null || true)
 fi
-if [[ -z "$NPM" ]]; then
+if [ -z "$NPM" ]; then
     log_warn "npm not found — skipping dependency install"
 else
     # Install/update dependencies
@@ -150,14 +149,14 @@ else
 fi
 
 # Re-install CLI binary so new commands (start/stop/restart/logs) are available
-if [[ -f "$INSTALL_DIR/script/zen.sh" ]]; then
+if [ -f "$INSTALL_DIR/script/zen.sh" ]; then
     # Update whichever location the binary was originally installed to
-    if [[ -f "$HOME/.local/bin/zen" ]]; then
+    if [ -f "$HOME/.local/bin/zen" ]; then
         run cp "$INSTALL_DIR/script/zen.sh" "$HOME/.local/bin/zen"
         run chmod +x "$HOME/.local/bin/zen"
         log_info "zen CLI updated (~/.local/bin/zen)"
     fi
-    if [[ -f "/usr/local/bin/zen" ]]; then
+    if [ -f "/usr/local/bin/zen" ]; then
         run $SUDO cp "$INSTALL_DIR/script/zen.sh" /usr/local/bin/zen
         run $SUDO chmod +x /usr/local/bin/zen
         log_info "zen CLI updated (/usr/local/bin/zen)"
@@ -166,8 +165,6 @@ fi
 
 # Restart service
 restart_service
-
-trap - ERR
 
 log_info "ZEN update completed!"
 log_info "  Logs: journalctl -u $SERVICE_NAME -f"
