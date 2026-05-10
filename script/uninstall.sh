@@ -231,6 +231,15 @@ remove_autoupdate_timer() {
     execute $SUDO systemctl daemon-reload 2>/dev/null || true
 }
 
+# Remove passwordless sudo rules installed by install.sh
+remove_sudoers() {
+    local sudoers_file="/etc/sudoers.d/zen-${SERVICE_NAME}"
+    if [[ -f "$sudoers_file" ]]; then
+        execute $SUDO rm -f "$sudoers_file"
+        log_info "Removed sudoers rule: $sudoers_file"
+    fi
+}
+
 # Stop and remove systemd service
 remove_service() {
     SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -493,6 +502,7 @@ main() {
     check_sudo
     remove_service
     remove_autoupdate_timer
+    remove_sudoers
     remove_cli
     remove_zen
     remove_nodejs

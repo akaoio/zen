@@ -66,7 +66,7 @@ if [[ $EUID -eq 0 ]]; then
     SUDO=""
 else
     command -v sudo &>/dev/null || { log_error "sudo required"; exit 1; }
-    SUDO="sudo"
+    SUDO="sudo -n"  # non-interactive: fail fast if no sudoers rule instead of hanging
 fi
 
 if [[ ! -d "$INSTALL_DIR/.git" ]]; then

@@ -260,6 +260,47 @@ configure_limits() {
     log_info "System limits configured"
 }
 
+configure_sudoers() {
+    [[ "$SKIP_SERVICE" == "true" ]] && return
+    [[ $EUID -eq 0 ]] && return  # already root — no sudo needed
+
+    local sudoers_file="/etc/sudoers.d/zen-${SERVICE_NAME}"
+    local user
+    user="$(whoami)"
+    local systemctl_bin cp_bin chmod_bin
+    systemctl_bin="$(command -v systemctl)"
+    cp_bin="$(command -v cp)"
+    chmod_bin="$(command -v chmod)"
+
+    log_info "Configuring passwordless sudo for service management..."
+
+    # Allow managing the relay service and updating the CLI binary without a password.
+    # All paths are fully qualified to minimise the attack surface.
+    local content
+    content="# ZEN relay — passwordless sudo rules (managed by install.sh)
+${user} ALL=(root) NOPASSWD: ${systemctl_bin} start ${SERVICE_NAME}
+${user} ALL=(root) NOPASSWD: ${systemctl_bin} stop ${SERVICE_NAME}
+${user} ALL=(root) NOPASSWD: ${systemctl_bin} restart ${SERVICE_NAME}
+${user} ALL=(root) NOPASSWD: ${cp_bin} ${INSTALL_DIR}/script/zen.sh /usr/local/bin/zen
+${user} ALL=(root) NOPASSWD: ${chmod_bin} +x /usr/local/bin/zen"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would write $sudoers_file"
+        return
+    fi
+
+    local tmpf
+    tmpf="$(mktemp)"
+    printf '%s\n' "$content" > "$tmpf"
+    if visudo -c -f "$tmpf" &>/dev/null; then
+        $SUDO install -m 0440 -o root -g root "$tmpf" "$sudoers_file"
+        log_info "Sudoers rule installed: $sudoers_file"
+    else
+        log_warn "visudo validation failed — skipping (auto-update will need manual sudo)"
+    fi
+    rm -f "$tmpf"
+}
+
 start_service() {
     [[ "$SKIP_SERVICE" == "true" ]] && return
 
@@ -415,6 +456,7 @@ main() {
     install_zen
     create_service
     configure_limits
+    configure_sudoers
     start_service
     install_autoupdate
     install_cli
