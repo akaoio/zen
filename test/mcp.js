@@ -130,38 +130,44 @@ async function withSession(fn, timeout = 20000) {
   }
 }
 
-/** Shorthand: single tool call in its own session. */
-async function call(name, args, timeout) {
-  return withSession(s => s.tool(name, args, timeout), timeout || 15000);
-}
+// ─── shared session for stateless describe blocks ────────────────────────────
+// initialize, tools/list, error handling, graph, crypto (stateless), and
+// notifications all share ONE subprocess.  Each test uses unique souls where
+// needed so there is no state contamination between them.
+
+let ss; // shared session
+
+before(async function () {
+  this.timeout(20000);
+  ss = new McpSession().start();
+  await ss.init();
+});
+
+after(function () { ss && ss.end(); });
 
 // ─── initialize ───────────────────────────────────────────────────────────────
 
 describe("MCP — initialize", function () {
-  this.timeout(15000);
+  this.timeout(10000);
 
   it("returns protocolVersion and serverInfo", async function () {
-    await withSession(async s => {
-      const res = await s.init();
-      assert.strictEqual(res.result.protocolVersion, "2024-11-05");
-      assert.strictEqual(res.result.serverInfo.name, "zen");
-      assert.strictEqual(res.result.serverInfo.version, pkg.version);
-      assert.ok(res.result.capabilities.tools);
-    });
+    const res = await ss.init();
+    assert.strictEqual(res.result.protocolVersion, "2024-11-05");
+    assert.strictEqual(res.result.serverInfo.name, "zen");
+    assert.strictEqual(res.result.serverInfo.version, pkg.version);
+    assert.ok(res.result.capabilities.tools);
   });
 });
 
 // ─── tools/list ───────────────────────────────────────────────────────────────
 
 describe("MCP — tools/list", function () {
-  this.timeout(15000);
+  this.timeout(10000);
 
   let tools;
   before(async function () {
-    await withSession(async s => {
-      const res = await s.send("tools/list", {});
-      tools = res.result.tools;
-    });
+    const res = await ss.send("tools/list", {});
+    tools = res.result.tools;
   });
 
   it("exposes exactly 5 tools", function () {
@@ -205,31 +211,29 @@ describe("MCP — tools/list", function () {
 // ─── unknown tool ─────────────────────────────────────────────────────────────
 
 describe("MCP — error handling", function () {
-  this.timeout(15000);
+  this.timeout(10000);
 
   it("unknown tool returns -32000 error", async function () {
-    const res = await call("nope", {});
+    const res = await ss.tool("nope", {});
     assert.ok(res.error);
     assert.strictEqual(res.error.code, -32000);
     assert.ok(res.error.message.includes("Unknown tool"));
   });
 
   it("unknown method (RPC level) returns -32601", async function () {
-    await withSession(async s => {
-      const res = await s.send("tools/nonexistent", {});
-      assert.ok(res.error);
-      assert.strictEqual(res.error.code, -32601);
-    });
+    const res = await ss.send("tools/nonexistent", {});
+    assert.ok(res.error);
+    assert.strictEqual(res.error.code, -32601);
   });
 
   it("unknown crypto method returns error", async function () {
-    const res = await call("crypto", { method: "nonexistent" });
+    const res = await ss.tool("crypto", { method: "nonexistent" });
     assert.ok(res.error);
     assert.ok(res.error.message.includes("Unknown crypto method"));
   });
 
   it("unknown pairId returns error", async function () {
-    const res = await call("crypto", { method: "sign", pairId: "pair_fake", data: "x" });
+    const res = await ss.tool("crypto", { method: "sign", pairId: "pair_fake", data: "x" });
     assert.ok(res.error);
     assert.ok(res.error.message.includes("Unknown pairId"));
   });
@@ -238,52 +242,46 @@ describe("MCP — error handling", function () {
 // ─── graph ────────────────────────────────────────────────────────────────────
 
 describe("MCP — graph", function () {
-  this.timeout(15000);
+  this.timeout(10000);
 
   it("get on empty soul returns null", async function () {
-    const soul = "mcp_test_" + Date.now();
-    const res = await call("graph", { soul, path: ["x"], op: "get" });
+    const soul = "mcp_test_" + Date.now() + "_a";
+    const res = await ss.tool("graph", { soul, path: ["x"], op: "get" });
     assert.strictEqual(content(res), null);
   });
 
   it("put then get round-trips a string value", async function () {
-    const soul = "mcp_test_" + Date.now();
-    await withSession(async s => {
-      const putRes = await s.tool("graph", { soul, path: ["name"], op: "put", value: "hello" });
-      const getRes = await s.tool("graph", { soul, path: ["name"], op: "get" });
-      assert.deepStrictEqual(content(putRes), { ok: true });
-      assert.strictEqual(content(getRes), "hello");
-    });
+    const soul = "mcp_test_" + Date.now() + "_b";
+    const putRes = await ss.tool("graph", { soul, path: ["name"], op: "put", value: "hello" });
+    const getRes = await ss.tool("graph", { soul, path: ["name"], op: "get" });
+    assert.deepStrictEqual(content(putRes), { ok: true });
+    assert.strictEqual(content(getRes), "hello");
   });
 
   it("put then get round-trips a numeric value", async function () {
-    const soul = "mcp_test_" + Date.now();
-    await withSession(async s => {
-      const putRes = await s.tool("graph", { soul, path: ["score"], op: "put", value: 42 });
-      const getRes = await s.tool("graph", { soul, path: ["score"], op: "get" });
-      assert.deepStrictEqual(content(putRes), { ok: true });
-      assert.strictEqual(content(getRes), 42);
-    });
+    const soul = "mcp_test_" + Date.now() + "_c";
+    const putRes = await ss.tool("graph", { soul, path: ["score"], op: "put", value: 42 });
+    const getRes = await ss.tool("graph", { soul, path: ["score"], op: "get" });
+    assert.deepStrictEqual(content(putRes), { ok: true });
+    assert.strictEqual(content(getRes), 42);
   });
 
   it("multi-level path (depth 3) round-trips", async function () {
-    const soul = "mcp_test_" + Date.now();
-    await withSession(async s => {
-      const putRes = await s.tool("graph", { soul, path: ["a", "b", "c"], op: "put", value: "deep" });
-      const getRes = await s.tool("graph", { soul, path: ["a", "b", "c"], op: "get" });
-      assert.deepStrictEqual(content(putRes), { ok: true });
-      assert.strictEqual(content(getRes), "deep");
-    });
+    const soul = "mcp_test_" + Date.now() + "_d";
+    const putRes = await ss.tool("graph", { soul, path: ["a", "b", "c"], op: "put", value: "deep" });
+    const getRes = await ss.tool("graph", { soul, path: ["a", "b", "c"], op: "get" });
+    assert.deepStrictEqual(content(putRes), { ok: true });
+    assert.strictEqual(content(getRes), "deep");
   });
 });
 
 // ─── crypto — stateless ───────────────────────────────────────────────────────
 
 describe("MCP — crypto (stateless)", function () {
-  this.timeout(20000);
+  this.timeout(15000);
 
   it("pair returns pub only (no private keys, no epub)", async function () {
-    const res = await call("crypto", { method: "pair" });
+    const res = await ss.tool("crypto", { method: "pair" });
     const pair = content(res);
     assert.ok(pair.pub);
     assert.ok(pair.address, "address present");
@@ -295,8 +293,8 @@ describe("MCP — crypto (stateless)", function () {
 
   it("pair with seed is deterministic", async function () {
     const [r1, r2] = await Promise.all([
-      call("crypto", { method: "pair", seed: "test-seed-123" }),
-      call("crypto", { method: "pair", seed: "test-seed-123" }),
+      ss.tool("crypto", { method: "pair", seed: "test-seed-123" }),
+      ss.tool("crypto", { method: "pair", seed: "test-seed-123" }),
     ]);
     const p1 = content(r1), p2 = content(r2);
     assert.strictEqual(p1.pub, p2.pub);
@@ -304,7 +302,7 @@ describe("MCP — crypto (stateless)", function () {
   });
 
   it("pair with format:evm returns 0x-prefixed pub and address", async function () {
-    const res = await call("crypto", { method: "pair", format: "evm" });
+    const res = await ss.tool("crypto", { method: "pair", format: "evm" });
     const pair = content(res);
     assert.match(pair.pub, /^0x04[0-9a-fA-F]{128}$/, "evm pub is uncompressed 04...");
     assert.match(pair.address, /^0x[0-9a-fA-F]{40}$/, "evm address is checksummed");
@@ -313,7 +311,7 @@ describe("MCP — crypto (stateless)", function () {
   });
 
   it("pair with format:btc returns compressed pub and P2PKH address", async function () {
-    const res = await call("crypto", { method: "pair", format: "btc" });
+    const res = await ss.tool("crypto", { method: "pair", format: "btc" });
     const pair = content(res);
     assert.match(pair.pub, /^0x0[23][0-9a-fA-F]{64}$/, "btc pub is compressed 02/03...");
     assert.match(pair.address, /^1[1-9A-HJ-NP-Za-km-z]{25,34}$/, "btc address is P2PKH");
@@ -322,59 +320,51 @@ describe("MCP — crypto (stateless)", function () {
   });
 
   it("sign → verify round-trip", async function () {
-    await withSession(async s => {
-      const identity = content(await s.tool("identity", {}));
-      const signed = content(await s.tool("crypto", { method: "sign", data: "hello", pairId: "self" }));
-      assert.ok(typeof signed === "string");
-      const plain  = content(await s.tool("crypto", { method: "verify", signed, pub: identity.pub }));
-      assert.strictEqual(plain, "hello");
-    });
+    const identity = content(await ss.tool("identity", {}));
+    const signed = content(await ss.tool("crypto", { method: "sign", data: "hello", pairId: "self" }));
+    assert.ok(typeof signed === "string");
+    const plain = content(await ss.tool("crypto", { method: "verify", signed, pub: identity.pub }));
+    assert.strictEqual(plain, "hello");
   });
 
   it("verify with wrong pub returns null/undefined (not throw)", async function () {
-    await withSession(async s => {
-      const p2 = content(await s.tool("crypto", { method: "pair" }));
-      const signed = content(await s.tool("crypto", { method: "sign", data: "x", pairId: "self" }));
-      const res = await s.tool("crypto", { method: "verify", signed, pub: p2.pub });
-      const val = res.error ? null : content(res);
-      assert.notStrictEqual(val, "x");
-    });
+    const p2 = content(await ss.tool("crypto", { method: "pair" }));
+    const signed = content(await ss.tool("crypto", { method: "sign", data: "x", pairId: "self" }));
+    const res = await ss.tool("crypto", { method: "verify", signed, pub: p2.pub });
+    const val = res.error ? null : content(res);
+    assert.notStrictEqual(val, "x");
   });
 
   it("encrypt → decrypt round-trip via pairId:self", async function () {
-    await withSession(async s => {
-      const enc = content(await s.tool("crypto", { method: "encrypt", data: "secret", pairId: "self" }));
-      assert.ok(typeof enc === "string" && enc.length > 0);
-      const dec = content(await s.tool("crypto", { method: "decrypt", enc, pairId: "self" }));
-      assert.strictEqual(dec, "secret");
-    });
+    const enc = content(await ss.tool("crypto", { method: "encrypt", data: "secret", pairId: "self" }));
+    assert.ok(typeof enc === "string" && enc.length > 0);
+    const dec = content(await ss.tool("crypto", { method: "decrypt", enc, pairId: "self" }));
+    assert.strictEqual(dec, "secret");
   });
 
   it("hash returns a string", async function () {
-    const res = await call("crypto", { method: "hash", data: "hello", name: "SHA-256", encode: "base62" });
+    const res = await ss.tool("crypto", { method: "hash", data: "hello", name: "SHA-256", encode: "base62" });
     const h = content(res);
     assert.ok(typeof h === "string" && h.length > 0);
   });
 
   it("hash is deterministic for same input", async function () {
     const [r1, r2] = await Promise.all([
-      call("crypto", { method: "hash", data: "x", name: "SHA-256", encode: "base62" }),
-      call("crypto", { method: "hash", data: "x", name: "SHA-256", encode: "base62" }),
+      ss.tool("crypto", { method: "hash", data: "x", name: "SHA-256", encode: "base62" }),
+      ss.tool("crypto", { method: "hash", data: "x", name: "SHA-256", encode: "base62" }),
     ]);
     assert.strictEqual(content(r1), content(r2));
   });
 
   it("recover returns the signer's pub key", async function () {
-    await withSession(async s => {
-      const identity = content(await s.tool("identity", {}));
-      const signed   = content(await s.tool("crypto", { method: "sign", data: "recov", pairId: "self" }));
-      const pub      = content(await s.tool("crypto", { method: "recover", signed }));
-      assert.strictEqual(pub, identity.pub);
-    });
+    const identity = content(await ss.tool("identity", {}));
+    const signed   = content(await ss.tool("crypto", { method: "sign", data: "recov", pairId: "self" }));
+    const pub      = content(await ss.tool("crypto", { method: "recover", signed }));
+    assert.strictEqual(pub, identity.pub);
   });
 
   it("pen returns a soul string starting with !", async function () {
-    const soul = content(await call("crypto", { method: "pen", key: "fixed" }));
+    const soul = content(await ss.tool("crypto", { method: "pen", key: "fixed" }));
     assert.ok(typeof soul === "string");
     assert.ok(soul.startsWith("!"));
   });
@@ -405,7 +395,7 @@ describe("MCP — pairId:\"self\" flow", function () {
   });
 
   it("unknown pairId returns error", async function () {
-    const res = await call("crypto", { method: "sign", pairId: "pair_stale123", data: "x" });
+    const res = await ss.tool("crypto", { method: "sign", pairId: "pair_stale123", data: "x" });
     assert.ok(res.error);
     assert.ok(res.error.message.includes("Unknown pairId"));
   });
@@ -749,13 +739,13 @@ describe("MCP — graph subscribe / unsubscribe", function () {
   });
 
   it("unsubscribe with unknown sub_id returns error", async function () {
-    const res = await call("graph", { soul: "x", op: "unsubscribe", opt: { sub_id: "sub_bad999" } });
+    const res = await ss.tool("graph", { soul: "x", op: "unsubscribe", opt: { sub_id: "sub_bad999" } });
     assert.ok(res.error);
     assert.ok(res.error.message.includes("Unknown sub_id"));
   });
 
   it("unsubscribe without sub_id returns error", async function () {
-    const res = await call("graph", { soul: "x", op: "unsubscribe" });
+    const res = await ss.tool("graph", { soul: "x", op: "unsubscribe" });
     assert.ok(res.error);
     assert.ok(res.error.message.includes("sub_id"));
   });
