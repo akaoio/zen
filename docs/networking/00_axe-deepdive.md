@@ -60,6 +60,7 @@ graph TB
             OPT_HOOK["mesh.hear['opt']\npeer advertisement"]
             STAY["axe.stay()\npersist topology"]
             PING["auto-ping\nevery 30s"]
+            SVC["loadService()\nlib/service.js\ndam:'service'"]
         end
 
         subgraph MOB["⑤ MOB CONTROL"]
@@ -105,6 +106,7 @@ graph TB
     style OPT_HOOK fill:#14532d,stroke:#22c55e,color:#86efac
     style STAY fill:#14532d,stroke:#22c55e,color:#86efac
     style PING fill:#14532d,stroke:#22c55e,color:#86efac
+    style SVC fill:#14532d,stroke:#22c55e,color:#86efac
 
     style MOB fill:#3a1a10,stroke:#f97316,color:#fdba74
     style MOBHI fill:#3a2010,stroke:#f97316,color:#fdba74
@@ -234,9 +236,11 @@ Mục đích: nếu tab A đã discover được relay X, tab B không cần dis
 | | `axe.fall` | `axe.up` |
 |---|---|---|
 | **Môi trường** | Browser | Node.js relay |
-| **Nội dung** | Tất cả peer đã biết | Relay peer đã kết nối (outbound only) |
+| **Nội dung** | Tất cả peer đã biết (URL → obj) | Cả inbound lẫn outbound (pid → peer) |
 | **Key** | URL string | PID string |
-| **Mục đích** | Track để không kết nối lại; fallback khi disconnect | Relay mesh topology |
+| **Inbound** | N/A | Có — chỉ cho conflict detection + MOB |
+| **Outbound** | N/A | Có — được axe.stay persist và auto-ping |
+| **Mục đích** | Track để không kết nối lại; fallback khi disconnect | Relay mesh topology + conflict dedup |
 
 ---
 
@@ -399,7 +403,19 @@ function flush(peer) {
 
 ## ④ Relay Mesh — `axe.up`
 
-`axe.up` là **topology map của relay mesh**: `{ pid → peer }` chỉ chứa outbound relay connections.
+`axe.up` là **topology map của relay mesh**: `{ pid → peer }` chứa **cả inbound lẫn outbound** connections.
+
+> **Phân biệt quan trọng**: mọi peer sau handshake (`mesh.hear["?"]`) đều vào `axe.up`. Nhưng chỉ outbound (có `peer.url`) mới được `axe.stay` và auto-ping. Inbound chỉ lưu để phục vụ conflict detection và MOB eviction.
+
+```js
+// Line 554-558 trong axe.js:
+axe.up[peer.pid] = peer;          // ALL peers vào axe.up
+if (!peer.url) {
+  // Inbound — stored for conflict detection only. No axe.stay, no ping.
+  return;
+}
+axe.stay();  // chỉ outbound kích trigger persist
+```
 
 ### Duplicate connection resolution
 
@@ -430,17 +446,20 @@ Tại sao không dùng timestamp? Vì clock sync không đảm bảo. Tại sao 
 
 Lưu ý quan trọng: **không copy `drop.url` sang `keep`**. Nếu copy, inbound peer (no url) sẽ bị ghi url → `axe.stay` save url đó → next restart tạo outbound self-connection loop.
 
-### Tại sao chỉ outbound vào `axe.up`?
+### Tại sao inbound vào `axe.up` nhưng không persist?
 
 ```js
-if (!peer.url) { return; } // chỉ outbound (có url) mới được lưu vào axe.up
-axe.up[peer.pid] = peer;
+// 3 lý do chỉ outbound được axe.stay:
 ```
 
-Outbound connection = relay này chủ động connect đến relay kia → có `url`. Inbound = relay kia connect đến mình → không có `url`. `axe.up` chỉ track outbound vì:
-1. Outbound là "những relay mình biết và tin tưởng đủ để connect"
-2. `axe.stay` persist outbound URLs để restore sau restart
-3. Nếu lưu inbound → risk self-URL loop (như note trên)
+1. **Outbound = relay mình biết và chọn**: `axe.stay` lưu URL → restore sau restart. Inbound không có URL → không thể save.
+2. **Tránh self-URL loop**: Nếu inbound được lưu URL (copied từ outbound) → `axe.stay` save URL đó → next restart tạo outbound đến chính mình → vòng lặp.
+3. **Inbound là "ai đó connect đến mình"**: Relay kia sẽ tự kết nối lại sau restart — không cần mình phải lưu.
+
+Inbound vẫn trong `axe.up` để:
+- PID conflict detection (xem phần trên)
+- MOB eviction: MOB filter `!p.url` → evict inbound trước outbound
+- `axe.up` length check (99 cap tính cả inbound)
 
 ### `mesh.hear["opt"]` — peer advertisement
 
@@ -501,7 +520,32 @@ Tại sao ping ngay? Vì `peer.rtt = 0` khi mới connect → sort RTT sẽ cho 
 
 Tại sao 30s? Đủ để detect degraded connection (3 missed pings = 90s). Không quá thường để tránh overhead.
 
----
+### `loadService()` — remote relay management
+
+Sau 9ms khởi động, AXE load `lib/service.js` (Node.js only, lazy import):
+
+```js
+// axe.js line 644-646:
+setTimeout(function() {
+  loadService(root);  // import("./service.js")
+}, 9);
+
+// loadService() bỏ qua nếu là browser:
+function loadService(root) {
+  if (Zen.window || typeof process === "undefined") return;
+  // ...
+}
+```
+
+`lib/service.js` đăng ký handler `mesh.hear["service"]` — cho phép relay nhận lệnh qua DAM protocol:
+
+| Command | Điều kiện | Hành động |
+|---|---|---|
+| `{ dam:"service", try:"update", pass, version }` | Cần `/etc/systemd/system/relay.service` + pass đúng | Chạy `script/install.sh`, exit process |
+
+Password được đọc từ `~/.config/zen/pass`. Sau khi `install.sh` chạy xong (kéo code mới, restart), relay tự exit → systemd restart với code mới.
+
+Đây là cơ chế cho `zen update` CLI và MCP `update` tool hoạt động từ xa — không cần SSH.
 
 ## ⑤ Mob Control
 
@@ -613,6 +657,7 @@ Lưu ý: `fall(msg)` vẫn broadcast PUT đến tất cả. AXE `root.on("put")`
 | 6 | **Mob rebalancing** | Redirect thay vì drop → peer bị reject vẫn biết đi đâu tiếp |
 | 7 | **RTT-based mob pruning** | Drop peer latency cao nhất trước → minimize quality impact |
 | 8 | **Topology persistence** | `axe.stay` → relay mesh restore nhanh sau restart |
+| 9 | **Remote management** | `lib/service.js` cho phép `zen update` / MCP update relay từ xa qua DAM, không cần SSH |
 
 ---
 
@@ -627,7 +672,7 @@ Lưu ý: `fall(msg)` vẫn broadcast PUT đến tất cả. AXE `root.on("put")`
 | 5 | **99 peer cap hardcoded** | `mesh.hear["opt"]` dừng ở 99 — "TEMPORARILY UNTIL BENCHMARKED!" từ comment |
 | 6 | **bscan CORS workaround** | Dựa vào quirk WS bypass CORS — có thể bị browser policy thay đổi |
 | 7 | **Volunteer DHT trust** | `?axe=` URL param → fetch peer list từ arbitrary URL, chỉ filter regex `wss?://` |
-| 8 | **axe.up chỉ track outbound** | Inbound relay peers không vào axe.up → nếu outbound die, không failover sang inbound |
+| 8 | **Inbound không được restore sau restart** | `axe.stay` chỉ persist outbound URLs. Nếu tất cả outbound peers die, relay bị cô lập cho đến khi có inbound kết nối lại |
 
 ---
 
@@ -646,6 +691,7 @@ ZEN.gun() / ZEN()
     ├── mesh.hear["opt"]         ← AXE thêm peer advertisement handler
     ├── mesh.hear["pex"]         ← AXE thêm PEX handler (browser)
     ├── mesh.hear["mob"]         ← DAM handle mob message từ relay (browser)
+    ├── mesh.hear["service"]     ← lib/service.js: remote update via DAM (Node.js, systemd)
     │
     ├── root.on("hi")            ← AXE intercept connect event (browser + mob)
     ├── root.on("bye")           ← AXE intercept disconnect event
@@ -674,7 +720,8 @@ NODE RELAY:
    GET đến tôi → tôi hỏi đúng người, theo thứ tự RTT.
    PUT đến tôi → tôi gửi đúng người đang chờ, không broadcast vô tội vạ.
    Relay mới kết nối → tôi negotiate giữ một connection thôi.
-   Peer quá nhiều → tôi redirect peer tệ nhất đi chỗ khác."
+   Peer quá nhiều → tôi redirect peer tệ nhất đi chỗ khác.
+   Ai muốn update tôi từ xa → gửi dam:'service' + password là xong."
 ```
 
 **Cách nhớ 5 layer của AXE:**
