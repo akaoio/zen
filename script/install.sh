@@ -18,6 +18,7 @@ INSTALL_DIR="$HOME/zen"
 SKIP_DEPS=false
 SKIP_SERVICE=false
 DRY_RUN=false
+YES=false
 NODE_MAJOR=24
 # Storage resilience (empty = use built-in defaults)
 FMB=""        # free-MB threshold before disk-full warning (default: 200)
@@ -40,6 +41,7 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 confirm() {
+    [[ "$YES" == "true" ]] && return 0
     local response
     if [[ -e /dev/tty ]]; then
         read -r -p "$1 [y/N] " response </dev/tty
@@ -85,6 +87,7 @@ OPTIONS:
     --skip-deps                 Skip Node.js/system dependency installation
     --skip-service              Skip systemd service setup
     --dry-run                   Show what would be done without executing
+    -y, --yes                   Auto-confirm all prompts (for non-interactive/CI use)
     -h, --help                  Show this help message
 
 EXAMPLES:
@@ -117,6 +120,7 @@ while [[ $# -gt 0 ]]; do
         --skip-deps)    SKIP_DEPS=true;    shift ;;
         --skip-service) SKIP_SERVICE=true; shift ;;
         --dry-run)      DRY_RUN=true;      shift ;;
+        -y|--yes)       YES=true;          shift ;;
         -h|--help)      show_help; exit 0 ;;
         *) log_error "Unknown option: $1"; show_help; exit 1 ;;
     esac
@@ -476,7 +480,7 @@ main() {
     fi
 
     # Interactive prompts — use /dev/tty so this works with curl|bash too
-    if [[ -e /dev/tty ]] && [[ "$SKIP_SERVICE" != "true" ]]; then
+    if [[ -e /dev/tty ]] && [[ "$SKIP_SERVICE" != "true" ]] && [[ "$YES" != "true" ]]; then
         if [[ -z "$DOMAIN" ]]; then
             read -rp "$(echo -e '\033[1;34m[ZEN]\033[0m') Your public domain or IP (e.g. peer1.example.com) [leave blank to auto-detect]: " _dom </dev/tty
             DOMAIN="${_dom:-}"
