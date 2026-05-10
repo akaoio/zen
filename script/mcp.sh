@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # script/mcp.sh — Dev-mode MCP launcher
 #
 # Resolves the absolute path of lib/mcp.js relative to this script,
@@ -12,5 +12,5 @@
 #   ZEN_NET=testnet   — use testnet network (port 8421, separate data dir)
 #   ZEN_NET=mainnet   — use mainnet network (port 8420) — default
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 exec node "$SCRIPT_DIR/../lib/mcp.js" "$@"

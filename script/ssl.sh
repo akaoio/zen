@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # SSL Certificate Management Script using acme.sh
 # This script sets up SSL certificates using Let's Encrypt via acme.sh
@@ -38,7 +38,7 @@ NC='\033[0m' # No Color
 
 # Help function
 show_help() {
-    cat << EOF
+    cat << EOF2
 SSL Certificate Management Script
 
 USAGE:
@@ -100,29 +100,29 @@ EXAMPLES:
     # Custom certificate paths
     $0 -d example.com -e admin@example.com --key-file /etc/ssl/private/example.key --cert-file /etc/ssl/certs/example.crt
 
-EOF
+EOF2
 }
 
 # Logging functions
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    printf '%b[INFO]%b %s\n' "${GREEN}" "${NC}" "$1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    printf '%b[WARN]%b %s\n' "${YELLOW}" "${NC}" "$1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$1"
 }
 
 log_debug() {
-    echo -e "${BLUE}[DEBUG]${NC} $1"
+    printf '%b[DEBUG]%b %s\n' "${BLUE}" "${NC}" "$1"
 }
 
 # Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
+while [ $# -gt 0 ]; do
+    case "$1" in
         -d|--domain)
             DOMAIN="$2"
             shift 2
@@ -157,12 +157,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dns)
             DNS_MODE=true
-            DNS_PROVIDER="${2:-manual}"
-            if [[ "$2" && "$2" != --* ]]; then
-                shift 2
-            else
-                shift
-            fi
+            case "${2:-}" in
+                ''|--*) DNS_PROVIDER="manual"; shift ;;
+                *)      DNS_PROVIDER="$2"; shift 2 ;;
+            esac
             ;;
         --dns-api-key)
             DNS_API_KEY="$2"
@@ -208,21 +206,23 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Discover the outbound global IPv6 of this machine (bash only, no Node)
+# Discover the outbound global IPv6 of this machine (no Node)
 discover_local_ip6() {
     local ip6
-    # Prefer route-based discovery (most reliable)
+    # Prefer route-based discovery
     ip6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null \
-          | grep -oP '(?<=src )([0-9a-fA-F:]+)' | head -1)
-    if [[ -n "$ip6" ]] && is_ipv6_address "$ip6"; then
-        echo "$ip6"; return 0
+          | sed -n 's/.*src \([0-9a-fA-F:]*\).*/\1/p' | head -1)
+    if [ -n "$ip6" ] && is_ipv6_address "$ip6"; then
+        printf '%s\n' "$ip6"
+        return 0
     fi
-    # Fallback: first global unicast address from ip -6 addr
+    # Fallback: first global unicast address
     ip6=$(ip -6 addr show scope global 2>/dev/null \
-          | grep -oP '(?<=inet6 )([0-9a-fA-F:]+)(?=/)' \
+          | sed -n 's/.*inet6 \([0-9a-fA-F:]*\)\/.*/\1/p' \
           | grep -v '^fe80' | head -1)
-    if [[ -n "$ip6" ]] && is_ipv6_address "$ip6"; then
-        echo "$ip6"; return 0
+    if [ -n "$ip6" ] && is_ipv6_address "$ip6"; then
+        printf '%s\n' "$ip6"
+        return 0
     fi
     return 1
 }
@@ -230,24 +230,35 @@ discover_local_ip6() {
 # Detect if a string is a raw IPv6 address
 is_ipv6_address() {
     local d="$1"
-    # Strip brackets if present: [2001:db8::1] -> 2001:db8::1
-    d="${d#[}"; d="${d%]}"
-    [[ "$d" =~ ^[0-9a-fA-F:]+$ && "$d" == *:*:* ]]
+    # Strip brackets if present
+    d="${d#[}"
+    d="${d%]}"
+    # Must contain at least two colons (IPv6) and only hex chars + colons
+    case "$d" in
+        *:*:*) ;;
+        *) return 1 ;;
+    esac
+    case "$d" in
+        *[!0-9a-fA-F:]*) return 1 ;;
+    esac
+    return 0
 }
 
 # Input validation functions
 validate_domain() {
     local domain="$1"
-    # Allow raw IPv6 addresses — validated separately
     if is_ipv6_address "$domain"; then
         return 0
     fi
-    # Basic domain validation - RFC compliant
-    if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-        log_error "Invalid domain format: $domain"
-        exit 1
-    fi
-    if [[ ${#domain} -gt 253 ]]; then
+    # Basic domain validation using case pattern
+    case "$domain" in
+        '') log_error "Domain cannot be empty"; exit 1 ;;
+        *[!a-zA-Z0-9.-]*) log_error "Invalid domain format: $domain"; exit 1 ;;
+        .*|*.) log_error "Invalid domain format: $domain"; exit 1 ;;
+    esac
+    local len
+    len=$(printf '%s' "$domain" | wc -c | tr -d ' ')
+    if [ "$len" -gt 253 ]; then
         log_error "Domain too long: $domain (max 253 chars)"
         exit 1
     fi
@@ -255,52 +266,53 @@ validate_domain() {
 
 validate_email() {
     local email="$1"
-    # Basic email validation
-    if [[ ! "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        log_error "Invalid email format: $email"
-        exit 1
-    fi
+    case "$email" in
+        *@*.*) ;;
+        *) log_error "Invalid email format: $email"; exit 1 ;;
+    esac
 }
 
 validate_path() {
     local path="$1"
-    # Prevent path traversal attacks
-    if [[ "$path" =~ \.\./ ]]; then
-        log_error "Path traversal detected: $path"
-        exit 1
-    fi
-    # Ensure absolute paths for key files
-    if [[ "$path" =~ \.(pem|key|crt|cert)$ && ! "$path" =~ ^/ ]]; then
-        log_error "Key/cert files must use absolute paths: $path"
-        exit 1
-    fi
+    case "$path" in
+        *../*|*..) log_error "Path traversal detected: $path"; exit 1 ;;
+    esac
+    case "$path" in
+        *.pem|*.key|*.crt|*.cert)
+            case "$path" in
+                /*) ;;
+                *) log_error "Key/cert files must use absolute paths: $path"; exit 1 ;;
+            esac
+            ;;
+    esac
 }
 
 sanitize_command() {
     local cmd="$1"
     # Remove potentially dangerous characters
-    echo "$cmd" | sed 's/[;&|`$(){}\[\]\\]//g'
+    printf '%s\n' "$cmd" | sed 's/[;&|`$(){}\[\]\\]//g'
 }
 
 get_acme_domain_dir() {
-    if [[ -d "$ACME_DIR/${DOMAIN}_ecc" ]]; then
+    local escaped_domain
+
+    if [ -d "$ACME_DIR/${DOMAIN}_ecc" ]; then
         echo "$ACME_DIR/${DOMAIN}_ecc"
         return 0
     fi
 
-    if [[ -d "$ACME_DIR/$DOMAIN" ]]; then
+    if [ -d "$ACME_DIR/$DOMAIN" ]; then
         echo "$ACME_DIR/$DOMAIN"
         return 0
     fi
 
     # acme.sh may encode colons in IPv6 dirs (some versions use underscores)
-    local escaped_domain
-    escaped_domain="${DOMAIN//:/_}"
-    if [[ -d "$ACME_DIR/${escaped_domain}_ecc" ]]; then
+    escaped_domain=$(printf '%s' "$DOMAIN" | sed 's/:/_/g')
+    if [ -d "$ACME_DIR/${escaped_domain}_ecc" ]; then
         echo "$ACME_DIR/${escaped_domain}_ecc"
         return 0
     fi
-    if [[ -d "$ACME_DIR/$escaped_domain" ]]; then
+    if [ -d "$ACME_DIR/$escaped_domain" ]; then
         echo "$ACME_DIR/$escaped_domain"
         return 0
     fi
@@ -317,13 +329,13 @@ CERT_FILE="${CERT_FILE:-$ZEN_CONFIG_DIR/cert.pem}"
 RELOAD_CMD="${RELOAD_CMD:-}"
 
 # Validate required parameters
-if [[ -z "$DOMAIN" ]]; then
+if [ -z "$DOMAIN" ]; then
     log_error "Domain is required. Use --domain or set DOMAIN environment variable."
     show_help
     exit 1
 fi
 
-if [[ -z "$EMAIL" ]]; then
+if [ -z "$EMAIL" ]; then
     log_error "Email is required. Use --email or set EMAIL environment variable."
     show_help
     exit 1
@@ -342,20 +354,20 @@ fi
 # Validate inputs
 validate_domain "$DOMAIN"
 validate_email "$EMAIL"
-[[ -n "$WEBROOT" ]] && validate_path "$WEBROOT"
+[ -n "$WEBROOT" ] && validate_path "$WEBROOT"
 validate_path "$KEY_FILE"
 validate_path "$CERT_FILE"
-[[ -n "$RELOAD_CMD" ]] && RELOAD_CMD="$(sanitize_command "$RELOAD_CMD")"
+[ -n "$RELOAD_CMD" ] && RELOAD_CMD="$(sanitize_command "$RELOAD_CMD")"
 
 # Set default webroot if not specified
-if [[ -z "$WEBROOT" ]]; then
+if [ -z "$WEBROOT" ]; then
     WEBROOT="$(pwd)"
     log_info "Using current directory as webroot: $WEBROOT"
 fi
 
 # Dry run function
 execute() {
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would execute: $*"
     else
         "$@"
@@ -364,7 +376,7 @@ execute() {
 
 # Check if acme.sh is installed
 check_acme_installation() {
-    if [[ -d "$ACME_DIR" && -f "$ACME_DIR/acme.sh" && "$FORCE_INSTALL" != "true" ]]; then
+    if [ -d "$ACME_DIR" ] && [ -f "$ACME_DIR/acme.sh" ] && [ "$FORCE_INSTALL" != "true" ]; then
         log_info "acme.sh is already installed at $ACME_DIR"
         return 0
     else
@@ -383,7 +395,7 @@ install_acme() {
     local temp_dir
 
     # Remove existing installation if force install
-    if [[ "$FORCE_INSTALL" == "true" && -d "$ACME_DIR" ]]; then
+    if [ "$FORCE_INSTALL" = "true" ] && [ -d "$ACME_DIR" ]; then
         log_info "Force install: removing existing acme.sh installation"
         execute rm -rf "$ACME_DIR"
     fi
@@ -392,13 +404,12 @@ install_acme() {
     temp_dir=$(mktemp -d)
 
     cleanup_temp_dir() {
-        [[ -d "$temp_dir" ]] && rm -rf "$temp_dir"
+        [ -d "$temp_dir" ] && rm -rf "$temp_dir"
     }
 
-    trap cleanup_temp_dir RETURN
-
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would download and install acme.sh"
+        cleanup_temp_dir
         return 0
     fi
 
@@ -408,11 +419,12 @@ install_acme() {
     # Build install command from within the cloned repo because acme.sh expects
     # its support files to be available relative to the current working directory.
     INSTALL_CMD="cd \"$temp_dir/acme.sh\" && ./acme.sh --install --home \"$ACME_DIR\" --accountemail \"$EMAIL\""
-    if [[ "$AUTO_UPGRADE" == "false" ]]; then
+    if [ "$AUTO_UPGRADE" = "false" ]; then
         INSTALL_CMD="$INSTALL_CMD --noupgrade"
     fi
 
-    execute bash -c "$INSTALL_CMD"
+    execute sh -c "$INSTALL_CMD"
+    cleanup_temp_dir
 
     log_info "acme.sh installed successfully"
 }
@@ -422,33 +434,33 @@ issue_certificate() {
     log_info "Issuing certificate for domain: $DOMAIN"
 
     # Build acme.sh command
-    if [[ "$STANDALONE" == "true" ]]; then
-        if [[ "$IS_IPV6" == "true" ]]; then
+    if [ "$STANDALONE" = "true" ]; then
+        if [ "$IS_IPV6" = "true" ]; then
             ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone --listen-v6"
             log_info "Using standalone IPv6 mode (temporary web server on port 80, IPv6)"
         else
             ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone"
             log_info "Using standalone mode (temporary web server on port 80)"
         fi
-    elif [[ "$DNS_MODE" == "true" ]]; then
+    elif [ "$DNS_MODE" = "true" ]; then
         # Setup DNS provider environment variables
-        if [[ "$DNS_PROVIDER" == "cloudflare" ]]; then
-            [[ -n "$DNS_API_KEY" ]] && export CF_Key="$DNS_API_KEY"
-            [[ -n "$DNS_EMAIL" ]] && export CF_Email="$DNS_EMAIL"
+        if [ "$DNS_PROVIDER" = "cloudflare" ]; then
+            [ -n "$DNS_API_KEY" ] && export CF_Key="$DNS_API_KEY"
+            [ -n "$DNS_EMAIL" ] && export CF_Email="$DNS_EMAIL"
             ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_cf"
             log_info "Using Cloudflare automatic DNS validation"
-        elif [[ "$DNS_PROVIDER" == "route53" ]]; then
-            [[ -n "$DNS_API_KEY" ]] && export AWS_ACCESS_KEY_ID="$DNS_API_KEY"
-            [[ -n "$DNS_API_SECRET" ]] && export AWS_SECRET_ACCESS_KEY="$DNS_API_SECRET"
+        elif [ "$DNS_PROVIDER" = "route53" ]; then
+            [ -n "$DNS_API_KEY" ] && export AWS_ACCESS_KEY_ID="$DNS_API_KEY"
+            [ -n "$DNS_API_SECRET" ] && export AWS_SECRET_ACCESS_KEY="$DNS_API_SECRET"
             ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_aws"
             log_info "Using Route53 automatic DNS validation"
-        elif [[ "$DNS_PROVIDER" == "digitalocean" ]]; then
-            [[ -n "$DNS_API_KEY" ]] && export DO_API_KEY="$DNS_API_KEY"
+        elif [ "$DNS_PROVIDER" = "digitalocean" ]; then
+            [ -n "$DNS_API_KEY" ] && export DO_API_KEY="$DNS_API_KEY"
             ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_dgon"
             log_info "Using DigitalOcean automatic DNS validation"
-        elif [[ "$DNS_PROVIDER" == "godaddy" ]]; then
-            [[ -n "$DNS_API_KEY" ]] && export GD_Key="$DNS_API_KEY"
-            [[ -n "$DNS_API_SECRET" ]] && export GD_Secret="$DNS_API_SECRET"
+        elif [ "$DNS_PROVIDER" = "godaddy" ]; then
+            [ -n "$DNS_API_KEY" ] && export GD_Key="$DNS_API_KEY"
+            [ -n "$DNS_API_SECRET" ] && export GD_Secret="$DNS_API_SECRET"
             ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_gd"
             log_info "Using GoDaddy automatic DNS validation"
         else
@@ -460,12 +472,12 @@ issue_certificate() {
         log_info "Using webroot mode with path: $WEBROOT"
     fi
 
-    if [[ "$STAGING" == "true" ]]; then
+    if [ "$STAGING" = "true" ]; then
         ACME_CMD="$ACME_CMD --staging"
         log_warn "Using Let's Encrypt staging environment (test certificates)"
     fi
 
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would issue certificate with: $ACME_CMD"
         return 0
     fi
@@ -473,20 +485,21 @@ issue_certificate() {
     # Execute certificate issuance with proper error handling
     log_debug "Executing: $ACME_CMD"
 
-    if execute bash -c "$ACME_CMD"; then
+    if execute sh -c "$ACME_CMD"; then
         log_info "Certificate issued successfully"
 
         # Verify certificate was actually created
         local cert_dir
-        cert_dir="$(get_acme_domain_dir)" || true
-        if [[ -z "$cert_dir" || ! -f "$cert_dir/fullchain.cer" ]]; then
+        cert_dir=$(get_acme_domain_dir) || true
+        if [ -z "$cert_dir" ] || [ ! -f "$cert_dir/fullchain.cer" ]; then
             log_error "Certificate issuance reported success but files not found"
             exit 1
         fi
     else
-        local exit_code=$?
+        local exit_code
+        exit_code=$?
         log_error "Certificate issuance failed with exit code $exit_code"
-        
+
         # Show debug information
         log_info "For troubleshooting, run with --debug:"
         log_info "$ACME_DIR/acme.sh --issue -d $DOMAIN --debug"
@@ -504,26 +517,27 @@ install_certificate() {
     execute mkdir -p "$(dirname "$KEY_FILE")"
     execute mkdir -p "$(dirname "$CERT_FILE")"
 
-    local cert_type_flag=""
-    if [[ -d "$ACME_DIR/${DOMAIN}_ecc" ]]; then
+    local cert_type_flag
+    cert_type_flag=""
+    if [ -d "$ACME_DIR/${DOMAIN}_ecc" ]; then
         cert_type_flag=" --ecc"
     fi
 
     # Build install command
     INSTALL_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --install-cert -d \"$DOMAIN\"$cert_type_flag --key-file \"$KEY_FILE\" --fullchain-file \"$CERT_FILE\""
 
-    if [[ -n "$RELOAD_CMD" ]]; then
+    if [ -n "$RELOAD_CMD" ]; then
         INSTALL_CMD="$INSTALL_CMD --reloadcmd \"$RELOAD_CMD\""
         log_info "  Reload command: $RELOAD_CMD"
     fi
 
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would install certificate with: $INSTALL_CMD"
         return 0
     fi
-    
+
     # Execute certificate installation
-    if execute bash -c "$INSTALL_CMD"; then
+    if execute sh -c "$INSTALL_CMD"; then
         log_info "Certificate installed successfully"
     else
         log_error "Certificate installation failed"
@@ -533,23 +547,23 @@ install_certificate() {
 
 # Verify certificate
 verify_certificate() {
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would verify certificate files"
         return 0
     fi
 
     log_info "Verifying certificate installation..."
-    
-    if [[ -f "$KEY_FILE" && -f "$CERT_FILE" ]]; then
+
+    if [ -f "$KEY_FILE" ] && [ -f "$CERT_FILE" ]; then
         log_info "Certificate files exist:"
         log_info "  Key: $KEY_FILE ($(stat -c%s "$KEY_FILE") bytes)"
         log_info "  Cert: $CERT_FILE ($(stat -c%s "$CERT_FILE") bytes)"
-        
+
         # Check certificate validity
-        if command -v openssl &> /dev/null; then
+        if command -v openssl >/dev/null 2>&1; then
             CERT_INFO=$(openssl x509 -in "$CERT_FILE" -text -noout 2>/dev/null || echo "")
-            if [[ -n "$CERT_INFO" ]]; then
-                EXPIRY=$(echo "$CERT_INFO" | grep "Not After" | cut -d: -f2- | xargs)
+            if [ -n "$CERT_INFO" ]; then
+                EXPIRY=$(printf '%s\n' "$CERT_INFO" | grep "Not After" | cut -d: -f2- | xargs)
                 log_info "  Certificate expires: $EXPIRY"
             fi
         fi
@@ -574,21 +588,22 @@ issue_ip6_cert() {
         return 0
     fi
 
-    local ip6_acme_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt \
+    local ip6_acme_cmd
+    ip6_acme_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt \
 --issue -d \"$ip6\" --keylength ec-256 --standalone --listen-v6"
 
-    if [[ "$STAGING" == "true" ]]; then
+    if [ "$STAGING" = "true" ]; then
         ip6_acme_cmd="$ip6_acme_cmd --staging"
     fi
 
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would issue IPv6 cert: $ip6_acme_cmd"
         log_info "[DRY RUN] Would install IPv6 cert → $ip6_key / $ip6_cert"
         return 0
     fi
 
     log_debug "Executing IPv6 cert: $ip6_acme_cmd"
-    if bash -c "$ip6_acme_cmd"; then
+    if sh -c "$ip6_acme_cmd"; then
         log_info "IPv6 certificate issued"
     else
         log_warn "IPv6 cert issuance failed (non-fatal). You can retry manually:"
@@ -597,15 +612,16 @@ issue_ip6_cert() {
     fi
 
     # Install IPv6 cert to predictable path; register reload hook for renewal
-    local ip6_install_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" \
+    local ip6_install_cmd
+    ip6_install_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" \
 --install-cert -d \"$ip6\" --ecc \
 --key-file \"$ip6_key\" --fullchain-file \"$ip6_cert\""
 
-    if [[ -n "$RELOAD_CMD" ]]; then
+    if [ -n "$RELOAD_CMD" ]; then
         ip6_install_cmd="$ip6_install_cmd --reloadcmd \"$RELOAD_CMD\""
     fi
 
-    if bash -c "$ip6_install_cmd"; then
+    if sh -c "$ip6_install_cmd"; then
         log_info "IPv6 certificate installed → $ip6_key"
         log_info "IPv6 certificate installed → $ip6_cert"
     else
@@ -619,35 +635,41 @@ show_renewal_info() {
     log_info "  Certificates are automatically renewed by acme.sh"
     log_info "  Check renewal status: $ACME_DIR/acme.sh --home $ACME_DIR --list"
     log_info "  Manual renewal: $ACME_DIR/acme.sh --home $ACME_DIR --renew -d $DOMAIN"
-    if [[ -n "$RELOAD_CMD" ]]; then
+    if [ -n "$RELOAD_CMD" ]; then
         log_info "  Service will be reloaded automatically: $RELOAD_CMD"
     fi
 }
 
 # Cleanup function for failed SSL operations
 cleanup_ssl() {
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        return 0
+    fi
+
+    trap - 0
     log_warn "SSL setup failed, cleaning up..."
 
     # Remove failed certificate attempt
-    if [[ -d "$ACME_DIR/$DOMAIN" ]]; then
+    if [ -d "$ACME_DIR/$DOMAIN" ]; then
         rm -rf "$ACME_DIR/$DOMAIN"
         log_info "Removed failed certificate directory"
     fi
-    if [[ -d "$ACME_DIR/${DOMAIN}_ecc" ]]; then
+    if [ -d "$ACME_DIR/${DOMAIN}_ecc" ]; then
         rm -rf "$ACME_DIR/${DOMAIN}_ecc"
         log_info "Removed failed certificate directory"
     fi
 
     # Remove incomplete certificate files
-    [[ -f "$KEY_FILE" && ! -s "$KEY_FILE" ]] && rm -f "$KEY_FILE"
-    [[ -f "$CERT_FILE" && ! -s "$CERT_FILE" ]] && rm -f "$CERT_FILE"
+    [ -f "$KEY_FILE" ] && [ ! -s "$KEY_FILE" ] && rm -f "$KEY_FILE"
+    [ -f "$CERT_FILE" ] && [ ! -s "$CERT_FILE" ] && rm -f "$CERT_FILE"
 
     log_error "SSL setup failed and cleaned up"
-    exit 1
+    exit "$status"
 }
 
 # Set up error trap
-trap cleanup_ssl ERR
+trap 'cleanup_ssl' 0
 
 # Main process
 main() {
@@ -657,13 +679,13 @@ main() {
     log_info "Webroot: $WEBROOT"
     log_info "Key file: $KEY_FILE"
     log_info "Cert file: $CERT_FILE"
-    [[ "$STAGING" == "true" ]] && log_warn "Using staging environment"
-    [[ "$DRY_RUN" == "true" ]] && log_warn "DRY RUN MODE - No changes will be made"
-    
+    [ "$STAGING" = "true" ] && log_warn "Using staging environment"
+    [ "$DRY_RUN" = "true" ] && log_warn "DRY RUN MODE - No changes will be made"
+
     # Pre-flight checks
-    if [[ "$STANDALONE" == "true" ]]; then
+    if [ "$STANDALONE" = "true" ]; then
         # Check if port 80 is available for standalone mode
-        if [[ "$IS_IPV6" == "true" ]]; then
+        if [ "$IS_IPV6" = "true" ]; then
             if ss -tlnp | grep -q '\[::\]:80\|:::80'; then
                 log_error "Port 80 (IPv6) is already in use. Stop other services or use DNS mode"
                 exit 1
@@ -675,37 +697,37 @@ main() {
             fi
         fi
     fi
-    
-    if [[ "$DNS_MODE" == "true" && "$DNS_PROVIDER" != "manual" ]]; then
+
+    if [ "$DNS_MODE" = "true" ] && [ "$DNS_PROVIDER" != "manual" ]; then
         # Validate DNS API credentials are provided
         case "$DNS_PROVIDER" in
             cloudflare)
-                if [[ -z "$DNS_API_KEY" || -z "$DNS_EMAIL" ]]; then
+                if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_EMAIL" ]; then
                     log_error "Cloudflare requires --dns-api-key and --dns-email"
                     exit 1
                 fi
                 ;;
             route53)
-                if [[ -z "$DNS_API_KEY" || -z "$DNS_API_SECRET" ]]; then
+                if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_API_SECRET" ]; then
                     log_error "Route53 requires --dns-api-key and --dns-api-secret"
                     exit 1
                 fi
                 ;;
             digitalocean)
-                if [[ -z "$DNS_API_KEY" ]]; then
+                if [ -z "$DNS_API_KEY" ]; then
                     log_error "DigitalOcean requires --dns-api-key"
                     exit 1
                 fi
                 ;;
             godaddy)
-                if [[ -z "$DNS_API_KEY" || -z "$DNS_API_SECRET" ]]; then
+                if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_API_SECRET" ]; then
                     log_error "GoDaddy requires --dns-api-key and --dns-api-secret"
                     exit 1
                 fi
                 ;;
         esac
     fi
-    
+
     install_acme
     issue_certificate
     install_certificate
@@ -714,10 +736,10 @@ main() {
 
     # Auto-issue cert for local IPv6 when domain cert was requested
     # (not when we were already issuing for a raw IPv6 address)
-    if [[ "$AUTO_IP6" == "true" && "$IS_IPV6" == "false" ]]; then
+    if [ "$AUTO_IP6" = "true" ] && [ "$IS_IPV6" = "false" ]; then
         local detected_ip6
         detected_ip6=$(discover_local_ip6 2>/dev/null || true)
-        if [[ -n "$detected_ip6" && "$detected_ip6" != "$DOMAIN" ]]; then
+        if [ -n "$detected_ip6" ] && [ "$detected_ip6" != "$DOMAIN" ]; then
             log_info "Local IPv6 detected: $detected_ip6 — requesting certificate"
             issue_ip6_cert "$detected_ip6"
         else
@@ -726,7 +748,7 @@ main() {
     fi
 
     # Disable error trap on success
-    trap - ERR
+    trap - 0
 
     log_info "SSL certificate setup completed successfully!"
 }

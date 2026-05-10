@@ -150,6 +150,15 @@ case "$INSTALL_DIR" in
     *..*) log_error "Path traversal detected: $INSTALL_DIR"; exit 1 ;;
 esac
 
+# Auto-detect HTTPS certs from XDG config (set by ssl.sh) if not provided explicitly
+_zen_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
+if [ -z "$HTTPS_KEY" ] && [ -f "$_zen_cfg/key.pem" ]; then
+    HTTPS_KEY="$_zen_cfg/key.pem"
+fi
+if [ -z "$HTTPS_CERT" ] && [ -f "$_zen_cfg/cert.pem" ]; then
+    HTTPS_CERT="$_zen_cfg/cert.pem"
+fi
+
 # Determine sudo
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
