@@ -117,6 +117,12 @@ const zen = new ZEN({
 | `localStorage` | boolean | `true` | Use `localStorage` in browser |
 | `radisk` | boolean | `true` | Enable Radisk storage |
 | `peers` | string or string[] | `[]` | Peer relay URLs |
+| `evict` | boolean | `true` | Enable memory-pressure eviction (Node.js) |
+| `frat` | number | `0.10` | Evict when `os.freemem()/os.totalmem()` < this ratio |
+| `fmb` | number | `200` | Evict / warn when free memory or disk drops below this MB |
+| `tombstoneTTL` | number (ms) | `604800000` | Omit tombstones older than this from disk (7 days; `0` = keep forever) |
+
+See [§5.12 Storage resilience](ch05-storage.md#512-storage-resilience) for full details.
 
 ---
 

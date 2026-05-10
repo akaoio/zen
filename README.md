@@ -22,7 +22,7 @@ This repository is documented as a structured book. Read it in order or jump to 
 | [Ch 2 — Graph Model](docs/ch02-graph-model.md) | Nodes, souls, HAM/CRDT, state timestamps, `get`, `put`, `on`, `map` |
 | [Ch 3 — Cryptography](docs/ch03-crypto.md) | `pair`, `sign`, `verify`, `encrypt`, `decrypt`, `secret`, `hash`, `certify` |
 | [Ch 4 — Authenticated Data](docs/ch04-authenticated-data.md) | Owned namespaces, signing writes, certificates, security pipeline |
-| [Ch 5 — Storage Adapters](docs/ch05-storage.md) | Radisk, filesystem, IndexedDB, OPFS, S3, writing your own |
+| [Ch 5 — Storage Adapters](docs/ch05-storage.md) | Radisk, filesystem, IndexedDB, OPFS, S3, writing your own; ENOSPC/OOM resilience |
 | [Ch 6 — Networking](docs/ch06-networking.md) | Mesh, peers, WebSocket, `zen.push()` ephemeral relay, DAM ping/RTT, AXE clustering |
 | [Ch 7 — PEN Policy VM](docs/ch07-pen.md) | WASM bytecode engine, opcodes, `ZEN.pen()`, bridge/runtime policy enforcement |
 | [Ch 8 — Contributing](docs/ch08-contributing.md) | Build system, test suite, adding chain methods, adding adapters |
