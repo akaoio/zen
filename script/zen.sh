@@ -44,9 +44,7 @@ cmd_status() {
     local install_dir service_name node_ver
 
     install_dir="$(find_install_dir || true)"
-    service_name=""
-    [[ -f "$ZEN_CONFIG_DIR/service_name" ]] && service_name="$(cat "$ZEN_CONFIG_DIR/service_name")"
-    [[ -z "$service_name" ]] && service_name="relay"
+    service_name="$(get_service_name)"
 
     local sep="────────────────────────────────"
 
@@ -137,6 +135,76 @@ cmd_update() {
     exec "$install_dir/script/update.sh" "$@"
 }
 
+# ── service helpers ───────────────────────────────────────────────────────────
+get_service_name() {
+    local svc=""
+    [[ -f "$ZEN_CONFIG_DIR/service_name" ]] && svc="$(cat "$ZEN_CONFIG_DIR/service_name")"
+    echo "${svc:-relay}"
+}
+
+ensure_systemd() {
+    command -v systemctl &>/dev/null || { err "systemd not available on this host"; exit 1; }
+}
+
+get_sudo() {
+    [[ $EUID -eq 0 ]] && echo "" && return
+    command -v sudo &>/dev/null && echo "sudo" && return
+    err "sudo is required but not available"; exit 1
+}
+
+# ── zen start ─────────────────────────────────────────────────────────────────
+cmd_start() {
+    ensure_systemd
+    local svc SUDO
+    svc="$(get_service_name)"
+    SUDO="$(get_sudo)"
+    info "Starting $svc…"
+    $SUDO systemctl start "$svc"
+    if systemctl is-active --quiet "$svc"; then
+        info "Service ${BOLD}$svc${NC} is ${GREEN}active${NC}"
+    else
+        err "Service '$svc' did not start"; exit 1
+    fi
+}
+
+# ── zen stop ──────────────────────────────────────────────────────────────────
+cmd_stop() {
+    ensure_systemd
+    local svc SUDO
+    svc="$(get_service_name)"
+    SUDO="$(get_sudo)"
+    info "Stopping $svc…"
+    $SUDO systemctl stop "$svc"
+    if ! systemctl is-active --quiet "$svc" 2>/dev/null; then
+        info "Service ${BOLD}$svc${NC} is ${YELLOW}stopped${NC}"
+    else
+        err "Service '$svc' did not stop"; exit 1
+    fi
+}
+
+# ── zen restart ───────────────────────────────────────────────────────────────
+cmd_restart() {
+    ensure_systemd
+    local svc SUDO
+    svc="$(get_service_name)"
+    SUDO="$(get_sudo)"
+    info "Restarting $svc…"
+    $SUDO systemctl restart "$svc"
+    if systemctl is-active --quiet "$svc"; then
+        info "Service ${BOLD}$svc${NC} restarted — ${GREEN}active${NC}"
+    else
+        err "Service '$svc' failed to restart"; exit 1
+    fi
+}
+
+# ── zen logs ──────────────────────────────────────────────────────────────────
+cmd_logs() {
+    ensure_systemd
+    local svc
+    svc="$(get_service_name)"
+    exec journalctl -u "$svc" -f "$@"
+}
+
 # ── zen uninstall ─────────────────────────────────────────────────────────────
 cmd_uninstall() {
     local install_dir
@@ -158,6 +226,10 @@ ${BOLD}USAGE${NC}
 
 ${BOLD}COMMANDS${NC}
     status      Show relay status, service state, and XDG paths
+    start       Start the relay service
+    stop        Stop the relay service
+    restart     Restart the relay service
+    logs        Follow relay service logs  (passes args to journalctl -f)
     update      Pull latest code and restart service
     uninstall   Remove ZEN from this system
     help        Show this message
@@ -177,6 +249,10 @@ cmd="${1:-help}"
 shift || true
 case "$cmd" in
     status)              cmd_status "$@" ;;
+    start)               cmd_start "$@" ;;
+    stop)                cmd_stop "$@" ;;
+    restart)             cmd_restart "$@" ;;
+    logs)                cmd_logs "$@" ;;
     update)              cmd_update "$@" ;;
     uninstall)           cmd_uninstall "$@" ;;
     help|-h|--help)      show_help ;;
