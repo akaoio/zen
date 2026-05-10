@@ -221,7 +221,13 @@ create_service() {
     log_info "Creating systemd service: $SERVICE_NAME"
 
     service_file="/etc/systemd/system/${SERVICE_NAME}.service"
-    node_bin="$(command -v node)"
+    # Use || true so set -e doesn't exit when node is not in PATH (e.g. nvm user running via sudo)
+    node_bin=""
+    node_bin=$(command -v node 2>/dev/null) || true
+    # Fallback: check common nvm location
+    if [ -z "$node_bin" ] && [ -d "$HOME/.nvm/versions/node" ]; then
+        node_bin=$(find "$HOME/.nvm/versions/node" -name node -maxdepth 3 2>/dev/null | sort -V | tail -1) || true
+    fi
 
     # Build env lines
     env_lines=""
