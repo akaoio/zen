@@ -190,6 +190,12 @@ install_dependencies() {
 install_zen() {
     log_info "Installing ZEN to $INSTALL_DIR..."
 
+    # Load nvm if npm not in PATH (nvm-based installs)
+    if ! command -v npm >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
+        log_info "npm not found, loading nvm..."
+        . "$HOME/.nvm/nvm.sh"
+    fi
+
     run mkdir -p "$(dirname "$INSTALL_DIR")"
 
     if [ -d "$INSTALL_DIR/.git" ]; then
