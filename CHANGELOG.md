@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.0.22
+
+- **All shell scripts POSIX-compliant** (`script/install.sh`, `update.sh`, `uninstall.sh`, `zen.sh`, `ssl.sh`, `mcp.sh`): changed shebang to `#!/bin/sh`; replaced all bash-specific syntax (`[[ ]]` → `[ ]`, `echo -e` → `printf`, `$EUID` → `$(id -u)`, bash arrays → inline loops, `grep -oP` → `sed`, `${var//k/v}` → `sed`). Scripts now run on any POSIX-compatible shell including `dash`. `nvm.sh` is loaded via `bash -c ". ~/.nvm/nvm.sh && cmd"` since nvm itself requires bash.
+- **`install.sh` auto-detects SSL certs**: if `--https-key`/`--https-cert` are not specified, `install.sh` automatically uses `$XDG_CONFIG_HOME/zen/key.pem` and `$XDG_CONFIG_HOME/zen/cert.pem` (the paths where `ssl.sh` saves certificates). Run `ssl.sh` once, then `install.sh` — no extra flags needed.
+- **`install.sh` new flags**: `--yes`/`-y` skips all interactive prompts (safe for SSH/piped installs); `--skip-deps` skips the `apt-get install nodejs` step (useful when Node.js is installed via nvm); `--https-key`/`--https-cert` for explicit cert paths.
+- **`install.sh` correctness fixes under `sudo`**: added `REAL_USER="${SUDO_USER:-$(id -un)}"` so the systemd `User=` field is set to the actual login user (not `root`) when running via `sudo`; all `command -v` lookups made safe under `set -e` with `|| true`; nvm node resolution uses `bash -c '. ~/.nvm/nvm.sh && command -v node'` to get the nvm default version (not newest installed).
+- **Service renamed**: systemd unit is now `zen.service` (was `relay.service`); auto-update timer is `zen-update.timer`. The `zen` CLI default service name updated accordingly.
+- **`zen` CLI extended**: added `zen start`, `zen stop`, `zen restart` (via sudoers NOPASSWD) and `zen logs` (tails `journalctl -u zen -f`).
+- **MCP `relay` tool renamed to `status`**: the MCP tool that returns relay health is now called `status`, matching the HTTP `GET /status` endpoint.
+- **Sudoers NOPASSWD rules**: `install.sh` creates `/etc/sudoers.d/zen` granting passwordless `systemctl start/stop/restart zen` and CLI install operations, so `zen start/stop/restart` and `zen update` work without a password prompt.
+
 ## 1.0.10
 
 - **`root.graph` GC eviction** (`script/server.js`): relay now evicts in-memory graph nodes when heap exceeds `GRAPH_GC_MB` (default 400 MB). Eviction skips souls with active `on()` listeners (`root.next[soul]`) and souls written in the last `GRAPH_GC_KEEP` seconds (default 120 s). All data remains on disk (RAD); eviction only causes cache misses. Configurable via `GRAPH_GC_MB`, `GRAPH_GC_SEC`, `GRAPH_GC_KEEP` env vars.
