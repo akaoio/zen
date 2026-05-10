@@ -741,14 +741,14 @@ var Zen;
 
       it("read one", function (done) {
         var g = Zen({ chunk: ochunk });
-        //zen.get('names').get({'.': {'*': find}, '%': 1000 * 100}).once().map().once(function(data, key){
+        // on this chunk setting, Stu should be split between 2 files.
+        // Use .on() (not .once()) so the callback re-fires when RAD disk
+        // data arrives after the initial undefined fire from an empty graph.
         g.get("names")
           .get("stu")
-          .once(function (data, key) {
-            // on this chunk setting, Stu should be split between 2 files.
-            if (done.c) {
-              return;
-            }
+          .on(function (data, key) {
+            if (!data) { return; } // initial fire before disk read completes
+            if (done.c) { return; }
             done.c = 1;
             expect(data.name).to.be.ok();
             expect(data.age).to.be.ok();
