@@ -4,6 +4,15 @@
 # Pulls latest code and restarts the relay service
 # Usage: ./update.sh [OPTIONS]
 
+# Guard: copy self to tmpfile so bash doesn't re-read a modified script
+# when git pull replaces this file mid-execution (classic bash race).
+if [[ "${BASH_SOURCE[0]}" != /tmp/zen-update.* ]]; then
+    _tmpf=$(mktemp /tmp/zen-update.XXXXXX)
+    cp "${BASH_SOURCE[0]}" "$_tmpf"
+    chmod +x "$_tmpf"
+    exec bash "$_tmpf" "$@"
+fi
+
 set -euo pipefail
 
 SERVICE_NAME="relay"
