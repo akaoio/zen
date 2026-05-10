@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { homedir, hostname } from "node:os";
 import { execSync, spawnSync, spawn } from "node:child_process";
 import ZEN from "../../index.js";
+import Store from "../../lib/rfs.js";
 import { ZenMcpClient } from "../../lib/mcp/client.js";
 import { getOrCreateIdentity } from "../../lib/identity.js";
 
@@ -439,6 +440,75 @@ async function suiteDiskRead(zen) {
   console.log();
 }
 
+async function suiteStorage() {
+  console.log(`${BOLD}── Suite: storage-resilience (quota, degraded mode, eviction opts) ──${RESET}`);
+
+  const tmpDir = `/tmp/zen-e2e-storage-${Date.now()}`;
+
+  // 1. store.quota() — rfs.js (requires Node 19+ fs.statfs)
+  await new Promise((resolve) => {
+    const store = Store({ file: tmpDir + "/quota", log: () => {} });
+    if (typeof store.quota !== "function") {
+      fail("store.quota() missing on rfs adapter"); resolve(); return;
+    }
+    store.quota((err, info) => {
+      if (err) {
+        warn(`store.quota(): ${err.message} (Node ${process.versions.node} — ok if < v19)`);
+      } else if (typeof info.free === "number" && typeof info.total === "number" && info.total > 0) {
+        pass(`store.quota() → free=${Math.round(info.free/1024/1024)}MB total=${Math.round(info.total/1024/1024)}MB`);
+        results.passed++;
+      } else {
+        fail(`store.quota() unexpected shape: ${JSON.stringify(info)}`);
+      }
+      resolve();
+    });
+  });
+
+  // 2. store.degraded / store._markFull() / store.recover()
+  const store2 = Store({ file: tmpDir + "/degrade", log: () => {} });
+  if (typeof store2._markFull !== "function") {
+    fail("store._markFull() missing"); results.failed++;
+  } else {
+    store2._markFull(Object.assign(new Error("sim"), { code: "ENOSPC" }));
+    if (store2.degraded !== true) {
+      fail("store.degraded not set after _markFull()"); results.failed++;
+    } else {
+      pass("store._markFull() → store.degraded = true"); results.passed++;
+      await new Promise((resolve) => {
+        store2.put("k", "v", (err) => {
+          if (err && /full/i.test(err.message)) {
+            pass("store.put() rejects when degraded"); results.passed++;
+          } else {
+            fail(`store.put() should reject when degraded, got: ${err}`);
+          }
+          resolve();
+        });
+      });
+      store2.recover();
+      if (store2.degraded !== false) {
+        fail("store.recover() did not clear store.degraded"); results.failed++;
+      } else {
+        pass("store.recover() → store.degraded = false"); results.passed++;
+      }
+    }
+  }
+
+  // 3. Eviction config options: frat / fmb / evict=false
+  try {
+    const z1 = new ZEN({ radisk: false, localStorage: false, peers: [], frat: 0.01, fmb: 10 });
+    pass("ZEN({ frat, fmb }) instantiates without error"); results.passed++;
+    z1.off();
+  } catch (e) { fail(`ZEN({ frat, fmb }) threw: ${e.message}`); }
+
+  try {
+    const z2 = new ZEN({ radisk: false, localStorage: false, peers: [], evict: false });
+    pass("ZEN({ evict: false }) instantiates without error"); results.passed++;
+    z2.off();
+  } catch (e) { fail(`ZEN({ evict: false }) threw: ${e.message}`); }
+
+  console.log();
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -456,6 +526,7 @@ async function main() {
     if (SUITE === "all" || SUITE === "persist") await suitePersist(zen);
     if (SUITE === "all" || SUITE === "cross")   await suiteCross(zen, testPair);
     if (SUITE === "all" || SUITE === "chain")   await suiteChain();
+    if (SUITE === "all" || SUITE === "storage") await suiteStorage();
     if (SUITE === "all" || SUITE === "push") {
       // Disconnect the main zen client so it doesn't pollute XOR routing on zen relay
       // (routing must go chain-only: zen relay → peer0 → peer1 → browserB).
