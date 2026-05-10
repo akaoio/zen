@@ -744,10 +744,12 @@ var Zen;
         // on this chunk setting, Stu should be split between 2 files.
         // Use .on() (not .once()) so the callback re-fires when RAD disk
         // data arrives after the initial undefined fire from an empty graph.
+        // Data may arrive in partial pieces when split across shards, so wait
+        // until both expected fields are present before asserting.
         g.get("names")
           .get("stu")
           .on(function (data, key) {
-            if (!data) { return; } // initial fire before disk read completes
+            if (!data || !data.name || !data.age) { return; }
             if (done.c) { return; }
             done.c = 1;
             expect(data.name).to.be.ok();
