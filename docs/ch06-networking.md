@@ -180,25 +180,233 @@ When `msg.nts` or `msg.NTS` is set on a message, `universe()` skips the `out` br
 
 ## 6.9 AXE — automatic peer clustering
 
-`lib/axe.js` implements automatic peer discovery, load balancing, and connection quality management. It is an optional add-on loaded by the server entry point.
+`lib/axe.js` is the ZEN clustering engine. It runs **on both Node.js and in the browser**, but the two environments have completely different feature sets. The sections below document each separately.
+
+AXE activates automatically when `lib/axe.js` is imported (the relay entry point `lib/server.js` does this). To disable it:
 
 ```js
-const zen = new ZEN({ axe: true });
+// Option 1: constructor option (both environments)
+const zen = new ZEN({ axe: false });
+
+// Option 2: environment variable (Node.js only)
+AXE=false node server.js
 ```
 
-AXE handles:
+---
 
-- **Peer discovery** — scans sibling domains (`peer1.akao.io` → probes `peer0`, `peer2`, …) and receives peer lists from PEX on each new connection
-- **MOB** — redirects excess inbound connections to other peers; configurable via `opt.mob` (default: effectively unlimited; set to e.g. `10` to keep at most 10 inbound)
-- **RTT-weighted pruning** — when MOB must redirect a peer, the one with the highest rolling-average RTT is chosen first, keeping the best-latency peers alive
-- **Auto-ping** — immediately after an inbound peer is registered in `axe.up`, AXE sends a DAM `ping` message and repeats every **30 s**; this populates `peer.rtt` so RTT-weighted pruning has real data to work with
+### 6.9.1 Node.js relay AXE
+
+On a Node.js relay, AXE becomes the full routing and connection management layer.
+
+**`axe.up` — upstream connection registry**
+
+`root.axe.up` is a `pid → peer` map of all inbound connections known to this relay. AXE uses it as the authoritative view of which relay peers are alive:
 
 ```js
-// axe.up: map of pid → peer for upstream (inbound) connections
-// peer.rtt: rolling-average round-trip time in ms (populated by ping/pong)
+// internal structure (read-only from app code)
+root.axe.up["<peer-pid>"] = peer;  // peer.url, peer.rtt, peer.wire
 ```
 
-See `lib/axe.js` for configuration options.
+---
+
+**PID-sort conflict resolution**
+
+When two relay nodes both connect to each other (race condition on startup), AXE deterministically chooses which physical connection to drop. Both sides apply the same rule:
+
+- Higher `opt.pid` side: drops its *outbound* connection (keeps the inbound from the remote)
+- Lower `opt.pid` side: drops its *inbound* connection (keeps the outbound to the remote)
+
+This guarantees exactly one connection survives without coordination messages.
+
+---
+
+**Auto-ping and RTT measurement**
+
+AXE pings every outbound relay peer (those with a URL in `axe.up`) immediately on connect and every **30 s**:
+
+```js
+// Internal — you do not call this directly.
+mesh.ping(peer);        // fires immediately on connection
+setInterval(→ mesh.ping(peer), 30_000);
+```
+
+`peer.rtt` is populated by the ping/pong round-trip and used for RTT-sorted routing (see below).
+
+---
+
+**PEX acceptance (`dam:"opt"`)**
+
+When a remote peer announces a new peer URL via the `dam:"opt"` message, AXE:
+1. Normalises the protocol (`wss://` → `https://`)
+2. Skips it if it matches `opt.domain` (self-connection guard)
+3. Skips it if the URL is already an outbound peer
+4. Skips if `axe.up` already has ≥ 99 entries
+5. Otherwise calls `mesh.hi({ url })` to open a new outbound connection
+
+```js
+// AXE replies to the sender to confirm acceptance:
+mesh.say({ dam: "opt", ok: 1, "@": msg["#"] }, peer);
+```
+
+---
+
+**`axe.stay` — peer list persistence**
+
+AXE automatically saves outbound peer URLs to `root.stats.stay.axe.up` (disk-persisted graph state) every **9 seconds** after any topology change. On restart, saved URLs are reconnected:
+
+```js
+// On startup, after 1 s, restore saved peers:
+mesh.hear.opt({ opt: { peers: savedUrl } });   // re-uses normal PEX acceptance path
+```
+
+> Note: `axe.stay` is skipped when `opt.super = true` (boot-relay mode); BOOT handles reconnects there.
+
+---
+
+**RTT-sorted GET routing**
+
+When a relay forwards a `get` request to other peers, it queries them in ascending RTT order — lowest-latency peer first. Peers with no RTT data sort to the end:
+
+```
+peers sorted: [rtt=12ms, rtt=45ms, rtt=∞(no data)]
+```
+
+If a peer replies with a matching hash (`msg["##"]` match), AXE stops querying the remaining peers. Relay peers (`axe.up`) are prioritised over leaf clients in broadcast.
+
+---
+
+**MOB — connection limit and redirection**
+
+When inbound connection count exceeds `opt.mob`, AXE redirects the excess peer to another relay:
+
+```js
+// Configurable (default: 999999 — effectively unlimited):
+const zen = new ZEN({ mob: 50 });
+// Or via environment:
+MOB=50 node server.js
+```
+
+The peer with the **highest RTT** among inbounds is chosen for redirection first. The redirected peer receives a `dam:"mob"` message with a list of relay URLs to connect to instead.
+
+---
+
+**WebRTC relay (`dam:"rtc"`)**
+
+AXE routes `dam:"rtc"` messages directly to the target peer by `pid`, without broadcasting:
+
+```js
+// If the target pid is connected locally → unicast
+// If not found → broadcast to relay peers (fall)
+```
+
+---
+
+**Remote service management**
+
+After a short delay, AXE loads `lib/service.js`, which registers a `dam:"service"` handler. This enables password-protected remote operations over the relay mesh (requires a running `systemd` service):
+
+| Command | Description |
+|---------|-------------|
+| `update` | Runs `script/install.sh` to pull latest code and restart |
+
+This is used internally by `zen update` CLI and the MCP `update` tool.
+
+---
+
+**Node.js AXE summary**
+
+| Feature | Default | Config |
+|---------|---------|--------|
+| Inbound registry (`axe.up`) | always on | — |
+| PID-sort conflict resolution | always on | — |
+| Auto-ping every 30 s | always on | — |
+| PEX acceptance (max 99 outbound) | always on | — |
+| Self-connection guard | requires `opt.domain` | set via `install.sh` |
+| `axe.stay` (peer persistence) | always on (non-boot mode) | `opt.super=true` disables |
+| RTT-sorted GET routing | always on | — |
+| MOB connection limit | 999999 (unlimited) | `opt.mob` / `MOB=` env |
+| WebRTC relay routing | always on | — |
+| Remote service (systemd) | loads if systemd present | — |
+| Disable entire AXE | — | `{ axe: false }` or `AXE=false` |
+
+---
+
+### 6.9.2 Browser AXE
+
+In the browser, AXE handles peer discovery and session continuity. There is no server-side routing — the browser is a leaf node, not a relay.
+
+**Bootstrap sequence**
+
+When a browser page loads, AXE attempts to find peers in this order:
+
+| Step | Source | Notes |
+|------|--------|-------|
+| 1 | `localStorage["zenPeers"]` | Peers from previous sessions |
+| 2 | Same-origin relay | `location.origin + "/zen"` |
+| 3 | Localhost dev relay | `http://localhost:8420/zen` |
+| 4 | `?peers=url1,url2` URL param | Comma-separated seed URLs |
+| 5 | WebSocket domain scan | Probe sibling hostnames (see below) |
+| 6 | `?axe=url` DHT fallback | Fetch URL for peer list — last resort if still not connected after 5 s |
+
+---
+
+**WebSocket domain scan**
+
+The browser probes sibling relay domains using raw WebSocket connections (which bypass CORS). Given the current page hostname:
+
+```
+peer1.akao.io  →  probes peer0, peer2, … peer100
+zen.akao.io    →  probes zen0, zen1, …
+```
+
+Up to **5 concurrent** WS probes; stops after **10** peers found or 100 candidates exhausted.
+
+---
+
+**PEX — receiving peer lists**
+
+When connected to a relay, the browser receives `dam:"pex"` messages with a list of peer URLs and connects to them:
+
+```js
+mesh.hear["pex"] = function(msg) {
+  msg.peers.forEach(addPeer);
+};
+```
+
+On each new connection, AXE also fetches the relay's `/status` endpoint (signed JSON) and extracts additional peer URLs from `status.peers`.
+
+---
+
+**BroadcastChannel — cross-tab peer sharing**
+
+AXE opens a `BroadcastChannel("zen")` to share discovered peer URLs across all tabs on the same origin. When one tab finds a relay, all tabs benefit immediately.
+
+---
+
+**Stable browser pid**
+
+Each browser gets a random 9-char pid generated once and persisted to `localStorage["zenPid"]`. This is used by the relay for deduplication (PID-sort conflict resolution only applies to relay peers, not browsers).
+
+---
+
+**Fallback on disconnect**
+
+When a relay disconnects, AXE picks a random known peer from its fallback list and reconnects to it (unless `navigator.onLine` is `false`, in which case it reduces retry count and waits for reconnection).
+
+---
+
+**Browser AXE summary**
+
+| Feature | Notes |
+|---------|-------|
+| `localStorage` peer list | Restored on every page load |
+| BroadcastChannel | Shares peers across same-origin tabs |
+| WebSocket domain scan | Probes up to 100 sibling hostnames |
+| PEX handler (`dam:"pex"`) | Receives peer arrays from relay |
+| `/status` fetch on connect | Extracts peer list from signed relay status |
+| Stable browser pid | Persisted in `localStorage["zenPid"]` |
+| Fallback on disconnect | Reconnects to random known peer |
+| Disable | `{ axe: false }` constructor option |
 
 ---
 
@@ -351,12 +559,20 @@ node-3.net     →  node-{0..100}.net
 relay01.host   →  relay{00..100}.host   (zero-padded)
 ```
 
+`lib/scan.js` is used by **both** the Node.js relay and the browser, but with different probe methods:
+
+| Environment | Probe method | Notes |
+|-------------|-------------|-------|
+| Node.js relay | HTTP/HTTPS GET `/zen.js` | Full TCP connect; used by `script/server.js` |
+| Browser | Raw WebSocket connect | WS bypasses CORS; used by AXE browser scan (§6.9.2) |
+
 The scanner (`lib/scan.js`) exports:
 
 | Function | Description |
 |----------|-------------|
 | `mkpat(domain)` | Parse domain → `{ prefix, index, tail, suffix, padLen }` |
 | `bdom(pat, n)` | Build domain for index `n` from a parsed pattern |
+| `candidateHosts(pat, opt)` | Return sorted array of candidate hostnames |
 | `scan(domain, opt)` | Probe all candidates; returns `Promise<string[]>` of `wss://` URLs |
 | `scanbg(domain, opt)` | Fire-and-forget variant; calls `opt.onFound(url)` per discovery |
 
@@ -365,8 +581,9 @@ The scanner (`lib/scan.js`) exports:
 - Stops probing once `opt.mfnd` peers found (default **10**) — avoids exhausting the full 0–100 range when the network is small
 - Concurrent HTTP/HTTPS probes (default **10**), 3 s timeout each; tries HTTPS first, falls back to HTTP
 - `script/server.js` tracks `spat` (scanned patterns) per cycle to skip re-probing the same pattern within one cycle
+- Browser AXE uses up to **5** concurrent WS probes and stops after **10** found
 
-**Backoff schedule:**
+**Backoff schedule (Node.js relay):**
 
 ```
 Cycle 1: no new peers → next scan in 20 min
@@ -380,19 +597,37 @@ Discovery resets backoff to 10 min immediately.
 
 ## 6.16 Peer Exchange (PEX)
 
-When a new peer connects, the relay immediately sends it the full list of known peers via a DAM `"pex"` message — a direct peer-to-peer exchange that does not touch the public graph:
+ZEN uses two complementary PEX mechanisms — one for relay-to-relay, one for relay-to-browser.
+
+**Relay-to-browser (`dam:"pex"`)**
+
+When a browser connects, the relay sends the full list of known relay peers as a `dam:"pex"` message:
 
 ```js
-// Sent on "hi" (new connection):
-mesh.say({ dam: "pex", peers: ["wss://peer0.akao.io:8420/zen", ...] }, newPeer)
+// Sent on "hi" (new browser connection):
+mesh.say({ dam: "pex", peers: ["wss://peer0.akao.io:8420/zen", ...] }, newPeer);
 
-// Handler on receiving end:
-mesh.hear["pex"] = function(msg, _peer) {
-  msg.peers.forEach(url => adp(url));  // adp = addPeer
+// Browser-side handler (in lib/axe.js):
+mesh.hear["pex"] = function(msg) {
+  msg.peers.forEach(addPeer);
 };
 ```
 
-When a peer is discovered mid-session (via scan or inbound pex), it is **immediately broadcast** to all currently connected peers — not deferred to the next `"hi"`.
+When a peer is discovered mid-session, it is **immediately broadcast** to all currently connected peers.
+
+**Relay-to-relay (`dam:"opt"`)**
+
+Relay nodes exchange peer URLs using the `dam:"opt"` message (part of the standard options sync message). AXE on the receiving relay decides whether to open a new outbound connection (see §6.9.1 — PEX acceptance).
+
+```js
+// Relay announces itself to a newly-connected relay:
+mesh.say({ dam: "opt", opt: { peers: "wss://zen.akao.io:8420/zen" } }, peer);
+
+// Receiving relay's AXE handler:
+mesh.hear["opt"] = function(msg, peer) {
+  // validates, deduplicates, calls mesh.hi(url) if accepted
+};
+```
 
 **Full-mesh prevention:**
 
@@ -400,10 +635,11 @@ ZEN uses two complementary mechanisms to prevent every peer connecting to every 
 
 | Layer | Mechanism | Where |
 |-------|-----------|-------|
-| Inbound | **MOB** — redirects excess inbound connections to other peers | `lib/axe.js` line 491 |
+| Inbound | **MOB** — redirects excess inbound connections to other peers | §6.9.1 |
 | Outbound | **`MUPS = 10`** — scan-initiated `mesh.hi()` capped at 10 upstream connections | `script/server.js` `adp()` |
+| Outbound (AXE) | **max 99** relay-to-relay connections via `dam:"opt"` PEX | `lib/axe.js` `mesh.hear["opt"]` |
 
-Checks `root.axe.up` (AXE upstream connection map) before each `mesh.hi()` call. Broadcast (`pex` send) is always allowed regardless of upstream limit — only the actual WebSocket connection is capped.
+`root.axe.up` (AXE upstream connection map) is the source of truth for relay connectivity. Broadcast (`pex` send) is always allowed regardless of upstream limit — only the actual WebSocket connection is capped.
 
 ---
 
