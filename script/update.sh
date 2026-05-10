@@ -126,8 +126,19 @@ fi
 log_info "Updated: ${PREV_COMMIT:0:7} → ${NEW_COMMIT:0:7}"
 log_info "$(git -C "$INSTALL_DIR" log -1 --format='  %s (%cr)' HEAD)"
 
-# Install/update dependencies
-run npm --prefix "$INSTALL_DIR" install --omit=dev
+# Resolve npm: system PATH first, then nvm default, then any nvm version
+NPM="$(command -v npm 2>/dev/null || true)"
+if [[ -z "$NPM" ]] && [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+    # shellcheck source=/dev/null
+    . "$HOME/.nvm/nvm.sh" --no-use 2>/dev/null || true
+    NPM="$(command -v npm 2>/dev/null || true)"
+fi
+if [[ -z "$NPM" ]]; then
+    log_warn "npm not found — skipping dependency install"
+else
+    # Install/update dependencies
+    run "$NPM" --prefix "$INSTALL_DIR" install --omit=dev
+fi
 
 # Re-install CLI binary so new commands (start/stop/restart/logs) are available
 if [[ -f "$INSTALL_DIR/script/zen.sh" ]]; then
