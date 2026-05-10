@@ -36,7 +36,7 @@ const zen = new ZEN({ file: "data" });
 // Creates ./data.radata, ./data1.radata, etc.
 ```
 
-When running on Node.js **without** a `file` option, ZEN uses the **XDG Base Directory** default — see §5.12.
+When running on Node.js **without** a `file` option, ZEN uses the **XDG Base Directory** default — see §5.13.
 
 To disable Radisk (in-memory only):
 
@@ -61,7 +61,7 @@ const zen = new ZEN({ file: "myapp-data" });
 // stores data in ./myapp-data/
 ```
 
-Without `file`, the default on Node.js is the XDG data directory (see §5.12).
+Without `file`, the default on Node.js is the XDG data directory (see §5.13).
 
 ---
 
@@ -203,7 +203,145 @@ Files are named by `encodeURIComponent` of the first character(s) of the stored 
 
 ---
 
-## 5.12 Production storage paths (XDG Base Directory)
+## 5.12 Storage resilience
+
+ZEN's Node.js storage layer (`lib/rfs.js`, `lib/radisk.js`, `lib/store.js`) is designed to survive adverse runtime conditions. This section documents the built-in protections and how to configure them.
+
+---
+
+### 5.12.1 Disk-full handling (ENOSPC)
+
+When the filesystem runs out of space, writes fail with an `ENOSPC` error. ZEN handles this gracefully:
+
+1. The store switches to **degraded mode** (`store.degraded = true`).
+2. All subsequent writes are **rejected immediately** with a clear error message — no silent data loss.
+3. Data already in the in-memory graph is preserved until process restart.
+4. When space is freed, call `store.recover()` to resume writes.
+
+**Global hooks** (set on the `Store` constructor function):
+
+```js
+import Store from "@akaoio/zen/lib/rfs.js";
+
+// Called once when the store first hits ENOSPC:
+Store._onFull = function(err, store) {
+  alertOps("Disk full on " + store.opt.file);
+};
+
+// Called each minute when free space is below the threshold:
+Store._onLow = function(info) {
+  console.warn("Low disk:", Math.round(info.freeBytes/1024/1024) + "MB free at", info.path);
+};
+```
+
+**Recovery:**
+
+```js
+// After freeing space:
+zen._.opt.store.recover();
+```
+
+---
+
+### 5.12.2 Disk-space monitoring
+
+On Node.js 19+, `rfs.js` polls disk usage every **60 seconds** using `fs.statfs`. When free bytes fall below `opt.fmb` (default 200 MB), a warning is logged and `Store._onLow` is called.
+
+On older Node.js versions, the polling is silently skipped (no-op).
+
+To check disk usage on demand:
+
+```js
+zen._.opt.store.quota(function(err, info) {
+  // info = { used: bytes, free: bytes, total: bytes }
+  console.log("Free:", Math.round(info.free / 1024 / 1024) + " MB");
+});
+```
+
+---
+
+### 5.12.3 Memory pressure eviction
+
+ZEN periodically evicts cold souls from the in-memory graph when system RAM is low. This prevents OOM crashes on long-running relay nodes.
+
+**How it works:**
+
+- Every **30 seconds**, `os.freemem()` and `os.totalmem()` are queried (real-time, not a startup snapshot).
+- If system free memory is below either threshold, the coldest (least recently accessed) persisted souls are removed from `root.graph`.
+- Only souls confirmed persisted on disk (`_.rad` flag set) are eligible for eviction — in-memory-only souls are never evicted.
+- Eviction fraction scales with pressure: **5% at threshold → 40% critically low**.
+- The eviction timer is `.unref()`'d so it never prevents process exit.
+
+**Configuration options** (all optional — feature is on by default):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `frat` | number | `0.10` | Evict when `os.freemem() / os.totalmem()` falls below this ratio |
+| `fmb`  | number | `200`  | Evict when `os.freemem()` falls below this many **MB** |
+| `evict` | boolean | `true` | Set to `false` to disable eviction entirely |
+
+```js
+// Default — no config needed
+const zen = new ZEN();
+
+// Custom thresholds
+const zen = new ZEN({ frat: 0.15, fmb: 300 });
+
+// Disable entirely
+const zen = new ZEN({ evict: false });
+```
+
+**Eviction event** — subscribe to react in app code:
+
+```js
+zen.get("memory/evict").on(function(data) {
+  console.log(`Evicted ${data.count} souls. Heap: ${data.heapMB}MB, Free RAM: ${data.freeMemMB}MB`);
+});
+```
+
+---
+
+### 5.12.4 Tombstone TTL (stale null cleanup)
+
+When a graph value is deleted, ZEN writes a **tombstone** — a null value with a state timestamp. Tombstones accumulate over time and bloat shard files.
+
+Radisk automatically filters tombstones older than `opt.tombstoneTTL` (default **7 days**) when writing shard files to disk. The in-memory tombstone is preserved until process restart so in-flight deduplication still works.
+
+```js
+// Default: purge tombstones older than 7 days
+const zen = new ZEN();
+
+// Keep tombstones for 30 days
+const zen = new ZEN({ tombstoneTTL: 1000 * 60 * 60 * 24 * 30 });
+
+// Disable tombstone cleanup (tombstones live forever on disk)
+const zen = new ZEN({ tombstoneTTL: 0 });
+```
+
+---
+
+### 5.12.5 Write retry cap
+
+Radisk internally retries mislocated-data corrections (writes that land in the wrong shard due to concurrent splits). The retry loop is **capped at 3 attempts** to prevent infinite loops when the store is in an error state (e.g. ENOSPC). Failed corrections are logged with `opt.log`.
+
+---
+
+### 5.12.6 Browser quota API
+
+The IndexedDB adapter (`lib/rindexed.js`) exposes the same `store.quota()` API using the browser's Storage API:
+
+```js
+zen._.opt.store.quota(function(err, info) {
+  // info = { used: bytes, free: bytes, total: bytes }
+  console.log("Browser storage:", info.used, "/", info.total, "bytes");
+});
+```
+
+Requires a browser that supports `navigator.storage.estimate()` (all modern browsers).
+
+---
+
+## 5.13 Production storage paths (XDG Base Directory)
 
 ZEN follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/) for production storage on Node.js. When you start ZEN **without** a `file` option, storage is placed under your home directory:
 
