@@ -561,7 +561,17 @@ if (main && cluster.isPrimary) {
   // Since MCP is now embedded in the relay (same process), there is no separate MCP peer
   // to cause a self-connection, so the old /relay-routing derivation is no longer needed.
   const relayPub = identity && identity.pair && identity.pair.pub ? identity.pair.pub : null;
-  zen = new ZEN({ web: opt.server.listen(opt.port, bindHost), peers: opt.peers, ...(domain && { domain }), ...(ppid && { pid: ppid }), ...(relayPub && { pub: relayPub }) });
+  zen = new ZEN({
+    web: opt.server.listen(opt.port, bindHost),
+    peers: opt.peers,
+    ...(domain && { domain }),
+    ...(ppid && { pid: ppid }),
+    ...(relayPub && { pub: relayPub }),
+    // Storage resilience — configurable via env vars set at install time
+    ...(process.env.FMB   !== undefined && { fmb:   parseInt(process.env.FMB) }),
+    ...(process.env.FRAT  !== undefined && { frat:  parseFloat(process.env.FRAT) }),
+    ...(process.env.EVICT !== undefined && { evict: process.env.EVICT !== '0' }),
+  });
   console.log("Relay peer started on port " + opt.port + " with /zen (" + bindHost + ")");
 
   // Embed MCP server on this ZEN instance — exposes IPC socket for local IDE/agent connections.

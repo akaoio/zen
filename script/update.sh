@@ -129,6 +129,13 @@ log_info "$(git -C "$INSTALL_DIR" log -1 --format='  %s (%cr)' HEAD)"
 # Install/update dependencies
 run npm --prefix "$INSTALL_DIR" install --omit=dev
 
+# Re-install CLI binary so new commands (start/stop/restart/logs) are available
+if [[ -f "$INSTALL_DIR/script/zen.sh" ]]; then
+    run $SUDO cp "$INSTALL_DIR/script/zen.sh" /usr/local/bin/zen
+    run $SUDO chmod +x /usr/local/bin/zen
+    log_info "zen CLI updated"
+fi
+
 # Restart service
 restart_service
 

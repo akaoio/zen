@@ -11,7 +11,6 @@ VERSION="main"
 PORT="8420"
 DOMAIN=""
 PEERS=""
-RAD="true"
 HTTPS_KEY=""
 HTTPS_CERT=""
 SERVICE_NAME="relay"
@@ -20,6 +19,15 @@ SKIP_DEPS=false
 SKIP_SERVICE=false
 DRY_RUN=false
 NODE_MAJOR=24
+# Storage resilience (empty = use built-in defaults)
+FMB=""        # free-MB threshold before disk-full warning (default: 200)
+FRAT=""       # free/total RAM ratio threshold for OOM eviction (default: 0.10)
+EVICT=""      # set to 0 to disable memory+disk eviction entirely
+# Graph GC tuning (empty = use built-in defaults)
+GC_MB=""      # heap MB threshold for in-memory graph GC (default: 400)
+GC_SEC=""     # graph GC interval in seconds (default: 60)
+GC_KEEP=""    # seconds to keep recently-written souls (default: 120)
+UDP_PORT=""   # UDP multicast port for LAN peer discovery (default: 8421)
 
 # Colors
 RED='\033[0;31m'
@@ -65,9 +73,15 @@ OPTIONS:
     -P, --peers PEERS           Comma-separated list of peer URLs
     -d, --dir DIRECTORY         Installation directory (default: ~/zen)
     -s, --service NAME          Systemd service name (default: relay)
-    --rad BOOL                  Enable/disable RAD storage (default: true)
     --https-key PATH            Path to HTTPS key file
     --https-cert PATH           Path to HTTPS certificate file
+    --fmb N                     Free-disk-MB threshold for storage warning (default: 200)
+    --frat N                    Free/total RAM ratio for OOM eviction (default: 0.10)
+    --evict 0|1                 Enable (1) or disable (0) memory+disk eviction (default: 1)
+    --gc-mb N                   Heap MB threshold for in-memory graph GC (default: 400)
+    --gc-sec N                  Graph GC interval in seconds (default: 60)
+    --gc-keep N                 Seconds to keep recently-written souls in GC (default: 120)
+    --udp-port N                UDP multicast port for LAN peer discovery (default: 8421)
     --skip-deps                 Skip Node.js/system dependency installation
     --skip-service              Skip systemd service setup
     --dry-run                   Show what would be done without executing
@@ -91,9 +105,15 @@ while [[ $# -gt 0 ]]; do
         -P|--peers)     PEERS="$2";        shift 2 ;;
         -d|--dir)       INSTALL_DIR="$2";  shift 2 ;;
         -s|--service)   SERVICE_NAME="$2"; shift 2 ;;
-        --rad)          RAD="$2";          shift 2 ;;
         --https-key)    HTTPS_KEY="$2";    shift 2 ;;
         --https-cert)   HTTPS_CERT="$2";   shift 2 ;;
+        --fmb)          FMB="$2";          shift 2 ;;
+        --frat)         FRAT="$2";         shift 2 ;;
+        --evict)        EVICT="$2";        shift 2 ;;
+        --gc-mb)        GC_MB="$2";        shift 2 ;;
+        --gc-sec)       GC_SEC="$2";       shift 2 ;;
+        --gc-keep)      GC_KEEP="$2";      shift 2 ;;
+        --udp-port)     UDP_PORT="$2";     shift 2 ;;
         --skip-deps)    SKIP_DEPS=true;    shift ;;
         --skip-service) SKIP_SERVICE=true; shift ;;
         --dry-run)      DRY_RUN=true;      shift ;;
@@ -182,9 +202,17 @@ create_service() {
     [[ -n "$PORT" ]]       && env_lines+="Environment=PORT=$PORT\n"
     [[ -n "$DOMAIN" ]]     && env_lines+="Environment=DOMAIN=$DOMAIN\n"
     [[ -n "$PEERS" ]]      && env_lines+="Environment=PEERS=$PEERS\n"
-    [[ -n "$RAD" ]]        && env_lines+="Environment=RAD=$RAD\n"
     [[ -n "$HTTPS_KEY" ]]  && env_lines+="Environment=HTTPS_KEY=$HTTPS_KEY\n"
     [[ -n "$HTTPS_CERT" ]] && env_lines+="Environment=HTTPS_CERT=$HTTPS_CERT\n"
+    # Storage resilience
+    [[ -n "$FMB" ]]        && env_lines+="Environment=FMB=$FMB\n"
+    [[ -n "$FRAT" ]]       && env_lines+="Environment=FRAT=$FRAT\n"
+    [[ -n "$EVICT" ]]      && env_lines+="Environment=EVICT=$EVICT\n"
+    # Graph GC tuning
+    [[ -n "$GC_MB" ]]      && env_lines+="Environment=GRAPH_GC_MB=$GC_MB\n"
+    [[ -n "$GC_SEC" ]]     && env_lines+="Environment=GRAPH_GC_SEC=$GC_SEC\n"
+    [[ -n "$GC_KEEP" ]]    && env_lines+="Environment=GRAPH_GC_KEEP=$GC_KEEP\n"
+    [[ -n "$UDP_PORT" ]]   && env_lines+="Environment=UDP_PORT=$UDP_PORT\n"
 
     local service_content
     service_content="$(cat << EOF
@@ -350,6 +378,13 @@ main() {
     [[ -n "$PEERS" ]]     && log_info "  Peers:     $PEERS"
     [[ -n "$HTTPS_KEY" ]] && log_info "  HTTPS Key: $HTTPS_KEY"
     [[ -n "$HTTPS_CERT" ]] && log_info "  HTTPS Cert: $HTTPS_CERT"
+    [[ -n "$FMB" ]]       && log_info "  FMB:       $FMB MB (disk warning)"
+    [[ -n "$FRAT" ]]      && log_info "  FRAT:      $FRAT (RAM eviction ratio)"
+    [[ -n "$EVICT" ]]     && log_info "  EVICT:     $EVICT"
+    [[ -n "$GC_MB" ]]     && log_info "  GC_MB:     $GC_MB MB"
+    [[ -n "$GC_SEC" ]]    && log_info "  GC_SEC:    $GC_SEC s"
+    [[ -n "$GC_KEEP" ]]   && log_info "  GC_KEEP:   $GC_KEEP s"
+    [[ -n "$UDP_PORT" ]]  && log_info "  UDP_PORT:  $UDP_PORT"
 
     if [[ -d "$INSTALL_DIR" ]] && [[ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
         confirm "Directory $INSTALL_DIR is not empty. Continue?" || { log_info "Cancelled"; exit 0; }

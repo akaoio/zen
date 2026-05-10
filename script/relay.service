@@ -15,5 +15,18 @@ Environment=PORT=8420
 # SSL certs are auto-detected from $XDG_CONFIG_HOME/zen/ (default: ~/.config/zen/)
 # To enable HTTPS, run: bash script/ssl.sh --domain yourdomain.com --email you@example.com
 
+# ── Storage resilience (optional — defaults shown) ───────────────────────────
+# Environment=FMB=200        # warn + evict when disk free < N MB
+# Environment=FRAT=0.10      # evict in-memory graph when free/total RAM < ratio
+# Environment=EVICT=1        # set to 0 to disable all eviction
+
+# ── Graph GC tuning (optional — defaults shown) ──────────────────────────────
+# Environment=GRAPH_GC_MB=400    # heap MB above which in-memory GC runs
+# Environment=GRAPH_GC_SEC=60    # graph GC interval in seconds
+# Environment=GRAPH_GC_KEEP=120  # seconds to keep recently-written souls
+
+# ── Network (optional — defaults shown) ──────────────────────────────────────
+# Environment=UDP_PORT=8421  # UDP multicast port for LAN peer discovery
+
 [Install]
 WantedBy=multi-user.target
