@@ -381,56 +381,6 @@ ${user} ALL=(root) NOPASSWD: ${chmod_bin} +x /usr/local/bin/zen"
     rm -f "$tmpf"
 }
 
-# Migrate from an old service name (e.g. "relay") to SERVICE_NAME (e.g. "zen").
-# Called automatically when re-running install.sh on a machine with the old service.
-migrate_old_service() {
-    if [ "$SKIP_SERVICE" = "true" ]; then
-        return
-    fi
-    old_name="relay"
-    old_svc="/etc/systemd/system/${old_name}.service"
-
-    # Nothing to do if same name or old service doesn't exist
-    if [ "$SERVICE_NAME" = "$old_name" ]; then
-        return
-    fi
-    if [ ! -f "$old_svc" ]; then
-        return
-    fi
-
-    log_info "Migrating service: $old_name → $SERVICE_NAME"
-
-    # Copy systemd drop-in overrides (e.g. peers.conf) to new service name
-    old_drop="/etc/systemd/system/${old_name}.service.d"
-    new_drop="/etc/systemd/system/${SERVICE_NAME}.service.d"
-    if [ "$DRY_RUN" != "true" ] && [ -d "$old_drop" ]; then
-        $SUDO mkdir -p "$new_drop"
-        $SUDO cp -r "${old_drop}/." "$new_drop/"
-        log_info "Migrated service drop-ins: $old_drop → $new_drop"
-    fi
-
-    # Stop and remove old service and its auto-update timer
-    for unit in "${old_name}-update.timer" "${old_name}-update.service" "${old_name}.service"; do
-        if systemctl list-unit-files "$unit" >/dev/null 2>&1 | grep -q "$unit"; then
-            run $SUDO systemctl stop "$unit" 2>/dev/null || true
-            run $SUDO systemctl disable "$unit" 2>/dev/null || true
-        fi
-        f="/etc/systemd/system/$unit"
-        if [ -f "$f" ]; then
-            run $SUDO rm -f "$f"
-        fi
-    done
-
-    # Remove old sudoers file (both naming conventions)
-    if [ "$DRY_RUN" != "true" ]; then
-        $SUDO rm -f "/etc/sudoers.d/zen-${old_name}" "/etc/sudoers.d/${old_name}" 2>/dev/null || true
-    fi
-
-    if [ "$DRY_RUN" != "true" ]; then
-        $SUDO systemctl daemon-reload
-    fi
-    log_info "Old '$old_name' service removed"
-}
 
 start_service() {
     if [ "$SKIP_SERVICE" = "true" ]; then
@@ -618,7 +568,6 @@ main() {
 
     install_dependencies
     install_zen
-    migrate_old_service
     create_service
     configure_limits
     configure_sudoers
