@@ -30,6 +30,9 @@ GC_SEC=""     # graph GC interval in seconds (default: 60)
 GC_KEEP=""    # seconds to keep recently-written souls (default: 120)
 UDP_PORT=""   # UDP multicast port for LAN peer discovery (default: 8421)
 
+# When running via "sudo -SE", preserve the original login user for service User= field
+REAL_USER="${SUDO_USER:-$(id -un)}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -224,9 +227,9 @@ create_service() {
     # Use || true so set -e doesn't exit when node is not in PATH (e.g. nvm user running via sudo)
     node_bin=""
     node_bin=$(command -v node 2>/dev/null) || true
-    # Fallback: check common nvm location
+    # Fallback: check common nvm location (look for bin/node specifically)
     if [ -z "$node_bin" ] && [ -d "$HOME/.nvm/versions/node" ]; then
-        node_bin=$(find "$HOME/.nvm/versions/node" -name node -maxdepth 3 2>/dev/null | sort -V | tail -1) || true
+        node_bin=$(find "$HOME/.nvm/versions/node" -path "*/bin/node" -maxdepth 4 2>/dev/null | sort -V | tail -1) || true
     fi
 
     # Build env lines
@@ -292,7 +295,7 @@ StartLimitIntervalSec=0
 Type=simple
 Restart=always
 RestartSec=1
-User=$(whoami)
+User=$REAL_USER
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$node_bin $INSTALL_DIR/script/server.js
 LimitNOFILE=65536
@@ -336,10 +339,10 @@ configure_sudoers() {
     fi
 
     sudoers_file="/etc/sudoers.d/${SERVICE_NAME}"
-    user="$(whoami)"
-    systemctl_bin="$(command -v systemctl)"
-    cp_bin="$(command -v cp)"
-    chmod_bin="$(command -v chmod)"
+    user="$REAL_USER"
+    systemctl_bin=$(command -v systemctl 2>/dev/null) || true
+    cp_bin=$(command -v cp 2>/dev/null) || true
+    chmod_bin=$(command -v chmod 2>/dev/null) || true
 
     log_info "Configuring passwordless sudo for service management..."
 
@@ -493,12 +496,16 @@ install_autoupdate() {
 
     log_info "Installing auto-update timer: ${SERVICE_NAME}-update"
 
-    node_bin="$(command -v node)"
+    node_bin=""
+    node_bin=$(command -v node 2>/dev/null) || true
+    if [ -z "$node_bin" ] && [ -d "$HOME/.nvm/versions/node" ]; then
+        node_bin=$(find "$HOME/.nvm/versions/node" -path "*/bin/node" -maxdepth 4 2>/dev/null | sort -V | tail -1) || true
+    fi
     update_svc="/etc/systemd/system/${SERVICE_NAME}-update.service"
     update_tmr="/etc/systemd/system/${SERVICE_NAME}-update.timer"
 
     svc_content="$(sed \
-        -e "s|__ZEN_USER__|$(whoami)|g" \
+        -e "s|__ZEN_USER__|$REAL_USER|g" \
         -e "s|__ZEN_DIR__|$INSTALL_DIR|g" \
         -e "s|__ZEN_SERVICE__|$SERVICE_NAME|g" \
         "$INSTALL_DIR/script/zen-update.service")"
