@@ -7,8 +7,7 @@
 set -e
 
 # Default values
-SERVICE_NAME="relay"
-INSTALL_DIR="$HOME/zen"
+SERVICE_NAME="zen"INSTALL_DIR="$HOME/zen"
 REMOVE_NODEJS=false
 REMOVE_CERTS=false
 REMOVE_ACME=false
@@ -154,7 +153,7 @@ validate_path() {
 }
 
 # Use environment variables with validation
-SERVICE_NAME="${SERVICE_NAME:-relay}"
+SERVICE_NAME="${SERVICE_NAME:-zen}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/zen}"
 
 # Validate inputs
@@ -233,11 +232,13 @@ remove_autoupdate_timer() {
 
 # Remove passwordless sudo rules installed by install.sh
 remove_sudoers() {
-    local sudoers_file="/etc/sudoers.d/zen-${SERVICE_NAME}"
-    if [[ -f "$sudoers_file" ]]; then
-        execute $SUDO rm -f "$sudoers_file"
-        log_info "Removed sudoers rule: $sudoers_file"
-    fi
+    # Support both naming conventions (old: zen-<name>, new: <name>)
+    for sudoers_file in "/etc/sudoers.d/${SERVICE_NAME}" "/etc/sudoers.d/zen-${SERVICE_NAME}"; do
+        if [[ -f "$sudoers_file" ]]; then
+            execute $SUDO rm -f "$sudoers_file"
+            log_info "Removed sudoers rule: $sudoers_file"
+        fi
+    done
 }
 
 # Stop and remove systemd service

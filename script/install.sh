@@ -13,7 +13,7 @@ DOMAIN=""
 PEERS=""
 HTTPS_KEY=""
 HTTPS_CERT=""
-SERVICE_NAME="relay"
+SERVICE_NAME="zen"
 INSTALL_DIR="$HOME/zen"
 SKIP_DEPS=false
 SKIP_SERVICE=false
@@ -72,7 +72,7 @@ OPTIONS:
     -D, --domain DOMAIN         Public domain name (e.g. peer1.akao.io)
     -P, --peers PEERS           Comma-separated list of peer URLs
     -d, --dir DIRECTORY         Installation directory (default: ~/zen)
-    -s, --service NAME          Systemd service name (default: relay)
+    -s, --service NAME          Systemd service name (default: zen)
     --https-key PATH            Path to HTTPS key file
     --https-cert PATH           Path to HTTPS certificate file
     --fmb N                     Free-disk-MB threshold for storage warning (default: 200)
@@ -228,6 +228,7 @@ RestartSec=1
 User=$(whoami)
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$node_bin $INSTALL_DIR/script/server.js
+LimitNOFILE=65536
 $(printf "$env_lines")
 [Install]
 WantedBy=multi-user.target
@@ -264,7 +265,7 @@ configure_sudoers() {
     [[ "$SKIP_SERVICE" == "true" ]] && return
     [[ $EUID -eq 0 ]] && return  # already root — no sudo needed
 
-    local sudoers_file="/etc/sudoers.d/zen-${SERVICE_NAME}"
+    local sudoers_file="/etc/sudoers.d/${SERVICE_NAME}"
     local user
     user="$(whoami)"
     local systemctl_bin cp_bin chmod_bin
@@ -274,10 +275,10 @@ configure_sudoers() {
 
     log_info "Configuring passwordless sudo for service management..."
 
-    # Allow managing the relay service and updating the CLI binary without a password.
+    # Allow managing the zen service and updating the CLI binary without a password.
     # All paths are fully qualified to minimise the attack surface.
     local content
-    content="# ZEN relay — passwordless sudo rules (managed by install.sh)
+    content="# ZEN — passwordless sudo rules (managed by install.sh)
 ${user} ALL=(root) NOPASSWD: ${systemctl_bin} start ${SERVICE_NAME}
 ${user} ALL=(root) NOPASSWD: ${systemctl_bin} stop ${SERVICE_NAME}
 ${user} ALL=(root) NOPASSWD: ${systemctl_bin} restart ${SERVICE_NAME}
@@ -294,11 +295,54 @@ ${user} ALL=(root) NOPASSWD: ${chmod_bin} +x /usr/local/bin/zen"
     printf '%s\n' "$content" > "$tmpf"
     if visudo -c -f "$tmpf" &>/dev/null; then
         $SUDO install -m 0440 -o root -g root "$tmpf" "$sudoers_file"
+        # Remove any old sudoers file from previous naming (zen-<service>)
+        $SUDO rm -f "/etc/sudoers.d/zen-${SERVICE_NAME}" 2>/dev/null || true
         log_info "Sudoers rule installed: $sudoers_file"
     else
         log_warn "visudo validation failed — skipping (auto-update will need manual sudo)"
     fi
     rm -f "$tmpf"
+}
+
+# Migrate from an old service name (e.g. "relay") to SERVICE_NAME (e.g. "zen").
+# Called automatically when re-running install.sh on a machine with the old service.
+migrate_old_service() {
+    [[ "$SKIP_SERVICE" == "true" ]] && return
+    local old_name="relay"
+    local old_svc="/etc/systemd/system/${old_name}.service"
+
+    # Nothing to do if same name or old service doesn't exist
+    [[ "$SERVICE_NAME" == "$old_name" ]] && return
+    [[ -f "$old_svc" ]] || return
+
+    log_info "Migrating service: $old_name → $SERVICE_NAME"
+
+    # Copy systemd drop-in overrides (e.g. peers.conf) to new service name
+    local old_drop="/etc/systemd/system/${old_name}.service.d"
+    local new_drop="/etc/systemd/system/${SERVICE_NAME}.service.d"
+    if [[ "$DRY_RUN" != "true" ]] && [[ -d "$old_drop" ]]; then
+        $SUDO mkdir -p "$new_drop"
+        $SUDO cp -r "${old_drop}/." "$new_drop/"
+        log_info "Migrated service drop-ins: $old_drop → $new_drop"
+    fi
+
+    # Stop and remove old service and its auto-update timer
+    for unit in "${old_name}-update.timer" "${old_name}-update.service" "${old_name}.service"; do
+        if systemctl list-unit-files "$unit" &>/dev/null 2>&1 | grep -q "$unit"; then
+            run $SUDO systemctl stop "$unit" 2>/dev/null || true
+            run $SUDO systemctl disable "$unit" 2>/dev/null || true
+        fi
+        local f="/etc/systemd/system/$unit"
+        [[ -f "$f" ]] && run $SUDO rm -f "$f"
+    done
+
+    # Remove old sudoers file (both naming conventions)
+    if [[ "$DRY_RUN" != "true" ]]; then
+        $SUDO rm -f "/etc/sudoers.d/zen-${old_name}" "/etc/sudoers.d/${old_name}" 2>/dev/null || true
+    fi
+
+    [[ "$DRY_RUN" != "true" ]] && $SUDO systemctl daemon-reload
+    log_info "Old '$old_name' service removed"
 }
 
 start_service() {
@@ -454,6 +498,7 @@ main() {
 
     install_dependencies
     install_zen
+    migrate_old_service
     create_service
     configure_limits
     configure_sudoers

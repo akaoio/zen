@@ -15,7 +15,7 @@ fi
 
 set -euo pipefail
 
-SERVICE_NAME="relay"
+SERVICE_NAME="zen"
 INSTALL_DIR="$HOME/zen"
 VERSION="main"
 DRY_RUN=false

@@ -139,7 +139,7 @@ cmd_update() {
 get_service_name() {
     local svc=""
     [[ -f "$ZEN_CONFIG_DIR/service_name" ]] && svc="$(cat "$ZEN_CONFIG_DIR/service_name")"
-    echo "${svc:-relay}"
+    echo "${svc:-zen}"
 }
 
 ensure_systemd() {

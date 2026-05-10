@@ -11,6 +11,7 @@ RestartSec=1
 User=__ZEN_USER__
 WorkingDirectory=__ZEN_DIR__
 ExecStart=__ZEN_NODE__ __ZEN_DIR__/script/server.js
+LimitNOFILE=65536
 Environment=PORT=8420
 # SSL certs are auto-detected from $XDG_CONFIG_HOME/zen/ (default: ~/.config/zen/)
 # To enable HTTPS, run: bash script/ssl.sh --domain yourdomain.com --email you@example.com
