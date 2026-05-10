@@ -68,6 +68,10 @@ After install:
 
 ```bash
 zen status      # service state, version, XDG paths, SSL expiry
+zen start       # start the relay service
+zen stop        # stop the relay service
+zen restart     # restart the relay service
+zen logs        # follow journalctl live logs
 zen update      # pull latest & restart
 zen uninstall   # remove everything
 ```

@@ -218,14 +218,19 @@ Failures return `error.code = -32000` with the thrown message.
 
 ## 9.7 Tool surface
 
-The current MCP server exposes **exactly four tools**:
+The current MCP server exposes **exactly seven tools**:
 
-- `graph`
-- `crypto`
-- `identity`
-- `protocol`
+| Tool | Purpose |
+|------|---------|
+| `graph` | Graph chain operations — get / put / set / subscribe / unsubscribe |
+| `crypto` | All crypto primitives — pair / sign / verify / encrypt / decrypt / hash / certify / … |
+| `identity` | Return this server's public key |
+| `protocol` | ZACP collaboration — channels, DMs, inboxes, project metadata |
+| `push` | Ephemeral peer-to-peer relay message via `zen.push()` |
+| `storage` | Local rfs store diagnostics — quota / degraded state / recover |
+| `status` | Relay operational status (mirrors HTTP GET `/status`) |
 
-There are no standalone `get`, `put`, `on`, `pair`, `sign`, or `storePair` tools in the current implementation. Those behaviors now live under `graph` and `crypto`.
+There are no standalone `get`, `put`, `on`, `pair`, `sign`, or `storePair` tools. Those behaviors live under `graph` and `crypto`.
 
 ---
 
@@ -850,7 +855,163 @@ Response format:
 
 ---
 
-## 9.12 A real end-to-end session
+## 9.12 `push` tool
+
+### Purpose
+
+Send an ephemeral, best-effort message to any ZEN peer identified by public key.
+Uses `zen.push(pub, data)` under the hood — backed by the DAM relay mesh.
+There is no persistence and no delivery acknowledgement.
+Use `graph.put` when durability matters.
+
+### Request
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "push",
+    "arguments": {
+      "to": "<recipient-pub>",
+      "data": { "type": "ping", "ts": 1715000000 }
+    }
+  }
+}
+```
+
+### Response
+
+```json
+{ "ok": true }
+```
+
+`ok: true` means the message was handed to the relay — not that it was delivered.
+
+### Receiving pushed messages
+
+Subscribe to a soul that the sender writes into:
+
+```json
+{ "name": "graph", "arguments": { "soul": "inbox/<your-pub>", "op": "subscribe" } }
+```
+
+Or use `protocol.read_inbox` / `protocol.read_dms` for authenticated inboxes.
+
+---
+
+## 9.13 `storage` tool
+
+### Purpose
+
+Inspect and manage the local rfs (relay file store) that backs graph persistence.
+Only available when the MCP process **is** the relay (binds port 8420 directly).
+When running as a thin peer connected to an external relay, all ops return `{ "error": "no store" }`.
+
+### Supported operations
+
+| op | Arguments | Returns |
+|----|-----------|---------|
+| `quota` | — | `{ used, free, total }` in bytes |
+| `degraded` | — | `{ degraded: bool }` |
+| `recover` | — | `{ ok: true }` |
+
+`degraded: true` means the store hit an ENOSPC or OOM error and rejected all new writes.
+Call `recover` after freeing disk space to resume normal writes.
+
+### `quota`
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "storage",
+    "arguments": { "op": "quota" }
+  }
+}
+```
+
+```json
+{ "used": 1073741824, "free": 5368709120, "total": 6442450944 }
+```
+
+All values in bytes. Backed by Node.js `fs.statfs()` (requires Node.js 19+).
+
+### `degraded`
+
+```json
+{ "name": "storage", "arguments": { "op": "degraded" } }
+```
+
+```json
+{ "degraded": false }
+```
+
+### `recover`
+
+```json
+{ "name": "storage", "arguments": { "op": "recover" } }
+```
+
+```json
+{ "ok": true }
+```
+
+Clears the degraded flag so writes are accepted again. Call this only after you have freed sufficient disk space — otherwise the store will immediately re-enter degraded mode on the next write attempt.
+
+---
+
+## 9.14 `status` tool
+
+### Purpose
+
+Return live relay metadata — the same payload as HTTP `GET /status`.
+Useful for an agent that needs to confirm the relay's pub key, version, or mesh connectivity before performing authenticated graph writes.
+
+### Supported operations
+
+| op | Returns |
+|----|---------|
+| `status` | `{ pub, version, domain, port, peers_near, mcp: true }` |
+| `peers` | `{ count: N }` |
+
+`peers_near` is `mesh.near` — the DAM layer's live estimate of directly reachable peers.
+
+### `status`
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "status",
+    "arguments": { "op": "status" }
+  }
+}
+```
+
+```json
+{
+  "pub": "0wTwUprS...",
+  "version": "1.0.25",
+  "domain": "zen.akao.io",
+  "port": 443,
+  "peers_near": 3,
+  "mcp": true
+}
+```
+
+### `peers`
+
+```json
+{ "name": "status", "arguments": { "op": "peers" } }
+```
+
+```json
+{ "count": 3 }
+```
+
+---
+
+## 9.15 A real end-to-end session
 
 The current server has been exercised directly over stdio with this flow:
 
@@ -871,7 +1032,7 @@ This matters because it confirms the server works as a real MCP endpoint, not on
 
 ---
 
-## 9.13 Security model
+## 9.16 Security model
 
 Important constraints in the current implementation:
 
@@ -891,7 +1052,7 @@ It is not designed to be a general wallet server that accepts arbitrary private 
 
 ---
 
-## 9.14 Relationship to the rest of the book
+## 9.17 Relationship to the rest of the book
 
 - Use Chapter 3 for the exact crypto method semantics.
 - Use Chapter 4 for how authenticated writes and certificates are enforced.
@@ -900,7 +1061,7 @@ It is not designed to be a general wallet server that accepts arbitrary private 
 
 ---
 
-## 9.15 Relay RPC mode — cross-machine MCP without HTTP
+## 9.18 Relay RPC mode — cross-machine MCP without HTTP
 
 When the MCP server has an identity, it automatically starts a **relay RPC listener** on the same WebSocket mesh that ZEN uses for graph sync.
 
@@ -931,7 +1092,7 @@ const info = await ZenMcpClient.discover(serverPub, zen, 2000);
 
 ---
 
-## 9.16 `ZenMcpClient` — JavaScript relay client
+## 9.19 `ZenMcpClient` — JavaScript relay client
 
 `lib/mcp/client.js` provides a `ZenMcpClient` class for making MCP calls to a relay-mode server from any JavaScript environment (Node, browser, or another ZEN agent).
 
@@ -1031,7 +1192,7 @@ client.close();
 
 ---
 
-## 9.17 SSE transport mode (planned)
+## 9.20 SSE transport mode (planned)
 
 > **Not yet implemented.** The `--sse` flag does not exist in the current codebase. This section describes the planned design.
 
@@ -1052,7 +1213,7 @@ When implemented, both modes would run in the same process, sharing the same `pa
 
 ---
 
-## 9.18 Relay-embedded MCP — `attach()` and the IPC transport
+## 9.21 Relay-embedded MCP — `attach()` and the IPC transport
 
 When the relay service (`script/server.js`) is running, MCP is embedded directly into the relay process via `attach()`. No second ZEN instance is created — the relay's own ZEN graph is exposed to AI clients.
 
