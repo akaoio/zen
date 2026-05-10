@@ -139,7 +139,7 @@ log_info "$(git -C "$INSTALL_DIR" log -1 --format='  %s (%cr)' HEAD)"
 NPM="$(command -v npm 2>/dev/null || true)"
 if [[ -z "$NPM" ]] && [[ -s "$HOME/.nvm/nvm.sh" ]]; then
     # shellcheck source=/dev/null
-    . "$HOME/.nvm/nvm.sh" --no-use 2>/dev/null || true
+    . "$HOME/.nvm/nvm.sh" 2>/dev/null || true
     NPM="$(command -v npm 2>/dev/null || true)"
 fi
 if [[ -z "$NPM" ]]; then
