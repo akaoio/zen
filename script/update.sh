@@ -131,9 +131,17 @@ run npm --prefix "$INSTALL_DIR" install --omit=dev
 
 # Re-install CLI binary so new commands (start/stop/restart/logs) are available
 if [[ -f "$INSTALL_DIR/script/zen.sh" ]]; then
-    run $SUDO cp "$INSTALL_DIR/script/zen.sh" /usr/local/bin/zen
-    run $SUDO chmod +x /usr/local/bin/zen
-    log_info "zen CLI updated"
+    # Update whichever location the binary was originally installed to
+    if [[ -f "$HOME/.local/bin/zen" ]]; then
+        run cp "$INSTALL_DIR/script/zen.sh" "$HOME/.local/bin/zen"
+        run chmod +x "$HOME/.local/bin/zen"
+        log_info "zen CLI updated (~/.local/bin/zen)"
+    fi
+    if [[ -f "/usr/local/bin/zen" ]]; then
+        run $SUDO cp "$INSTALL_DIR/script/zen.sh" /usr/local/bin/zen
+        run $SUDO chmod +x /usr/local/bin/zen
+        log_info "zen CLI updated (/usr/local/bin/zen)"
+    fi
 fi
 
 # Restart service
