@@ -190,12 +190,6 @@ install_dependencies() {
 install_zen() {
     log_info "Installing ZEN to $INSTALL_DIR..."
 
-    # Load nvm if npm not in PATH (nvm-based installs)
-    if ! command -v npm >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
-        log_info "npm not found, loading nvm..."
-        . "$HOME/.nvm/nvm.sh"
-    fi
-
     run mkdir -p "$(dirname "$INSTALL_DIR")"
 
     if [ -d "$INSTALL_DIR/.git" ]; then
@@ -208,7 +202,13 @@ install_zen() {
         run git -C "$INSTALL_DIR" checkout "$VERSION"
     fi
 
-    run npm --prefix "$INSTALL_DIR" install
+    # nvm.sh uses bash syntax — must invoke via bash when npm not in PATH
+    if ! command -v npm >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
+        log_info "npm not in PATH, running npm install via bash+nvm..."
+        run bash -c ". \"$HOME/.nvm/nvm.sh\" && npm --prefix \"$INSTALL_DIR\" install"
+    else
+        run npm --prefix "$INSTALL_DIR" install
+    fi
     log_info "ZEN installed successfully"
 }
 
