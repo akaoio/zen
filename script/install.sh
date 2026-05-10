@@ -224,12 +224,11 @@ create_service() {
     log_info "Creating systemd service: $SERVICE_NAME"
 
     service_file="/etc/systemd/system/${SERVICE_NAME}.service"
-    # Use || true so set -e doesn't exit when node is not in PATH (e.g. nvm user running via sudo)
+    # Resolve node binary — use nvm default via bash subshell if not in PATH
     node_bin=""
     node_bin=$(command -v node 2>/dev/null) || true
-    # Fallback: check common nvm location (look for bin/node specifically)
-    if [ -z "$node_bin" ] && [ -d "$HOME/.nvm/versions/node" ]; then
-        node_bin=$(find "$HOME/.nvm/versions/node" -path "*/bin/node" -maxdepth 4 2>/dev/null | sort -V | tail -1) || true
+    if [ -z "$node_bin" ] && [ -s "$HOME/.nvm/nvm.sh" ]; then
+        node_bin=$(bash -c '. "$HOME/.nvm/nvm.sh" && command -v node' 2>/dev/null) || true
     fi
 
     # Build env lines
@@ -498,8 +497,8 @@ install_autoupdate() {
 
     node_bin=""
     node_bin=$(command -v node 2>/dev/null) || true
-    if [ -z "$node_bin" ] && [ -d "$HOME/.nvm/versions/node" ]; then
-        node_bin=$(find "$HOME/.nvm/versions/node" -path "*/bin/node" -maxdepth 4 2>/dev/null | sort -V | tail -1) || true
+    if [ -z "$node_bin" ] && [ -s "$HOME/.nvm/nvm.sh" ]; then
+        node_bin=$(bash -c '. "$HOME/.nvm/nvm.sh" && command -v node' 2>/dev/null) || true
     fi
     update_svc="/etc/systemd/system/${SERVICE_NAME}-update.service"
     update_tmr="/etc/systemd/system/${SERVICE_NAME}-update.timer"
