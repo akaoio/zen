@@ -567,10 +567,11 @@ function Mesh(root) {
       // Keep peer as tombstone so PEX cannot re-add it; also record URL.
       peer._noReconnect = true;
       if (peer.url) {
-        opt._tombUrls = opt._tombUrls || new Set();
-        opt._tombUrls.add(peer.url);
-        opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
-        opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
+        var tu = (opt._tombUrls = opt._tombUrls || new Set());
+        if (tu.size >= 500) { tu.delete(tu.values().next().value); } // cap: drop oldest
+        tu.add(peer.url);
+        tu.add(peer.url.replace(/^wss?:/, function(p){ return p[2]==='s'?'https:':'http:'; }));
+        tu.add(peer.url.replace(/^https?:/, function(p){ return p[4]==='s'?'wss:':'ws:'; }));
       }
     }
   };

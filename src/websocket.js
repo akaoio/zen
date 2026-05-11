@@ -4,6 +4,16 @@ import __mesh from "./mesh.js";
 var Zen = __root;
 Zen.Mesh = __mesh;
 
+// Cap tombUrls at 500 entries (≈167 dead peers × 3 URL variants each).
+// Set is insertion-ordered so oldest entries are dropped first.
+function tombAdd(opt, url) {
+  var t = (opt._tombUrls = opt._tombUrls || new Set());
+  if (t.size >= 500) { t.delete(t.values().next().value); }
+  t.add(url);
+  t.add(url.replace(/^wss?:/, function(p){ return p[2]==='s'?'https:':'http:'; }));
+  t.add(url.replace(/^https?:/, function(p){ return p[4]==='s'?'wss:':'ws:'; }));
+}
+
 // TODO: resync upon reconnect online/offline
 //window.ononline = window.onoffline = function(){ console.log('online?', navigator.onLine) }
 
@@ -56,12 +66,7 @@ Zen.on("opt", function (root) {
           peer._axeGuess = (peer._axeGuess || 0) + 1;
           if (peer._axeGuess >= 5) {
             peer._noReconnect = true;
-            if (peer.url) {
-              opt._tombUrls = opt._tombUrls || new Set();
-              opt._tombUrls.add(peer.url);
-              opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
-              opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
-            }
+            if (peer.url) { tombAdd(opt, peer.url); }
           }
         }
         // Backoff for peers that accept then quickly close (AXE PID-sort drop).
@@ -70,12 +75,7 @@ Zen.on("opt", function (root) {
           peer._hiGuess = (peer._hiGuess || 0) + 1;
           if (peer._hiGuess >= 3) {
             peer._noReconnect = true;
-            if (peer.url) {
-              opt._tombUrls = opt._tombUrls || new Set();
-              opt._tombUrls.add(peer.url);
-              opt._tombUrls.add(peer.url.replace(/^wss?/, 'http'));
-              opt._tombUrls.add(peer.url.replace(/^https?/, 'ws'));
-            }
+            if (peer.url) { tombAdd(opt, peer.url); }
           }
         }
         reconnect(peer);
