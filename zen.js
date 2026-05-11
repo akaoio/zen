@@ -1023,6 +1023,7 @@ defmod('./src/root.js', function(module, exp){
       if (0 < --ctx.stun && !ctx.err) {
         return;
       } // decrement always runs; early-return only if stun still positive AND no error.
+      if (ctx.stun < 0) { ctx.stun = 0; } // defensive: ctx.stop below prevents double-fire, but guard underflow
       ctx.stop = 1;
       if (!(root = ctx.root)) {
         return;
@@ -7944,7 +7945,9 @@ defmod('./src/mesh.js', function(module, exp){
         mesh.say.d += raw.length || 0;
         ++mesh.say.c; // STATS!
       } catch (e) {
-        (peer.queue = peer.queue || []).push(raw);
+        var q = (peer.queue = peer.queue || []);
+        if (q.length >= 1000) { q.shift(); } // drop oldest to prevent unbounded memory growth
+        q.push(raw);
       }
     }
 

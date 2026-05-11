@@ -489,7 +489,9 @@ function Mesh(root) {
       mesh.say.d += raw.length || 0;
       ++mesh.say.c; // STATS!
     } catch (e) {
-      (peer.queue = peer.queue || []).push(raw);
+      var q = (peer.queue = peer.queue || []);
+      if (q.length >= 1000) { q.shift(); } // drop oldest to prevent unbounded memory growth
+      q.push(raw);
     }
   }
 

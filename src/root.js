@@ -300,6 +300,7 @@ Zen.ask = __ask;
     if (0 < --ctx.stun && !ctx.err) {
       return;
     } // decrement always runs; early-return only if stun still positive AND no error.
+    if (ctx.stun < 0) { ctx.stun = 0; } // defensive: ctx.stop below prevents double-fire, but guard underflow
     ctx.stop = 1;
     if (!(root = ctx.root)) {
       return;
