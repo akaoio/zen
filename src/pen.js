@@ -109,9 +109,11 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
     if (typeof val === "string") {
       view[offset++] = 4;
       var encoded = _enc.encode(val);
-      var slen = Math.min(encoded.length, 0xffff);
+      var slen = encoded.length;
       view[offset++] = slen & 0xff;
       view[offset++] = (slen >> 8) & 0xff;
+      view[offset++] = (slen >> 16) & 0xff;
+      view[offset++] = (slen >> 24) & 0xff;
       for (var i = 0; i < slen; i++) view[offset++] = encoded[i];
       return offset;
     }
@@ -238,8 +240,8 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
     return [0x02];
   };
   bc.str = function (s) {
-    var bytes = Array.from(_enc.encode(s.slice(0, 255)));
-    return [0x03, bytes.length].concat(bytes);
+    var bytes = Array.from(_enc.encode(s));
+    return [0x03].concat(bc.uleb(bytes.length)).concat(bytes);
   };
   bc.uint = function (n) {
     return [0x04].concat(bc.uleb(n));
@@ -412,7 +414,13 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
     if (op === 0x00 || op === 0x01 || op === 0x02 || op === 0x23 || op === 0x24)
       return pos;
     if (op === 0x03) {
-      var len = bytecode[pos++];
+      // ULEB128-encoded length
+      var len = 0, shift = 0, b;
+      do {
+        b = bytecode[pos++];
+        len |= (b & 0x7f) << shift;
+        shift += 7;
+      } while (b & 0x80);
       return pos + len;
     } // string
     if (op === 0x04 || op === 0x07) {

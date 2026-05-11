@@ -1607,3 +1607,140 @@ describe("value update — re-sign and re-mine required", function () {
     });
   });
 });
+
+// ── unlimited string tests ────────────────────────────────────────────────────
+
+describe("pen — unlimited string support (WASM linear memory heap)", function () {
+  function rep(ch, n) { return ch.repeat(n); }
+
+  it("register string > 128 bytes accepted and compared correctly (EQ)", function () {
+    var b = pen.bc;
+    var longStr = rep("a", 150) + rep("b", 150); // 300 bytes
+    var bytecode = prog(b.eq(b.r0(), b.str(longStr)));
+    assert.strictEqual(run(bytecode, [longStr]), true, "exact 300-byte match");
+    assert.strictEqual(run(bytecode, [longStr + "x"]), false, "mismatch: longer input");
+    assert.strictEqual(run(bytecode, [rep("a", 150) + rep("b", 149)]), false, "mismatch: shorter input");
+  });
+
+  it("register string > 255 bytes accepted", function () {
+    var b = pen.bc;
+    var longStr = rep("z", 500); // 500 bytes
+    var bytecode = prog(b.eq(b.r0(), b.str(longStr)));
+    assert.strictEqual(run(bytecode, [longStr]), true, "exact 500-byte match");
+    assert.strictEqual(run(bytecode, [rep("z", 499)]), false, "499 bytes does not match 500");
+  });
+
+  it("inline bytecode STR > 128 bytes via ULEB128 encoding", function () {
+    var b = pen.bc;
+    var longStr = rep("x", 300); // 300 bytes encoded inline in bytecode
+    var bytecode = prog(b.eq(b.r0(), b.str(longStr)));
+    assert.strictEqual(run(bytecode, [longStr]), true, "300-byte inline STR match");
+    assert.strictEqual(run(bytecode, [rep("x", 299)]), false, "299-byte mismatch");
+  });
+
+  it("CONCAT of two 200-byte register strings produces 400-byte result", function () {
+    var b = pen.bc;
+    var a = rep("A", 200);
+    var ab = rep("B", 200);
+    var expected = a + ab;
+    var bytecode = prog(b.eq(b.concat(b.r0(), b.r1()), b.str(expected)));
+    assert.strictEqual(run(bytecode, [a, ab]), true, "concat(200,200)=400 bytes");
+    assert.strictEqual(run(bytecode, [a, rep("B", 199)]), false, "concat mismatch");
+  });
+
+  it("UPPER on 200-byte string works correctly", function () {
+    var b = pen.bc;
+    var lower = rep("a", 200);
+    var upper = rep("A", 200);
+    var bytecode = prog(b.eq(b.upper(b.r0()), b.str(upper)));
+    assert.strictEqual(run(bytecode, [lower]), true, "upper(200 lowercase a) = 200 uppercase A");
+  });
+
+  it("LOWER on 200-byte string works correctly", function () {
+    var b = pen.bc;
+    var upper = rep("Z", 200);
+    var lower = rep("z", 200);
+    var bytecode = prog(b.eq(b.lower(b.r0()), b.str(lower)));
+    assert.strictEqual(run(bytecode, [upper]), true, "lower(200 uppercase Z) = 200 lowercase z");
+  });
+
+  it("INCLUDES finds short needle in long haystack", function () {
+    var b = pen.bc;
+    var haystack = rep("a", 100) + "NEEDLE" + rep("b", 100);
+    var bytecode = prog(b.inc(b.r0(), b.str("NEEDLE")));
+    assert.strictEqual(run(bytecode, [haystack]), true, "NEEDLE found in 206-byte haystack");
+    assert.strictEqual(run(bytecode, [rep("a", 200)]), false, "NEEDLE not found");
+  });
+
+  it("INCLUDES finds long needle in long haystack", function () {
+    var b = pen.bc;
+    var needle = rep("x", 150);
+    var haystack = rep("a", 100) + needle + rep("b", 100);
+    var bytecode = prog(b.inc(b.r0(), b.r1()));
+    assert.strictEqual(run(bytecode, [haystack, needle]), true, "150-byte needle in 350-byte haystack");
+    assert.strictEqual(run(bytecode, [rep("a", 350), needle]), false, "needle not found");
+  });
+
+  it("PRE (startsWith) with long prefix", function () {
+    var b = pen.bc;
+    var prefix = rep("p", 150);
+    var str = prefix + rep("s", 100);
+    var bytecode = prog(b.pre(b.r0(), b.r1()));
+    assert.strictEqual(run(bytecode, [str, prefix]), true, "long startsWith: true");
+    assert.strictEqual(run(bytecode, [rep("q", 250), prefix]), false, "long startsWith: false");
+  });
+
+  it("SUF (endsWith) with long suffix", function () {
+    var b = pen.bc;
+    var suffix = rep("e", 150);
+    var str = rep("s", 100) + suffix;
+    var bytecode = prog(b.suf(b.r0(), b.r1()));
+    assert.strictEqual(run(bytecode, [str, suffix]), true, "long endsWith: true");
+    assert.strictEqual(run(bytecode, [rep("a", 250), suffix]), false, "long endsWith: false");
+  });
+
+  it("LEN of 500-byte string returns 500", function () {
+    var b = pen.bc;
+    var str = rep("L", 500);
+    var bytecode = prog(b.eq(b.len(b.r0()), b.uint(500)));
+    assert.strictEqual(run(bytecode, [str]), true, "LEN(500-byte string) = 500");
+  });
+
+  it("SLICE of long string extracts correct substring", function () {
+    var b = pen.bc;
+    var str = rep("a", 100) + "MIDDLE" + rep("b", 100);
+    var bytecode = prog(b.eq(b.slice(b.r0(), b.uint(100), b.uint(106)), b.str("MIDDLE")));
+    assert.strictEqual(run(bytecode, [str]), true, "SLICE extracts MIDDLE from 206-byte string");
+  });
+
+  it("SEG on long string works correctly", function () {
+    var b = pen.bc;
+    var part1 = rep("a", 100);
+    var part2 = rep("b", 100);
+    var str = part1 + "/" + part2;
+    var bytecode = prog(b.eq(b.seg(b.r0(), "/", b.uint(1)), b.str(part2)));
+    assert.strictEqual(run(bytecode, [str]), true, "SEG extracts 100-byte second segment");
+  });
+
+  it("LT/GT comparison on long strings (lexicographic)", function () {
+    var b = pen.bc;
+    var a = rep("a", 200);
+    var bstr = rep("b", 200);
+    var ltbc = prog(b.lt(b.r0(), b.r1()));
+    assert.strictEqual(run(ltbc, [a, bstr]), true, "200-byte aaa... < bbb...");
+    assert.strictEqual(run(ltbc, [bstr, a]), false, "200-byte bbb... not < aaa...");
+  });
+
+  it("1000-byte string round-trips through register", function () {
+    var b = pen.bc;
+    var str = rep("X", 1000);
+    var bytecode = prog(b.eq(b.r0(), b.str(str)));
+    assert.strictEqual(run(bytecode, [str]), true, "1000-byte equality");
+  });
+
+  it("TONUM on numeric string works", function () {
+    var b = pen.bc;
+    var bytecode = prog(b.eq(b.tonum(b.r0()), b.uint(12345)));
+    assert.strictEqual(run(bytecode, ["12345"]), true, "tonum('12345') = 12345");
+  });
+});

@@ -21,7 +21,23 @@
 const MAX_DEPTH: u32 = 32;
 const MAX_LOCALS: usize = 32;
 const MAX_REGS: usize = 64;
-const MAX_STR: usize = 128;
+
+// String heap — freestanding bump allocator in WASM linear memory.
+// Strings are stored here; Value holds (sptr, slen) instead of an inline buffer.
+// resetStrHeap() must be called before each evaluation (in wasm.zig run()).
+const MAX_STR_HEAP: usize = 4 * 1024 * 1024; // 4 MiB
+var str_heap: [MAX_STR_HEAP]u8 = undefined;
+var str_bump: u32 = 0;
+
+pub fn resetStrHeap() void {
+    str_bump = 0;
+}
+
+// Return the bytes of a TAG_STR Value.
+fn strBytes(v: Value) []const u8 {
+    if (v.slen == 0) return str_heap[0..0];
+    return str_heap[v.sptr .. v.sptr + v.slen];
+}
 
 // Value tag
 const TAG_NULL: u8 = 0;
@@ -35,8 +51,8 @@ pub const Value = struct {
     tag: u8,
     i: i64, // TAG_INT or TAG_BOOL (0/1) or TAG_ERR code
     f: f64, // TAG_FLOAT
-    s: [MAX_STR]u8, // TAG_STR
-    slen: u16,
+    sptr: u32, // TAG_STR: byte offset into str_heap
+    slen: u32, // TAG_STR: byte length (unlimited)
 };
 
 pub fn vNull() Value {
@@ -44,6 +60,7 @@ pub fn vNull() Value {
     v.tag = TAG_NULL;
     v.i = 0;
     v.f = 0;
+    v.sptr = 0;
     v.slen = 0;
     return v;
 }
@@ -52,6 +69,7 @@ pub fn vBool(b: bool) Value {
     v.tag = TAG_BOOL;
     v.i = if (b) 1 else 0;
     v.f = 0;
+    v.sptr = 0;
     v.slen = 0;
     return v;
 }
@@ -60,6 +78,7 @@ pub fn vInt(n: i64) Value {
     v.tag = TAG_INT;
     v.i = n;
     v.f = 0;
+    v.sptr = 0;
     v.slen = 0;
     return v;
 }
@@ -68,6 +87,7 @@ pub fn vFloat(f: f64) Value {
     v.tag = TAG_FLOAT;
     v.i = 0;
     v.f = f;
+    v.sptr = 0;
     v.slen = 0;
     return v;
 }
@@ -76,10 +96,14 @@ pub fn vStr(ptr: [*]const u8, len: usize) Value {
     v.tag = TAG_STR;
     v.i = 0;
     v.f = 0;
-    const l = if (len > MAX_STR) MAX_STR else len;
-    v.slen = @intCast(l);
+    const available = MAX_STR_HEAP - @as(usize, str_bump);
+    const l = if (len > available) available else len;
+    const off = str_bump;
     var i: usize = 0;
-    while (i < l) : (i += 1) v.s[i] = ptr[i];
+    while (i < l) : (i += 1) str_heap[off + i] = ptr[i];
+    str_bump += @intCast(l);
+    v.sptr = off;
+    v.slen = @intCast(l);
     return v;
 }
 fn vStrSlice(sl: []const u8) Value {
@@ -90,6 +114,7 @@ pub fn vErr(code: i64) Value {
     v.tag = TAG_ERR;
     v.i = code;
     v.f = 0;
+    v.sptr = 0;
     v.slen = 0;
     return v;
 }
@@ -110,7 +135,7 @@ fn toNumber(v: Value) f64 {
         TAG_INT => @floatFromInt(v.i),
         TAG_FLOAT => v.f,
         TAG_BOOL => @floatFromInt(v.i),
-        TAG_STR => parseF64(v.s[0..v.slen]),
+        TAG_STR => parseF64(strBytes(v)),
         else => 0.0,
     };
 }
@@ -120,9 +145,11 @@ fn valEqual(a: Value, b: Value) bool {
     if (a.tag == TAG_NULL or b.tag == TAG_NULL) return false;
     if (a.tag == TAG_STR and b.tag == TAG_STR) {
         if (a.slen != b.slen) return false;
+        const ba = strBytes(a);
+        const bb = strBytes(b);
         var i: usize = 0;
         while (i < a.slen) : (i += 1) {
-            if (a.s[i] != b.s[i]) return false;
+            if (ba[i] != bb[i]) return false;
         }
         return true;
     }
@@ -133,13 +160,15 @@ fn valEqual(a: Value, b: Value) bool {
 fn strCmp(a: Value, b: Value) i32 {
     // lexicographic for strings, numeric for others
     if (a.tag == TAG_STR and b.tag == TAG_STR) {
+        const ba = strBytes(a);
+        const bb = strBytes(b);
         const la = a.slen;
         const lb = b.slen;
         const min = if (la < lb) la else lb;
         var i: usize = 0;
         while (i < min) : (i += 1) {
-            if (a.s[i] < b.s[i]) return -1;
-            if (a.s[i] > b.s[i]) return 1;
+            if (ba[i] < bb[i]) return -1;
+            if (ba[i] > bb[i]) return 1;
         }
         if (la < lb) return -1;
         if (la > lb) return 1;
@@ -321,9 +350,11 @@ fn intToStr(n: i64, buf: []u8) usize {
 fn strStartsWith(s: Value, prefix: Value) bool {
     if (s.tag != TAG_STR or prefix.tag != TAG_STR) return false;
     if (prefix.slen > s.slen) return false;
+    const bs = strBytes(s);
+    const bp = strBytes(prefix);
     var i: usize = 0;
     while (i < prefix.slen) : (i += 1) {
-        if (s.s[i] != prefix.s[i]) return false;
+        if (bs[i] != bp[i]) return false;
     }
     return true;
 }
@@ -332,10 +363,12 @@ fn strStartsWith(s: Value, prefix: Value) bool {
 fn strEndsWith(s: Value, suffix: Value) bool {
     if (s.tag != TAG_STR or suffix.tag != TAG_STR) return false;
     if (suffix.slen > s.slen) return false;
+    const bs = strBytes(s);
+    const bsuf = strBytes(suffix);
     const offset = s.slen - suffix.slen;
     var i: usize = 0;
     while (i < suffix.slen) : (i += 1) {
-        if (s.s[offset + i] != suffix.s[i]) return false;
+        if (bs[offset + i] != bsuf[i]) return false;
     }
     return true;
 }
@@ -345,13 +378,15 @@ fn strIncludes(s: Value, needle: Value) bool {
     if (s.tag != TAG_STR or needle.tag != TAG_STR) return false;
     if (needle.slen == 0) return true;
     if (needle.slen > s.slen) return false;
+    const bs = strBytes(s);
+    const bn = strBytes(needle);
     const limit = s.slen - needle.slen;
     var i: usize = 0;
     while (i <= limit) : (i += 1) {
         var match = true;
         var j: usize = 0;
         while (j < needle.slen) : (j += 1) {
-            if (s.s[i + j] != needle.s[j]) {
+            if (bs[i + j] != bn[j]) {
                 match = false;
                 break;
             }
@@ -361,37 +396,48 @@ fn strIncludes(s: Value, needle: Value) bool {
     return false;
 }
 
-// lower/upper
+// lower/upper — allocate new string in str_heap
 fn strToLower(v: Value) Value {
     if (v.tag != TAG_STR) return v;
-    var r = v;
+    const src = strBytes(v);
+    const off = str_bump;
+    const available = MAX_STR_HEAP - @as(usize, str_bump);
+    const l: u32 = if (@as(usize, v.slen) > available) @intCast(available) else v.slen;
     var i: usize = 0;
-    while (i < r.slen) : (i += 1) {
-        if (r.s[i] >= 'A' and r.s[i] <= 'Z') r.s[i] += 32;
+    while (i < l) : (i += 1) {
+        const c = src[i];
+        str_heap[off + i] = if (c >= 'A' and c <= 'Z') c + 32 else c;
     }
-    return r;
+    str_bump += l;
+    return Value{ .tag = TAG_STR, .i = 0, .f = 0, .sptr = off, .slen = l };
 }
 fn strToUpper(v: Value) Value {
     if (v.tag != TAG_STR) return v;
-    var r = v;
+    const src = strBytes(v);
+    const off = str_bump;
+    const available = MAX_STR_HEAP - @as(usize, str_bump);
+    const l: u32 = if (@as(usize, v.slen) > available) @intCast(available) else v.slen;
     var i: usize = 0;
-    while (i < r.slen) : (i += 1) {
-        if (r.s[i] >= 'a' and r.s[i] <= 'z') r.s[i] -= 32;
+    while (i < l) : (i += 1) {
+        const c = src[i];
+        str_heap[off + i] = if (c >= 'a' and c <= 'z') c - 32 else c;
     }
-    return r;
+    str_bump += l;
+    return Value{ .tag = TAG_STR, .i = 0, .f = 0, .sptr = off, .slen = l };
 }
 
 // SEG(str, sep_byte, idx) → split str by sep, return segment at idx
 fn strSeg(s: Value, sep: u8, idx: i64) Value {
     if (s.tag != TAG_STR) return vStr("", 0);
+    const bs = strBytes(s);
     var seg_idx: i64 = 0;
     var seg_start: usize = 0;
     var i: usize = 0;
     while (i <= s.slen) : (i += 1) {
-        const at_sep = (i == s.slen or s.s[i] == sep);
+        const at_sep = (i == s.slen or bs[i] == sep);
         if (at_sep) {
             if (seg_idx == idx) {
-                return vStrSlice(s.s[seg_start..i]);
+                return vStrSlice(bs[seg_start..i]);
             }
             seg_idx += 1;
             seg_start = i + 1;
@@ -473,10 +519,9 @@ fn skipExpr(bc: []const u8, pos: *usize, depth: u32) EvalError!void {
         0x23, 0x24 => {},
 
         // STR: [u8 len] + len bytes
+        // STR: 0x03 [uleb128 len] [utf8...]
         0x03 => {
-            if (pos.* >= bc.len) return EvalError.BadBytecode;
-            const len = bc[pos.*];
-            pos.* += 1;
+            const len: usize = @intCast(readUleb(bc, pos));
             if (pos.* + len > bc.len) return EvalError.BadBytecode;
             pos.* += len;
         },
@@ -584,11 +629,9 @@ pub fn eval(ctx: *Ctx, pos: *usize) EvalError!Value {
         0x01 => return vBool(true),
         0x02 => return vBool(false),
 
-        // STR: 0x03 [u8 len] [utf8...]
+        // STR: 0x03 [uleb128 len] [utf8...]
         0x03 => {
-            if (pos.* >= ctx.bc.len) return EvalError.BadBytecode;
-            const len = ctx.bc[pos.*];
-            pos.* += 1;
+            const len: usize = @intCast(readUleb(ctx.bc, pos));
             if (pos.* + len > ctx.bc.len) return EvalError.BadBytecode;
             const start = pos.*;
             pos.* += len;
@@ -774,45 +817,45 @@ pub fn eval(ctx: *Ctx, pos: *usize) EvalError!Value {
         // String ops
         0x50 => { // LEN
             const a = try eval(ctx, pos);
-            const l: i64 = if (a.tag == TAG_STR) a.slen else 0;
+            const l: i64 = if (a.tag == TAG_STR) @intCast(a.slen) else 0;
             return vInt(l);
         },
-        0x51 => { // SLICE(str, start, end) — clamp float indices to [0, MAX_STR]
+        0x51 => { // SLICE(str, start, end)
             const s = try eval(ctx, pos);
             const st_v = try eval(ctx, pos);
             const en_v = try eval(ctx, pos);
             if (s.tag != TAG_STR) return vStr("", 0);
-            const MAX_F: f64 = @floatFromInt(MAX_STR);
+            const max_f: f64 = @floatFromInt(s.slen);
             var stf = toNumber(st_v);
             var enf = toNumber(en_v);
             if (stf != stf or stf < 0.0) stf = 0.0; // NaN or negative → 0
             if (enf != enf or enf < 0.0) enf = 0.0;
-            if (stf > MAX_F) stf = MAX_F;
-            if (enf > MAX_F) enf = MAX_F;
+            if (stf > max_f) stf = max_f;
+            if (enf > max_f) enf = max_f;
             var st: usize = @intFromFloat(stf);
             var en: usize = @intFromFloat(enf);
             if (st > s.slen) st = s.slen;
             if (en > s.slen) en = s.slen;
             if (st > en) st = en;
-            return vStr(s.s[st..].ptr, en - st);
+            const bs = strBytes(s);
+            return vStr(bs[st..].ptr, en - st);
         },
-        0x52 => { // SEG(str_expr, sep_byte, idx_expr) — guard against NaN/huge idx
+        0x52 => { // SEG(str_expr, sep_byte, idx_expr)
             const s = try eval(ctx, pos);
             if (pos.* >= ctx.bc.len) return EvalError.BadBytecode;
             const sep = ctx.bc[pos.*];
             pos.* += 1;
             const idx_v = try eval(ctx, pos);
             const idx_f = toNumber(idx_v);
-            // NaN or negative or impossibly large → no segment matches
-            if (idx_f != idx_f or idx_f < 0.0 or idx_f > @as(f64, MAX_STR)) return vStr("", 0);
-            const idx: i64 = @intFromFloat(idx_f);
+            if (idx_f != idx_f or idx_f < 0.0) return vStr("", 0);
+            const idx: i64 = if (idx_f >= 4294967295.0) 4294967295 else @intFromFloat(idx_f);
             return strSeg(s, sep, idx);
         },
         0x53 => { // TONUM
             const a = try eval(ctx, pos);
             if (a.tag == TAG_INT) return a;
             if (a.tag == TAG_FLOAT) return a;
-            if (a.tag == TAG_STR) return vFloat(parseF64(a.s[0..a.slen]));
+            if (a.tag == TAG_STR) return vFloat(parseF64(strBytes(a)));
             return vInt(0);
         },
         0x54 => { // TOSTR
@@ -865,17 +908,21 @@ pub fn eval(ctx: *Ctx, pos: *usize) EvalError!Value {
                 TAG_BOOL => if (b_raw.i != 0) vStr("true", 4) else vStr("false", 5),
                 else => vStr("null", 4),
             };
-            var r: Value = undefined;
-            r.tag = TAG_STR;
-            r.i = 0;
-            r.f = 0;
-            const total = @min(@as(usize, a.slen) + @as(usize, b.slen), MAX_STR);
+            // Allocate concatenated result in str_heap
+            const off = str_bump;
+            const avail1 = MAX_STR_HEAP - @as(usize, str_bump);
+            const a_copy: u32 = if (@as(usize, a.slen) > avail1) @intCast(avail1) else a.slen;
+            const ba = strBytes(a);
             var k: usize = 0;
-            while (k < a.slen and k < total) : (k += 1) r.s[k] = a.s[k];
+            while (k < a_copy) : (k += 1) str_heap[off + k] = ba[k];
+            str_bump += a_copy;
+            const avail2 = MAX_STR_HEAP - @as(usize, str_bump);
+            const b_copy: u32 = if (@as(usize, b.slen) > avail2) @intCast(avail2) else b.slen;
+            const bb = strBytes(b);
             var j: usize = 0;
-            while (j < b.slen and k + j < total) : (j += 1) r.s[k + j] = b.s[j];
-            r.slen = @intCast(total);
-            return r;
+            while (j < b_copy) : (j += 1) str_heap[str_bump + j] = bb[j];
+            str_bump += b_copy;
+            return Value{ .tag = TAG_STR, .i = 0, .f = 0, .sptr = off, .slen = a_copy + b_copy };
         },
         0x56 => {
             const a = try eval(ctx, pos);
@@ -993,7 +1040,7 @@ pub fn eval(ctx: *Ctx, pos: *usize) EvalError!Value {
                 vNull();
             const seg = strSeg(s, sep, idx);
             if (seg.tag != TAG_STR) return vFloat(0);
-            return vFloat(parseF64(seg.s[0..seg.slen]));
+            return vFloat(parseF64(strBytes(seg)));
         },
 
         else => return EvalError.UnknownOpcode,
@@ -1004,7 +1051,7 @@ pub fn eval(ctx: *Ctx, pos: *usize) EvalError!Value {
 var static_ctx: Ctx = Ctx{
     .bc = &[_]u8{},
     .regs = &[_]Value{},
-    .locals = [_]Value{Value{ .tag = TAG_NULL, .i = 0, .f = 0, .s = undefined, .slen = 0 }} ** MAX_LOCALS,
+    .locals = [_]Value{Value{ .tag = TAG_NULL, .i = 0, .f = 0, .sptr = 0, .slen = 0 }} ** MAX_LOCALS,
     .depth = 0,
 };
 

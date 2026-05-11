@@ -3849,9 +3849,11 @@ defmod('./src/pen.js', function(module, exp){
       if (typeof val === "string") {
         view[offset++] = 4;
         var encoded = _enc.encode(val);
-        var slen = Math.min(encoded.length, 0xffff);
+        var slen = encoded.length;
         view[offset++] = slen & 0xff;
         view[offset++] = (slen >> 8) & 0xff;
+        view[offset++] = (slen >> 16) & 0xff;
+        view[offset++] = (slen >> 24) & 0xff;
         for (var i = 0; i < slen; i++) view[offset++] = encoded[i];
         return offset;
       }
@@ -3978,8 +3980,8 @@ defmod('./src/pen.js', function(module, exp){
       return [0x02];
     };
     bc.str = function (s) {
-      var bytes = Array.from(_enc.encode(s.slice(0, 255)));
-      return [0x03, bytes.length].concat(bytes);
+      var bytes = Array.from(_enc.encode(s));
+      return [0x03].concat(bc.uleb(bytes.length)).concat(bytes);
     };
     bc.uint = function (n) {
       return [0x04].concat(bc.uleb(n));
@@ -4152,7 +4154,13 @@ defmod('./src/pen.js', function(module, exp){
       if (op === 0x00 || op === 0x01 || op === 0x02 || op === 0x23 || op === 0x24)
         return pos;
       if (op === 0x03) {
-        var len = bytecode[pos++];
+        // ULEB128-encoded length
+        var len = 0, shift = 0, b;
+        do {
+          b = bytecode[pos++];
+          len |= (b & 0x7f) << shift;
+          shift += 7;
+        } while (b & 0x80);
         return pos + len;
       } // string
       if (op === 0x04 || op === 0x07) {
@@ -7715,10 +7723,9 @@ defmod('./src/mesh.js', function(module, exp){
         } // TODO: Should broadcasts be hashed?
         if (!peer && ack) {
           peer =
-            ((tmp = dup.s.get(ack)) &&
-              (tmp.via || ((tmp = tmp.it) && (tmp = tmp._) && tmp.via))) ||
-            ((tmp = mesh.last) && ack === tmp["#"] && mesh.leap);
-        } // warning! mesh.leap could be buggy! mesh last check reduces this. // TODO: CLEAN UP THIS LINE NOW? `.it` should be reliable.
+            (tmp = dup.s.get(ack)) &&
+            (tmp.via || ((tmp = tmp.it) && (tmp = tmp._) && tmp.via));
+        } // mesh.leap fallback removed — race condition with async mesh.raw; dup.s.via is reliable.
         if (!peer && ack) {
           // still no peer, then ack daisy chain 'tunnel' got lost.
           if (dup.s.has(ack)) {
@@ -7860,9 +7867,9 @@ defmod('./src/mesh.js', function(module, exp){
               break;
             }
           }
-          if (i > 1) {
+          if (i > 1 && !peer) {
             msg["><"] = to.join();
-          } // TODO: BUG! This gets set regardless of peers sent to! Detect?
+          } // Only set yo-list for broadcasts (peer=null); targeted sends must not include unrelated peers.
         }
         if (msg.put && (tmp = msg.ok)) {
           msg.ok = {
@@ -7968,7 +7975,8 @@ defmod('./src/mesh.js', function(module, exp){
         if (opt.udpPort) { hiMsg.udp = opt.udpPort; } // advertise our UDP listening port
         if (opt.udpToken) { hiMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
         mesh.say(hiMsg, (opt.peers[tmp] = peer));
-        dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
+        var _hiLast = peer.last; // capture before any async reconnect can overwrite peer.last
+        dup.s.delete(_hiLast); // IMPORTANT: see https://zen.eco/docs/DAM#self
       }
       if (!peer.met) {
         mesh.near++;
@@ -8044,7 +8052,8 @@ defmod('./src/mesh.js', function(module, exp){
       if (opt.udpPort) { replyMsg.udp = opt.udpPort; } // advertise our UDP port in reply
       if (opt.udpToken) { replyMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
       mesh.say(replyMsg, peer);
-      dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
+      var _replyLast = peer.last; // capture before any async reconnect can overwrite peer.last
+      dup.s.delete(_replyLast); // IMPORTANT: see https://zen.eco/docs/DAM#self
     };
     mesh.hear["ping"] = function (msg, peer) {
       mesh.say({ dam: "pong", t: msg.t, "@": msg["#"] }, peer);
@@ -8339,6 +8348,8 @@ defmod('./src/websocket.js', function(module, exp){
         };
         wire.onopen = function () {
           peer._openAt = +new Date();
+          peer._axeGuess = 0; // reset on successful open — prevent spurious tombstoning
+          peer._hiGuess = 0;
           // Keepalive: ping every 30s so idle relay connections don't time out at
           // network/proxy boundaries (typical idle timeout is ~60s).
           peer._keepalive = setInterval(function () {

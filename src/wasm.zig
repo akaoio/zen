@@ -25,8 +25,9 @@
 
 const pen = @import("pen.zig");
 
-// 64KB static buffer (enough for any PEN bytecode + registers)
-var buf: [65536]u8 = undefined;
+// 4 MiB static buffer — supports bytecode + large string register values.
+// Increasing from 64 KiB (old) to 4 MiB matches pen.zig's str_heap size.
+var buf: [4 * 1024 * 1024]u8 = undefined;
 var bump: u32 = 0;
 
 export fn mem() u32 {
@@ -41,6 +42,7 @@ export fn alloc(size: u32) u32 {
 
 export fn free() void {
     bump = 0;
+    pen.resetStrHeap();
 }
 
 // Parse registers from wire format starting at offset
@@ -85,14 +87,15 @@ fn parseRegs(offset: u32, count: u32, regs: []pen.Value) u32 {
                 }
                 regs[i] = pen.vFloat(@bitCast(bits));
             },
-            4 => { // str: 2 bytes LE length + utf8
-                if (off + 2 > buf.len) {
+            4 => { // str: 4 bytes LE u32 length + utf8
+                if (off + 4 > buf.len) {
                     regs[i] = pen.vNull();
                     break;
                 }
-                const slen: u16 = @as(u16, buf[off]) | (@as(u16, buf[off + 1]) << 8);
-                off += 2;
-                if (off + slen > buf.len) {
+                const slen: u32 = @as(u32, buf[off]) | (@as(u32, buf[off + 1]) << 8) |
+                    (@as(u32, buf[off + 2]) << 16) | (@as(u32, buf[off + 3]) << 24);
+                off += 4;
+                if (@as(u64, off) + @as(u64, slen) > buf.len) {
                     regs[i] = pen.vNull();
                     break;
                 }
@@ -111,6 +114,9 @@ fn parseRegs(offset: u32, count: u32, regs: []pen.Value) u32 {
 var static_regs: [64]pen.Value = [_]pen.Value{pen.vNull()} ** 64;
 
 export fn run() i32 {
+    // Reset string heap before parsing registers (strings are allocated there)
+    pen.resetStrHeap();
+
     // Read bytecode length from buf[0..3]
     const bclen: u32 = @as(u32, buf[0]) | (@as(u32, buf[1]) << 8) |
         (@as(u32, buf[2]) << 16) | (@as(u32, buf[3]) << 24);
