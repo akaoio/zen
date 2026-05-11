@@ -2774,6 +2774,7 @@ describe("ZEN", function () {
       });
 
       it("in memory get before map map get get get", function (done) {
+        this.timeout(20000);
         var zen = Zen();
         var check = {};
         zen

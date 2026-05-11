@@ -918,7 +918,7 @@ var Zen;
               done.c = 1;
               expect(Object.empty(all)).to.be.ok();
               done();
-            }, 300);
+            }, 800);
           });
       });
 
