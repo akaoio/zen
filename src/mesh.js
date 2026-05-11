@@ -268,10 +268,9 @@ function Mesh(root) {
       } // TODO: Should broadcasts be hashed?
       if (!peer && ack) {
         peer =
-          ((tmp = dup.s.get(ack)) &&
-            (tmp.via || ((tmp = tmp.it) && (tmp = tmp._) && tmp.via))) ||
-          ((tmp = mesh.last) && ack === tmp["#"] && mesh.leap);
-      } // warning! mesh.leap could be buggy! mesh last check reduces this. // TODO: CLEAN UP THIS LINE NOW? `.it` should be reliable.
+          (tmp = dup.s.get(ack)) &&
+          (tmp.via || ((tmp = tmp.it) && (tmp = tmp._) && tmp.via));
+      } // mesh.leap fallback removed — race condition with async mesh.raw; dup.s.via is reliable.
       if (!peer && ack) {
         // still no peer, then ack daisy chain 'tunnel' got lost.
         if (dup.s.has(ack)) {
@@ -413,9 +412,9 @@ function Mesh(root) {
             break;
           }
         }
-        if (i > 1) {
+        if (i > 1 && !peer) {
           msg["><"] = to.join();
-        } // TODO: BUG! This gets set regardless of peers sent to! Detect?
+        } // Only set yo-list for broadcasts (peer=null); targeted sends must not include unrelated peers.
       }
       if (msg.put && (tmp = msg.ok)) {
         msg.ok = {
@@ -521,7 +520,8 @@ function Mesh(root) {
       if (opt.udpPort) { hiMsg.udp = opt.udpPort; } // advertise our UDP listening port
       if (opt.udpToken) { hiMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
       mesh.say(hiMsg, (opt.peers[tmp] = peer));
-      dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
+      var _hiLast = peer.last; // capture before any async reconnect can overwrite peer.last
+      dup.s.delete(_hiLast); // IMPORTANT: see https://zen.eco/docs/DAM#self
     }
     if (!peer.met) {
       mesh.near++;
@@ -597,7 +597,8 @@ function Mesh(root) {
     if (opt.udpPort) { replyMsg.udp = opt.udpPort; } // advertise our UDP port in reply
     if (opt.udpToken) { replyMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
     mesh.say(replyMsg, peer);
-    dup.s.delete(peer.last); // IMPORTANT: see https://zen.eco/docs/DAM#self
+    var _replyLast = peer.last; // capture before any async reconnect can overwrite peer.last
+    dup.s.delete(_replyLast); // IMPORTANT: see https://zen.eco/docs/DAM#self
   };
   mesh.hear["ping"] = function (msg, peer) {
     mesh.say({ dam: "pong", t: msg.t, "@": msg["#"] }, peer);

@@ -86,6 +86,8 @@ Zen.on("opt", function (root) {
       };
       wire.onopen = function () {
         peer._openAt = +new Date();
+        peer._axeGuess = 0; // reset on successful open — prevent spurious tombstoning
+        peer._hiGuess = 0;
         // Keepalive: ping every 30s so idle relay connections don't time out at
         // network/proxy boundaries (typical idle timeout is ~60s).
         peer._keepalive = setInterval(function () {
