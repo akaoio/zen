@@ -7964,7 +7964,7 @@ defmod('./src/mesh.js', function(module, exp){
         var peerUrl = peer.url || peer.id;
         var storedPeer = peerUrl && opt.peers[peerUrl];
         if ((storedPeer && storedPeer._noReconnect) ||
-            (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id)))) {
+            (opt.tomb && (opt.tomb.has(peer.url) || opt.tomb.has(peer.id)))) {
           peer._noReconnect = true;
           if (wire) { try { wire.close(); } catch (e) {} peer.wire = null; }
           return;
@@ -8023,7 +8023,7 @@ defmod('./src/mesh.js', function(module, exp){
         // Keep peer as tombstone so PEX cannot re-add it; also record URL.
         peer._noReconnect = true;
         if (peer.url) {
-          var tu = (opt._tombUrls = opt._tombUrls || new Set());
+          var tu = (opt.tomb = opt.tomb || new Set());
           if (tu.size >= 500) { tu.delete(tu.values().next().value); } // cap: drop oldest
           tu.add(peer.url);
           tu.add(peer.url.replace(/^wss?:/, function(p){ return p[2]==='s'?'https:':'http:'; }));
@@ -8273,7 +8273,7 @@ defmod('./src/websocket.js', function(module, exp){
   // Cap tombUrls at 500 entries (≈167 dead peers × 3 URL variants each).
   // Set is insertion-ordered so oldest entries are dropped first.
   function tombAdd(opt, url) {
-    var t = (opt._tombUrls = opt._tombUrls || new Set());
+    var t = (opt.tomb = opt.tomb || new Set());
     if (t.size >= 500) { t.delete(t.values().next().value); }
     t.add(url);
     t.add(url.replace(/^wss?:/, function(p){ return p[2]==='s'?'https:':'http:'; }));
@@ -8312,11 +8312,11 @@ defmod('./src/websocket.js', function(module, exp){
         // Do not open connections to tombstoned peers.
         // Normalise to https:// for lookup since tombstones are stored under https/http keys.
         if (peer._noReconnect) { return; }
-        if (opt._tombUrls) {
+        if (opt.tomb) {
           var _tu = peer.url;
           var _tn = _tu.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
-          if (opt._tombUrls.has(_tu) || opt._tombUrls.has(_tn) ||
-              opt._tombUrls.has(_tu.replace(/^https?/, 'ws'))) { return; }
+          if (opt.tomb.has(_tu) || opt.tomb.has(_tn) ||
+              opt.tomb.has(_tu.replace(/^https?/, 'ws'))) { return; }
         }
         var url = peer.url.replace(/^http/, "ws");
         peer._isOutbound = true;
@@ -8388,11 +8388,11 @@ defmod('./src/websocket.js', function(module, exp){
       if (!opt.peers[peer.url] || peer._noReconnect) {
         return;
       }
-      if (opt._tombUrls) {
+      if (opt.tomb) {
         var _ru = peer.url || '';
         var _rn = _ru.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
-        if (opt._tombUrls.has(_ru) || opt._tombUrls.has(_rn) ||
-            opt._tombUrls.has(_ru.replace(/^https?/, 'ws'))) { return; }
+        if (opt.tomb.has(_ru) || opt.tomb.has(_rn) ||
+            opt.tomb.has(_ru.replace(/^https?/, 'ws'))) { return; }
       }
       if (doc && peer.retry <= 0) {
         return;

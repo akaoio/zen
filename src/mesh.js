@@ -508,7 +508,7 @@ function Mesh(root) {
       var peerUrl = peer.url || peer.id;
       var storedPeer = peerUrl && opt.peers[peerUrl];
       if ((storedPeer && storedPeer._noReconnect) ||
-          (opt._tombUrls && (opt._tombUrls.has(peer.url) || opt._tombUrls.has(peer.id)))) {
+          (opt.tomb && (opt.tomb.has(peer.url) || opt.tomb.has(peer.id)))) {
         peer._noReconnect = true;
         if (wire) { try { wire.close(); } catch (e) {} peer.wire = null; }
         return;
@@ -567,7 +567,7 @@ function Mesh(root) {
       // Keep peer as tombstone so PEX cannot re-add it; also record URL.
       peer._noReconnect = true;
       if (peer.url) {
-        var tu = (opt._tombUrls = opt._tombUrls || new Set());
+        var tu = (opt.tomb = opt.tomb || new Set());
         if (tu.size >= 500) { tu.delete(tu.values().next().value); } // cap: drop oldest
         tu.add(peer.url);
         tu.add(peer.url.replace(/^wss?:/, function(p){ return p[2]==='s'?'https:':'http:'; }));
