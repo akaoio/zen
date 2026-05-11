@@ -15,7 +15,7 @@ ZEN uses **native ES modules** (`import`/`export`) throughout `/src`. A custom N
 - `lib/builder/pen.js` — bundles PEN module
 - `lib/builder/crypto.js` — bundles crypto module
 - Bundled outputs: `zen.js`, `zen.min.js`
-- **After modifying `/src` files, always run `npm run buildZEN`**
+- **After modifying `/src` files, always run `npm run build:zen`**
 
 ### Entry Points
 
@@ -136,18 +136,18 @@ PEN (Predicate-Embedded Namespace) is a **WebAssembly bytecode VM** compiled fro
 
 ```bash
 # Build
-npm run buildZEN       # Bundle src/ → zen.js + zen.min.js (CRITICAL after /src changes)
-npm run buildPEN       # Rebuild PEN WASM module (only after src/pen.zig changes)
-npm run buildCrypto    # Rebuild crypto module
-npm run buildRelease   # Full release build (buildZEN + uglify all lib/)
+npm run build:zen       # Bundle src/ → zen.js + zen.min.js (CRITICAL after /src changes)
+npm run build:pen       # Rebuild PEN WASM module (only after src/pen.zig changes)
+npm run build:crypto    # Rebuild crypto module
+npm run build:release   # Full release build (build:zen + uglify all lib/)
 
 # Testing
 npm run clean          # Remove radata/data directories
 npm run test:all       # Run all tests
 npm run test:core      # Core + RAD tests (mocha)
-npm run testZEN:unit   # Crypto/certify unit tests
-npm run testPEN        # PEN VM tests
-npm test               # buildZEN + test:all
+npm run test:zen:unit   # Crypto/certify unit tests
+npm run test:pen        # PEN VM tests
+npm test               # build:zen + test:all
 
 # Browser tests
 npm run test:browser:setup   # Install Playwright Chromium
@@ -157,7 +157,7 @@ npm run test:browser         # Run browser tests via Playwright
 ### Build flow
 
 1. Edit files in `/src`
-2. Run `npm run buildZEN` — bundles `src/index.js` → `zen.js`
+2. Run `npm run build:zen` — bundles `src/index.js` → `zen.js`
 3. Run `npm run clean && npm run test:all` — clean data and run tests
 
 ## Core Patterns
@@ -331,7 +331,7 @@ Zen.chain.myMethod = function (data) {
 
 ## Common Pitfalls
 
-1. **Forgotten Build**: Changes to `/src/*.js` don't affect browser until `npm run buildZEN`
+1. **Forgotten Build**: Changes to `/src/*.js` don't affect browser until `npm run build:zen`
 2. **Test Data Pollution**: ALWAYS `npm run clean` between test runs
 3. **Circular References**: ZEN supports them natively — don't "fix" them
 4. **Async Everywhere**: All storage/network ops use callbacks or async/await
@@ -357,5 +357,5 @@ Zen.chain.myMethod = function (data) {
 
 ---
 
-**After any `/src` change**: `npm run buildZEN && npm run clean && npm run test:all`
-**After `src/pen.zig` change**: `npm run buildPEN && npm run buildZEN`
+**After any `/src` change**: `npm run build:zen && npm run clean && npm run test:all`
+**After `src/pen.zig` change**: `npm run build:pen && npm run build:zen`

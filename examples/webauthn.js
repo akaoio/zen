@@ -22,7 +22,7 @@ What should we edit?
 The zen.js in the root folder is just a built, it is very heavy and you cannot read it. So we must "blindly" debug in sign.js, verify.js and index.js in /zen folder. 
 
 DO THIS AFTER EVERY EDITION:
-npm run buildZEN
+npm run build:zen
 
 We need to re-build zen before testing it.
 

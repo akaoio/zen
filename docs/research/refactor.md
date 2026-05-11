@@ -234,7 +234,7 @@ Tất cả **round-trip tests** (sign→verify, encrypt→decrypt) vẫn phải 
 4. **`src/decrypt.js`** — dùng `parsed._enc`
 5. **`src/sign.js`** — output compact
 6. **`src/verify.js`** — decode sig từ base62
-7. **Build + test** — `npm run buildZEN && npm run clean && npm run test:all`
+7. **Build + test** — `npm run build:zen && npm run clean && npm run test:all`
 8. **Update tests** nếu có assertion về format
 
 ---

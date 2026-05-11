@@ -450,8 +450,8 @@ const soul = ZEN.pen({ val: { type: "string" }, sign: true });
 ```
 
 ```bash
-npm run buildPEN     # rebuild pen.wasm from src/pen.zig
-npm run testPEN      # run PEN unit tests
+npm run build:pen     # rebuild pen.wasm from src/pen.zig
+npm run test:pen      # run PEN unit tests
 ```
 
 ---
@@ -474,7 +474,7 @@ The principle: **use whatever is fastest**. Measure at the micro level, then dec
 | **base62** encode/decode | **WASM** (`crypto.wasm`) | Faster than BigInt for encoding |
 
 ```bash
-npm run buildCrypto  # rebuild crypto.wasm from src/crypto.zig
+npm run build:crypto  # rebuild crypto.wasm from src/crypto.zig
 ```
 
 ---
@@ -510,10 +510,10 @@ Selected baselines (Node.js, 5000 iters):
 
 ```bash
 npm test             # build zen.js + run full suite (PEN + ZEN unit + core)
-npm run testZEN      # build + ZEN unit tests only
-npm run testPEN      # build + PEN unit tests only
-npm run buildZEN     # buildPEN + buildCrypto + bundle + minify
-npm run buildRelease # buildZEN + uglify all lib adapters
+npm run test:zen      # build + ZEN unit tests only
+npm run test:pen      # build + PEN unit tests only
+npm run build:zen     # build:pen + build:crypto + bundle + minify
+npm run build:release # build:zen + uglify all lib adapters
 npm start            # start example relay (examples/zen-http.js)
 ```
 

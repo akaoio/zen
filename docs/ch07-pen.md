@@ -35,7 +35,7 @@ The WASM binary is 26 KB with zero imports. It is the smallest possible freestan
 Build it yourself with Zig:
 
 ```bash
-npm run buildPEN
+npm run build:pen
 ```
 
 ---
@@ -381,10 +381,10 @@ PEN Core is written in Zig. The source lives at `src/pen.zig` and `src/wasm.zig`
 
 ```bash
 # Build pen.wasm from Zig source
-npm run buildPEN
+npm run build:pen
 
 # Build pen.js (JS bridge + compiler) from zen.js
-npm run buildZEN
+npm run build:zen
 ```
 
 Zig must be on your `PATH`. See [ziglang.org](https://ziglang.org/download/) to install.
@@ -394,7 +394,7 @@ Zig must be on your `PATH`. See [ziglang.org](https://ziglang.org/download/) to 
 ## 7.14 Testing PEN
 
 ```bash
-npm run testPEN:unit
+npm run test:pen:unit
 ```
 
 This runs `test/pen.js` with a 10-second timeout. Tests cover:

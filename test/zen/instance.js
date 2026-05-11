@@ -38,7 +38,7 @@ function once(node, opt) {
   });
 }
 
-describe("testZEN", function () {
+describe("test:zen", function () {
   this.timeout(20 * 1000);
 
   it("creates a ZEN instance with graph and crypto methods", function () {
