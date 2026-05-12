@@ -8,6 +8,7 @@ const suites = [
   { name: "MCP",           args: ["run", "test:mcp"] },
   { name: "DHT",           args: ["run", "test:dht"] },
   { name: "chains",        args: ["run", "test:chains"] },
+  { name: "chains:fork",   args: ["run", "test:chains:fork"] },
 ];
 
 var totalPassing = 0;

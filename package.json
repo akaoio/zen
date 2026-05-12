@@ -43,6 +43,7 @@
     "build:pen": "node lib/builder/pen.js",
     "build:crypto": "node lib/builder/crypto.js",
     "test:chains": "cross-env GUN_TEST_TMP=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/chains/evm.js --timeout 60000",
+    "test:chains:fork": "cross-env GUN_TEST_TMP=1 node --import ./test/loaders/register-zen-minified.mjs ./node_modules/mocha/bin/_mocha --exit test/chains/evm-fork.js --timeout 180000",
     "bench": "node --experimental-vm-modules test/bench/run.js",
     "bench:hash": "node --experimental-vm-modules test/bench/01_hash.js",
     "bench:json": "node --experimental-vm-modules test/bench/02_json.js",
