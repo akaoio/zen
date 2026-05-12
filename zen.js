@@ -2079,6 +2079,18 @@ defmod('./src/hash.js', function(module, exp){
 
       if (data instanceof ArrayBuffer) {
         data = new Uint8Array(data);
+      }
+      if (opt.input === "raw" && data instanceof Uint8Array) {
+        // Pass raw bytes directly to hash algorithm without string conversion.
+        // Required for EVM use cases: keccak256(rlpEncodedBytes).
+        if (!ishash(opt.name)) {
+          throw new Error("opt.input='raw' requires a hash algorithm via opt.name");
+        }
+        let hashed = shim.Buffer.from(await digest(data, opt.name), "binary");
+        hashed = encbuf(hashed, enc);
+        return cbOk(cb, hashed);
+      }
+      if (data instanceof Uint8Array) {
         data = new shim.TextDecoder("utf-8").decode(data);
       }
       data = typeof data === "string" ? data : await shim.stringify(data);
@@ -2856,8 +2868,20 @@ defmod('./src/sign.js', function(module, exp){
         throw new Error("No signing key.");
       }
       const c = crv(pair.curve);
-      const msg = await c.normalizeMessage(data);
-      const h = await c.shaBytes(msg);
+      let msg, h;
+      if (opt.prehash) {
+        // Accept pre-hashed bytes (Uint8Array or 0x-prefixed hex string).
+        // Used for EVM transaction signing where the hash is keccak256(rlpEncoded).
+        if (data instanceof Uint8Array) {
+          h = data;
+        } else {
+          const hex = typeof data === "string" && data.startsWith("0x") ? data.slice(2) : data;
+          h = new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+        }
+      } else {
+        msg = await c.normalizeMessage(data);
+        h = await c.shaBytes(msg);
+      }
       const priv = c.parseScalar(pair.priv, "Signing key");
       for (let i = 0; i < 16; i++) {
         const k = await c.deterministicK(priv, h, i);
@@ -2880,6 +2904,18 @@ defmod('./src/sign.js', function(module, exp){
         if (s > c.HALF_N) {
           s = c.N - s;
           v ^= 1;
+        }
+        if (opt.encode === "raw") {
+          // Return raw {r, s, v} for EVM RLP transaction construction.
+          return c.finalize(
+            {
+              r: "0x" + r.toString(16).padStart(64, "0"),
+              s: "0x" + s.toString(16).padStart(64, "0"),
+              v,
+            },
+            { raw: true },
+            cb,
+          );
         }
         const sig = c.concatBytes(c.bigIntToBytes(r, 32), c.bigIntToBytes(s, 32));
         const sigB62 = c.base62.bufToB62Fixed(sig, 86);

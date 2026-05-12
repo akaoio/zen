@@ -105,6 +105,18 @@ export default async function hash(data, pair, cb, opt) {
 
     if (data instanceof ArrayBuffer) {
       data = new Uint8Array(data);
+    }
+    if (opt.input === "raw" && data instanceof Uint8Array) {
+      // Pass raw bytes directly to hash algorithm without string conversion.
+      // Required for EVM use cases: keccak256(rlpEncodedBytes).
+      if (!ishash(opt.name)) {
+        throw new Error("opt.input='raw' requires a hash algorithm via opt.name");
+      }
+      let hashed = shim.Buffer.from(await digest(data, opt.name), "binary");
+      hashed = encbuf(hashed, enc);
+      return cbOk(cb, hashed);
+    }
+    if (data instanceof Uint8Array) {
       data = new shim.TextDecoder("utf-8").decode(data);
     }
     data = typeof data === "string" ? data : await shim.stringify(data);
