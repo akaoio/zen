@@ -27,6 +27,7 @@ This repository is documented as a structured book. Read it in order or jump to 
 | [Ch 7 — PEN Policy VM](docs/ch07-pen.md) | WASM bytecode engine, opcodes, `ZEN.pen()`, bridge/runtime policy enforcement |
 | [Ch 8 — Contributing](docs/ch08-contributing.md) | Build system, test suite, adding chain methods, adding adapters |
 | [Ch 9 — MCP (AI Integration)](docs/ch09-mcp.md) | IDE peer, stdio server, tools, Cursor/VSCode config |
+| [Ch 10 — EVM Chain Adapter](docs/ch10-chains-evm.md) | `lib/chains/evm.js` — full ethers.js replacement using ZEN primitives, DeFi utilities, EIP-712 |
 
 ---
 

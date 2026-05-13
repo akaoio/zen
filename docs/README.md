@@ -12,3 +12,4 @@ This directory contains the ZEN developer book. Read the chapters in order for a
 | [Ch 6 — Networking](ch06-networking.md) | Mesh, peers, WebSocket, `zen.push()` ephemeral relay, DAM ping/RTT, AXE clustering |
 | [Ch 7 — PEN Policy VM](ch07-pen.md) | WASM bytecode engine, opcodes, `ZEN.pen()`, bridge/runtime policy enforcement |
 | [Ch 8 — Contributing](ch08-contributing.md) | Build system, test suite, adding chain methods, adding adapters |
+| [Ch 10 — EVM Chain Adapter](ch10-chains-evm.md) | `lib/chains/evm.js` — full ethers.js replacement using ZEN primitives, DeFi utilities, EIP-712 |
