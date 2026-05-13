@@ -27,6 +27,10 @@ import evm, {
     buildSig,
     decodeEventLog,
     buildEventTopicMap,
+    formatUnits,
+    parseUnits,
+    formatEther,
+    parseEther,
 } from "../../lib/chains/evm.js"
 
 // ─── Test vector ──────────────────────────────────────────────────────────────
@@ -473,5 +477,43 @@ describe("evm: event decoding (V3 Collect)", function () {
         assert.strictEqual(events.Collect.returnValues.tokenId.toString(),  tokenId.toString())
         assert.strictEqual(events.Collect.returnValues.amount0.toString(),  amount0.toString())
         assert.strictEqual(events.Collect.returnValues.amount1.toString(),  amount1.toString())
+    })
+})
+
+describe("formatUnits / parseUnits", () => {
+    it("formatUnits: bigint → string", () => {
+        assert.strictEqual(formatUnits(0n, 6),                    "0.0")
+        assert.strictEqual(formatUnits(1500000n, 6),              "1.5")
+        assert.strictEqual(formatUnits(1000000n, 6),              "1.0")
+        assert.strictEqual(formatUnits(123456789n, 6),            "123.456789")
+        assert.strictEqual(formatUnits(10n ** 18n, "ether"),      "1.0")
+        assert.strictEqual(formatUnits(1500000000000000000n, 18), "1.5")
+        assert.strictEqual(formatUnits(9n, 9),                    "0.000000009")
+    })
+
+    it("parseUnits: string → bigint", () => {
+        assert.strictEqual(parseUnits("0", 6),          0n)
+        assert.strictEqual(parseUnits("1.5", 6),        1500000n)
+        assert.strictEqual(parseUnits("1", 6),          1000000n)
+        assert.strictEqual(parseUnits("123.456789", 6), 123456789n)
+        assert.strictEqual(parseUnits("1.5", "ether"),  1500000000000000000n)
+        assert.strictEqual(parseUnits("1", "ether"),    10n ** 18n)
+    })
+
+    it("parseUnits truncates extra decimal digits", () => {
+        // "1.1234567" with 6 decimals → truncate to "123456"
+        assert.strictEqual(parseUnits("1.1234567", 6), 1123456n)
+    })
+
+    it("formatEther / parseEther are ether aliases", () => {
+        assert.strictEqual(formatEther(10n ** 18n), "1.0")
+        assert.strictEqual(parseEther("1.5"),       1500000000000000000n)
+    })
+
+    it("round-trip consistency", () => {
+        const cases = ["1.5", "0.000001", "123456.789"]
+        for (const v of cases) {
+            assert.strictEqual(formatUnits(parseUnits(v, 6), 6), v)
+        }
     })
 })
