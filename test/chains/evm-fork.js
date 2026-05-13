@@ -301,9 +301,14 @@ describe("evm-fork (mainnet fork via ETH_RPC)", function () {
             },
             logging: { quiet: true },
         })
-        await new Promise(resolve => server.listen(0, resolve))
-        const port = server.address().port
-        provider   = rpc(`http://127.0.0.1:${port}`)
+        await new Promise((resolve, reject) => server.listen(0, err => err ? reject(err) : resolve()))
+        let addr = server.address()
+        if (!addr) {
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            addr = server.address()
+        }
+        if (!addr) throw new Error("Ganache fork failed to start")
+        provider   = rpc(`http://127.0.0.1:${addr.port}`)
         wallet     = await Wallet.create(TEST_PRIV, provider)
 
         forkStartBlock = await provider.getBlock("latest").then(b => BigInt(b.number))
@@ -322,7 +327,7 @@ describe("evm-fork (mainnet fork via ETH_RPC)", function () {
     })
 
     after("close ganache fork", async function () {
-        if (server) await server.close()
+        if (server) await server.close().catch(() => null)
     })
 
     // ─── 1. Provider primitives ───────────────────────────────────────────────
@@ -889,4 +894,36 @@ describe("evm-fork (mainnet fork via ETH_RPC)", function () {
             }
         })
     })
+
+
+    describe("Multicall3", () => {
+        it("multicall: 3 balanceOf calls in 1 RPC", async function () {
+            const addresses = [TEST_ADDR, WHALE, V2_ROUTER]
+            const usdc = new Contract(USDC, ["function balanceOf(address) view returns (uint256)"], provider)
+            const multi = await provider.multicall(addresses.map(address => ({
+                address: USDC,
+                abi: ["function balanceOf(address) view returns (uint256)"],
+                method: "balanceOf",
+                args: [address],
+            })))
+            const singles = await Promise.all(addresses.map(address => usdc.balanceOf(address)))
+            assert.deepStrictEqual(multi.map(v => v?.toString()), singles.map(v => v.toString()))
+        })
+    })
+
+    describe("queryFilter (fork)", () => {
+        it("queryFilter: Transfer events from block range", async function () {
+            const usdc = new Contract(USDC, ["event Transfer(address indexed from, address indexed to, uint256 value)"], provider)
+            const latestBlock = await provider.getBlock("latest")
+            const fromBlock = Number(forkStartBlock) + 1
+            const toBlock = parseInt(latestBlock.number, 16)
+            const events = await usdc.queryFilter("Transfer", fromBlock, toBlock)
+            assert.ok(events.length > 0, "should return local USDC transfers since the fork")
+            const evt = events[0]
+            assert.ok(typeof evt.from === "string" && evt.from.startsWith("0x"))
+            assert.ok(typeof evt.to === "string" && evt.to.startsWith("0x"))
+            assert.ok(typeof evt.value === "bigint")
+        })
+    })
+
 })
