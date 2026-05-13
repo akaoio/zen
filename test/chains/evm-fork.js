@@ -39,6 +39,7 @@ const V2_ROUTER     = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 const V2_FACTORY    = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"
 const V3_ROUTER     = "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"  // SwapRouter02 (no deadline)
 const V3_PM         = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"   // NonfungiblePositionManager
+const V3_QUOTER     = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"   // QuoterV2 (tuple-based, akao statics)
 const WHALE         = "0x28C6c06298d514Db089934071355E5743bf21d60"   // Binance 14 — large USDC holder
 
 // V3 USDC/WETH 0.3% pool tick range (tickSpacing = 60)
@@ -173,6 +174,25 @@ const V3_PM_ABI = [
           { indexed: false, name: "recipient",  type: "address" },
           { indexed: false, name: "amount0",    type: "uint256" },
           { indexed: false, name: "amount1",    type: "uint256" },
+      ]
+    },
+]
+
+// QuoterV2 — tuple-based quoteExactInputSingle; marked "view" to route via eth_call
+const V3_QUOTER_ABI = [
+    { type: "function", name: "quoteExactInputSingle", stateMutability: "view",
+      inputs: [{ type: "tuple", name: "params", components: [
+          { name: "tokenIn",           type: "address" },
+          { name: "tokenOut",          type: "address" },
+          { name: "amountIn",          type: "uint256" },
+          { name: "fee",               type: "uint24"  },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+      ]}],
+      outputs: [
+          { name: "amountOut",               type: "uint256" },
+          { name: "sqrtPriceX96After",       type: "uint160" },
+          { name: "initializedTicksCrossed", type: "uint32"  },
+          { name: "gasEstimate",             type: "uint256" },
       ]
     },
 ]
@@ -374,7 +394,35 @@ describe("evm-fork (mainnet fork via ETH_RPC)", function () {
         })
     })
 
-    // ─── 4. V2 addLiquidity + removeLiquidity ────────────────────────────────
+    // ─── 4. V3 QuoterV2 ──────────────────────────────────────────────────────
+    //
+    // QuoterV2 (0x61fFE...) uses a revert-based simulation under the hood,
+    // but is intended to be called via eth_call (marked "view" in our ABI).
+    // Tests: tuple input encoding, 4-value return decoding, real WETH→USDC price.
+
+    describe("V3 QuoterV2", function () {
+        it("quoteExactInputSingle: WETH→USDC returns 4-value result with sensible amountOut", async function () {
+            const quoter = new Contract(V3_QUOTER, V3_QUOTER_ABI, provider)
+            const result = await quoter.quoteExactInputSingle({
+                tokenIn:           WETH,
+                tokenOut:          USDC,
+                amountIn:          100_000_000_000_000_000n,  // 0.1 WETH
+                fee:               3000n,
+                sqrtPriceLimitX96: 0n,
+            })
+            assert.ok(typeof result.amountOut               === "bigint", "amountOut is BigInt")
+            assert.ok(typeof result.sqrtPriceX96After       === "bigint", "sqrtPriceX96After is BigInt")
+            assert.ok(typeof result.initializedTicksCrossed === "bigint", "initializedTicksCrossed is BigInt")
+            assert.ok(typeof result.gasEstimate             === "bigint", "gasEstimate is BigInt")
+            // Block 19_500_000 ≈ Feb 2024; ETH ≈ $3500 → 0.1 WETH ≈ 300–400 USDC (6 decimals)
+            assert.ok(result.amountOut > 200n * 10n**6n, `amountOut ${result.amountOut} should be > 200 USDC`)
+            assert.ok(result.amountOut < 500n * 10n**6n, `amountOut ${result.amountOut} should be < 500 USDC`)
+            assert.ok(result.sqrtPriceX96After > 0n, "sqrtPriceX96After > 0")
+            assert.ok(result.gasEstimate       > 0n, "gasEstimate > 0")
+        })
+    })
+
+    // ─── 5. V2 addLiquidity + removeLiquidity ────────────────────────────────
 
     describe("V2 addLiquidity + removeLiquidity round-trip", function () {
         let lpTokenAddr
