@@ -10,7 +10,7 @@ on:
     paths:
       - "script/install.sh"
       - "script/zen.sh"
-      - "relay.js"
+      - "script/server.js"
       - "lib/server.js"
       - ".github/workflows/install.yml"
   schedule:
@@ -47,7 +47,7 @@ jobs:
 
       - name: Start relay
         run: |
-          PORT=8420 node "$HOME/zen/relay.js" &
+          PORT=8420 node "$HOME/zen/script/server.js" &
           echo $! > /tmp/zen.pid
           # wait up to 15s for the relay to bind the port
           for i in $(seq 1 15); do
