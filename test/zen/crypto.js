@@ -365,6 +365,59 @@ describe("ZEN crypto — pair() key format", function () {
   });
 });
 
+describe("ZEN crypto — recover prehash (EVM raw sig)", function () {
+  this.timeout(10 * 1000);
+
+  var pair, digest;
+  var keccak = async (bytes) => ZEN.hash(bytes, null, null, { name: "keccak256", encode: "hex", input: "raw" });
+
+  before(async function () {
+    pair = await ZEN.pair(null, { priv: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", format: "evm" });
+    // keccak256 of "hello zen" as mock pre-hashed EIP-712 digest
+    var msg = new TextEncoder().encode("hello zen");
+    digest = "0x" + await keccak(msg);
+  });
+
+  it("sign with prehash:true encode:raw then recover with prehash:true returns same address", async function () {
+    var sig = await ZEN.sign(digest, pair, null, { prehash: true, encode: "raw" });
+    var addr = await ZEN.recover(sig, null, { prehash: true, hash: digest, format: "evm" });
+    assert.strictEqual(addr.toLowerCase(), pair.address.toLowerCase());
+  });
+
+  it("recover with 65-byte hex sig string", async function () {
+    var sig = await ZEN.sign(digest, pair, null, { prehash: true, encode: "raw" });
+    // Build 65-byte hex: r(32) + s(32) + v(1)
+    var rHex = sig.r.startsWith("0x") ? sig.r.slice(2) : sig.r;
+    var sHex = sig.s.startsWith("0x") ? sig.s.slice(2) : sig.s;
+    var vHex = sig.v.toString(16).padStart(2, "0");
+    var hex65 = "0x" + rHex + sHex + vHex;
+    var addr = await ZEN.recover(hex65, null, { prehash: true, hash: digest, format: "evm" });
+    assert.strictEqual(addr.toLowerCase(), pair.address.toLowerCase());
+  });
+
+  it("different key produces different address", async function () {
+    var other = await ZEN.pair(null, { priv: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", format: "evm" });
+    var sig = await ZEN.sign(digest, other, null, { prehash: true, encode: "raw" });
+    var addr = await ZEN.recover(sig, null, { prehash: true, hash: digest, format: "evm" });
+    assert.strictEqual(addr.toLowerCase(), other.address.toLowerCase());
+    assert.notStrictEqual(addr.toLowerCase(), pair.address.toLowerCase());
+  });
+
+  it("recover without format:evm returns ZEN pub key", async function () {
+    var sig = await ZEN.sign(digest, pair, null, { prehash: true, encode: "raw" });
+    var pub = await ZEN.recover(sig, null, { prehash: true, hash: digest });
+    assert.match(pub, /^[A-Za-z0-9]{44}[01]$/);
+    // Verify it matches the ZEN-format pub derived from the same private key
+    var zenPair = await ZEN.pair(null, { priv: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" });
+    assert.strictEqual(pub, zenPair.pub);
+  });
+
+  it("throws when opt.hash is missing", async function () {
+    var sig = await ZEN.sign(digest, pair, null, { prehash: true, encode: "raw" });
+    await assert.rejects(ZEN.recover(sig, null, { prehash: true }), /opt\.hash/);
+  });
+});
+
 describe("ZEN crypto — wire format (no ZEN prefix)", function () {
   it("sign() and encrypt() omit ZEN prefix", async function () {
     var pair = await ZEN.pair(null, { seed: "zen-wire-format" });

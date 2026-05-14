@@ -2826,12 +2826,349 @@ defmod('./src/verify.js', function(module, exp){
   exp.verify = verify;
 });
 
+defmod('./src/ripemd160.js', function(module, exp){
+  // Pure RIPEMD-160 implementation — no dependencies, no WebCrypto.
+  // Spec: https://homes.esat.kuleuven.be/~bosselae/ripemd160.html
+  var bridge = reqmod('./src/crypto.js').default;
+  let _wasmReady = false;
+  bridge.ready.then(() => { _wasmReady = true; }).catch(() => {});
+
+  const KL = [0x00000000, 0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xa953fd4e];
+  const KR = [0x50a28be6, 0x5c4dd124, 0x6d703ef3, 0x7a6d76e9, 0x00000000];
+
+  // Message word indices
+  const ML = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 7, 4, 13, 1, 10, 6, 15,
+    3, 12, 0, 9, 5, 2, 14, 11, 8, 3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11,
+    5, 12, 1, 9, 11, 10, 0, 8, 12, 4, 13, 3, 7, 15, 14, 5, 6, 2, 4, 0, 5, 9, 7,
+    12, 2, 10, 14, 1, 3, 8, 11, 6, 15, 13,
+  ];
+  const MR = [
+    5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12, 6, 11, 3, 7, 0, 13, 5,
+    10, 14, 15, 8, 12, 4, 9, 1, 2, 15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0,
+    4, 13, 8, 6, 4, 1, 3, 11, 15, 0, 5, 12, 2, 13, 9, 7, 10, 14, 12, 15, 10, 4, 1,
+    5, 8, 7, 6, 2, 13, 14, 0, 3, 9, 11,
+  ];
+
+  // Shift amounts
+  const SL = [
+    11, 14, 15, 12, 5, 8, 7, 9, 11, 13, 14, 15, 6, 7, 9, 8, 7, 6, 8, 13, 11, 9, 7,
+    15, 7, 12, 15, 9, 11, 7, 13, 12, 11, 13, 6, 7, 14, 9, 13, 15, 14, 8, 13, 6, 5,
+    12, 7, 5, 11, 12, 14, 15, 14, 15, 9, 8, 9, 14, 5, 6, 8, 6, 5, 12, 9, 15, 5,
+    11, 6, 8, 13, 12, 5, 12, 13, 14, 11, 8, 5, 6,
+  ];
+  const SR = [
+    8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14, 14, 12, 6, 9, 13, 15, 7, 12, 8,
+    9, 11, 7, 7, 12, 7, 6, 15, 13, 11, 9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14,
+    13, 13, 7, 5, 15, 5, 8, 11, 14, 14, 6, 14, 6, 9, 12, 9, 12, 5, 15, 8, 8, 5,
+    12, 9, 12, 5, 14, 6, 8, 13, 6, 5, 15, 13, 11, 11,
+  ];
+
+  function rotl(x, n) {
+    return ((x << n) | (x >>> (32 - n))) >>> 0;
+  }
+
+  // Round selection functions (left: f1..f5, right: f5..f1)
+  const FL = [
+    (x, y, z) => (x ^ y ^ z) >>> 0,
+    (x, y, z) => ((x & y) | (~x & z)) >>> 0,
+    (x, y, z) => ((x | ~y) ^ z) >>> 0,
+    (x, y, z) => ((x & z) | (y & ~z)) >>> 0,
+    (x, y, z) => (x ^ (y | ~z)) >>> 0,
+  ];
+  const FR = [FL[4], FL[3], FL[2], FL[1], FL[0]];
+
+  function ripemd160(data) {
+    const bytes =
+      data instanceof Uint8Array
+        ? data
+        : data instanceof ArrayBuffer
+          ? new Uint8Array(data)
+          : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+
+    if (_wasmReady) {
+      return bridge.ripemd160(bytes);
+    }
+
+    const len = bytes.length;
+    const bitLen = len * 8;
+    const padLen = (len + 9 + 63) & ~63;
+    const padded = new Uint8Array(padLen);
+    padded.set(bytes);
+    padded[len] = 0x80;
+    const dv = new DataView(padded.buffer);
+    dv.setUint32(padLen - 8, bitLen >>> 0, true);
+    dv.setUint32(padLen - 4, Math.floor(bitLen / 0x100000000), true);
+
+    let h0 = 0x67452301,
+      h1 = 0xefcdab89,
+      h2 = 0x98badcfe,
+      h3 = 0x10325476,
+      h4 = 0xc3d2e1f0;
+
+    for (let off = 0; off < padLen; off += 64) {
+      const M = [];
+      for (let i = 0; i < 16; i++) M[i] = dv.getUint32(off + i * 4, true);
+
+      let al = h0,
+        bl = h1,
+        cl = h2,
+        dl = h3,
+        el = h4;
+      let ar = h0,
+        br = h1,
+        cr = h2,
+        dr = h3,
+        er = h4;
+
+      for (let i = 0; i < 80; i++) {
+        const r = (i / 16) | 0;
+        const sumL = (al + FL[r](bl, cl, dl) + M[ML[i]] + KL[r]) >>> 0;
+        const tl = (rotl(sumL, SL[i]) + el) >>> 0;
+        al = el;
+        el = dl;
+        dl = rotl(cl, 10);
+        cl = bl;
+        bl = tl;
+
+        const sumR = (ar + FR[r](br, cr, dr) + M[MR[i]] + KR[r]) >>> 0;
+        const tr = (rotl(sumR, SR[i]) + er) >>> 0;
+        ar = er;
+        er = dr;
+        dr = rotl(cr, 10);
+        cr = br;
+        br = tr;
+      }
+
+      const T = (h1 + cl + dr) >>> 0;
+      h1 = (h2 + dl + er) >>> 0;
+      h2 = (h3 + el + ar) >>> 0;
+      h3 = (h4 + al + br) >>> 0;
+      h4 = (h0 + bl + cr) >>> 0;
+      h0 = T;
+    }
+
+    const out = new DataView(new ArrayBuffer(20));
+    out.setUint32(0, h0, true);
+    out.setUint32(4, h1, true);
+    out.setUint32(8, h2, true);
+    out.setUint32(12, h3, true);
+    out.setUint32(16, h4, true);
+    return new Uint8Array(out.buffer);
+  }
+
+  exp.default = ripemd160;
+});
+
+defmod('./src/format.js', function(module, exp){
+  // Format converters for zen.pair() output.
+  // Receives raw BigInt scalars and {x,y} curve points; returns {curve, pub, priv, address}.
+  var keccak256 = reqmod('./src/keccak256.js').default;
+  var ripemd160 = reqmod('./src/ripemd160.js').default;
+  var shim = reqmod('./src/shim.js').default;
+  var { bito } = reqmod('./src/base62.js');
+  // ── shared helpers ────────────────────────────────────────────────────────────
+
+  function toHex(bytes) {
+    return Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  // Binary SHA-256 — uses WebCrypto directly on raw bytes (NOT via sha256.js JSON path)
+  async function sha256Bytes(bytes) {
+    const hash = await shim.subtle.digest(
+      "SHA-256",
+      bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
+    );
+    return new Uint8Array(hash);
+  }
+
+  // Base58Check encode
+  const B58_ALPHA = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+  function base58Encode(bytes) {
+    const digits = [0];
+    for (let i = 0; i < bytes.length; i++) {
+      let carry = bytes[i];
+      for (let j = 0; j < digits.length; j++) {
+        carry += digits[j] * 256;
+        digits[j] = carry % 58;
+        carry = Math.floor(carry / 58);
+      }
+      while (carry) {
+        digits.push(carry % 58);
+        carry = Math.floor(carry / 58);
+      }
+    }
+    let result = "";
+    for (let i = 0; i < bytes.length && bytes[i] === 0; i++) result += "1";
+    for (let i = digits.length - 1; i >= 0; i--) result += B58_ALPHA[digits[i]];
+    return result;
+  }
+
+  async function base58Check(payload) {
+    const h1 = await sha256Bytes(payload);
+    const h2 = await sha256Bytes(h1);
+    const out = new Uint8Array(payload.length + 4);
+    out.set(payload);
+    out.set(h2.slice(0, 4), payload.length);
+    return base58Encode(out);
+  }
+
+  // ── EVM format ────────────────────────────────────────────────────────────────
+
+  async function evmAddress(pub) {
+    const xBytes = bito(pub.x);
+    const yBytes = bito(pub.y);
+    const raw = new Uint8Array(64);
+    raw.set(xBytes, 0);
+    raw.set(yBytes, 32);
+    // keccak256 of raw 64-byte uncompressed key (without 04 prefix)
+    const hash = await keccak256(raw);
+    const addrHex = toHex(hash.slice(-20));
+    // EIP-55 checksum
+    const ckHash = toHex(await keccak256(addrHex));
+    let addr = "0x";
+    for (let i = 0; i < 40; i++) {
+      addr +=
+        parseInt(ckHash[i], 16) >= 8 ? addrHex[i].toUpperCase() : addrHex[i];
+    }
+    return addr;
+  }
+
+  function evmPrivHex(priv) {
+    return "0x" + toHex(bito(priv));
+  }
+
+  function evmEncPub(pub) {
+    // Uncompressed pubkey: 0x04 + 32-byte x + 32-byte y
+    const out = new Uint8Array(65);
+    out[0] = 0x04;
+    out.set(bito(pub.x), 1);
+    out.set(bito(pub.y), 33);
+    return "0x" + toHex(out);
+  }
+
+  // ── BTC format ────────────────────────────────────────────────────────────────
+
+  function compressedPubBytes(pub) {
+    const out = new Uint8Array(33);
+    out[0] = pub.y & 1n ? 0x03 : 0x02;
+    out.set(bito(pub.x), 1);
+    return out;
+  }
+
+  async function btcAddress(pub) {
+    // P2PKH mainnet: Base58Check(0x00 + RIPEMD160(SHA256(compressed_pubkey)))
+    const compressed = compressedPubBytes(pub);
+    const sha = await sha256Bytes(compressed);
+    const ripd = ripemd160(sha);
+    const payload = new Uint8Array(21);
+    payload[0] = 0x00;
+    payload.set(ripd, 1);
+    return base58Check(payload);
+  }
+
+  async function btcWIF(priv) {
+    // WIF mainnet compressed: Base58Check(0x80 + 32-byte-priv + 0x01)
+    const privBytes = bito(priv);
+    const payload = new Uint8Array(34);
+    payload[0] = 0x80;
+    payload.set(privBytes, 1);
+    payload[33] = 0x01;
+    return base58Check(payload);
+  }
+
+  function btcCompressedHex(pub) {
+    return "0x" + toHex(compressedPubBytes(pub));
+  }
+
+  // ── main export ───────────────────────────────────────────────────────────────
+
+  async function applyFormat(format, curveName, core, raw) {
+    const { signPriv, signPub } = raw;
+    const out = { curve: curveName };
+
+    if (format === "zen") {
+      if (signPriv) out.priv = core.scalarToString(signPriv);
+      if (signPub)  out.pub  = core.pointToPub(signPub);
+      if (signPub)  out.address = await evmAddress(signPub);
+      return out;
+    }
+
+    if (format === "evm") {
+      if (signPub)  out.pub     = evmEncPub(signPub);       // 0x04 + 128 hex (uncompressed)
+      if (signPriv) out.priv    = evmPrivHex(signPriv);     // 0x + 64 hex
+      if (signPub)  out.address = await evmAddress(signPub); // 0x EIP-55 checksum
+      return out;
+    }
+
+    if (format === "btc") {
+      if (signPub)  out.pub     = btcCompressedHex(signPub); // 0x02/03 + 64 hex
+      if (signPriv) out.priv    = await btcWIF(signPriv);    // WIF compressed
+      if (signPub)  out.address = await btcAddress(signPub); // P2PKH base58
+      return out;
+    }
+
+    throw new Error("Unknown format: " + format + ". Supported: zen, evm, btc");
+  }
+
+  exp.default = applyFormat;
+});
+
 defmod('./src/recover.js', function(module, exp){
   var crv = reqmod('./src/curves.js').default;
+  var applyFormat = reqmod('./src/format.js').default;
   var { cryptoErr, cbOk } = reqmod('./src/err.js');
+  // Parse a raw ECDSA signature for prehash mode.
+  // Accepts: { r, s, v } object  OR  65-byte "0x..." hex string (r32 + s32 + v1).
+  function parseRawSig(data) {
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      let v = typeof data.v === "bigint" ? Number(data.v) : Number(data.v);
+      if (v >= 27) v -= 27;
+      const r = typeof data.r === "bigint" ? data.r : BigInt(data.r);
+      const s = typeof data.s === "bigint" ? data.s : BigInt(data.s);
+      return { r, s, v };
+    }
+    const hex = typeof data === "string" && data.startsWith("0x") ? data.slice(2) : String(data);
+    if (hex.length !== 130) throw new Error("ZEN.recover prehash: expected 65-byte hex sig (130 hex chars)");
+    const bytes = new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+    let v = bytes[64];
+    if (v >= 27) v -= 27;
+    const toBigInt = (arr) => arr.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n);
+    return { r: toBigInt(bytes.slice(0, 32)), s: toBigInt(bytes.slice(32, 64)), v };
+  }
+
+  // Parse a pre-hashed digest — accepts 32-byte Uint8Array or "0x..." hex string.
+  function parseHashBytes(hash) {
+    if (hash instanceof Uint8Array) return hash;
+    const hex = typeof hash === "string" && hash.startsWith("0x") ? hash.slice(2) : String(hash);
+    return new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+  }
+
   async function recover(data, cb, opt) {
     try {
       opt = opt || {};
+
+      if (opt.prehash) {
+        // Prehash mode: data = raw sig {r,s,v} or 65-byte hex; opt.hash = pre-hashed digest bytes/hex.
+        // Mirrors ZEN.sign(digest, pair, null, { prehash: true, encode: "raw" }) on the verify side.
+        if (!opt.hash) throw new Error("ZEN.recover prehash: opt.hash (pre-hashed digest) is required");
+        const curveName = opt.curve || "secp256k1";
+        const c = crv(curveName);
+        const hashBytes = parseHashBytes(opt.hash);
+        const { r, s, v } = parseRawSig(data);
+        const point = c.recoverPub(v, r, s, hashBytes);
+        if (opt.format === "evm" || opt.format === "btc") {
+          const out = await applyFormat(opt.format, c.curve, c, { signPriv: null, signPub: point });
+          return cbOk(cb, out.address);
+        }
+        const pub = c.pointToPub(point);
+        return cbOk(cb, pub);
+      }
+
+      // Original ZEN-format path: data is a ZEN signed string (base62 + embedded message).
       const c0 = crv();
       const msg = await c0.settings.parse(data);
       if (!msg || msg.v === undefined || msg.v === null) {
@@ -4772,297 +5109,6 @@ defmod('./src/pen.js', function(module, exp){
     };
   }
   exp.default = pen;
-});
-
-defmod('./src/ripemd160.js', function(module, exp){
-  // Pure RIPEMD-160 implementation — no dependencies, no WebCrypto.
-  // Spec: https://homes.esat.kuleuven.be/~bosselae/ripemd160.html
-  var bridge = reqmod('./src/crypto.js').default;
-  let _wasmReady = false;
-  bridge.ready.then(() => { _wasmReady = true; }).catch(() => {});
-
-  const KL = [0x00000000, 0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xa953fd4e];
-  const KR = [0x50a28be6, 0x5c4dd124, 0x6d703ef3, 0x7a6d76e9, 0x00000000];
-
-  // Message word indices
-  const ML = [
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 7, 4, 13, 1, 10, 6, 15,
-    3, 12, 0, 9, 5, 2, 14, 11, 8, 3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11,
-    5, 12, 1, 9, 11, 10, 0, 8, 12, 4, 13, 3, 7, 15, 14, 5, 6, 2, 4, 0, 5, 9, 7,
-    12, 2, 10, 14, 1, 3, 8, 11, 6, 15, 13,
-  ];
-  const MR = [
-    5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12, 6, 11, 3, 7, 0, 13, 5,
-    10, 14, 15, 8, 12, 4, 9, 1, 2, 15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0,
-    4, 13, 8, 6, 4, 1, 3, 11, 15, 0, 5, 12, 2, 13, 9, 7, 10, 14, 12, 15, 10, 4, 1,
-    5, 8, 7, 6, 2, 13, 14, 0, 3, 9, 11,
-  ];
-
-  // Shift amounts
-  const SL = [
-    11, 14, 15, 12, 5, 8, 7, 9, 11, 13, 14, 15, 6, 7, 9, 8, 7, 6, 8, 13, 11, 9, 7,
-    15, 7, 12, 15, 9, 11, 7, 13, 12, 11, 13, 6, 7, 14, 9, 13, 15, 14, 8, 13, 6, 5,
-    12, 7, 5, 11, 12, 14, 15, 14, 15, 9, 8, 9, 14, 5, 6, 8, 6, 5, 12, 9, 15, 5,
-    11, 6, 8, 13, 12, 5, 12, 13, 14, 11, 8, 5, 6,
-  ];
-  const SR = [
-    8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14, 14, 12, 6, 9, 13, 15, 7, 12, 8,
-    9, 11, 7, 7, 12, 7, 6, 15, 13, 11, 9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14,
-    13, 13, 7, 5, 15, 5, 8, 11, 14, 14, 6, 14, 6, 9, 12, 9, 12, 5, 15, 8, 8, 5,
-    12, 9, 12, 5, 14, 6, 8, 13, 6, 5, 15, 13, 11, 11,
-  ];
-
-  function rotl(x, n) {
-    return ((x << n) | (x >>> (32 - n))) >>> 0;
-  }
-
-  // Round selection functions (left: f1..f5, right: f5..f1)
-  const FL = [
-    (x, y, z) => (x ^ y ^ z) >>> 0,
-    (x, y, z) => ((x & y) | (~x & z)) >>> 0,
-    (x, y, z) => ((x | ~y) ^ z) >>> 0,
-    (x, y, z) => ((x & z) | (y & ~z)) >>> 0,
-    (x, y, z) => (x ^ (y | ~z)) >>> 0,
-  ];
-  const FR = [FL[4], FL[3], FL[2], FL[1], FL[0]];
-
-  function ripemd160(data) {
-    const bytes =
-      data instanceof Uint8Array
-        ? data
-        : data instanceof ArrayBuffer
-          ? new Uint8Array(data)
-          : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-
-    if (_wasmReady) {
-      return bridge.ripemd160(bytes);
-    }
-
-    const len = bytes.length;
-    const bitLen = len * 8;
-    const padLen = (len + 9 + 63) & ~63;
-    const padded = new Uint8Array(padLen);
-    padded.set(bytes);
-    padded[len] = 0x80;
-    const dv = new DataView(padded.buffer);
-    dv.setUint32(padLen - 8, bitLen >>> 0, true);
-    dv.setUint32(padLen - 4, Math.floor(bitLen / 0x100000000), true);
-
-    let h0 = 0x67452301,
-      h1 = 0xefcdab89,
-      h2 = 0x98badcfe,
-      h3 = 0x10325476,
-      h4 = 0xc3d2e1f0;
-
-    for (let off = 0; off < padLen; off += 64) {
-      const M = [];
-      for (let i = 0; i < 16; i++) M[i] = dv.getUint32(off + i * 4, true);
-
-      let al = h0,
-        bl = h1,
-        cl = h2,
-        dl = h3,
-        el = h4;
-      let ar = h0,
-        br = h1,
-        cr = h2,
-        dr = h3,
-        er = h4;
-
-      for (let i = 0; i < 80; i++) {
-        const r = (i / 16) | 0;
-        const sumL = (al + FL[r](bl, cl, dl) + M[ML[i]] + KL[r]) >>> 0;
-        const tl = (rotl(sumL, SL[i]) + el) >>> 0;
-        al = el;
-        el = dl;
-        dl = rotl(cl, 10);
-        cl = bl;
-        bl = tl;
-
-        const sumR = (ar + FR[r](br, cr, dr) + M[MR[i]] + KR[r]) >>> 0;
-        const tr = (rotl(sumR, SR[i]) + er) >>> 0;
-        ar = er;
-        er = dr;
-        dr = rotl(cr, 10);
-        cr = br;
-        br = tr;
-      }
-
-      const T = (h1 + cl + dr) >>> 0;
-      h1 = (h2 + dl + er) >>> 0;
-      h2 = (h3 + el + ar) >>> 0;
-      h3 = (h4 + al + br) >>> 0;
-      h4 = (h0 + bl + cr) >>> 0;
-      h0 = T;
-    }
-
-    const out = new DataView(new ArrayBuffer(20));
-    out.setUint32(0, h0, true);
-    out.setUint32(4, h1, true);
-    out.setUint32(8, h2, true);
-    out.setUint32(12, h3, true);
-    out.setUint32(16, h4, true);
-    return new Uint8Array(out.buffer);
-  }
-
-  exp.default = ripemd160;
-});
-
-defmod('./src/format.js', function(module, exp){
-  // Format converters for zen.pair() output.
-  // Receives raw BigInt scalars and {x,y} curve points; returns {curve, pub, priv, address}.
-  var keccak256 = reqmod('./src/keccak256.js').default;
-  var ripemd160 = reqmod('./src/ripemd160.js').default;
-  var shim = reqmod('./src/shim.js').default;
-  var { bito } = reqmod('./src/base62.js');
-  // ── shared helpers ────────────────────────────────────────────────────────────
-
-  function toHex(bytes) {
-    return Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  }
-
-  // Binary SHA-256 — uses WebCrypto directly on raw bytes (NOT via sha256.js JSON path)
-  async function sha256Bytes(bytes) {
-    const hash = await shim.subtle.digest(
-      "SHA-256",
-      bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
-    );
-    return new Uint8Array(hash);
-  }
-
-  // Base58Check encode
-  const B58_ALPHA = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
-  function base58Encode(bytes) {
-    const digits = [0];
-    for (let i = 0; i < bytes.length; i++) {
-      let carry = bytes[i];
-      for (let j = 0; j < digits.length; j++) {
-        carry += digits[j] * 256;
-        digits[j] = carry % 58;
-        carry = Math.floor(carry / 58);
-      }
-      while (carry) {
-        digits.push(carry % 58);
-        carry = Math.floor(carry / 58);
-      }
-    }
-    let result = "";
-    for (let i = 0; i < bytes.length && bytes[i] === 0; i++) result += "1";
-    for (let i = digits.length - 1; i >= 0; i--) result += B58_ALPHA[digits[i]];
-    return result;
-  }
-
-  async function base58Check(payload) {
-    const h1 = await sha256Bytes(payload);
-    const h2 = await sha256Bytes(h1);
-    const out = new Uint8Array(payload.length + 4);
-    out.set(payload);
-    out.set(h2.slice(0, 4), payload.length);
-    return base58Encode(out);
-  }
-
-  // ── EVM format ────────────────────────────────────────────────────────────────
-
-  async function evmAddress(pub) {
-    const xBytes = bito(pub.x);
-    const yBytes = bito(pub.y);
-    const raw = new Uint8Array(64);
-    raw.set(xBytes, 0);
-    raw.set(yBytes, 32);
-    // keccak256 of raw 64-byte uncompressed key (without 04 prefix)
-    const hash = await keccak256(raw);
-    const addrHex = toHex(hash.slice(-20));
-    // EIP-55 checksum
-    const ckHash = toHex(await keccak256(addrHex));
-    let addr = "0x";
-    for (let i = 0; i < 40; i++) {
-      addr +=
-        parseInt(ckHash[i], 16) >= 8 ? addrHex[i].toUpperCase() : addrHex[i];
-    }
-    return addr;
-  }
-
-  function evmPrivHex(priv) {
-    return "0x" + toHex(bito(priv));
-  }
-
-  function evmEncPub(pub) {
-    // Uncompressed pubkey: 0x04 + 32-byte x + 32-byte y
-    const out = new Uint8Array(65);
-    out[0] = 0x04;
-    out.set(bito(pub.x), 1);
-    out.set(bito(pub.y), 33);
-    return "0x" + toHex(out);
-  }
-
-  // ── BTC format ────────────────────────────────────────────────────────────────
-
-  function compressedPubBytes(pub) {
-    const out = new Uint8Array(33);
-    out[0] = pub.y & 1n ? 0x03 : 0x02;
-    out.set(bito(pub.x), 1);
-    return out;
-  }
-
-  async function btcAddress(pub) {
-    // P2PKH mainnet: Base58Check(0x00 + RIPEMD160(SHA256(compressed_pubkey)))
-    const compressed = compressedPubBytes(pub);
-    const sha = await sha256Bytes(compressed);
-    const ripd = ripemd160(sha);
-    const payload = new Uint8Array(21);
-    payload[0] = 0x00;
-    payload.set(ripd, 1);
-    return base58Check(payload);
-  }
-
-  async function btcWIF(priv) {
-    // WIF mainnet compressed: Base58Check(0x80 + 32-byte-priv + 0x01)
-    const privBytes = bito(priv);
-    const payload = new Uint8Array(34);
-    payload[0] = 0x80;
-    payload.set(privBytes, 1);
-    payload[33] = 0x01;
-    return base58Check(payload);
-  }
-
-  function btcCompressedHex(pub) {
-    return "0x" + toHex(compressedPubBytes(pub));
-  }
-
-  // ── main export ───────────────────────────────────────────────────────────────
-
-  async function applyFormat(format, curveName, core, raw) {
-    const { signPriv, signPub } = raw;
-    const out = { curve: curveName };
-
-    if (format === "zen") {
-      if (signPriv) out.priv = core.scalarToString(signPriv);
-      if (signPub)  out.pub  = core.pointToPub(signPub);
-      if (signPub)  out.address = await evmAddress(signPub);
-      return out;
-    }
-
-    if (format === "evm") {
-      if (signPub)  out.pub     = evmEncPub(signPub);       // 0x04 + 128 hex (uncompressed)
-      if (signPriv) out.priv    = evmPrivHex(signPriv);     // 0x + 64 hex
-      if (signPub)  out.address = await evmAddress(signPub); // 0x EIP-55 checksum
-      return out;
-    }
-
-    if (format === "btc") {
-      if (signPub)  out.pub     = btcCompressedHex(signPub); // 0x02/03 + 64 hex
-      if (signPriv) out.priv    = await btcWIF(signPriv);    // WIF compressed
-      if (signPub)  out.address = await btcAddress(signPub); // P2PKH base58
-      return out;
-    }
-
-    throw new Error("Unknown format: " + format + ". Supported: zen, evm, btc");
-  }
-
-  exp.default = applyFormat;
 });
 
 defmod('./src/pair.js', function(module, exp){
