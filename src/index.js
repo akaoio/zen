@@ -274,5 +274,8 @@ ZEN.security = security;
 ZEN.check = security.check;
 ZEN.opt = security.opt;
 
+import initAXE from "./axe.js";
+initAXE(ZEN);
+
 export { ZEN };
 export default ZEN;

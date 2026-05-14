@@ -1,0 +1,748 @@
+import { mkpat, candidateHosts } from "./scan.js";
+
+var _axeInit = false; // guard against double-registration
+
+export default function initAXE(ZEN) {
+  if (_axeInit) return;
+  _axeInit = true;
+var Zen = ZEN;
+var u;
+var __servicePromise;
+
+function loadService(root) {
+  if (Zen.window || typeof process === "undefined") {
+    return;
+  }
+  __servicePromise = __servicePromise || import("./service.js");
+  __servicePromise.then(
+    function (mod) {
+      var service = mod && (mod.default || mod);
+      if (typeof service === "function") {
+        service(root);
+      }
+    },
+    function () {},
+  );
+}
+
+Zen.on("opt", function (at) {
+  start(at);
+  this.to.next(at);
+}); // make sure to call the "next" middleware adapter.
+// TODO: BUG: panic test/panic/1 & test/panic/3 fail when AXE is on.
+function start(root) {
+  if (root.axe) {
+    return;
+  }
+  var opt = root.opt,
+    peers = opt.peers;
+  if (false === opt.axe) {
+    return;
+  }
+  if (false === opt.WebSocket) {
+    return; // in-process / test mode — no real network, skip AXE entirely
+  }
+  var axe = (root.axe = {}),
+    tmp,
+    id;
+  var mesh = (opt.mesh = opt.mesh || Zen.Mesh(root)); // DAM!
+
+  if (Zen.window) {
+    // BROWSER peer discovery — localStorage · WebSocket scan · PEX · BroadcastChannel
+    var w   = Zen.window,
+        lS  = w.localStorage || opt.localStorage || {},
+        loc = w.location || opt.location || {},
+        nav = w.navigator || opt.navigator || {};
+
+    // ── localStorage JSON peer list ───────────────────────────────────────
+    function lsld() {
+      try { return JSON.parse(lS.zenPeers || "[]"); } catch { return []; }
+    }
+    function lssv(urls) {
+      var set = {}, all = lsld();
+      all.concat(urls).forEach(function(u) { if (u && /^wss?:\/\//.test(u)) set[u] = 1; });
+      try { lS.zenPeers = JSON.stringify(Object.keys(set).slice(0, 50)); } catch {}
+    }
+
+    // ── BroadcastChannel — share peers across tabs on same origin ─────────
+    var bc = null;
+    try { bc = new (w.BroadcastChannel || BroadcastChannel)("zen-peers"); } catch {}
+    function bcast(d) { try { if (bc) bc.postMessage(d); } catch {} }
+
+    // ── add peer: connect + save + broadcast + expand scan ────────────────
+    axe.fall = {};
+    var scpat = {};
+    function adpbr(url) {
+      if (!url || !/^wss?:\/\//.test(url)) return;
+      if (axe.fall[url]) return;
+      axe.fall[url] = { url: url, id: url, retry: 0 };
+      mesh.hi({ id: url, url: url, retry: 9 });
+      lssv([url]);
+      bcast({ type: "peer", url: url });
+      try { bscan(new URL(url).hostname); } catch {}
+    }
+
+    // ── WebSocket scan: probe sibling domains (WS bypasses CORS) ─────────
+    var BCONC = 5, BMIDX = 100, BMFND = 10;
+    function bscan(host) {
+      var pat = mkpat(host || "");
+      var hosts;
+      if (!pat) return;
+      var key = pat.prefix + "*" + pat.tail + pat.suffix;
+      if (scpat[key]) return;
+      scpat[key] = 1;
+      hosts = candidateHosts(pat, { maxIndex: BMIDX });
+      var port  = loc.port || (loc.protocol === "https:" ? "443" : "8420");
+      var proto = loc.protocol === "https:" ? "wss" : "ws";
+      var fnd = 0, cur = 0, fly = 0;
+      function nxt() {
+        while (fly < BCONC && cur < hosts.length && fnd < BMFND) {
+          var url = proto + "://" + hosts[cur++] + ":" + port + "/zen";
+          if (axe.fall[url] || peers[url]) continue;
+          fly++;
+          (function(u) {
+            var done = 0, ws;
+            try { ws = new (w.WebSocket || WebSocket)(u); } catch { fly--; nxt(); return; }
+            ws.onopen = function() {
+              ws.onerror = ws.onclose = null;
+              ws.close();
+              fly--; fnd++;
+              adpbr(u); nxt();
+            };
+            ws.onerror = ws.onclose = function() {
+              if (done++) return;
+              fly--; nxt();
+            };
+          }(url));
+        }
+      }
+      nxt();
+    }
+
+    // ── PEX handler: receive peer list from relay ─────────────────────────
+    mesh.hear["pex"] = function(msg) {
+      if (!Array.isArray(msg.peers)) return;
+      msg.peers.forEach(adpbr);
+    };
+
+    // ── on connect: fetch /status signed string from relay ─────────────────
+    root.on("hi", function(peer) {
+      this.to.next(peer);
+      if (!peer.url) return;
+      try {
+        var base = peer.url
+          .replace(/^wss:\/\//, "https://")
+          .replace(/^ws:\/\//, "http://")
+          .replace(/\/zen$/, "");
+        var ac = w.AbortController ? new w.AbortController() : null;
+        var sto = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
+        fetch(base + "/status", ac ? { signal: ac.signal } : {})
+          .then(function(r) { clearTimeout(sto); return r.ok ? r.text() : null; })
+          .then(function(str) {
+            if (!str) return;
+            return Zen.recover(str).then(function(pub) {
+              return Zen.verify(str, pub);
+            }).then(function(data) {
+              if (!data) return;
+              // ZEN.verify auto-parses JSON — data may already be an object
+              var status = (typeof data === "string") ? JSON.parse(data) : data;
+              if (status && Array.isArray(status.peers)) status.peers.forEach(adpbr);
+            });
+          })
+          .catch(function() { clearTimeout(sto); });
+      } catch {}
+    });
+
+    // ── BroadcastChannel inbound: peers from other tabs ───────────────────
+    if (bc) bc.onmessage = function(e) {
+      if (e && e.data && e.data.type === "peer") adpbr(e.data.url);
+    };
+
+    // ── on disconnect: fall back to next known peer ───────────────────────
+    root.on("bye", function(peer) {
+      this.to.next(peer);
+      if (!peer.url) return;
+      if (!nav.onLine) { peer.retry = 1; return; }
+      if (peer.retry) return;
+      delete axe.fall[peer.url || peer.id];
+      var fall = Object.keys(axe.fall);
+      if (!fall.length) return;
+      var one = fall[(Math.random() * fall.length) >> 0];
+      if (!peers[one]) mesh.hi(one);
+    });
+
+    // ── stable browser pid — persisted in localStorage, generated once ────
+    if (!opt.pid) {
+      opt.pid = lS.zenPid || String.random(9);
+      try { lS.zenPid = opt.pid; } catch {}
+    }
+
+    // ── bootstrap ─────────────────────────────────────────────────────────
+
+    // 1. saved peers from previous sessions
+    lsld().forEach(adpbr);
+
+    // 2. same-origin relay
+    tmp = peers[(id = loc.origin + "/zen")] = peers[id] || {};
+    tmp.id = tmp.url = id; tmp.retry = tmp.retry || 9;
+
+    // 3. localhost dev
+    tmp = peers[(id = "http://localhost:8420/zen")] = peers[id] || {};
+    tmp.id = tmp.url = id; tmp.retry = tmp.retry || 9;
+
+    // 4. ?peers= URL param
+    var parg = ((loc.search || "").split("peers=")[1] || "").split("&")[0];
+    if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adpbr(u); });
+
+    // 5. WebSocket scan from current hostname
+    if (loc.hostname) bscan(loc.hostname);
+
+    // 6. volunteer DHT — last resort, only if still not connected after 5s
+    setTimeout(function() {
+      if (Object.keys(axe.up || {}).length) return;
+      var axeUrl = ((loc.search || "").split("axe=")[1] || "").split("&")[0]
+                   || (loc.axe || "");
+      if (!axeUrl) return;
+      try {
+        fetch(axeUrl)
+          .then(function(r) { return r.text(); })
+          .then(function(t) { (t.match(/wss?:\/\/[^\s"'<>]+/g) || []).forEach(adpbr); })
+          .catch(function() {});
+      } catch {}
+    }, 5000);
+
+    return;
+  }
+
+  // NODE.JS: relay
+  if (false === opt.WebSocket) {
+    return;
+  }
+  if (
+    typeof process !== "undefined" &&
+    "false" === "" + (opt.env = process.env || "").AXE
+  ) {
+    return;
+  }
+  Zen.log.once("AXE", "AXE relay enabled!");
+  var dup = root.dup;
+
+  mesh.way = function (msg) {
+    if (!msg) { return; }
+    if (msg.get) { return GET(msg); }
+    if (msg.put) { return fall(msg); }
+    if (msg.dam === "rtc") { return rtcway(msg); }
+    fall(msg);
+  };
+
+  // Route dam:"rtc" to the target pid directly; broadcast only if not found locally
+  function rtcway(msg) {
+    var toPid = msg.ok && msg.ok.rtc && msg.ok.rtc.to;
+    if (!toPid) { fall(msg); return; }
+    var peers = opt.peers, p, id;
+    for (id in peers) {
+      p = peers[id];
+      if (p && p.pid === toPid && p.wire) { mesh.say(msg, p); return; }
+    }
+    fall(msg); // target not on this relay — broadcast to relay peers
+  }
+
+  function GET(msg) {
+    if (!msg) {
+      return;
+    }
+    var via = (msg._ || "").via,
+      soul,
+      has,
+      tmp,
+      ref;
+    if (!via || !via.id) {
+      return fall(msg);
+    }
+    // SUBSCRIPTION LOGIC MOVED TO GET'S ACK REPLY.
+    if (!(ref = REF(msg)._)) {
+      return fall(msg);
+    }
+    ref.asked = +new Date();
+    GET.turn(msg, ref.route, 0);
+  }
+  GET.turn = function (msg, route, turn) {
+    var tmp = msg["#"],
+      tag = dup.s[tmp],
+      next;
+    if (!tmp || !tag) {
+      return;
+    } // message timed out
+    clearTimeout(tag.lack);
+    if (tag.ack && (tmp = tag["##"]) && msg["##"] === tmp) {
+      return;
+    } // hashes match, stop asking other peers!
+    // Sort peers by RTT (ascending) so the lowest-latency peer is queried first.
+    // Peers with no RTT data (rtt == 0 or undefined) sort to the end.
+    var keys = Object.maps(route || opt.peers).slice((turn = turn || 0));
+    keys.sort(function(a, b) {
+      var pa = route ? (route.get ? route.get(a) : route[a]) : opt.peers[a];
+      var pb = route ? (route.get ? route.get(b) : route[b]) : opt.peers[b];
+      var ra = (pa && pa.rtt > 0) ? pa.rtt : Infinity;
+      var rb = (pb && pb.rtt > 0) ? pb.rtt : Infinity;
+      if (ra !== rb) return ra - rb;
+      // When broadcasting to all peers, relay peers (in axe.up) go first.
+      if (!route) {
+        var ua = (pa && pa.url) ? 0 : 1;
+        var ub = (pb && pb.url) ? 0 : 1;
+        return ua - ub;
+      }
+      return 0;
+    });
+    next = keys;
+    if (!next.length) {
+      if (!route) {
+        return;
+      } // asked all peers, stop asking!
+      GET.turn(msg, u, 0); // asked all subs, now now ask any peers. (not always the best idea, but stays )
+      return;
+    }
+    setTimeout.each(
+      next,
+      function (id) {
+        var peer = opt.peers[id];
+        turn++;
+        if (!peer || !peer.wire) {
+          route && route.delete(id);
+          return;
+        } // bye! // TODO: CHECK IF 0 OTHER PEERS & UNSUBSCRIBE
+        if (mesh.say(msg, peer) === false) {
+          return;
+        } // was self
+        if (0 == turn % 3) {
+          return 1;
+        }
+      },
+      function () {
+        tag["##"] = msg["##"]; // should probably set this in a more clever manner, do live `in` checks ++ --, etc. but being lazy for now. // TODO: Yes, see `in` TODO, currently this might match against only in-mem cause no other peers reply, which is "fine", but could cause a false positive.
+        tag.lack = setTimeout(function () {
+          GET.turn(msg, route, turn);
+        }, 25);
+      },
+      3,
+    );
+  };
+  function fall(msg) {
+    mesh.say(msg, opt.peers);
+  }
+  function REF(msg) {
+    var ref = "",
+      soul,
+      has,
+      tmp;
+    if (!msg || !msg.get) {
+      return ref;
+    }
+    if ("string" == typeof (soul = msg.get["#"])) {
+      ref = root.$.get(soul);
+    }
+    if ("string" == typeof (tmp = msg.get["."])) {
+      has = tmp;
+    } else {
+      has = "";
+    }
+
+    var via = (msg._ || "").via,
+      sub = via.sub || (via.sub = new Object.Map());
+    (sub.get(soul) || (sub.set(soul, (tmp = new Object.Map())) && tmp)).set(
+      has,
+      1,
+    ); // {soul: {'':1, has: 1}} // TEMPORARILY REVERT AXE TOWER TYING TO SUBSCRIBING TO EVERYTHING. UNDO THIS!
+    via.id &&
+      ref._ &&
+      (ref._.route || (ref._.route = new Object.Map())).set(via.id, via); // SAME AS ^
+
+    return ref;
+  }
+  function LEX(lex) {
+    return (lex = lex || "")["="] || lex["*"] || lex[">"] || lex;
+  }
+
+  root.on("in", function (msg) {
+    var to = this.to,
+      tmp;
+    if ((tmp = msg["@"]) && (tmp = dup.s[tmp])) {
+      tmp.ack = (tmp.ack || 0) + 1; // count remote ACKs to GET. // TODO: If mismatch, should trigger next asks.
+      if (tmp.it && tmp.it.get && msg.put) {
+        // WHEN SEEING A PUT REPLY TO A GET...
+        var get = tmp.it.get || "",
+          ref = REF(tmp.it)._,
+          via = (tmp.it._ || "").via || "",
+          sub;
+        if (via && ref) {
+          // SUBSCRIBE THE PEER WHO ASKED VIA FOR IT:
+          //console.log("SUBSCRIBING", Object.maps(ref.route||''), "to", LEX(get['#']));
+          via.id &&
+            (ref.route || (ref.route = new Object.Map())).set(via.id, via);
+          sub = via.sub || (via.sub = new Object.Map());
+          ref &&
+            (
+              sub.get(LEX(get["#"])) ||
+              (sub.set(LEX(get["#"]), (sub = new Object.Map())) && sub)
+            ).set(LEX(get["."]), 1); // {soul: {'':1, has: 1}}
+
+          via = (msg._ || "").via || "";
+          if (via) {
+            // BIDIRECTIONAL SUBSCRIBE: REPLIER IS NOW SUBSCRIBED. DO WE WANT THIS?
+            via.id &&
+              (ref.route || (ref.route = new Object.Map())).set(via.id, via);
+            sub = via.sub || (via.sub = new Object.Map());
+            if (ref) {
+              var soul = LEX(get["#"]),
+                sift = sub.get(soul),
+                has = LEX(get["."]);
+              if (has) {
+                (
+                  sift ||
+                  (sub.set(soul, (sift = new Object.Map())) && sift)
+                ).set(has, 1);
+              } else if (!sift) {
+                sub.set(soul, (sift = new Object.Map()));
+                sift.set("", 1);
+              }
+            }
+          }
+        }
+      }
+      if ((tmp = tmp.back)) {
+        // backtrack OKs since AXE splits PUTs up.
+        setTimeout.each(Object.keys(tmp), function (id) {
+          to.next({ "#": msg["#"], "@": id, ok: msg.ok });
+        });
+        return;
+      }
+    }
+    to.next(msg);
+  });
+
+  root.on("create", function (root) {
+    this.to.next(root);
+    var Q = {};
+    root.on("put", function (msg) {
+      var eve = this,
+        at = eve.as,
+        put = msg.put,
+        soul = put["#"],
+        has = put["."],
+        val = put[":"],
+        state = put[">"],
+        q,
+        tmp;
+      eve.to.next(msg);
+      if (msg["@"]) {
+        return;
+      } // acks send existing data, not updates, so no need to resend to others.
+      if (!soul || !has) {
+        return;
+      }
+      var ref = root.$.get(soul)._,
+        route = (ref || "").route;
+      if (!route) {
+        return;
+      }
+      if (ref.skip && ref.skip.has == has) {
+        ref.skip.now = msg["#"];
+        return;
+      }
+      clearTimeout(ref.skip && ref.skip.to); // clear stale timeout before overwriting
+      (ref.skip = { now: msg["#"], has: has }).to = setTimeout(function () {
+        setTimeout.each(Object.maps(route), function (pid) {
+          var peer, tmp;
+          var skip = ref.skip || "";
+          ref.skip = null;
+          if (!(peer = route.get(pid))) {
+            return;
+          }
+          if (!peer.wire) {
+            route.delete(pid);
+            return;
+          } // bye!
+          var sub = (peer.sub || (peer.sub = new Object.Map())).get(soul);
+          if (!sub) {
+            return;
+          }
+          if (!sub.get(has) && !sub.get("")) {
+            return;
+          }
+          var put = peer.put || (peer.put = {});
+          var node = root.graph[soul],
+            tmp;
+          if (node && u !== (tmp = node[has])) {
+            state = state_is(node, has);
+            val = tmp;
+          }
+          put[soul] = state_ify(put[soul], has, state, val, soul);
+          tmp = dup.track((peer.next = peer.next || String.random(9)));
+          (tmp.back || (tmp.back = {}))["" + (skip.now || msg["#"])] = 1;
+          if (peer.to) {
+            return;
+          }
+          peer.to = setTimeout(function () {
+            flush(peer);
+          }, opt.gap);
+        });
+      }, 9);
+    });
+  });
+
+  function flush(peer) {
+    var msg = { "#": peer.next, put: peer.put, ok: { "@": 3, "/": mesh.near } }; // BUG: TODO: sub count!
+    // TODO: what about DAM's >< dedup? Current thinking is, don't use it, however, you could store first msg# & latest msg#, and if here... latest === first then likely it is the same >< thing, so if(firstMsg['><'][peer.id]){ return } don't send.
+    peer.next = peer.put = peer.to = null;
+    mesh.say(msg, peer);
+  }
+  var state_ify = Zen.state.ify,
+    state_is = Zen.state.is;
+
+  function relayUp(msg) {
+    mesh.say(msg, axe.up);
+  }
+
+  {
+    // THIS IS THE UP MODULE;
+    axe.up = {};
+    var hi = mesh.hear["?"]; // lower-level integration with DAM! This is abnormal but helps performance.
+    mesh.hear["?"] = function (msg, peer) {
+      var p; // deduplicate unnecessary connections:
+      hi(msg, peer);
+      if (!peer.pid) {
+        return;
+      }
+      if (peer.pid === opt.pid) {
+        peer._noReconnect = true; // don't retry self-connection
+        mesh.bye(peer);
+        return;
+      } // if I connected to myself, drop.
+      if ((p = axe.up[peer.pid])) {
+        // if we both connected to each other...
+        if (p === peer) {
+          return;
+        } // do nothing if no conflict,
+        var drop, keep;
+        if (!p.url && !peer.url) {
+          // Both inbounds: keep the live entry, do NOT close either wire.
+          if (!p.wire) { axe.up[peer.pid] = peer; }
+          return;
+        }
+        // Use PID sort for ALL directional cases (outbound+inbound or both outbound).
+        // CRITICAL: both relay sides must reach the SAME decision about which physical
+        // connection to close — otherwise each side closes its own outbound and ALL
+        // connections drop. PID sort guarantees cross-relay consistency:
+        //   higher opt.pid side → drops its outbound (keeps inbound from remote)
+        //   lower  opt.pid side → drops its inbound  (keeps outbound to remote)
+        if (opt.pid > peer.pid) {
+          // This relay has the higher PID: drop whichever peer has url (outbound).
+          if (p.url) { drop = p; keep = peer; } else { drop = peer; keep = p; }
+        } else {
+          // This relay has the lower PID: keep whichever peer has url (outbound).
+          if (p.url) { keep = p; drop = peer; } else { keep = peer; drop = p; }
+        }
+        // NOTE: do NOT copy drop.url to keep — inbounds must stay url-less.
+        // Copying url caused axe.stay to save inbound URLs (incl. self-URL),
+        // which then created outbound self-connections on next startup.
+        drop._noReconnect = true; // prevent reconnect cycle on dropped peer's wire.onclose
+        var dropIp = drop.wire && drop.wire._socket && drop.wire._socket.remoteAddress || (drop.wire && drop.wire.url) || '?';
+        console.log('[AXE-CONFLICT] opt.pid=' + opt.pid.slice(0,8) + ' peer.pid=' + peer.pid.slice(0,8) + ' drop.url=' + (drop.url||'inbound') + ' keep.url=' + (keep.url||'inbound') + ' p.url=' + (p.url||'none') + ' peer.url=' + (peer.url||'none') + ' drop.remoteIp=' + dropIp);
+        mesh.bye(drop);
+        axe.up[keep.pid] = keep;
+        // If the kept peer is an outbound and has no ping interval yet
+        // (happens when the inbound arrives before the outbound's "?" completes),
+        // start one now to prevent the TCP from going idle and timing out.
+        if (keep.url && mesh.ping && !keep._pingIv) {
+          mesh.ping(keep);
+          var keepIv = setInterval(function () {
+            if (!keep.wire) { clearInterval(keepIv); return; }
+            mesh.ping(keep);
+          }, 30000);
+          keep._pingIv = keepIv;
+        }
+        return;
+      }
+      axe.up[peer.pid] = peer;
+      if (!peer.url) {
+        // Inbounds stored for conflict detection only — skip axe.stay and ping.
+        return;
+      }
+      if (axe.stay) {
+        axe.stay();
+      }
+      // Auto-ping on connect so RTT is populated immediately.
+      // Repeat every 30s to keep the rolling average fresh.
+      if (mesh.ping) {
+        mesh.ping(peer);
+        var iv = setInterval(function () {
+          if (!peer.wire) { clearInterval(iv); return; }
+          mesh.ping(peer);
+        }, 30000);
+        peer._pingIv = iv;
+      }
+    };
+
+    mesh.hear["opt"] = function (msg, peer) {
+      if (msg.ok) {
+        return;
+      }
+      var tmp = msg.opt;
+      if (!tmp) {
+        return;
+      }
+      tmp = tmp.peers;
+      if (!tmp || "string" != typeof tmp) {
+        return;
+      }
+      if (99 <= Object.keys(axe.up).length) {
+        return;
+      } // 99 TEMPORARILY UNTIL BENCHMARKED!
+      // Normalize protocol: wss→https, ws→http — avoids dual outbound from axe.stay.
+      var normTmp = tmp.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      // Skip self-URL to prevent self-connection loop.
+      if (opt.domain) {
+        try {
+          var urlHost = new (typeof URL !== 'undefined' ? URL : require('url').URL)(normTmp).hostname;
+          if (urlHost === opt.domain) { return; }
+        } catch(e) {}
+      }
+      // Skip if already configured as an outbound peer — prevents duplicate connections
+      // when a remote peer suggests a URL we already have open (e.g. PEX forwarding boot peers).
+      if (opt.peers && opt.peers[normTmp]) { return; }
+      mesh.hi({ id: normTmp, url: normTmp, retry: 9 });
+      if (peer) {
+        mesh.say({ dam: "opt", ok: 1, "@": msg["#"] }, peer);
+      }
+    };
+
+    axe.stay = function () {
+      clearTimeout(axe.stay.to);
+      axe.stay.to = setTimeout(function (tmp, urls) {
+        if (!(tmp = root.stats && root.stats.stay)) {
+          return;
+        }
+        urls = {};
+        Object.keys(axe.up || "").forEach(function (p) {
+          p = (axe.up || "")[p];
+          if (p.url) {
+            // Normalize protocol: wss→https, ws→http — prevents dual outbound on restore.
+            var normUrl = p.url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+            urls[normUrl] = {};
+          }
+        });
+        (tmp.axe = tmp.axe || {}).up = urls;
+      }, 1000 * 9); //1000 * 60);
+    };
+    setTimeout(function (tmp) {
+      // In relay mode (opt.super=true), BOOT handles all reconnects — skip axe.stay restore
+      // to prevent redundant connection cycles.
+      if (opt.super) { return; }
+      if (!(tmp = root.stats && root.stats.stay && root.stats.stay.axe)) {
+        return;
+      }
+      if (!(tmp = tmp.up)) {
+        return;
+      }
+      if (!(tmp instanceof Array)) {
+        tmp = Object.keys(tmp);
+      }
+      setTimeout.each(tmp || [], function (url) {
+        mesh.hear.opt({ opt: { peers: url } });
+      });
+    }, 1000);
+  }
+
+  setTimeout(function () {
+    loadService(root);
+  }, 9);
+
+  {
+    // THIS IS THE MOB MODULE;
+    //return; // WORK IN PROGRESS, TEST FINALIZED, NEED TO MAKE STABLE.
+    /*
+			AXE should have a couple of threshold items...
+			let's pretend there is a variable max peers connected
+			mob = 10000
+			if we get more peers than that...
+			we should start sending those peers a remote command
+			that they should connect to this or that other peer
+			and then once they (or before they do?) drop them from us.
+			sake of the test... gonna set that peer number to 1.
+			The mob threshold might be determined by other factors,
+			like how much RAM or CPU stress we have.
+		*/
+    opt.mob = opt.mob || parseFloat((opt.env || "").MOB) || 999999; // should be based on ulimit, some clouds as low as 10K.
+
+    // handle rebalancing a mob of peers:
+    root.on("hi", function (peer) {
+      this.to.next(peer);
+      if (peer.url) {
+        return;
+      } // I am assuming that if we are wanting to make an outbound connection to them, that we don't ever want to drop them unless our actual config settings change.
+      var count = /*Object.keys(opt.peers).length ||*/ mesh.near; // TODO: BUG! This is slow, use .near, but near is buggy right now, fix in DAM.
+      //console.log("are we mobbed?", opt.mob, Object.keys(opt.peers).length, mesh.near);
+      if (opt.mob >= count) {
+        return;
+      } // TODO: Make dynamic based on RAM/CPU also. Or possibly even weird stuff like opt.mob / axe.up length?
+      var peers = {};
+      // Prefer dropping peers with the highest RTT first (worst latency).
+      // Collect inbound peers (no url) that could be redirected, sorted worst-first.
+      var candidates = Object.keys(axe.up).map(function (p) { return axe.up[p]; })
+        .filter(function (p) { return !p.url; })
+        .sort(function (a, b) {
+          var ra = (a.rtt !== undefined && a.rtt > 0) ? a.rtt : Infinity;
+          var rb = (b.rtt !== undefined && b.rtt > 0) ? b.rtt : Infinity;
+          return rb - ra; // highest RTT first
+        });
+      Object.keys(axe.up).forEach(function (p) {
+        p = axe.up[p];
+        p.url && (peers[p.url] = {});
+      });
+      // TODO: BUG!!! Infinite reconnection loop happens if not enough relays, or if some are missing. For instance, :8766 says to connect to :8767 which then says to connect to :8766. To not DDoS when system overload, figure clever way to tell peers to retry later, that network does not have enough capacity?
+      var toDrop = candidates[0] || peer; // drop highest-RTT inbound or the new peer
+      mesh.say({ dam: "mob", mob: count, peers: peers }, toDrop);
+      setTimeout(function () {
+        mesh.bye(toDrop);
+      }, 9); // something with better perf?
+    });
+    root.on("bye", function (peer) {
+      this.to.next(peer);
+      // Clear auto-ping interval when peer disconnects.
+      if (peer._pingIv) { clearInterval(peer._pingIv); delete peer._pingIv; }
+      // Clean up axe.up so the next reconnect from this peer is treated fresh.
+      if (peer.pid && axe.up[peer.pid] === peer) { delete axe.up[peer.pid]; }
+    });
+  }
+
+  {
+    var from = Array.from;
+    Object.maps = function (o) {
+      if (from && o instanceof Map) {
+        return from(o.keys());
+      }
+      if (o instanceof Object.Map) {
+        o = o.s;
+      }
+      return Object.keys(o);
+    };
+    if (from) {
+      return (Object.Map = Map);
+    }
+    (Object.Map = function () {
+      this.s = {};
+    }).prototype = {
+      set: function (k, v) {
+        this.s[k] = v;
+        return this;
+      },
+      get: function (k) {
+        return this.s[k];
+      },
+      delete: function (k) {
+        delete this.s[k];
+      },
+    };
+  }
+}
+}

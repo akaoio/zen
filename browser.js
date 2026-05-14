@@ -1,5 +1,4 @@
 import ZEN from "./zen.min.js";
-import "./lib/axe.min.js";
 import "./lib/webrtc.min.js";
 import "./lib/radisk.min.js";
 import "./lib/radix.min.js";
@@ -13,7 +12,7 @@ export const BROWSER_RUNTIME = {
 	radix: true,
 	opfs: typeof navigator !== "undefined" && !!navigator.storage?.getDirectory,
 	notes: {
-		axe: "AXE is loaded explicitly as an addon on top of core ZEN. It is not built into `zen.min.js`.",
+		axe: "AXE is now built into `zen.min.js` core bundle — no separate import needed.",
 	},
 };
 
