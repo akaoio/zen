@@ -266,6 +266,8 @@ mirrorChain(ZEN.prototype, graph.chain);
 
 ZEN.Buffer = shim.Buffer;
 ZEN.random = shim.random;
+ZEN.TextEncoder = shim.TextEncoder;
+ZEN.TextDecoder = shim.TextDecoder;
 ZEN.keyid = keyid;
 ZEN.graph = graph;
 ZEN.security = security;
