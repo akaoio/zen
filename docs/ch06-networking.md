@@ -154,12 +154,13 @@ Clients connect with:
 const zen = new ZEN({ peers: ["ws://localhost:8420/zen"] });
 ```
 
-For a production relay with SSL, logging, and auto-restart, use the included `relay.js` at the project root:
+For a production relay with SSL, logging, and auto-restart, use `script/server.js`:
 
 ```bash
-node relay.js
-# or via systemd / PM2
-npm start        # node --prof relay.js (V8 profiling enabled)
+node script/server.js
+# or via npm
+npm start          # node script/server.js
+npm run start:prof # node --prof script/server.js (V8 profiling)
 ```
 
 See `script/install.sh` for full production deployment (XDG paths, systemd service, SSL setup).

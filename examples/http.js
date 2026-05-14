@@ -1,5 +1,5 @@
 // Example: minimal relay server
-// For production use, see relay.js at the project root.
+// For production use, see script/server.js at the project root.
 import ZEN from "../index.js";
 import http from "http";
 import { fileURLToPath } from "node:url";
