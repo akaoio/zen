@@ -549,11 +549,6 @@ function Mesh(root) {
     var effectiveNoRec = passedNoRec || peer._noReconnect;
     peer.met && --mesh.near;
     delete peer.met;
-    // Log which peer dropped (helps diagnose intermittent disconnect)
-    if (peer.url || peer.pub) {
-      var byeStack = new Error().stack.split('\n').slice(1,4).join(' | ').replace(/\s+/g,' ');
-      console.log('[BYE] url=' + (peer.url||'inbound') + ' pub=' + (peer.pub||'?').slice(0,8) + ' noRec=' + !!effectiveNoRec + ' from=' + byeStack);
-    }
     // Save wire reference before nulling — root.on("bye") listener uses it to close the TCP connection.
     // We null peer.wire first so mesh.route()/say() skip this peer while it's being torn down.
     peer._preByeWire = peer.wire;

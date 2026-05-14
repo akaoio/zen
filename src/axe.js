@@ -546,8 +546,6 @@ function start(root) {
         // Copying url caused axe.stay to save inbound URLs (incl. self-URL),
         // which then created outbound self-connections on next startup.
         drop._noReconnect = true; // prevent reconnect cycle on dropped peer's wire.onclose
-        var dropIp = drop.wire && drop.wire._socket && drop.wire._socket.remoteAddress || (drop.wire && drop.wire.url) || '?';
-        console.log('[AXE-CONFLICT] opt.pid=' + opt.pid.slice(0,8) + ' peer.pid=' + peer.pid.slice(0,8) + ' drop.url=' + (drop.url||'inbound') + ' keep.url=' + (keep.url||'inbound') + ' p.url=' + (p.url||'none') + ' peer.url=' + (peer.url||'none') + ' drop.remoteIp=' + dropIp);
         mesh.bye(drop);
         axe.up[keep.pid] = keep;
         // If the kept peer is an outbound and has no ping interval yet

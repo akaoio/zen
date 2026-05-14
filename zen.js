@@ -8087,11 +8087,6 @@ defmod('./src/mesh.js', function(module, exp){
       var effectiveNoRec = passedNoRec || peer._noReconnect;
       peer.met && --mesh.near;
       delete peer.met;
-      // Log which peer dropped (helps diagnose intermittent disconnect)
-      if (peer.url || peer.pub) {
-        var byeStack = new Error().stack.split('\n').slice(1,4).join(' | ').replace(/\s+/g,' ');
-        console.log('[BYE] url=' + (peer.url||'inbound') + ' pub=' + (peer.pub||'?').slice(0,8) + ' noRec=' + !!effectiveNoRec + ' from=' + byeStack);
-      }
       // Save wire reference before nulling — root.on("bye") listener uses it to close the TCP connection.
       // We null peer.wire first so mesh.route()/say() skip this peer while it's being torn down.
       peer._preByeWire = peer.wire;
@@ -8402,10 +8397,8 @@ defmod('./src/websocket.js', function(module, exp){
         }
         var url = peer.url.replace(/^http/, "ws");
         peer._isOutbound = true;
-        console.log('[WS-OPEN] new WS to:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, '_noReconnect:', !!peer._noReconnect);
         var wire = (peer.wire = new opt.WebSocket(url));
         wire.onclose = function () {
-          console.log('[WS-CLOSE] WS closed:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, 'duration:', peer._openAt ? (Date.now()-peer._openAt)+'ms' : 'unknown');
           // Stop keepalive ping for this wire.
           clearInterval(peer._keepalive);
           peer._keepalive = null;
@@ -9591,8 +9584,6 @@ defmod('./src/axe.js', function(module, exp){
           // Copying url caused axe.stay to save inbound URLs (incl. self-URL),
           // which then created outbound self-connections on next startup.
           drop._noReconnect = true; // prevent reconnect cycle on dropped peer's wire.onclose
-          var dropIp = drop.wire && drop.wire._socket && drop.wire._socket.remoteAddress || (drop.wire && drop.wire.url) || '?';
-          console.log('[AXE-CONFLICT] opt.pid=' + opt.pid.slice(0,8) + ' peer.pid=' + peer.pid.slice(0,8) + ' drop.url=' + (drop.url||'inbound') + ' keep.url=' + (keep.url||'inbound') + ' p.url=' + (p.url||'none') + ' peer.url=' + (peer.url||'none') + ' drop.remoteIp=' + dropIp);
           mesh.bye(drop);
           axe.up[keep.pid] = keep;
           // If the kept peer is an outbound and has no ping interval yet

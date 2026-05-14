@@ -54,10 +54,8 @@ Zen.on("opt", function (root) {
       }
       var url = peer.url.replace(/^http/, "ws");
       peer._isOutbound = true;
-      console.log('[WS-OPEN] new WS to:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, '_noReconnect:', !!peer._noReconnect);
       var wire = (peer.wire = new opt.WebSocket(url));
       wire.onclose = function () {
-        console.log('[WS-CLOSE] WS closed:', peer.url, 'met:', !!peer.met, '_axeGuess:', peer._axeGuess||0, '_hiGuess:', peer._hiGuess||0, 'duration:', peer._openAt ? (Date.now()-peer._openAt)+'ms' : 'unknown');
         // Stop keepalive ping for this wire.
         clearInterval(peer._keepalive);
         peer._keepalive = null;
