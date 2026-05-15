@@ -130,10 +130,7 @@ function Mesh(root) {
     if ((tmp = dup_check(id))) {
       return;
     }
-    // DAM logic:
-    if (!(hash = msg["##"]) && false && u !== msg.put) {
-      /*hash = msg['##'] = Type.obj.hash(msg.put)*/
-    } // disable hashing for now // TODO: impose warning/penalty instead (?)
+    // DAM logic: dedup by content hash for pre-hashed messages (## set by sender).
     if (
       hash &&
       (tmp = msg["@"] || (msg.get && id)) &&

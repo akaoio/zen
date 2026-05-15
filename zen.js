@@ -839,8 +839,8 @@ defmod('./src/root.js', function(module, exp){
         S = +new Date();
       courtesyTime = courtesyTime || S;
       if (put["#"] && put["."]) {
-        /*root && root.on('put', msg);*/ return;
-      } // TODO: BUG! This needs to call HAM instead.
+        return; // leaf-format message emitted by ham() — already processed; map.js handles graph write.
+      }
       DBG && (DBG.p = S);
       ctx["#"] = msg["#"];
       ctx.msg = msg;
@@ -7703,10 +7703,7 @@ defmod('./src/mesh.js', function(module, exp){
       if ((tmp = dup_check(id))) {
         return;
       }
-      // DAM logic:
-      if (!(hash = msg["##"]) && false && u !== msg.put) {
-        /*hash = msg['##'] = Type.obj.hash(msg.put)*/
-      } // disable hashing for now // TODO: impose warning/penalty instead (?)
+      // DAM logic: dedup by content hash for pre-hashed messages (## set by sender).
       if (
         hash &&
         (tmp = msg["@"] || (msg.get && id)) &&
