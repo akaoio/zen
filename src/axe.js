@@ -536,7 +536,31 @@ function start(root) {
       }
       axe.up[peer.pid] = peer;
       if (!peer.url) {
-        // Inbounds stored for conflict detection only — skip axe.stay and ping.
+        // Inbound client (browser or inbound relay) — skip axe.stay and ping.
+        // Send PEX so the new client discovers relay URLs and existing browser pids for WebRTC.
+        if (peer.wire) {
+          var pexPeers = [], pexBpids = [];
+          Object.maps(axe.up).forEach(function (pid) {
+            var p = axe.up[pid];
+            if (!p || p === peer || !p.wire) return;
+            if (p.url) pexPeers.push(p.url);
+            else if (p.pid) pexBpids.push(p.pid);
+          });
+          if (pexPeers.length || pexBpids.length) {
+            var pexMsg = { dam: "pex" };
+            if (pexPeers.length) pexMsg.peers = pexPeers;
+            if (pexBpids.length) pexMsg.bpids = pexBpids;
+            mesh.say(pexMsg, peer);
+          }
+          // Notify existing inbound clients about the new peer's pid so they can initiate WebRTC.
+          if (peer.pid) {
+            Object.maps(axe.up).forEach(function (pid) {
+              var p = axe.up[pid];
+              if (!p || p === peer || !p.wire || p.url) return;
+              mesh.say({ dam: "pex", bpids: [peer.pid] }, p);
+            });
+          }
+        }
         return;
       }
       if (axe.stay) {
