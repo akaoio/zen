@@ -305,7 +305,7 @@ EOF
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
 cmd="${1:-help}"
-shift || true
+if [ "$#" -ge 1 ]; then shift; fi
 case "$cmd" in
     status)              cmd_status "$@" ;;
     start)               cmd_start "$@" ;;

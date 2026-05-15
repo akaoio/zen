@@ -9117,7 +9117,6 @@ defmod('./src/axe.js', function(module, exp){
         mesh.hi({ id: url, url: url, retry: 9 });
         lssv([url]);
         bcast({ type: "peer", url: url });
-        try { bscan(new URL(url).hostname); } catch {}
       }
 
       // ── WebSocket scan: probe sibling domains (WS bypasses CORS) ─────────
@@ -9232,8 +9231,26 @@ defmod('./src/axe.js', function(module, exp){
       var parg = ((loc.search || "").split("peers=")[1] || "").split("&")[0];
       if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adpbr(u); });
 
-      // 5. WebSocket scan from current hostname
-      if (loc.hostname) bscan(loc.hostname);
+      // 5. Fetch peers from same-origin /status — silent, no console errors
+      // (replaces blind WebSocket scan that caused net::ERR_CONNECTION_REFUSED noise)
+      try {
+        var _o = loc.origin || (loc.protocol + "//" + loc.host);
+        var _ac5 = w.AbortController ? new w.AbortController() : null;
+        var _sto5 = _ac5 ? setTimeout(function() { _ac5.abort(); }, 3000) : null;
+        fetch(_o + "/status", _ac5 ? { signal: _ac5.signal } : {})
+          .then(function(r) { if (_sto5) clearTimeout(_sto5); return r.ok ? r.text() : null; })
+          .then(function(str) {
+            if (!str) return;
+            return Zen.recover(str).then(function(pub) {
+              return Zen.verify(str, pub);
+            }).then(function(data) {
+              if (!data) return;
+              var st = typeof data === "string" ? JSON.parse(data) : data;
+              if (st && Array.isArray(st.peers)) st.peers.forEach(adpbr);
+            });
+          })
+          .catch(function() { if (_sto5) clearTimeout(_sto5); });
+      } catch {}
 
       // 6. volunteer DHT — last resort, only if still not connected after 5s
       setTimeout(function() {
