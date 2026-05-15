@@ -1,5 +1,3 @@
-import { mkpat, candidateHosts } from "./scan.js";
-
 var _axeInit = false; // guard against double-registration
 
 export default function initAXE(ZEN) {
@@ -71,7 +69,6 @@ function start(root) {
 
     // ── add peer: connect + save + broadcast + expand scan ────────────────
     axe.fall = {};
-    var scpat = {};
     function adpbr(url) {
       if (!url || !/^wss?:\/\//.test(url)) return;
       if (axe.fall[url]) return;
@@ -79,43 +76,6 @@ function start(root) {
       mesh.hi({ id: url, url: url, retry: 9 });
       lssv([url]);
       bcast({ type: "peer", url: url });
-    }
-
-    // ── WebSocket scan: probe sibling domains (WS bypasses CORS) ─────────
-    var BCONC = 5, BMIDX = 100, BMFND = 10;
-    function bscan(host) {
-      var pat = mkpat(host || "");
-      var hosts;
-      if (!pat) return;
-      var key = pat.prefix + "*" + pat.tail + pat.suffix;
-      if (scpat[key]) return;
-      scpat[key] = 1;
-      hosts = candidateHosts(pat, { maxIndex: BMIDX });
-      var port  = loc.port || (loc.protocol === "https:" ? "443" : "8420");
-      var proto = loc.protocol === "https:" ? "wss" : "ws";
-      var fnd = 0, cur = 0, fly = 0;
-      function nxt() {
-        while (fly < BCONC && cur < hosts.length && fnd < BMFND) {
-          var url = proto + "://" + hosts[cur++] + ":" + port + "/zen";
-          if (axe.fall[url] || peers[url]) continue;
-          fly++;
-          (function(u) {
-            var done = 0, ws;
-            try { ws = new (w.WebSocket || WebSocket)(u); } catch { fly--; nxt(); return; }
-            ws.onopen = function() {
-              ws.onerror = ws.onclose = null;
-              ws.close();
-              fly--; fnd++;
-              adpbr(u); nxt();
-            };
-            ws.onerror = ws.onclose = function() {
-              if (done++) return;
-              fly--; nxt();
-            };
-          }(url));
-        }
-      }
-      nxt();
     }
 
     // ── PEX handler: receive peer list from relay ─────────────────────────
@@ -515,10 +475,6 @@ function start(root) {
   }
   var state_ify = Zen.state.ify,
     state_is = Zen.state.is;
-
-  function relayUp(msg) {
-    mesh.say(msg, axe.up);
-  }
 
   {
     // THIS IS THE UP MODULE;
