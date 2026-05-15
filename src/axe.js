@@ -723,8 +723,22 @@ function start(root) {
     });
     root.on("bye", function (peer) {
       this.to.next(peer);
-      // Clear auto-ping interval when peer disconnects.
+      // Clear timers/batches retained by this peer after disconnect.
       if (peer._pingIv) { clearInterval(peer._pingIv); delete peer._pingIv; }
+      if (peer.to) { clearTimeout(peer.to); peer.to = null; }
+      if (peer.defer) { clearTimeout(peer.defer); peer.defer = null; }
+      peer.next = peer.put = null;
+      // Prune dead peer references from per-soul routing tables.
+      if (peer.sub) {
+        Object.maps(peer.sub).forEach(function (soul) {
+          var node = (root.next || "")[soul];
+          var ref = (node && ((node.$ || "")._ || node._)) || "";
+          var route = ref && ref.route;
+          route && route.delete && route.delete(peer.id);
+          peer.sub.delete && peer.sub.delete(soul);
+        });
+        peer.sub = null;
+      }
       // Clean up axe.up so the next reconnect from this peer is treated fresh.
       if (peer.pid && axe.up[peer.pid] === peer) { delete axe.up[peer.pid]; }
     });

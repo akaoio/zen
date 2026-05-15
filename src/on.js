@@ -16,7 +16,7 @@ Zen.chain.on = function (tag, arg, eas, as) {
     }
     act = cat.on(tag, arg, eas || cat, as);
     if (eas && eas.$) {
-      (eas.subs || (eas.subs = [])).push(act);
+      trackSub(eas, act);
     }
     return zen;
   }
@@ -167,6 +167,23 @@ Zen.chain.off = function () {
     return;
   }
   at.ack = 0; // so can resubscribe.
+  clearTimers(at.one);
+  if ((tmp = at.any)) {
+    Object.keys(tmp).forEach(function (id) {
+      tmp[id] && tmp[id].off && tmp[id].off();
+    });
+    delete at.any;
+  }
+  if ((tmp = at.subs)) {
+    at.subs = [];
+    tmp.slice().forEach(function (sub) {
+      sub && sub.off && sub.off();
+    });
+  }
+  if ((tmp = at.jam)) {
+    delete at.jam;
+    tmp.length = 0;
+  }
   if ((tmp = cat.next)) {
     if (tmp[at.get]) {
       delete tmp[at.get];
@@ -204,6 +221,24 @@ Zen.chain.off = function () {
   at.on("off", {});
   return zen;
 };
+function trackSub(eas, act, subs, off) {
+  subs = eas.subs || (eas.subs = []);
+  subs.push(act);
+  off = act.off;
+  act.off = function () {
+    var i = subs.indexOf(act);
+    if (i >= 0) {
+      subs.splice(i, 1);
+    }
+    return off && off.call(this);
+  };
+}
+function clearTimers(map) {
+  Object.keys(map || {}).forEach(function (id) {
+    clearTimeout(map[id]);
+    delete map[id];
+  });
+}
 var empty = {},
   noop = function () {},
   u;

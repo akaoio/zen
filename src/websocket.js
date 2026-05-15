@@ -83,6 +83,8 @@ Zen.on("opt", function (root) {
         reconnect(peer);
       };
       wire.onopen = function () {
+        clearTimeout(peer.defer);
+        peer.defer = null;
         peer._openAt = +new Date();
         peer._axeGuess = 0; // reset on successful open — prevent spurious tombstoning
         peer._hiGuess = 0;
@@ -115,27 +117,42 @@ Zen.on("opt", function (root) {
   }, 1); // it can take a while to open a socket, so maybe no longer lazy load for perf reasons?
 
   var wait = 2 * 999;
-  function reconnect(peer) {
-    clearTimeout(peer.defer);
-    if (!opt.peers[peer.url] || peer._noReconnect) {
-      return;
+  function canReconnect(peer) {
+    if (!peer || !peer.url || !opt.peers[peer.url] || peer._noReconnect) {
+      return false;
     }
     if (opt.tomb) {
-      var _ru = peer.url || '';
-      var _rn = _ru.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      var _ru = peer.url || "";
+      var _rn = _ru.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
       if (opt.tomb.has(_ru) || opt.tomb.has(_rn) ||
-          opt.tomb.has(_ru.replace(/^https?/, 'ws'))) { return; }
+          opt.tomb.has(_ru.replace(/^https?/, "ws"))) {
+        return false;
+      }
     }
     if (doc && peer.retry <= 0) {
+      return false;
+    }
+    return true;
+  }
+  function reconnect(peer) {
+    clearTimeout(peer.defer);
+    peer.defer = null;
+    if (!canReconnect(peer)) {
       return;
     }
     peer.retry =
       (peer.retry || opt.retry + 1 || 60) -
       (-peer.tried + (peer.tried = +new Date()) < wait * 4 ? 1 : 0);
     peer.defer = setTimeout(function to() {
-      if (doc && doc.hidden) {
-        return setTimeout(to, wait);
+      if (!canReconnect(peer)) {
+        peer.defer = null;
+        return;
       }
+      if (doc && doc.hidden) {
+        peer.defer = setTimeout(to, wait);
+        return;
+      }
+      peer.defer = null;
       open(peer);
     }, wait);
   }

@@ -7119,7 +7119,7 @@ defmod('./src/on.js', function(module, exp){
       }
       act = cat.on(tag, arg, eas || cat, as);
       if (eas && eas.$) {
-        (eas.subs || (eas.subs = [])).push(act);
+        trackSub(eas, act);
       }
       return zen;
     }
@@ -7270,6 +7270,23 @@ defmod('./src/on.js', function(module, exp){
       return;
     }
     at.ack = 0; // so can resubscribe.
+    clearTimers(at.one);
+    if ((tmp = at.any)) {
+      Object.keys(tmp).forEach(function (id) {
+        tmp[id] && tmp[id].off && tmp[id].off();
+      });
+      delete at.any;
+    }
+    if ((tmp = at.subs)) {
+      at.subs = [];
+      tmp.slice().forEach(function (sub) {
+        sub && sub.off && sub.off();
+      });
+    }
+    if ((tmp = at.jam)) {
+      delete at.jam;
+      tmp.length = 0;
+    }
     if ((tmp = cat.next)) {
       if (tmp[at.get]) {
         delete tmp[at.get];
@@ -7307,6 +7324,24 @@ defmod('./src/on.js', function(module, exp){
     at.on("off", {});
     return zen;
   };
+  function trackSub(eas, act, subs, off) {
+    subs = eas.subs || (eas.subs = []);
+    subs.push(act);
+    off = act.off;
+    act.off = function () {
+      var i = subs.indexOf(act);
+      if (i >= 0) {
+        subs.splice(i, 1);
+      }
+      return off && off.call(this);
+    };
+  }
+  function clearTimers(map) {
+    Object.keys(map || {}).forEach(function (id) {
+      clearTimeout(map[id]);
+      delete map[id];
+    });
+  }
   var empty = {},
     noop = function () {},
     u;
@@ -8426,6 +8461,8 @@ defmod('./src/websocket.js', function(module, exp){
           reconnect(peer);
         };
         wire.onopen = function () {
+          clearTimeout(peer.defer);
+          peer.defer = null;
           peer._openAt = +new Date();
           peer._axeGuess = 0; // reset on successful open — prevent spurious tombstoning
           peer._hiGuess = 0;
@@ -8458,27 +8495,42 @@ defmod('./src/websocket.js', function(module, exp){
     }, 1); // it can take a while to open a socket, so maybe no longer lazy load for perf reasons?
 
     var wait = 2 * 999;
-    function reconnect(peer) {
-      clearTimeout(peer.defer);
-      if (!opt.peers[peer.url] || peer._noReconnect) {
-        return;
+    function canReconnect(peer) {
+      if (!peer || !peer.url || !opt.peers[peer.url] || peer._noReconnect) {
+        return false;
       }
       if (opt.tomb) {
-        var _ru = peer.url || '';
-        var _rn = _ru.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+        var _ru = peer.url || "";
+        var _rn = _ru.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
         if (opt.tomb.has(_ru) || opt.tomb.has(_rn) ||
-            opt.tomb.has(_ru.replace(/^https?/, 'ws'))) { return; }
+            opt.tomb.has(_ru.replace(/^https?/, "ws"))) {
+          return false;
+        }
       }
       if (doc && peer.retry <= 0) {
+        return false;
+      }
+      return true;
+    }
+    function reconnect(peer) {
+      clearTimeout(peer.defer);
+      peer.defer = null;
+      if (!canReconnect(peer)) {
         return;
       }
       peer.retry =
         (peer.retry || opt.retry + 1 || 60) -
         (-peer.tried + (peer.tried = +new Date()) < wait * 4 ? 1 : 0);
       peer.defer = setTimeout(function to() {
-        if (doc && doc.hidden) {
-          return setTimeout(to, wait);
+        if (!canReconnect(peer)) {
+          peer.defer = null;
+          return;
         }
+        if (doc && doc.hidden) {
+          peer.defer = setTimeout(to, wait);
+          return;
+        }
+        peer.defer = null;
         open(peer);
       }, wait);
     }
@@ -9761,8 +9813,22 @@ defmod('./src/axe.js', function(module, exp){
       });
       root.on("bye", function (peer) {
         this.to.next(peer);
-        // Clear auto-ping interval when peer disconnects.
+        // Clear timers/batches retained by this peer after disconnect.
         if (peer._pingIv) { clearInterval(peer._pingIv); delete peer._pingIv; }
+        if (peer.to) { clearTimeout(peer.to); peer.to = null; }
+        if (peer.defer) { clearTimeout(peer.defer); peer.defer = null; }
+        peer.next = peer.put = null;
+        // Prune dead peer references from per-soul routing tables.
+        if (peer.sub) {
+          Object.maps(peer.sub).forEach(function (soul) {
+            var node = (root.next || "")[soul];
+            var ref = (node && ((node.$ || "")._ || node._)) || "";
+            var route = ref && ref.route;
+            route && route.delete && route.delete(peer.id);
+            peer.sub.delete && peer.sub.delete(soul);
+          });
+          peer.sub = null;
+        }
         // Clean up axe.up so the next reconnect from this peer is treated fresh.
         if (peer.pid && axe.up[peer.pid] === peer) { delete axe.up[peer.pid]; }
       });
