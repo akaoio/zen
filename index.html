@@ -598,9 +598,9 @@
           </div>
           <div class="runtime-grid" id="runtime-grid"></div>
           <div class="callout">
-              <strong>Important: AXE is not baked into `zen.min.js`.</strong>
+              <strong>AXE is built into `zen.min.js`.</strong>
             <p>
-              In browser usage, AXE is an add-on module, not part of the core bundle. This page now loads it explicitly through <code>browser.js</code>. You still need a real <code>/zen</code> relay endpoint if you want to see relay-assisted clustering behavior rather than local-only startup.
+              Since the AXE peer-mesh migration, AXE is part of the core bundle — no separate import needed. WebRTC, Radisk, Radix, and OPFS remain optional add-on modules. You still need a real <code>/zen</code> relay endpoint to see relay-assisted clustering behavior rather than local-only startup.
             </p>
           </div>
         </aside>
@@ -781,13 +781,13 @@
           <article class="faq-item">
             <h3>Is AXE already inside `zen.min.js`?</h3>
             <p class="faq-answer">
-              No. Core ZEN and AXE are separate. You enable AXE by adding the AXE module on top of ZEN. This page does exactly that through `browser.js`, so the browser bundle shows the intended addon pattern explicitly.
+              Yes. AXE peer-mesh is built into the `zen.min.js` core bundle — no separate import needed. Just <code>new ZEN({ peers: [...] })</code> and AXE is automatically active.
             </p>
           </article>
           <article class="faq-item">
             <h3>Then how do I use AXE in browser code?</h3>
             <p class="faq-answer">
-              Pattern: import ZEN, import `lib/axe.js` or `lib/axe.min.js`, then construct `new ZEN({ peers, axe: true })` when you want AXE clustering behavior. To see real peering rather than local-only startup, point `peers` at an actual relay endpoint that serves `/zen` and `/peers`.
+              Import `zen.min.js` and instantiate: <code>new ZEN({ peers: ["wss://your-relay/zen"] })</code>. AXE clustering is on by default. To see real peering, point <code>peers</code> at an actual relay endpoint that serves <code>/zen</code>.
             </p>
           </article>
           <article class="faq-item">
@@ -812,38 +812,46 @@
     </div>
 
     <script type="module">
-      import ZEN, { BROWSER_RUNTIME } from "/browser.js";
+      import ZEN from "/zen.min.js";
+      import "/lib/webrtc.min.js";
+      import "/lib/radisk.min.js";
+      import "/lib/radix.min.js";
+      import "/lib/opfs.min.js";
+
+      globalThis.ZEN = ZEN;
+
+      const OPFS_OK = typeof navigator !== "undefined" && !!navigator.storage?.getDirectory;
 
       const runtimeCards = [
         {
           name: "ZEN Core",
-          status: BROWSER_RUNTIME.core,
+          status: true,
           text: "Graph, crypto, PEN compiler, realtime chain API.",
         },
         {
           name: "AXE",
-          status: BROWSER_RUNTIME.axe,
-          text: BROWSER_RUNTIME.notes.axe,
+          status: true,
+          text: "AXE peer mesh is built into `zen.min.js` — no separate import needed.",
         },
         {
           name: "WebRTC",
-          status: BROWSER_RUNTIME.webrtc,
+          status: true,
           text: "Browser-to-browser transport addon for peer mesh expansion.",
         },
         {
           name: "Radisk + Radix",
-          status: BROWSER_RUNTIME.radisk && BROWSER_RUNTIME.radix,
+          status: true,
           text: "Persistence/indexing internals available in this browser runtime bundle.",
         },
         {
           name: "OPFS",
-          status: BROWSER_RUNTIME.opfs,
+          status: OPFS_OK,
           text: "Origin Private File System support detected in this browser.",
         },
         {
           name: "Browser globals",
-          status: !!globalThis.ZEN,
-          text: "`browser.js` also exposes `globalThis.ZEN` for quick experiments.",
+          status: true,
+          text: "`globalThis.ZEN` is available for quick console experiments.",
         },
       ];
 
@@ -883,7 +891,7 @@
 
       const defaultPeers = "";
       els.peerInput.value = defaultPeers;
-      els.optAxe.disabled = !BROWSER_RUNTIME.axe;
+      els.optAxe.disabled = false;
 
       const state = {
         zen: null,
@@ -943,7 +951,7 @@
 
       function renderInstanceOptions(opt) {
         els.instanceCode.textContent = [
-          'import ZEN from "/browser.js";',
+          'import ZEN from "/zen.min.js";',
           "",
           `const zen = new ZEN(${JSON.stringify(opt, null, 2)});`,
         ].join("\n");
