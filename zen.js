@@ -9049,6 +9049,9 @@ defmod('./src/axe.js', function(module, exp){
       }
       fall(msg); // target not on this relay — broadcast to relay peers
     }
+    // mesh.hear dispatches dam messages directly; mesh.way is only called when dam is absent.
+    // Register rtcway so relay properly routes WebRTC signaling (offer/answer/candidate).
+    mesh.hear["rtc"] = rtcway;
 
     function GET(msg) {
       if (!msg) {
