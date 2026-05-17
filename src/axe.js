@@ -581,6 +581,11 @@ function start(root) {
       }
     };
 
+    // URL normalisation helper: wss→https, ws→http (relay section)
+    var normUrl = function(u) {
+      return u.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+    };
+
     mesh.hear["opt"] = function (msg, peer) {
       if (msg.ok) {
         return;
@@ -597,7 +602,7 @@ function start(root) {
         return;
       } // 99 TEMPORARILY UNTIL BENCHMARKED!
       // Normalize protocol: wss→https, ws→http — avoids dual outbound from axe.stay.
-      var normTmp = tmp.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      var normTmp = normUrl(tmp);
       // Skip self-URL to prevent self-connection loop.
       if (opt.domain) {
         try {
@@ -625,8 +630,8 @@ function start(root) {
           p = (axe.up || "")[p];
           if (p.url) {
             // Normalize protocol: wss→https, ws→http — prevents dual outbound on restore.
-            var normUrl = p.url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
-            urls[normUrl] = {};
+            var normP = normUrl(p.url);
+            urls[normP] = {};
           }
         });
         (tmp.axe = tmp.axe || {}).up = urls;
