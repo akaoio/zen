@@ -691,7 +691,6 @@ function Mesh(root) {
     for (var k in peers) {
       var p = peers[k];
       if (p && p.pub === msg.to && p.wire) {
-        if (p.udpSay) { try { p.udpSay(fwd); return; } catch(e) {} }
         mesh.say(fwd, p); return;
       }
     }
@@ -702,7 +701,6 @@ function Mesh(root) {
     for (var fk in peers) {
       var fpeer = peers[fk];
       if (fpeer && fpeer.pub && fpeer.wire && fpeer !== peer) {
-        if (fpeer.udpSay) { try { fpeer.udpSay(fwd); continue; } catch(e) {} }
         mesh.say(fwd, fpeer);
       }
     }

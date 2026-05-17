@@ -274,8 +274,12 @@ defmod('./src/shim.js', function(module, exp){
     (globalScope.crypto || empty).subtle ||
     (globalScope.crypto || empty).webkitSubtle;
   api.random = function (len) {
+    // Access lazily: on Node.js v18 the global crypto property may not be
+    // populated yet when this module first initialises (static ESM evaluation),
+    // so fall back to reading it from globalScope at call time.
+    const c = api.crypto || globalScope.crypto;
     return api.Buffer.from(
-      api.crypto.getRandomValues(new Uint8Array(api.Buffer.alloc(len))),
+      c.getRandomValues(new Uint8Array(api.Buffer.alloc(len))),
     );
   };
 
@@ -8264,7 +8268,6 @@ defmod('./src/mesh.js', function(module, exp){
       for (var k in peers) {
         var p = peers[k];
         if (p && p.pub === msg.to && p.wire) {
-          if (p.udpSay) { try { p.udpSay(fwd); return; } catch(e) {} }
           mesh.say(fwd, p); return;
         }
       }
@@ -8275,7 +8278,6 @@ defmod('./src/mesh.js', function(module, exp){
       for (var fk in peers) {
         var fpeer = peers[fk];
         if (fpeer && fpeer.pub && fpeer.wire && fpeer !== peer) {
-          if (fpeer.udpSay) { try { fpeer.udpSay(fwd); continue; } catch(e) {} }
           mesh.say(fwd, fpeer);
         }
       }
