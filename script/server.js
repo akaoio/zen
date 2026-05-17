@@ -24,6 +24,7 @@ import { attach as attachMcp } from "../lib/mcp/server.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const PEERSF = path.join(xdg.config(), "peers.json");
 const main = !!process.argv[1] && __filename === process.argv[1];
 
 const nver = process.versions.node.split(".").map(Number);
@@ -331,10 +332,40 @@ if (main && cluster.isPrimary) {
     const now = Date.now();
     if (entry) {
       entry.seen = now;
-      if (ok) entry.lastOk = now;
+      if (ok) { entry.lastOk = now; scheduleSavePeers(); }
     } else {
       kprs.set(url, { seen: now, lastOk: ok ? now : 0 });
+      if (ok) scheduleSavePeers();
     }
+  }
+
+  // ── Peer list persistence ─────────────────────────────────────────────────
+  // Saves confirmed PEX-discovered peers to disk so they survive relay restarts.
+  // Only peers with lastOk > 0 (at least one confirmed connection) are written.
+  // surl/surl6 may be null during early startup — that is fine; the null check
+  // simply skips excluding self until the domain is resolved.
+  let _savePeersTmr = null;
+  function scheduleSavePeers() {
+    if (_savePeersTmr) return;
+    _savePeersTmr = setTimeout(() => { _savePeersTmr = null; savePeers(); }, 5000);
+  }
+  function savePeers() {
+    try {
+      xdg.ensure(xdg.config());
+      const list = Array.from(kprs.entries())
+        .filter(([url, e]) =>
+          e.lastOk > 0 &&
+          /^wss?:\/\//.test(url) &&
+          url !== surl && url !== surl6 &&
+          !kprsProtect.has(url) // exclude BOOT peers — they come from env var
+        )
+        .map(([url, e]) => ({ url, lastOk: e.lastOk }))
+        .sort((a, b) => b.lastOk - a.lastOk)
+        .slice(0, 200);
+      const tmp = PEERSF + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify({ peers: list, savedAt: Date.now() }, null, 2));
+      fs.renameSync(tmp, PEERSF);
+    } catch {}
   }
 
   function kprsEvict() {
@@ -835,6 +866,21 @@ if (main && cluster.isPrimary) {
       try { pmsh.hi(peerObj); } catch {}
     });
 
+    // Load previously discovered peers from disk and reconnect them.
+    // This runs after BOOT peers are wired so adp() MUPS check is accurate.
+    try {
+      const raw = fs.readFileSync(PEERSF, "utf8");
+      const data = JSON.parse(raw);
+      const now = Date.now();
+      const MAX_AGE = 7 * 24 * 60 * 60 * 1000; // discard peers unseen for 7 days
+      (data.peers || []).forEach(p => {
+        if (typeof p.url === "string" && p.lastOk > 0 && (now - p.lastOk) < MAX_AGE) {
+          adp(p.url);
+        }
+      });
+      console.log(`Loaded ${(data.peers || []).length} persisted peers from disk`);
+    } catch {}
+
     // Handle incoming peer lists from other nodes
     mesh.hear["pex"] = function (msg, _peer) {
       if (!Array.isArray(msg.peers)) return;
@@ -959,6 +1005,23 @@ if (main && cluster.isPrimary) {
       console.log('[BOOT-WATCHDOG] Reconnecting lost BOOT peer:', norm);
       try { pmsh.hi({ id: norm, url: norm, retry: 9 }); } catch {}
     }
+
+    // Also reconnect confirmed PEX-discovered peers that dropped, if under capacity.
+    // Less aggressive than BOOT: respect tombstones, retry: 3 (not 9).
+    const ups = Object.keys(axeUp).length;
+    if (ups < MUPS) {
+      for (const [url, entry] of kprs) {
+        if (!entry.lastOk) continue;             // never had a confirmed connection
+        if (kprsProtect.has(url)) continue;      // BOOT — handled above
+        if (!/^https?:\/\//.test(url)) continue; // normalised form only
+        if (ups >= MUPS) break;
+        const tombs = opt._tombUrls;
+        if (tombs && (tombs.has(url) || tombs.has(url.replace(/^https?:\/\//, 'wss://')))) continue;
+        const p = opt.peers && opt.peers[url];
+        if (p && p.wire) continue;               // already connected
+        try { pmsh.hi({ id: url, url: url, retry: 3 }); } catch {}
+      }
+    }
   }, 30 * 1000).unref();
 
   // Reactive rescan: when a peer disconnects, rescan after a 30s debounce
@@ -987,6 +1050,15 @@ if (main && cluster.isPrimary) {
     }, 30000);
     btmr.unref();
   });
+
+  // Save peer list on graceful shutdown so the next restart can reconnect quickly.
+  const _gracefulExit = (sig) => {
+    savePeers();
+    process.exit(sig === 'SIGINT' ? 130 : 0);
+  };
+  process.on('SIGTERM', () => _gracefulExit('SIGTERM'));
+  process.on('SIGINT',  () => _gracefulExit('SIGINT'));
+
   })().catch(err => { console.error("Fatal:", err); process.exit(1); });
 }
 
