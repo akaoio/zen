@@ -160,7 +160,7 @@ async function suiteBasic(zen) {
 }
 
 async function suitePersist(zen) {
-  console.log(`${BOLD}── Suite: persist (write → restart relay → read) ──${RESET}`);
+  console.log(`${BOLD}── Suite: persist (write → restart zen → read) ──${RESET}`);
 
   const soul  = `e2e-persist`;
   const key   = HOST;
@@ -179,14 +179,14 @@ async function suitePersist(zen) {
   await sleep(500);
 
   // 2. Restart relay
-  info("Restarting relay service...");
+  info("Restarting zen service...");
   try {
-    execSync("sudo systemctl restart relay.service", { stdio: "inherit" });
+    execSync("sudo systemctl restart zen.service", { stdio: "inherit" });
     await sleep(3000);   // wait for relay to come back up
-    pass("Relay restarted");
+    pass("Zen restarted");
     results.passed++;
   } catch (e) {
-    warn(`Could not restart relay: ${e.message}`);
+    warn(`Could not restart zen: ${e.message}`);
     warn("Skipping persistence check (no systemctl access)");
     return;
   }
