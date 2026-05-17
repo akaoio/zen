@@ -700,10 +700,10 @@ function Mesh(root) {
     // (e.g. inbound-only peers absent from DHT k-buckets). Flooding with TTL
     // guarantees delivery and dedup (#) prevents true loops.
     for (var fk in peers) {
-      var fp = peers[fk];
-      if (fp && fp.pub && fp.wire && fp !== peer) {
-        if (fp.udpSay) { try { fp.udpSay(fwd); continue; } catch(e) {} }
-        mesh.say(fwd, fp);
+      var fpeer = peers[fk];
+      if (fpeer && fpeer.pub && fpeer.wire && fpeer !== peer) {
+        if (fpeer.udpSay) { try { fpeer.udpSay(fwd); continue; } catch(e) {} }
+        mesh.say(fwd, fpeer);
       }
     }
   };

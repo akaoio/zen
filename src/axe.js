@@ -69,7 +69,7 @@ function start(root) {
 
     // ── add peer: connect + save + broadcast + expand scan ────────────────
     axe.fall = {};
-    function adpbr(url) {
+    function adopt(url) {
       if (!url || !/^wss?:\/\//.test(url)) return;
       if (axe.fall[url]) return;
       axe.fall[url] = { url: url, id: url, retry: 0 };
@@ -81,7 +81,7 @@ function start(root) {
     // ── PEX handler: receive peer list from relay ─────────────────────────
     mesh.hear["pex"] = function(msg) {
       if (!Array.isArray(msg.peers)) return;
-      msg.peers.forEach(adpbr);
+      msg.peers.forEach(adopt);
     };
 
     // ── on connect: fetch /status signed string from relay ─────────────────
@@ -94,9 +94,9 @@ function start(root) {
           .replace(/^ws:\/\//, "http://")
           .replace(/\/zen$/, "");
         var ac = w.AbortController ? new w.AbortController() : null;
-        var sto = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
+        var tofetch = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
         fetch(base + "/status", ac ? { signal: ac.signal } : {})
-          .then(function(r) { clearTimeout(sto); return r.ok ? r.text() : null; })
+          .then(function(r) { clearTimeout(tofetch); return r.ok ? r.text() : null; })
           .then(function(str) {
             if (!str) return;
             return Zen.recover(str).then(function(pub) {
@@ -105,16 +105,16 @@ function start(root) {
               if (!data) return;
               // ZEN.verify auto-parses JSON — data may already be an object
               var status = (typeof data === "string") ? JSON.parse(data) : data;
-              if (status && Array.isArray(status.peers)) status.peers.forEach(adpbr);
+              if (status && Array.isArray(status.peers)) status.peers.forEach(adopt);
             });
           })
-          .catch(function() { clearTimeout(sto); });
+          .catch(function() { clearTimeout(tofetch); });
       } catch {}
     });
 
     // ── BroadcastChannel inbound: peers from other tabs ───────────────────
     if (bc) bc.onmessage = function(e) {
-      if (e && e.data && e.data.type === "peer") adpbr(e.data.url);
+      if (e && e.data && e.data.type === "peer") adopt(e.data.url);
     };
 
     // ── on disconnect: fall back to next known peer ───────────────────────
@@ -139,7 +139,7 @@ function start(root) {
     // ── bootstrap ─────────────────────────────────────────────────────────
 
     // 1. saved peers from previous sessions
-    lsld().forEach(adpbr);
+    lsld().forEach(adopt);
 
     // 2. same-origin relay
     tmp = peers[(id = loc.origin + "/zen")] = peers[id] || {};
@@ -151,7 +151,7 @@ function start(root) {
 
     // 4. ?peers= URL param
     var parg = ((loc.search || "").split("peers=")[1] || "").split("&")[0];
-    if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adpbr(u); });
+    if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adopt(u); });
 
     // 5. Fetch peers from same-origin /status — silent, no console errors
     // (replaces blind WebSocket scan that caused net::ERR_CONNECTION_REFUSED noise)
@@ -168,7 +168,7 @@ function start(root) {
           }).then(function(data) {
             if (!data) return;
             var st = typeof data === "string" ? JSON.parse(data) : data;
-            if (st && Array.isArray(st.peers)) st.peers.forEach(adpbr);
+            if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
           });
         })
         .catch(function() { if (_sto5) clearTimeout(_sto5); });
@@ -183,7 +183,7 @@ function start(root) {
       try {
         fetch(axeUrl)
           .then(function(r) { return r.text(); })
-          .then(function(t) { (t.match(/wss?:\/\/[^\s"'<>]+/g) || []).forEach(adpbr); })
+          .then(function(t) { (t.match(/wss?:\/\/[^\s"'<>]+/g) || []).forEach(adopt); })
           .catch(function() {});
       } catch {}
     }, 5000);
@@ -573,11 +573,11 @@ function start(root) {
       // Repeat every 30s to keep the rolling average fresh.
       if (mesh.ping) {
         mesh.ping(peer);
-        var iv = setInterval(function () {
-          if (!peer.wire) { clearInterval(iv); return; }
+        var pinger = setInterval(function () {
+          if (!peer.wire) { clearInterval(pinger); return; }
           mesh.ping(peer);
         }, 30000);
-        peer._pingIv = iv;
+        peer._pingIv = pinger;
       }
     };
 

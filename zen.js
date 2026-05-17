@@ -8273,10 +8273,10 @@ defmod('./src/mesh.js', function(module, exp){
       // (e.g. inbound-only peers absent from DHT k-buckets). Flooding with TTL
       // guarantees delivery and dedup (#) prevents true loops.
       for (var fk in peers) {
-        var fp = peers[fk];
-        if (fp && fp.pub && fp.wire && fp !== peer) {
-          if (fp.udpSay) { try { fp.udpSay(fwd); continue; } catch(e) {} }
-          mesh.say(fwd, fp);
+        var fpeer = peers[fk];
+        if (fpeer && fpeer.pub && fpeer.wire && fpeer !== peer) {
+          if (fpeer.udpSay) { try { fpeer.udpSay(fwd); continue; } catch(e) {} }
+          mesh.say(fwd, fpeer);
         }
       }
     };
@@ -8895,7 +8895,7 @@ defmod('./src/axe.js', function(module, exp){
 
       // ── add peer: connect + save + broadcast + expand scan ────────────────
       axe.fall = {};
-      function adpbr(url) {
+      function adopt(url) {
         if (!url || !/^wss?:\/\//.test(url)) return;
         if (axe.fall[url]) return;
         axe.fall[url] = { url: url, id: url, retry: 0 };
@@ -8907,7 +8907,7 @@ defmod('./src/axe.js', function(module, exp){
       // ── PEX handler: receive peer list from relay ─────────────────────────
       mesh.hear["pex"] = function(msg) {
         if (!Array.isArray(msg.peers)) return;
-        msg.peers.forEach(adpbr);
+        msg.peers.forEach(adopt);
       };
 
       // ── on connect: fetch /status signed string from relay ─────────────────
@@ -8920,9 +8920,9 @@ defmod('./src/axe.js', function(module, exp){
             .replace(/^ws:\/\//, "http://")
             .replace(/\/zen$/, "");
           var ac = w.AbortController ? new w.AbortController() : null;
-          var sto = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
+          var tofetch = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
           fetch(base + "/status", ac ? { signal: ac.signal } : {})
-            .then(function(r) { clearTimeout(sto); return r.ok ? r.text() : null; })
+            .then(function(r) { clearTimeout(tofetch); return r.ok ? r.text() : null; })
             .then(function(str) {
               if (!str) return;
               return Zen.recover(str).then(function(pub) {
@@ -8931,16 +8931,16 @@ defmod('./src/axe.js', function(module, exp){
                 if (!data) return;
                 // ZEN.verify auto-parses JSON — data may already be an object
                 var status = (typeof data === "string") ? JSON.parse(data) : data;
-                if (status && Array.isArray(status.peers)) status.peers.forEach(adpbr);
+                if (status && Array.isArray(status.peers)) status.peers.forEach(adopt);
               });
             })
-            .catch(function() { clearTimeout(sto); });
+            .catch(function() { clearTimeout(tofetch); });
         } catch {}
       });
 
       // ── BroadcastChannel inbound: peers from other tabs ───────────────────
       if (bc) bc.onmessage = function(e) {
-        if (e && e.data && e.data.type === "peer") adpbr(e.data.url);
+        if (e && e.data && e.data.type === "peer") adopt(e.data.url);
       };
 
       // ── on disconnect: fall back to next known peer ───────────────────────
@@ -8965,7 +8965,7 @@ defmod('./src/axe.js', function(module, exp){
       // ── bootstrap ─────────────────────────────────────────────────────────
 
       // 1. saved peers from previous sessions
-      lsld().forEach(adpbr);
+      lsld().forEach(adopt);
 
       // 2. same-origin relay
       tmp = peers[(id = loc.origin + "/zen")] = peers[id] || {};
@@ -8977,7 +8977,7 @@ defmod('./src/axe.js', function(module, exp){
 
       // 4. ?peers= URL param
       var parg = ((loc.search || "").split("peers=")[1] || "").split("&")[0];
-      if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adpbr(u); });
+      if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adopt(u); });
 
       // 5. Fetch peers from same-origin /status — silent, no console errors
       // (replaces blind WebSocket scan that caused net::ERR_CONNECTION_REFUSED noise)
@@ -8994,7 +8994,7 @@ defmod('./src/axe.js', function(module, exp){
             }).then(function(data) {
               if (!data) return;
               var st = typeof data === "string" ? JSON.parse(data) : data;
-              if (st && Array.isArray(st.peers)) st.peers.forEach(adpbr);
+              if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
             });
           })
           .catch(function() { if (_sto5) clearTimeout(_sto5); });
@@ -9009,7 +9009,7 @@ defmod('./src/axe.js', function(module, exp){
         try {
           fetch(axeUrl)
             .then(function(r) { return r.text(); })
-            .then(function(t) { (t.match(/wss?:\/\/[^\s"'<>]+/g) || []).forEach(adpbr); })
+            .then(function(t) { (t.match(/wss?:\/\/[^\s"'<>]+/g) || []).forEach(adopt); })
             .catch(function() {});
         } catch {}
       }, 5000);
@@ -9399,11 +9399,11 @@ defmod('./src/axe.js', function(module, exp){
         // Repeat every 30s to keep the rolling average fresh.
         if (mesh.ping) {
           mesh.ping(peer);
-          var iv = setInterval(function () {
-            if (!peer.wire) { clearInterval(iv); return; }
+          var pinger = setInterval(function () {
+            if (!peer.wire) { clearInterval(pinger); return; }
             mesh.ping(peer);
           }, 30000);
-          peer._pingIv = iv;
+          peer._pingIv = pinger;
         }
       };
 
