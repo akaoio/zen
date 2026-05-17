@@ -1,7 +1,3 @@
-if (typeof globalThis !== 'undefined' && typeof globalThis.crypto === 'undefined') {
-  try { globalThis.crypto = (await import('node:crypto')).webcrypto; } catch (_) {}
-}
-
 const mods = Object.create(null);
 function defmod(id, fn){ mods[id] = { fn: fn, exports: {}, loaded: false }; }
 function reqmod(id){ var mod = mods[id]; if(!mod){ throw new Error('Missing module: ' + id); } if(!mod.loaded){ mod.loaded = true; mod.fn(mod, mod.exports); } return mod.exports; }
