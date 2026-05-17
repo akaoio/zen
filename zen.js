@@ -1,3 +1,7 @@
+if (typeof globalThis !== 'undefined' && typeof globalThis.crypto === 'undefined') {
+  try { globalThis.crypto = (await import('node:crypto')).webcrypto; } catch (_) {}
+}
+
 const mods = Object.create(null);
 function defmod(id, fn){ mods[id] = { fn: fn, exports: {}, loaded: false }; }
 function reqmod(id){ var mod = mods[id]; if(!mod){ throw new Error('Missing module: ' + id); } if(!mod.loaded){ mod.loaded = true; mod.fn(mod, mod.exports); } return mod.exports; }
@@ -274,10 +278,7 @@ defmod('./src/shim.js', function(module, exp){
     (globalScope.crypto || empty).subtle ||
     (globalScope.crypto || empty).webkitSubtle;
   api.random = function (len) {
-    // Access lazily: on Node.js v18 the global crypto property may not be
-    // populated yet when this module first initialises (static ESM evaluation),
-    // so fall back to reading it from globalScope at call time.
-    const c = api.crypto || globalScope.crypto;
+    var c = api.crypto || globalScope.crypto;
     return api.Buffer.from(
       c.getRandomValues(new Uint8Array(api.Buffer.alloc(len))),
     );
