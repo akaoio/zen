@@ -8755,6 +8755,53 @@ defmod('./src/bootstrap.js', function(module, exp){
   // peers via PEERS env var or opts.peers. No hardcoded defaults.
   const BOOT = [];
 
+  // ── Peer URL normalisation ────────────────────────────────────────────────────
+  // Accepts bare hostname, host:port, or any wss?://…/zen URL.
+  // Returns a canonical wss:// (or ws:// for localhost) URL.
+  function normalizePeerUrl(raw) {
+    if (typeof raw !== "string") return null;
+    raw = raw.trim();
+    if (!raw) return null;
+    if (/^wss?:\/\/|^https?:\/\//.test(raw)) return raw; // already has scheme
+    const colonIdx = raw.lastIndexOf(":");
+    let host, port;
+    if (colonIdx > 0) {
+      host = raw.slice(0, colonIdx);
+      port = raw.slice(colonIdx + 1);
+    } else {
+      host = raw;
+      port = "8420";
+    }
+    if (!host) return null;
+    const isLocal = /^(localhost|127\.|::1)/.test(host);
+    return (isLocal ? "ws" : "wss") + "://" + host + ":" + port + "/zen";
+  }
+
+  // ── Well-known peer list fetch ────────────────────────────────────────────────
+  // Fetches /.well-known/peers.json from a relay URL.
+  // Works in both browser and Node.js 18+ (global fetch).
+  // Returns normalised wss:// URL array, or [] on any error.
+  async function wellKnownBootstrap(relayUrl) {
+    if (typeof fetch === "undefined") return [];
+    try {
+      const base = relayUrl
+        .replace(/^wss:\/\//, "https://")
+        .replace(/^ws:\/\//, "http://")
+        .replace(/\/zen\/?$/, "");
+      const url = base + "/.well-known/peers.json";
+      const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
+      const res = await fetch(url, ctrl ? { signal: ctrl.signal } : {});
+      if (timer) clearTimeout(timer);
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (!Array.isArray(data.peers)) return [];
+      return data.peers.map(normalizePeerUrl).filter(Boolean);
+    } catch (_) {
+      return [];
+    }
+  }
+
   function parseFlag(value) {
     if (typeof value !== "string") return null;
     const normalized = value.trim().toLowerCase();
@@ -8809,17 +8856,21 @@ defmod('./src/bootstrap.js', function(module, exp){
     BOOT,
     bootstrapDisabled,
     mergePeers,
+    normalizePeerUrl,
     parsePeerEnv,
     resolveBootstrapPeers,
     resolveEnvPeers,
+    wellKnownBootstrap,
   };
 
   exp.BOOT = BOOT;
   exp.bootstrapDisabled = bootstrapDisabled;
   exp.mergePeers = mergePeers;
+  exp.normalizePeerUrl = normalizePeerUrl;
   exp.parsePeerEnv = parsePeerEnv;
   exp.resolveBootstrapPeers = resolveBootstrapPeers;
   exp.resolveEnvPeers = resolveEnvPeers;
+  exp.wellKnownBootstrap = wellKnownBootstrap;
 });
 
 defmod('./src/axe.js', function(module, exp){
