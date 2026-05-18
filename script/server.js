@@ -15,6 +15,7 @@ import {
   bootstrapDisabled,
   resolveBootstrapPeers,
 } from "../src/bootstrap.js";
+import { discoverPeers } from "../lib/bootstrap.js";
 import * as xdg from "../lib/xdg.js";
 import { disc, hwid, DOMF, PORTF } from "../lib/discover.js";
 import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
@@ -139,14 +140,23 @@ if (main && cluster.isPrimary) {
     if (!domain) {
       try { domain = fs.readFileSync(DOMF, "utf8").trim() || null; } catch {}
     }
-    // Filter own URLs from bootstrap peers to prevent self-connection loops.
+    // Build self-URL set once (used both for filtering and DNS dedup).
+    const selfUrls = new Set();
     if (domain) {
-      const selfUrls = new Set();
       for (const scheme of ["https", "http", "wss", "ws"]) {
         selfUrls.add(`${scheme}://${domain}:${port}/zen`);
         selfUrls.add(`${scheme}://${domain}/zen`);
       }
-      peers = peers.filter(p => !selfUrls.has(p));
+    }
+    peers = peers.filter(p => !selfUrls.has(p));
+
+    // If no explicit peers configured: discover via DNS TXT "peers.akao.io".
+    // This lets any new relay join the network without hardcoded addresses.
+    // Skipped when NO_BOOTSTRAP=1 (tests, isolated deployments).
+    if (!bootstrapDisabled(env) && peers.length === 0) {
+      const discovered = await discoverPeers();
+      peers = discovered.filter(p => !selfUrls.has(p));
+      if (peers.length) console.log(`Bootstrap: discovered ${peers.length} peer(s) via DNS`);
     }
   } catch (err) {
     console.error("Configuration Error:", err.message);
@@ -328,6 +338,26 @@ if (main && cluster.isPrimary) {
     if (req.method === "GET" && (req.url === "/status" || req.url === "/status/")) {
       res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
       res.end(cachedStatus || "");
+      return;
+    }
+    if (req.method === "GET" && req.url === "/.well-known/peers.json") {
+      // Return known peers (BOOT + confirmed) as host:port for bootstrap discovery.
+      // Any ZEN relay exposes this so new relays/browsers can seed their peer list.
+      const entries = [
+        ...registry.bootEntries(),
+        ...registry.confirmedNonBoot(),
+      ];
+      const peers = entries
+        .map(e => {
+          try { const u = new URL(e.url); return u.hostname + ":" + u.port; } catch { return null; }
+        })
+        .filter((v, i, a) => v && a.indexOf(v) === i); // unique, non-null
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "max-age=60",
+      });
+      res.end(JSON.stringify({ peers }));
       return;
     }
     srv(req, res);
