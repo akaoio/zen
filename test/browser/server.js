@@ -10,7 +10,9 @@ var root = path.resolve(__dirname, "../..");
 var files = {
   "/": path.join(__dirname, "fixtures", "index.html"),
   "/relay-sync.html": path.join(__dirname, "fixtures", "relay-sync.html"),
+  "/webrtc-p2p.html": path.join(__dirname, "fixtures", "webrtc-p2p.html"),
   "/zen.js": path.join(root, "zen.js"),
+  "/webrtc.js": path.join(root, "webrtc.js"),
   "/crypto.wasm": path.join(root, "crypto.wasm"),
   "/pen.wasm": path.join(root, "pen.wasm"),
   "/lib/opfs.js": path.join(root, "lib", "opfs.js"),

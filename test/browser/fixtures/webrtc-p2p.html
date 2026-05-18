@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ZEN WebRTC P2P Test</title>
+  </head>
+  <body>
+    <div id="ready">loading</div>
+    <div id="relay"></div>
+
+    <script type="module">
+      import ZEN from '/zen.js';
+
+      var params   = new URLSearchParams(location.search);
+      var relayUrl = params.get('relay') || 'wss://zen.akao.io:8420/zen';
+      document.getElementById('relay').textContent = relayUrl;
+
+      // Capture the opt reference as soon as the ZEN instance boots.
+      // We register this BEFORE importing webrtc.js so our callback is first
+      // in the chain; webrtc.js adds its own callback when imported below.
+      var _opt = null;
+      ZEN.on('opt', function (root) {
+        this.to.next(root);
+        if (!_opt) _opt = root.opt;
+      });
+
+      // webrtc.js registers Zen.on('opt') to wire RTCPeerConnection support.
+      // Dynamic import ensures it runs after our callback is registered.
+      await import('/webrtc.js');
+
+      var zen = new ZEN({ peers: [relayUrl], localStorage: false });
+
+      window.webrtcTest = {
+        relay: relayUrl,
+
+        get pid() { return _opt && _opt.pid; },
+
+        // Returns array of peer IDs whose RTCDataChannel is open.
+        // RTCDataChannel.readyState is a string ('open'/'closed'…);
+        // WebSocket.readyState is a number — this distinguishes the two.
+        dcPeerIds: function () {
+          if (!_opt || !_opt.peers) return [];
+          return Object.keys(_opt.peers).filter(function (pid) {
+            var p = _opt.peers[pid];
+            return p && p.wire &&
+                   typeof p.wire.readyState === 'string' &&
+                   p.wire.readyState === 'open';
+          });
+        },
+
+        dcPeerCount: function () { return this.dcPeerIds().length; },
+
+        // Resolves with the list of DC peer IDs once minCount channels open.
+        waitForDC: function (minCount, timeout) {
+          minCount = minCount || 1;
+          timeout  = timeout  || 45000;
+          var self = this;
+          return new Promise(function (resolve, reject) {
+            var done  = false;
+            var timer = setTimeout(function () {
+              done = true;
+              reject(new Error(
+                'waitForDC timeout (' + timeout + 'ms), dc=' + self.dcPeerCount()
+              ));
+            }, timeout);
+            var poll = setInterval(function () {
+              if (done) { clearInterval(poll); return; }
+              if (self.dcPeerCount() >= minCount) {
+                done = true;
+                clearTimeout(timer);
+                clearInterval(poll);
+                resolve(self.dcPeerIds());
+              }
+            }, 300);
+          });
+        },
+      };
+
+      document.getElementById('ready').textContent = 'ready';
+    </script>
+  </body>
+</html>
