@@ -23,6 +23,7 @@ AUTO_UPGRADE=true
 STANDALONE=false
 IS_IPV6=false
 AUTO_IP6=true
+IP_CERT_PROFILE="shortlived"
 DNS_MODE=false
 DNS_PROVIDER=""
 DNS_API_KEY=""
@@ -88,7 +89,7 @@ EXAMPLES:
     # Manual DNS validation (IPv6-only servers)
     $0 --domain example.com --email admin@example.com --dns
 
-    # Raw IPv6 address certificate (uses standalone --listen-v6, requires port 80 free)
+    # Raw IPv6 address certificate (Let's Encrypt IP certs are short-lived)
     $0 --domain 2a02:c207:2327:7266::1 --email admin@example.com
 
     # Certificate with custom webroot and reload command
@@ -436,8 +437,8 @@ issue_certificate() {
     # Build acme.sh command
     if [ "$STANDALONE" = "true" ]; then
         if [ "$IS_IPV6" = "true" ]; then
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone --listen-v6"
-            log_info "Using standalone IPv6 mode (temporary web server on port 80, IPv6)"
+            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone --listen-v6 --cert-profile \"$IP_CERT_PROFILE\""
+            log_info "Using standalone IPv6 mode (temporary web server on port 80, IPv6, short-lived IP cert)"
         else
             ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone"
             log_info "Using standalone mode (temporary web server on port 80)"
@@ -590,7 +591,7 @@ issue_ip6_cert() {
 
     local ip6_acme_cmd
     ip6_acme_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt \
---issue -d \"$ip6\" --keylength ec-256 --standalone --listen-v6"
+--issue -d \"$ip6\" --keylength ec-256 --standalone --listen-v6 --cert-profile \"$IP_CERT_PROFILE\""
 
     if [ "$STAGING" = "true" ]; then
         ip6_acme_cmd="$ip6_acme_cmd --staging"
