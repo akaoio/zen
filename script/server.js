@@ -832,7 +832,9 @@ if (main && cluster.isPrimary) {
       _origHearOpt.call(this, msg, peer);
       if (!msg.ok && msg.opt && typeof msg.opt.peers === "string" && peer && !peer.url && peer.pid) {
         const ann = PeerRegistry.norm(msg.opt.peers);
-        if (ann && registry.isBoot(ann)) {
+        if (ann && !registry.isSelf(ann)) {
+          // Confirm ALL inbound connections (not just BOOT) so every peer
+          // that announces its URL becomes visible in confirmedNonBoot().
           registry.confirm(ann, { pub: peer.pub || "", pid: peer.pid });
         }
       }
