@@ -59,6 +59,7 @@ test.describe("WebRTC browser-to-browser across 3 physical machines", () => {
   });
 
   test("DataChannels open on all 3 machines", async ({ page }) => {
+    test.skip(!!process.env.CI, "Requires SSH key access to zen0/zen1 physical machines — run on physical infra only");
     test.setTimeout(90000);
 
     // zen browser connects to zen relay
