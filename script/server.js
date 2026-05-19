@@ -812,9 +812,27 @@ if (main && cluster.isPrimary) {
       const existing = _initOpt && _initOpt.peers && _initOpt.peers[normUrl];
       if (existing && existing.wire) return; // already wired
       const peerObj = existing || { id: normUrl, url: normUrl, retry: 9 };
+      peerObj._isBoot = true; // prevent AXE hiGuess/axeGuess tombstoning for BOOT peers
       if (existing) existing.retry = 9;
       try { route.hi(peerObj); } catch {}
+      // Ensure the stored peer object is also marked (open() may reuse opt.peers entry)
+      const stored = _initOpt && _initOpt.peers && _initOpt.peers[normUrl];
+      if (stored) stored._isBoot = true;
     });
+
+    // Confirm inbound BOOT peer connections when they announce their URL via dam:"opt".
+    // Without this, isPeerAlive() can't find the inbound connection in axe.up when
+    // AXE dedup drops our outbound (lower-PID peer keeps its outbound = our inbound).
+    const _origHearOpt = mesh.hear["opt"];
+    mesh.hear["opt"] = function(msg, peer) {
+      _origHearOpt.call(this, msg, peer);
+      if (!msg.ok && msg.opt && typeof msg.opt.peers === "string" && peer && !peer.url && peer.pid) {
+        const ann = PeerRegistry.norm(msg.opt.peers);
+        if (ann && registry.isBoot(ann)) {
+          registry.confirm(ann, { pub: peer.pub || "", pid: peer.pid });
+        }
+      }
+    };
 
     // Load previously discovered peers from disk and reconnect them.
     // This runs after BOOT peers are wired so adopt() MUPS check is accurate.
@@ -878,9 +896,12 @@ if (main && cluster.isPrimary) {
         opt._tombUrls.delete(PeerRegistry.alt(norm));
       }
       const p = opt.peers[norm];
-      if (p) { delete p._noReconnect; delete p._hiGuess; delete p._axeGuess; }
+      if (p) { delete p._noReconnect; delete p._hiGuess; delete p._axeGuess; p._isBoot = true; }
       console.log('[BOOT-WATCHDOG] Reconnecting lost BOOT peer:', norm);
       try { route.hi({ id: norm, url: norm, retry: 9 }); } catch {}
+      // Re-mark the peer after hi() reuses/creates the opt.peers entry
+      const rp = opt.peers && opt.peers[norm];
+      if (rp) rp._isBoot = true;
     }
 
     // Also reconnect confirmed PEX-discovered peers that dropped, if under capacity.

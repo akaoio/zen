@@ -8434,7 +8434,8 @@ defmod('./src/websocket.js', function(module, exp){
           clearInterval(peer._keepalive);
           peer._keepalive = null;
           // Exponential backoff for AXE-dropped outbound peers (closed before HI).
-          if (peer._isOutbound && !peer.met) {
+          // Skip for BOOT peers (_isBoot) — watchdog handles reconnect without tombstoning.
+          if (!peer._isBoot && peer._isOutbound && !peer.met) {
             peer._axeGuess = (peer._axeGuess || 0) + 1;
             if (peer._axeGuess >= 5) {
               peer._noReconnect = true;
@@ -8442,7 +8443,8 @@ defmod('./src/websocket.js', function(module, exp){
             }
           }
           // Backoff for peers that accept then quickly close (AXE PID-sort drop).
-          if (peer._isOutbound && peer.met && peer._openAt &&
+          // Skip for BOOT peers — they must always be reconnectable.
+          if (!peer._isBoot && peer._isOutbound && peer.met && peer._openAt &&
               (+new Date() - peer._openAt) < 8000) {
             peer._hiGuess = (peer._hiGuess || 0) + 1;
             if (peer._hiGuess >= 3) {
