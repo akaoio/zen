@@ -352,7 +352,11 @@ if (main && cluster.isPrimary) {
       ];
       const peers = entries
         .map(e => {
-          try { const u = new URL(e.url); return u.hostname + ":" + u.port; } catch { return null; }
+          try {
+            const u = new URL(e.url);
+            const port = u.port || (u.protocol === "https:" ? "443" : "8420");
+            return u.hostname + ":" + port;
+          } catch { return null; }
         })
         .filter((v, i, a) => v && a.indexOf(v) === i); // unique, non-null
       res.writeHead(200, {
