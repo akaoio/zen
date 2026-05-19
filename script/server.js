@@ -133,6 +133,7 @@ if (main && cluster.isPrimary) {
   try {
     port = vport(env.PORT || process.argv[2] || 8420);
     hport = env.HTTPS_PORT ? vport(env.HTTPS_PORT) : null;
+    const publicPort = env.PUBLIC_PORT ? vport(env.PUBLIC_PORT) : null;
     peers = resolveBootstrapPeers(screen(env.PEERS), {
       includeBootstrap: !bootstrapDisabled(env),
     });
@@ -577,6 +578,7 @@ if (main && cluster.isPrimary) {
   const { adopt } = setupRelayPex(zen, {
     domain,
     port,
+    publicPort,
     key:      opt.key,
     registry,
     pexMax:   50,
