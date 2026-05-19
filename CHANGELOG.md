@@ -54,7 +54,7 @@ This release completes the WebRTC DataChannel layer, enabling browsers to commun
 **Verified end-to-end with Playwright:**
 - 2-tab localhost test: both peers reach `RTC ↔ ... (direct)` in ~7 s ✅
 - 3-tab localhost test: full mesh (6/6 DataChannels) in ~8 s ✅
-- 3-machine cross-relay test (zen.akao.io, peer0.akao.io, peer1.akao.io): full mesh (6/6 DataChannels) in ~9 s ✅
+- 3-machine cross-relay test (zen.akao.io, zen0.akao.io, zen1.akao.io): full mesh (6/6 DataChannels) in ~9 s ✅
 
 ### MAX_RTC_PEERS Cap (`a28e1dd`)
 

@@ -99,15 +99,15 @@ function killZen(z) {
 
 // ── Setup ──────────────────────────────────────────────────────────────────────
 
-// Prefer ~/.config/zen/domain (e.g. "peer0.akao.io") then extract short name
+// Prefer ~/.config/zen/domain (e.g. "zen0.akao.io") then extract short name
 function detectHost() {
   const domainFile = join(homedir(), ".config/zen/domain");
   if (existsSync(domainFile)) {
-    return readFileSync(domainFile, "utf8").trim().split(".")[0]; // "zen", "peer0", "peer1"
+    return readFileSync(domainFile, "utf8").trim().split(".")[0]; // "zen", "zen0", "zen1"
   }
   return hostname().split(".")[0];
 }
-const HOST   = detectHost();   // zen, peer0, peer1
+const HOST   = detectHost();   // zen, zen0, zen1
 const RELAY  = process.env.ZEN_RELAY || buildRelayURL();
 const SUITE  = (process.argv.find((a) => a.startsWith("--suite=")) || "--suite=all").split("=")[1];
 
@@ -211,7 +211,7 @@ async function suiteCross(zen, testPair) {
   console.log(`${BOLD}── Suite: cross-peer (MCP put → relay → read) ──${RESET}`);
 
   const soul  = `e2e-cross`;
-  const peers = ["zen", "peer0", "peer1"].filter((h) => h !== HOST);
+  const peers = ["zen", "zen0", "zen1"].filter((h) => h !== HOST);
 
   // Resolve the pub key that the MCP server will use (same hardware identity)
   const identity = await getOrCreateIdentity();
@@ -305,13 +305,13 @@ async function suiteCross(zen, testPair) {
 }
 
 async function suiteChain() {
-  console.log(`${BOLD}── Suite: chain (multi-hop: clientA→zen → peer0 → peer1→clientB) ──${RESET}`);
+  console.log(`${BOLD}── Suite: chain (multi-hop: clientA→zen → zen0 → zen1→clientB) ──${RESET}`);
 
-  // Topology: zen.akao.io → peer0.akao.io → peer1.akao.io
+  // Topology: zen.akao.io → zen0.akao.io → zen1.akao.io
   // clientA knows ONLY the chain start, clientB knows ONLY the chain end.
   // Data must propagate through two relay hops without any direct connection.
   const CHAIN_START = process.env.CHAIN_START || "https://zen.akao.io:8420/zen";
-  const CHAIN_END   = process.env.CHAIN_END   || "https://peer1.akao.io:8420/zen";
+  const CHAIN_END   = process.env.CHAIN_END   || "https://zen1.akao.io:8420/zen";
 
   const pairA = await ZEN.pair();
   const pairB = await ZEN.pair();
@@ -337,7 +337,7 @@ async function suiteChain() {
     return;
   }
 
-  // Wait for multi-hop propagation: start → peer0 → end
+  // Wait for multi-hop propagation: start → zen0 → end
   info(`Waiting 12s for chain propagation (${CHAIN_START.replace("https://", "")} → ... → ${CHAIN_END.replace("https://", "")})...`);
   await sleep(12000);
 
@@ -356,12 +356,12 @@ async function suiteChain() {
 }
 
 async function suitePush() {
-  console.log(`${BOLD}── Suite: push (zen.push across chain: browserA→zen → peer0 → peer1→browserB) ──${RESET}`);
+  console.log(`${BOLD}── Suite: push (zen.push across chain: browserA→zen → zen0 → zen1→browserB) ──${RESET}`);
 
   // Two isolated "browsers" — no shared relay knowledge, no direct connection.
-  // zen.push(pubB, data) must traverse: zen relay → peer0 relay → peer1 relay → browserB.
+  // zen.push(pubB, data) must traverse: zen relay → zen0 relay → zen1 relay → browserB.
   const CHAIN_START = process.env.CHAIN_START || "https://zen.akao.io:8420/zen";
-  const CHAIN_END   = process.env.CHAIN_END   || "https://peer1.akao.io:8420/zen";
+  const CHAIN_END   = process.env.CHAIN_END   || "https://zen1.akao.io:8420/zen";
 
   const pairA = await ZEN.pair();
   const pairB = await ZEN.pair();
@@ -399,7 +399,7 @@ async function suitePush() {
 
   // browserA pushes to browserB's pub — routes through chain with no direct connection
   browserA._opt.mesh.relay(pairB.pub, message);
-  info(`PUSH sent → ${pairB.pub.slice(0, 12)}… (zen → peer0 → peer1 → browserB)`);
+  info(`PUSH sent → ${pairB.pub.slice(0, 12)}… (zen → zen0 → zen1 → browserB)`);
 
   info("Waiting 8s for push to traverse chain...");
   await sleep(8000);
@@ -529,7 +529,7 @@ async function main() {
     if (SUITE === "all" || SUITE === "storage") await suiteStorage();
     if (SUITE === "all" || SUITE === "push") {
       // Disconnect the main zen client so it doesn't pollute XOR routing on zen relay
-      // (routing must go chain-only: zen relay → peer0 → peer1 → browserB).
+      // (routing must go chain-only: zen relay → zen0 → zen1 → browserB).
       killZen(zen);
       // Brief pause for close frames to reach the relay before push test starts.
       await sleep(500);

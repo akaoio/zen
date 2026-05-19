@@ -2,21 +2,21 @@
  * Cross-relay browser sync tests
  *
  * Each test opens 3 browser pages simultaneously, each connected to a
- * different relay (zen / peer0 / peer1), then verifies data PUT on one
+ * different relay (zen / zen0 / zen1), then verifies data PUT on one
  * relay propagates and is received live on the other two.
  *
  * Topology tested:
  *   zen.akao.io:8420   = relay A
- *   peer0.akao.io:8420 = relay B
- *   peer1.akao.io:8420 = relay C
+ *   zen0.akao.io:8420 = relay B
+ *   zen1.akao.io:8420 = relay C
  */
 
 import { test, expect } from "@playwright/test";
 
 const RELAYS = {
   zen:   "wss://zen.akao.io:8420/zen",
-  peer0: "wss://peer0.akao.io:8420/zen",
-  peer1: "wss://peer1.akao.io:8420/zen",
+  zen0: "wss://zen0.akao.io:8420/zen",
+  zen1: "wss://zen1.akao.io:8420/zen",
 };
 
 function pageUrl(relay) {
@@ -61,12 +61,12 @@ async function waitFor(page, s, timeout) {
 
 test.describe("Cross-relay browser propagation (3 browsers × 3 relays)", () => {
 
-  test("PUT on zen → live on peer0 and peer1", async ({ browser }) => {
+  test("PUT on zen → live on zen0 and zen1", async ({ browser }) => {
     const s = soul(), v = rnd();
     const [pZen, pPeer0, pPeer1] = await Promise.all([
       openRelayPage(browser, "zen"),
-      openRelayPage(browser, "peer0"),
-      openRelayPage(browser, "peer1"),
+      openRelayPage(browser, "zen0"),
+      openRelayPage(browser, "zen1"),
     ]);
 
     // Subscribe readers BEFORE PUT so we catch live push
@@ -78,18 +78,18 @@ test.describe("Cross-relay browser propagation (3 browsers × 3 relays)", () => 
     console.log("PUT zen  → " + s + " = " + v);
 
     const [d0, d1] = await Promise.all([w0, w1]);
-    console.log("peer0 received:", d0);
-    console.log("peer1 received:", d1);
+    console.log("zen0 received:", d0);
+    console.log("zen1 received:", d1);
     expect(d0).toBe(v);
     expect(d1).toBe(v);
   });
 
-  test("PUT on peer0 → live on zen and peer1", async ({ browser }) => {
+  test("PUT on zen0 → live on zen and zen1", async ({ browser }) => {
     const s = soul(), v = rnd();
     const [pZen, pPeer0, pPeer1] = await Promise.all([
       openRelayPage(browser, "zen"),
-      openRelayPage(browser, "peer0"),
-      openRelayPage(browser, "peer1"),
+      openRelayPage(browser, "zen0"),
+      openRelayPage(browser, "zen1"),
     ]);
 
     const wZen = waitFor(pZen,   s);
@@ -97,21 +97,21 @@ test.describe("Cross-relay browser propagation (3 browsers × 3 relays)", () => 
     await new Promise((r) => setTimeout(r, 500)); // let subscriptions reach relays
 
     await put(pPeer0, s, v);
-    console.log("PUT peer0 → " + s + " = " + v);
+    console.log("PUT zen0 → " + s + " = " + v);
 
     const [dz, d1] = await Promise.all([wZen, w1]);
     console.log("zen   received:", dz);
-    console.log("peer1 received:", d1);
+    console.log("zen1 received:", d1);
     expect(dz).toBe(v);
     expect(d1).toBe(v);
   });
 
-  test("PUT on peer1 → live on zen and peer0", async ({ browser }) => {
+  test("PUT on zen1 → live on zen and zen0", async ({ browser }) => {
     const s = soul(), v = rnd();
     const [pZen, pPeer0, pPeer1] = await Promise.all([
       openRelayPage(browser, "zen"),
-      openRelayPage(browser, "peer0"),
-      openRelayPage(browser, "peer1"),
+      openRelayPage(browser, "zen0"),
+      openRelayPage(browser, "zen1"),
     ]);
 
     const wZen = waitFor(pZen,   s);
@@ -119,31 +119,31 @@ test.describe("Cross-relay browser propagation (3 browsers × 3 relays)", () => 
     await new Promise((r) => setTimeout(r, 500)); // let subscriptions reach relays
 
     await put(pPeer1, s, v);
-    console.log("PUT peer1 → " + s + " = " + v);
+    console.log("PUT zen1 → " + s + " = " + v);
 
     const [dz, d0] = await Promise.all([wZen, w0]);
     console.log("zen   received:", dz);
-    console.log("peer0 received:", d0);
+    console.log("zen0 received:", d0);
     expect(dz).toBe(v);
     expect(d0).toBe(v);
   });
 
-  test("chain A→peer0→peer1 without zen involved", async ({ browser }) => {
-    // Client A is connected ONLY to peer0.
-    // Client C is connected ONLY to peer1.
-    // Data must travel: client-A → peer0 → peer1 → client-C.
+  test("chain A→zen0→zen1 without zen involved", async ({ browser }) => {
+    // Client A is connected ONLY to zen0.
+    // Client C is connected ONLY to zen1.
+    // Data must travel: client-A → zen0 → zen1 → client-C.
     const s = soul(), v = rnd();
     const [pPeer0, pPeer1] = await Promise.all([
-      openRelayPage(browser, "peer0"),
-      openRelayPage(browser, "peer1"),
+      openRelayPage(browser, "zen0"),
+      openRelayPage(browser, "zen1"),
     ]);
 
     const w1 = waitFor(pPeer1, s);
     await put(pPeer0, s, v);
-    console.log("PUT peer0 → " + s + " = " + v);
+    console.log("PUT zen0 → " + s + " = " + v);
 
     const d1 = await w1;
-    console.log("peer1 received:", d1);
+    console.log("zen1 received:", d1);
     expect(d1).toBe(v);
   });
 
@@ -151,7 +151,7 @@ test.describe("Cross-relay browser propagation (3 browsers × 3 relays)", () => 
     const s = soul(), v = rnd();
     const [pWriter, pReader] = await Promise.all([
       openRelayPage(browser, "zen"),
-      openRelayPage(browser, "peer1"),  // furthest hop
+      openRelayPage(browser, "zen1"),  // furthest hop
     ]);
 
     // Subscribe first — ensure .on() is wired before PUT
@@ -162,7 +162,7 @@ test.describe("Cross-relay browser propagation (3 browsers × 3 relays)", () => 
     console.log("PUT zen → " + s + " = " + v);
 
     const received = await wLive;
-    console.log("peer1 live received:", received);
+    console.log("zen1 live received:", received);
     expect(received).toBe(v);
   });
 

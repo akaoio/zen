@@ -53,7 +53,7 @@ node lib/mcp.js
 ### With custom peers
 
 ```bash
-ZEN_PEERS="wss://peer0.akao.io,wss://peer1.akao.io" node lib/mcp.js
+ZEN_PEERS="wss://zen0.akao.io,wss://zen1.akao.io" node lib/mcp.js
 ```
 
 The server speaks JSON-RPC 2.0 over `stdin` and `stdout`.
@@ -98,7 +98,7 @@ Diagnostic logs are suppressed from stdout because stdout must remain valid JSON
       "command": "npx",
       "args": ["-y", "-p", "@akaoio/zen", "mcp"],
       "env": {
-        "ZEN_PEERS": "ws://localhost:8420/zen,wss://peer0.akao.io"
+        "ZEN_PEERS": "ws://localhost:8420/zen,wss://zen0.akao.io"
       }
     }
   }
@@ -1168,7 +1168,7 @@ import ZEN from "./zen.js";
 import { ZenMcpClient } from "./lib/mcp/client.js";
 
 const myPair = await ZEN.pair();
-const zen    = new ZEN({ peers: ["wss://peer0.akao.io"] });
+const zen    = new ZEN({ peers: ["wss://zen0.akao.io"] });
 
 // Discover the server
 const serverPub = "0TSEiscYykziuDXSIv0zcIc2Av4yJoZXViu5G6wkWqKI1";

@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node test/browser/webrtc-p2p-runner.js \
- *     --relay=wss://peer0.akao.io:8420/zen \
+ *     --relay=wss://zen0.akao.io:8420/zen \
  *     [--port=8767] [--min=1] [--timeout=50000]
  *
  * Exits 0 and prints "DC_OPEN:N" when N DataChannels open.

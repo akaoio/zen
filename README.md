@@ -35,7 +35,7 @@ This repository is documented as a structured book. Read it in order or jump to 
 
 - **Offline-first CRDT** — every write is a HAM (Hypothetical Amnesia Machine) state vector; peers converge without coordination
 - **No central server** — peers are symmetric; any node can relay
-- **Self-discovery** — peers find their own domain/IP via config → STUN → `ip route`; scan sibling peers by numeric index pattern (`peer1.akao.io` → probes `peer0`, `peer2`…)
+- **Self-discovery** — peers find their own domain/IP via config → STUN → `ip route`; scan sibling peers by numeric index pattern (`zen1.akao.io` → probes `peer0`, `peer2`…)
 - **PEX** — peers share known URLs on connect; no public graph required
 - **Graph, not table** — arbitrary node relationships, circular references native
 - **Crypto built in** — secp256k1 keys, AES-GCM encryption, ECDH shared secrets, deterministic certifications
@@ -82,8 +82,8 @@ Options (pass after `bash -s --`):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/akaoio/zen/main/script/install.sh | bash -s -- \
   --port 443 \
-  --domain peer1.akao.io \
-  --peers "https://peer0.akao.io/zen"
+  --domain zen1.akao.io \
+  --peers "https://zen0.akao.io/zen"
 ```
 
 | Option | Default | Description |
@@ -102,7 +102,7 @@ The domain is used for self-identification and peer scanning. If omitted, ZEN de
 
 Once your relay is running it finds other peers automatically — no seed peers required:
 
-1. **Smart scan** — detects numeric index in your domain (`peer1.akao.io`) and probes `peer0`, `peer2`… up to `peer100`; stops after 10 found
+1. **Smart scan** — detects numeric index in your domain (`zen1.akao.io`) and probes `peer0`, `peer2`… up to `peer100`; stops after 10 found
 2. **PEX** — each new connection immediately shares its peer list; new discoveries are forwarded to all existing connections
 3. **Backoff** — empty scan cycles back off from 10 m → 20 m → 40 m → capped at 2 h; resets immediately on any discovery
 4. **Upstream cap** — at most 10 outbound connections from scan; inbound excess redirected by AXE MOB

@@ -132,7 +132,7 @@ describe("hostInUrl()", function () {
     assert.strictEqual(hostInUrl("192.168.1.1"), "192.168.1.1");
   });
   it("leaves hostname unchanged", function () {
-    assert.strictEqual(hostInUrl("peer1.akao.io"), "peer1.akao.io");
+    assert.strictEqual(hostInUrl("zen1.akao.io"), "zen1.akao.io");
   });
   it("produces a valid URL with IPv6", function () {
     const h = hostInUrl("2001:db8::1");
@@ -219,8 +219,8 @@ describe("disc() — return shape", async function () {
   });
 
   it("opt.domain overrides discovery", async function () {
-    const r = await disc({ domain: "peer1.akao.io", noSave: true });
-    assert.strictEqual(r.domain, "peer1.akao.io");
+    const r = await disc({ domain: "zen1.akao.io", noSave: true });
+    assert.strictEqual(r.domain, "zen1.akao.io");
     assert.strictEqual(r.source, "opt");
   });
 });

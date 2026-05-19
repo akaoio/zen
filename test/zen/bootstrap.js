@@ -14,10 +14,10 @@ describe("bootstrap peer resolution", function () {
   });
 
   it("merges configured peers with bootstrap peers without duplicates", function () {
-    const configured = ["https://peer1.akao.io:8420/zen", "wss://custom.akao.io:8420/zen"];
+    const configured = ["https://zen1.akao.io:8420/zen", "wss://custom.akao.io:8420/zen"];
     // BOOT is empty — configured peers are returned as-is (no duplicates to remove)
     assert.deepStrictEqual(resolveBootstrapPeers(configured), [
-      "https://peer1.akao.io:8420/zen",
+      "https://zen1.akao.io:8420/zen",
       "wss://custom.akao.io:8420/zen",
     ]);
   });
@@ -34,12 +34,12 @@ describe("bootstrap peer resolution", function () {
   it("dedupes merged peer lists while preserving first-seen order", function () {
     assert.deepStrictEqual(
       mergePeers(
-        [" https://zen.akao.io ", "https://peer0.akao.io"],
-        ["https://peer0.akao.io", "https://custom.akao.io:8420/zen"],
+        [" https://zen.akao.io ", "https://zen0.akao.io"],
+        ["https://zen0.akao.io", "https://custom.akao.io:8420/zen"],
       ),
       [
         "https://zen.akao.io",
-        "https://peer0.akao.io",
+        "https://zen0.akao.io",
         "https://custom.akao.io:8420/zen",
       ],
     );
@@ -54,8 +54,8 @@ describe("bootstrap peer resolution", function () {
 
   it("parses PEERS env into a trimmed list", function () {
     assert.deepStrictEqual(
-      parsePeerEnv(" https://peer1.akao.io:8420/zen, wss://custom.akao.io:8420/zen ,, "),
-      ["https://peer1.akao.io:8420/zen", "wss://custom.akao.io:8420/zen"],
+      parsePeerEnv(" https://zen1.akao.io:8420/zen, wss://custom.akao.io:8420/zen ,, "),
+      ["https://zen1.akao.io:8420/zen", "wss://custom.akao.io:8420/zen"],
     );
   });
 
@@ -79,9 +79,9 @@ describe("bootstrap peer resolution", function () {
     assert.deepStrictEqual(
       resolveEnvPeers({
         NO_BOOTSTRAP: "1",
-        PEERS: "wss://custom.akao.io:8420/zen,https://peer1.akao.io:8420/zen",
+        PEERS: "wss://custom.akao.io:8420/zen,https://zen1.akao.io:8420/zen",
       }),
-      ["wss://custom.akao.io:8420/zen", "https://peer1.akao.io:8420/zen"],
+      ["wss://custom.akao.io:8420/zen", "https://zen1.akao.io:8420/zen"],
     );
   });
 });

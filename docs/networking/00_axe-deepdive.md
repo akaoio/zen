@@ -189,7 +189,7 @@ Mỗi peer mới tìm được → ngay lập tức kích thêm 3 tác vụ: sav
 WebSocket không bị CORS restrict → AXE tận dụng để probe sibling domains mà HTTP fetch không làm được.
 
 ```
-peer1.akao.io  →  probe peer0, peer2, peer3, ..., peer100
+zen1.akao.io  →  probe peer0, peer2, peer3, ..., peer100
                →  BCONC=5 concurrent WS, BMIDX=100 candidates, BMFND=10 found max
 ```
 

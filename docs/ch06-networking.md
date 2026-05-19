@@ -356,7 +356,7 @@ When a browser page loads, AXE attempts to find peers in this order:
 The browser probes sibling relay domains using raw WebSocket connections (which bypass CORS). Given the current page hostname:
 
 ```
-peer1.akao.io  →  probes peer0, peer2, … peer100
+zen1.akao.io  →  probes peer0, peer2, … peer100
 zen.akao.io    →  probes zen0, zen1, …
 ```
 
@@ -529,7 +529,7 @@ root.opt.super = true;  // also set; marks this as a "super peer"
 
 ## 6.14 Self-discovery (`lib/discover.js`)
 
-A relay peer needs to know its own domain or IP to announce itself to the network and to build correct self-URLs (`wss://peer1.akao.io:8420/zen`). `lib/discover.js` finds this offline-first:
+A relay peer needs to know its own domain or IP to announce itself to the network and to build correct self-URLs (`wss://zen1.akao.io:8420/zen`). `lib/discover.js` finds this offline-first:
 
 | Priority | Method | Notes |
 |----------|--------|-------|
@@ -552,10 +552,10 @@ The domain is persisted to `DOMF` (`~/.config/zen/domain`) on first discovery so
 
 ## 6.15 Smart domain scanning (`lib/scan.js`)
 
-Given a known peer domain like `peer1.akao.io`, ZEN automatically scans for sibling peers by detecting the numeric index in the leftmost label and probing all candidates:
+Given a known peer domain like `zen1.akao.io`, ZEN automatically scans for sibling peers by detecting the numeric index in the leftmost label and probing all candidates:
 
 ```
-peer1.akao.io  →  peer{0..100}.akao.io
+zen1.akao.io  →  peer{0..100}.akao.io
 node-3.net     →  node-{0..100}.net
 relay01.host   →  relay{00..100}.host   (zero-padded)
 ```
@@ -606,7 +606,7 @@ When a browser connects, the relay sends the full list of known relay peers as a
 
 ```js
 // Sent on "hi" (new browser connection):
-mesh.say({ dam: "pex", peers: ["wss://peer0.akao.io:8420/zen", ...] }, newPeer);
+mesh.say({ dam: "pex", peers: ["wss://zen0.akao.io:8420/zen", ...] }, newPeer);
 
 // Browser-side handler (in lib/axe.js):
 mesh.hear["pex"] = function(msg) {
