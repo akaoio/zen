@@ -884,16 +884,22 @@ if (main && cluster.isPrimary) {
     }
 
     // Also reconnect confirmed PEX-discovered peers that dropped, if under capacity.
-    // Less aggressive than BOOT: respect tombstones, retry: 3 (not 9).
+    // Like BOOT peers: clear tombstones so AXE dedup doesn't block reconnect.
+    // Less aggressive than BOOT: retry: 3 (not 9).
     const ups = Object.keys(getAxeUp()).length;
     if (ups < MUPS) {
       for (const entry of registry.confirmedNonBoot()) {
         if (ups >= MUPS) break;
         const url = entry.url;
         const tombs = opt._tombUrls;
-        if (tombs && (tombs.has(url) || tombs.has(PeerRegistry.alt(url)))) continue;
         const p = opt.peers && opt.peers[url];
         if (p && p.wire) continue;               // already connected
+        // Clear tombstone so AXE allows reconnect (same as BOOT watchdog does)
+        if (tombs) {
+          tombs.delete(url);
+          tombs.delete(PeerRegistry.alt(url));
+        }
+        if (p) { delete p._noReconnect; delete p._hiGuess; delete p._axeGuess; }
         try { route.hi({ id: url, url: url, retry: 3 }); } catch {}
       }
     }
