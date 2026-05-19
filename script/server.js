@@ -17,12 +17,13 @@ import {
 } from "../src/bootstrap.js";
 import { discoverPeers } from "../lib/bootstrap.js";
 import * as xdg from "../lib/xdg.js";
-import { disc, hwid, DOMF, PORTF } from "../lib/discover.js";
+import { hwid, DOMF, PORTF } from "../lib/discover.js";
 import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
 import { getOrCreateIdentity } from "../lib/identity.js";
 import { buildStatus, signStatus } from "../lib/status.js";
 import { attach as attachMcp } from "../lib/mcp/server.js";
 import PeerRegistry from "../lib/peer-registry.js";
+import { setupRelayPex } from "../lib/pex.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -368,7 +369,7 @@ if (main && cluster.isPrimary) {
   // identity (pub/pid), eviction, and persistence — replacing the former
   // ad-hoc combination of kprs/bootPubMap/bootPidMap/kprsProtect.
   const registry = new PeerRegistry().bindSave(PEERSF);
-  // BOOT peers are registered after domain/origin are resolved (see below).
+  // BOOT peers are protected below via registry.protect(); origin is resolved inside setupRelayPex.
 
   const probed = new Set();       // patterns scanned this cycle
   let tscan   = null;
@@ -382,35 +383,6 @@ if (main && cluster.isPrimary) {
   function pkey(host) {
     const p = mkpat((host || "").split(":")[0]);
     return p ? (p.prefix + "*" + p.tail + p.suffix) : host;
-  }
-
-  function adopt(url) {
-    const n = PeerRegistry.norm(url); // canonical https:// form
-    if (registry.has(n)) return;      // already known (either scheme)
-    if (registry.isSelf(n)) return;
-    // Skip tombstoned peers (AXE-dropped; BOOT-WATCHDOG handles BOOT peers separately)
-    const r = zen && zen._graph && zen._graph._;
-    const tombs = r && r.opt && r.opt._tombUrls;
-    if (tombs && (tombs.has(n) || tombs.has(PeerRegistry.alt(n)))) return;
-    registry.add(n);
-    found = true;
-    scheduleRefreshStatus(); // debounced — safe even if 1000 nodes join rapidly
-    console.log("Discovered peer:", n);
-    // Connect only if under upstream limit (prevents full mesh / bandwidth waste)
-    const ups = Object.keys(getAxeUp()).length;
-    if (route && ups < MUPS) {
-      try { route.hi({ id: n, url: n, retry: 9 }); } catch {}
-    } else if (!route && r && r.opt) {
-      // mesh not yet attached — queue in peer list for AXE to connect later
-      if (!Array.isArray(r.opt.peers)) r.opt.peers = [];
-      if (!r.opt.peers.includes(n)) r.opt.peers.push(n);
-    }
-    // Broadcast immediately to all currently connected peers
-    if (route) {
-      try { route.say({ dam: "pex", peers: [n] }, r && r.opt && r.opt.peers); } catch {}
-    }
-    // Expand scan to this peer's domain pattern
-    try { probe(new URL(n).hostname); } catch {}
   }
 
   function kprsEvict() { registry.evict(); } // kept for call-site compat; delegate to registry
@@ -593,46 +565,47 @@ if (main && cluster.isPrimary) {
   // Embed MCP server on this ZEN instance — exposes IPC socket for local IDE/agent connections.
   // This eliminates the need for a second ZEN peer process when MCP is used on the same machine.
   attachMcp(zen, { hwIdentity: identity, ipc: true });
-  // ── PEX: peer exchange via direct DAM message (not public graph) ──────────
-  // mesh.hear["pex"] + root.on("hi") — only shared with already-connected peers
-  const origin = domain
-    ? ((opt.key ? "wss" : "ws") + "://" + domain + ":" + port + "/zen")
-    : null;
 
-  // Register self and BOOT peers in the registry now that origin is resolved.
-  if (origin) registry.setSelf(origin);
+  // ── PEX: peer exchange via direct DAM message (not public graph) ──────────
+  // setupRelayPex wires mesh.hear["pex"] + root.on("hi") self-announce inside
+  // setImmediate (after AXE attaches). server.js adds the saySmart/bpids send
+  // via sendPeers, and drives scan-cycle bookkeeping via onAdopt/onDisc.
   registry.protect(peers); // BOOT peers: never evict, watchdog reconnects them
 
-  // ── IP discovery (IPv4 + IPv6) ────────────────────────────────────────────
-  // Single source of truth for IP info: cached in discResult, refreshed every
-  // 10 min (relays often have dynamic IPs). Used by /status and registry.
-  let originv = null;
   let discResult = null;
 
-  function refreshDisc() {
-    disc({ noSave: true }).then((di) => {
+  const { adopt } = setupRelayPex(zen, {
+    domain,
+    port,
+    key:      opt.key,
+    registry,
+    pexMax:   50,
+    rttOf,
+    sendPeers: (list, peer) => {
+      const r = zen._graph._;
+      const bpids = Object.values((r && r.opt && r.opt.peers) || {})
+        .filter(p => p && p.pid && !p.url && p.pid !== peer.pid)
+        .map(p => p.pid);
+      const msg = { dam: "pex", peers: list };
+      if (bpids.length) msg.bpids = bpids;
+      saySmart(msg, peer);
+    },
+    onDisc: (di) => {
       discResult = di;
-      if (di.ip6) {
-        const scheme = opt.key ? "wss" : "ws";
-        const newSurl6 = scheme + "://[" + di.ip6 + "]:" + port + "/zen";
-        if (newSurl6 !== originv) {
-          if (originv) registry.setSelf(originv); // absorb stale IPv6 into self set
-          originv = newSurl6;
-          // Only advertise IPv6 URL if no domain URL — avoids duplicate entries
-          if (!origin) registry.setSelf(originv);
-          console.log("IPv6 self-URL:", originv);
-        }
-      }
-      refreshStatus(); // rebuild status after IPs are updated
-    }).catch((err) => {
-      console.log("IP discovery failed:", err && err.message || err);
-    });
-  }
+      refreshStatus();
+    },
+    onAdopt: (url) => {
+      found = true;
+      scheduleRefreshStatus();
+      try { probe(new URL(PeerRegistry.norm(url)).hostname); } catch {}
+    },
+  });
 
-  refreshStatus();                                    // initial cache (no IP yet)
-  refreshDisc();                                       // async: updates IPs then re-caches
-  setInterval(refreshDisc, 10 * 60 * 1000);            // refresh IPs every 10 min
-  setInterval(refreshStatus, 30 * 1000);               // keep timestamp + peers fresh
+  // setupRelayPex registers origin/self URLs and wires disc() refresh.
+  // registry.protect() was already called above for BOOT peers.
+
+  refreshStatus();                        // initial cache (no IP yet)
+  setInterval(refreshStatus, 30 * 1000); // keep timestamp + peers fresh
 
   const root = zen._graph._;
 
@@ -848,20 +821,10 @@ if (main && cluster.isPrimary) {
     } catch {}
 
     // Handle incoming peer lists from other nodes
-    mesh.hear["pex"] = function (msg, _peer) {
-      if (!Array.isArray(msg.peers)) return;
-      msg.peers.forEach((url) => {
-        if (typeof url === "string" && /^wss?:\/\//.test(url) &&
-            url !== origin && url !== originv) {
-          adopt(url);
-        }
-      });
-    };
+    // (mesh.hear["pex"] is wired by setupRelayPex — see lib/pex.js)
 
-    // On new peer connection: mark URL as confirmed + send capped peer list
-    // PEX_MAX: cap prevents flooding when 1000+ MCP nodes are in registry.
-    // Sort: wss:// first (browser-usable), then by RTT ascending.
-    const PEX_MAX = 50;
+    // On new peer connection: mark URL as confirmed + announce new browser PIDs for WebRTC.
+    // Peer list + self-URL are sent by setupRelayPex via the sendPeers/root.on("hi") hooks.
     root.on("hi", function (peer) {
       this.to.next(peer);
       if (peer.url) {
@@ -869,36 +832,17 @@ if (main && cluster.isPrimary) {
         // confirm() records lastOk and stores pub/pid for WATCHDOG to use
         registry.confirm(nu, { pub: peer.pub || "", pid: peer.pid || "" });
       }
-      const list = registry.pexList(PEX_MAX, rttOf).filter(u => u !== origin);
-      setTimeout(() => {
-        try {
-          // browser pids: connected peers that have a pid but no URL (pure browser WS clients)
-          const bpids = Object.values(root.opt.peers || {})
-            .filter(p => p && p.pid && !p.url && p.pid !== peer.pid)
-            .map(p => p.pid);
-          const pexMsg = { dam: "pex", peers: list };
-          if (bpids.length) pexMsg.bpids = bpids;
-          saySmart(pexMsg, peer); // prefer UDP for relay peers
-          // announce this peer's pid to all existing peers so they can WebRTC to it
-          if (peer.pid && !peer.url) {
+      // Announce new browser peer's PID to all existing peers so they can WebRTC to it
+      if (peer.pid && !peer.url) {
+        setTimeout(() => {
+          try {
             Object.values(root.opt.peers || {}).forEach(p => {
               if (p && p.wire && p !== peer) {
                 saySmart({ dam: "pex", peers: [], bpids: [peer.pid] }, p);
               }
             });
-          }
-        } catch {}
-      }, 600);
-      if (origin) {
-        setTimeout(() => {
-          try { mesh.say({ dam: "pex", peers: [origin] }, peer); } catch {}
-        }, 700);
-      }
-      // Only advertise IPv6 URL when no domain URL — avoids duplicate peer entries
-      if (originv && !origin) {
-        setTimeout(() => {
-          try { mesh.say({ dam: "pex", peers: [originv] }, peer); } catch {}
-        }, 750);
+          } catch {}
+        }, 600);
       }
     });
   });
