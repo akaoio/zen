@@ -127,13 +127,14 @@ if (main && cluster.isPrimary) {
     const env = process.env;
     let port;
     let hport;
+    let publicPort;
     let peers;
     let domain;
 
   try {
     port = vport(env.PORT || process.argv[2] || 8420);
     hport = env.HTTPS_PORT ? vport(env.HTTPS_PORT) : null;
-    const publicPort = env.PUBLIC_PORT ? vport(env.PUBLIC_PORT) : null;
+    publicPort = env.PUBLIC_PORT ? vport(env.PUBLIC_PORT) : null;
     peers = resolveBootstrapPeers(screen(env.PEERS), {
       includeBootstrap: !bootstrapDisabled(env),
     });
