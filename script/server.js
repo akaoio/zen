@@ -913,22 +913,25 @@ if (main && cluster.isPrimary) {
     // Also reconnect confirmed PEX-discovered peers that dropped, if under capacity.
     // Like BOOT peers: clear tombstones so AXE dedup doesn't block reconnect.
     // Less aggressive than BOOT: retry: 3 (not 9).
+    // Always iterate (not just when under capacity) so alive peers get touch()
+    // to refresh their seen timestamp — otherwise evict() removes them after TTL.
     const ups = Object.keys(getAxeUp()).length;
-    if (ups < MUPS) {
-      for (const entry of registry.confirmedNonBoot()) {
-        if (ups >= MUPS) break;
-        const url = entry.url;
-        const tombs = opt._tombUrls;
-        const p = opt.peers && opt.peers[url];
-        if (p && p.wire) continue;               // already connected
-        // Clear tombstone so AXE allows reconnect (same as BOOT watchdog does)
-        if (tombs) {
-          tombs.delete(url);
-          tombs.delete(PeerRegistry.alt(url));
-        }
-        if (p) { delete p._noReconnect; delete p._hiGuess; delete p._axeGuess; }
-        try { route.hi({ id: url, url: url, retry: 3 }); } catch {}
+    for (const entry of registry.confirmedNonBoot()) {
+      const url = entry.url;
+      if (isPeerAlive(entry, opt)) {
+        registry.touch(url); // keep seen fresh → prevent TTL eviction while connected
+        continue;
       }
+      if (ups >= MUPS) continue;               // at capacity — skip reconnect
+      const tombs = opt._tombUrls;
+      const p = opt.peers && opt.peers[url];
+      // Clear tombstone so AXE allows reconnect (same as BOOT watchdog does)
+      if (tombs) {
+        tombs.delete(url);
+        tombs.delete(PeerRegistry.alt(url));
+      }
+      if (p) { delete p._noReconnect; delete p._hiGuess; delete p._axeGuess; }
+      try { route.hi({ id: url, url: url, retry: 3 }); } catch {}
     }
   }, 30 * 1000).unref();
 
