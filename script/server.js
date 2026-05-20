@@ -847,6 +847,24 @@ if (main && cluster.isPrimary) {
       console.log(`Loaded ${count} persisted peers from disk`);
     } catch {}
 
+    // Confirm inbound peers that self-announce their URL via dam:"pex".
+    // adopt() returns early (no confirm) when the peer is already known, leaving lastOk=0.
+    // Inbound connections have peer.url=undefined — gossip PEX from relay outbounds has peer.url set.
+    // So we confirm only when peer.url is absent (inbound/unknown transport) + peer.pid is set.
+    const _origHearPex = mesh.hear["pex"];
+    mesh.hear["pex"] = function(msg, peer) {
+      _origHearPex.call(this, msg, peer);
+      if (peer && peer.pid && !peer.url && Array.isArray(msg.peers)) {
+        for (const u of msg.peers) {
+          if (typeof u !== "string") continue;
+          const ann = PeerRegistry.norm(u);
+          if (ann && !registry.isSelf(ann)) {
+            registry.confirm(ann, { pub: peer.pub || "", pid: peer.pid });
+          }
+        }
+      }
+    };
+
     // Handle incoming peer lists from other nodes
     // (mesh.hear["pex"] is wired by setupRelayPex — see lib/pex.js)
 
