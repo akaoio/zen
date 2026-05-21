@@ -9016,41 +9016,53 @@ defmod('./src/axe.js', function(module, exp){
 
       // ── bootstrap ─────────────────────────────────────────────────────────
 
+      // helper: convert http(s) origin to ws(s) URL
+      function toWS(origin) {
+        return (origin || "").replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+      }
+
+      // helper: probe /status, verify ZEN signature, then run cb(statusObj)
+      function probeStatus(httpBase, cb) {
+        try {
+          var ac = w.AbortController ? new w.AbortController() : null;
+          var to = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
+          fetch(httpBase + "/status", ac ? { signal: ac.signal } : {})
+            .then(function(r) { if (to) clearTimeout(to); return r.ok ? r.text() : null; })
+            .then(function(str) {
+              if (!str) return;
+              return Zen.recover(str).then(function(pub) {
+                return Zen.verify(str, pub);
+              }).then(function(data) {
+                if (!data) return;
+                var st = typeof data === "string" ? JSON.parse(data) : data;
+                cb(st);
+              });
+            })
+            .catch(function() { if (to) clearTimeout(to); });
+        } catch {}
+      }
+
       // 1. saved peers from previous sessions
       lsld().forEach(adopt);
 
-      // 2. same-origin relay
-      tmp = peers[(id = loc.origin + "/zen")] = peers[id] || {};
-      tmp.id = tmp.url = id; tmp.retry = tmp.retry || 9;
-
-      // 3. localhost dev
-      tmp = peers[(id = "http://localhost:8420/zen")] = peers[id] || {};
-      tmp.id = tmp.url = id; tmp.retry = tmp.retry || 9;
-
-      // 4. ?peers= URL param
+      // 2. ?peers= URL param
       var parg = ((loc.search || "").split("peers=")[1] || "").split("&")[0];
       if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adopt(u); });
 
-      // 5. Fetch peers from same-origin /status — silent, no console errors
-      // (replaces blind WebSocket scan that caused net::ERR_CONNECTION_REFUSED noise)
-      try {
-        var _o = loc.origin || (loc.protocol + "//" + loc.host);
-        var _ac5 = w.AbortController ? new w.AbortController() : null;
-        var _sto5 = _ac5 ? setTimeout(function() { _ac5.abort(); }, 3000) : null;
-        fetch(_o + "/status", _ac5 ? { signal: _ac5.signal } : {})
-          .then(function(r) { if (_sto5) clearTimeout(_sto5); return r.ok ? r.text() : null; })
-          .then(function(str) {
-            if (!str) return;
-            return Zen.recover(str).then(function(pub) {
-              return Zen.verify(str, pub);
-            }).then(function(data) {
-              if (!data) return;
-              var st = typeof data === "string" ? JSON.parse(data) : data;
-              if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
-            });
-          })
-          .catch(function() { if (_sto5) clearTimeout(_sto5); });
-      } catch {}
+      // 3. same-origin relay — probe /status first; only connect WS if it speaks ZEN
+      var _o = loc.origin || (loc.protocol + "//" + loc.host);
+      probeStatus(_o, function(st) {
+        adopt(toWS(_o) + "/zen");
+        if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
+      });
+
+      // 4. localhost:8420 dev relay — probe /status first; only connect WS if it speaks ZEN
+      if (loc.hostname === "localhost" || loc.hostname === "127.0.0.1") {
+        probeStatus("http://localhost:8420", function(st) {
+          adopt("ws://localhost:8420/zen");
+          if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
+        });
+      }
 
       // 6. volunteer DHT — last resort, only if still not connected after 5s
       setTimeout(function() {
