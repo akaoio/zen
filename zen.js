@@ -9056,14 +9056,6 @@ defmod('./src/axe.js', function(module, exp){
         if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
       });
 
-      // 4. localhost:8420 dev relay — probe /status first; only connect WS if it speaks ZEN
-      if (loc.hostname === "localhost" || loc.hostname === "127.0.0.1") {
-        probeStatus("http://localhost:8420", function(st) {
-          adopt("ws://localhost:8420/zen");
-          if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
-        });
-      }
-
       // 6. volunteer DHT — last resort, only if still not connected after 5s
       setTimeout(function() {
         if (Object.keys(axe.up || {}).length) return;
