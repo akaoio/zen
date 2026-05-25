@@ -22,3 +22,7 @@ tmp/
 .well-known/
 playwright-report/
 test-results/
+.agents/
+.claude/
+_bmad/
+_bmad-output/
