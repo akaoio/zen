@@ -1,29 +1,9 @@
 {
   "mcpServers": {
-    "chrome-devtools": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--headless"],
-      "env": {},
-      "tools": ["*"]
-    },
     "playwright": {
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest"],
-      "env": {},
-      "tools": ["*"]
-    },
-    "zen": {
-      "type": "stdio",
-      "command": "./script/mcp.sh",
-      "env": { "ZEN_NET": "mainnet" },
-      "tools": ["*"]
-    },
-    "zen-testnet": {
-      "type": "stdio",
-      "command": "./script/mcp.sh",
-      "env": { "ZEN_NET": "testnet" },
       "tools": ["*"]
     }
   }

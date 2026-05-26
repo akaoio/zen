@@ -7,7 +7,7 @@ This guide is for projects that embed ZEN as a library and run their own HTTP/We
 ```js
 import ZEN from "zen";
 import { setupRelayPex } from "zen/lib/pex";
-import { PeerRegistry } from "zen/lib/peer-registry";
+import { PeerRegistry } from "zen/lib/preg";
 
 // 1. Create ZEN with your bootstrap peers
 const zen = ZEN({ peers: ["wss://zen.akao.io:8420/zen"] });
@@ -50,7 +50,7 @@ setupRelayPex(zen, { domain: null, port: 8765 });
 Expose the registry so other relays can bootstrap from you:
 
 ```js
-import { PeerRegistry } from "zen/lib/peer-registry";
+import { PeerRegistry } from "zen/lib/preg";
 
 app.get("/.well-known/peers.json", (req, res) => {
   const peers = registry.bootEntries().map(e => e.url)

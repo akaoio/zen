@@ -22,7 +22,7 @@ import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
 import { getOrCreateIdentity } from "../lib/identity.js";
 import { buildStatus, signStatus } from "../lib/status.js";
 import { attach as attachMcp } from "../lib/mcp/server.js";
-import PeerRegistry from "../lib/peer-registry.js";
+import PeerRegistry from "../lib/preg.js";
 import { setupRelayPex } from "../lib/pex.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -588,12 +588,13 @@ if (main && cluster.isPrimary) {
     registry,
     pexMax:   50,
     rttOf,
-    sendPeers: (list, peer) => {
+    sendPeers: (list, peer, pubmap) => {
       const r = zen._graph._;
       const bpids = Object.values((r && r.opt && r.opt.peers) || {})
         .filter(p => p && p.pid && !p.url && p.pid !== peer.pid)
         .map(p => p.pid);
       const msg = { dam: "pex", peers: list };
+      if (pubmap && Object.keys(pubmap).length) msg.pubmap = pubmap;
       if (bpids.length) msg.bpids = bpids;
       saySmart(msg, peer);
     },
