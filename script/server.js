@@ -911,8 +911,10 @@ if (main && cluster.isPrimary) {
           if (typeof u !== "string") continue;
           const ann = PeerRegistry.norm(u);
           if (!ann || registry.isSelf(ann)) continue;
-          // Update lastOk only — no pub to avoid _pidx corruption
-          registry.confirm(ann, {});
+          // Touch only (update seen without setting lastOk) — no pub available from
+          // re-gossip messages so confirm() would create a nopub confirmed entry that
+          // triggers spurious DEAD(nopub) logs in the WATCHDOG every 30s.
+          registry.touch(ann);
         }
       }
     };
@@ -1005,6 +1007,9 @@ if (main && cluster.isPrimary) {
     const ups = Object.keys(getAxeUp()).length;
     for (const entry of registry.confirmedNonBoot()) {
       const url = entry.url;
+      // Skip entries with no pub/pid — liveness can't be verified and reconnect
+      // attempts would produce DEAD(nopub) log spam with no useful recovery path.
+      if (!entry.pub && !entry.pid) continue;
       if (isPeerAlive(entry, opt)) {
         registry.touch(url); // keep seen fresh → prevent TTL eviction while connected
         continue;
