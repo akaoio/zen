@@ -11,7 +11,7 @@ function loadService(root) {
   if (Zen.window || typeof process === "undefined") {
     return;
   }
-  __servicePromise = __servicePromise || import("./service.js");
+  __servicePromise = __servicePromise || import("./lib/service.js");
   __servicePromise.then(
     function (mod) {
       var service = mod && (mod.default || mod);
