@@ -40,14 +40,14 @@ function wirePair(meshA, pubA, meshB, pubB) {
 
 /**
  * Minimal in-process relay MCP server.
- * Accepts encrypted JSON-RPC via mesh.onRelay(), dispatches, replies.
+ * Accepts encrypted JSON-RPC via mesh.on(), dispatches, replies.
  */
 async function makeRelayServer(pair, mesh) {
   const TOOLS = [
     { name: "echo", description: "Echo tool", inputSchema: { type: "object", properties: { msg: { type: "string" } } } },
   ];
 
-  const off = mesh.onRelay(async ({ from, data }) => {
+  const off = mesh.on(async ({ from, data }) => {
     if (!from || !data) return;
     let req;
     try {

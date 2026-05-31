@@ -440,7 +440,7 @@ describe("hear['relay'] handler", function () {
   it("delivers locally when msg.to matches opt.pub", function (done) {
     const { mesh, root } = makeMesh();
     root.opt.pub = PUB_A;
-    mesh.onRelay(function (payload) {
+    mesh.on(function (payload) {
       assert.strictEqual(payload.from, "senderpub");
       assert.strictEqual(payload.data, "secret");
       done();
@@ -507,12 +507,12 @@ describe("hear['relay'] handler", function () {
   });
 });
 
-describe("mesh.onRelay(fn)", function () {
+describe("mesh.on(fn)", function () {
   it("returns an off() function that stops delivery", function (done) {
     const { mesh, root } = makeMesh();
     root.opt.pub = PUB_A;
     let count = 0;
-    const off = mesh.onRelay(function () { count++; });
+    const off = mesh.on(function () { count++; });
     mesh.hear["relay"]({ "#": "or1", dam: "relay", to: PUB_A, from: "s", ttl: 2, data: "a" }, { id: "s" });
     setTimeout(function () {
       assert.strictEqual(count, 1);
@@ -529,8 +529,8 @@ describe("mesh.onRelay(fn)", function () {
     const { mesh, root } = makeMesh();
     root.opt.pub = PUB_A;
     let count = 0;
-    mesh.onRelay(function () { count++; });
-    mesh.onRelay(function () { count++; });
+    mesh.on(function () { count++; });
+    mesh.on(function () { count++; });
     mesh.hear["relay"]({ "#": "or3", dam: "relay", to: PUB_A, from: "s", ttl: 2, data: "x" }, { id: "s" });
     setTimeout(function () {
       assert.strictEqual(count, 2);
@@ -568,7 +568,7 @@ describe("DAM relay end-to-end: A → B → C", function () {
     // A has no direct connection to C — must route through B
     return new Promise(function (resolve, reject) {
       const t = setTimeout(function () { reject(new Error("Timed out: message did not reach C")); }, 5000);
-      meshC.onRelay(function (payload) {
+      meshC.on(function (payload) {
         clearTimeout(t);
         try {
           assert.strictEqual(payload.from, pairA.pub);
@@ -593,7 +593,7 @@ describe("DAM relay end-to-end: A → B → C", function () {
     meshB.hi(peerAatB);
 
     let deliveries = 0;
-    meshB.onRelay(function () { deliveries++; });
+    meshB.on(function () { deliveries++; });
 
     // Send to a non-existent pub — will be routed back and forth until TTL=0
     // The DAM dedup (#) ensures the same message is never processed twice per node

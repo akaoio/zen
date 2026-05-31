@@ -8197,7 +8197,7 @@ defmod('./src/mesh.js', function(module, exp){
     // ── relay: multi-hop ephemeral message routing ───────────────────────────
     // Subscribers receive { from, data } when a relay message is addressed to us.
     mesh._relay_handlers = [];
-    mesh.onRelay = function (fn) {
+    mesh.on = function (fn) {
       mesh._relay_handlers.push(fn);
       return function off() {
         var i = mesh._relay_handlers.indexOf(fn);
@@ -8239,9 +8239,15 @@ defmod('./src/mesh.js', function(module, exp){
         var p = peers[k];
         if (p && p.pub === to && p.wire) { mesh.say(msg, p); return; }
       }
-      // Fall back to XOR-closest peer.
+      // Fall back to XOR-closest peer with known pub key.
       var next = mesh.route(to);
-      if (next) { mesh.say(msg, next); }
+      if (next) { mesh.say(msg, next); return; }
+      // No pub-key route found — flood all connected wired peers.
+      // This handles relay nodes that have no opt.pub (common for server hubs).
+      for (var fk in peers) {
+        var fp = peers[fk];
+        if (fp && fp.wire) { mesh.say(msg, fp); }
+      }
     };
 
     // Multi-hop relay message handler.
@@ -8256,6 +8262,7 @@ defmod('./src/mesh.js', function(module, exp){
         for (var i = 0; i < mesh._relay_handlers.length; i++) {
           mesh._relay_handlers[i](payload);
         }
+        return;
         return;
       }
       // Preserve original msg # so dedup prevents loops across the mesh.
@@ -8272,9 +8279,10 @@ defmod('./src/mesh.js', function(module, exp){
       // Single-hop XOR routing is unreliable when routing tables are incomplete
       // (e.g. inbound-only peers absent from DHT k-buckets). Flooding with TTL
       // guarantees delivery and dedup (#) prevents true loops.
+      // Do NOT require fpeer.pub — relay nodes may not advertise a pub key.
       for (var fk in peers) {
         var fpeer = peers[fk];
-        if (fpeer && fpeer.pub && fpeer.wire && fpeer !== peer) {
+        if (fpeer && fpeer.wire && fpeer !== peer) {
           mesh.say(fwd, fpeer);
         }
       }
@@ -8733,6 +8741,57 @@ defmod('./src/graph.js', function(module, exp){
       }
       return this;
     };
+  }
+
+  // zen.mesh — public facade for the mesh subsystem.
+  // Exposes safe, stable APIs only. Internal transport/state is intentionally hidden.
+  //   zen.mesh.on(fn)          subscribe to incoming push messages; fn({from,data}); returns off()
+  //   zen.mesh.near            number of currently connected peers
+  //   zen.mesh.peers           snapshot array of connected peers { pub, url, id }
+  //   zen.mesh.route(pub)      next-hop peer toward pub by XOR distance { pub, url, id } or null
+  //   zen.mesh.xor(a, b)       XOR distance between two pub keys (BigInt), or null
+  //   zen.mesh.closer(t, a, b) return whichever of pub a or b is XOR-closer to target t
+  //   zen.mesh.ping(pub)       send a ping to the peer with matching pub key
+  //   zen.mesh.stats           { msgs, bytes } counters for received messages
+  if (!Object.getOwnPropertyDescriptor(ZEN.chain, 'mesh')) {
+    Object.defineProperty(ZEN.chain, 'mesh', {
+      get: function () {
+        var root = this._ && this._.root;
+        var m = root && root.opt && root.opt.mesh;
+        if (!m) { return null; }
+        var opt = root.opt;
+        return {
+          on: function (fn) { return m.on(fn); },
+          get near() { return m.near || 0; },
+          get peers() {
+            var ps = opt.peers || {}, out = [];
+            for (var k in ps) {
+              var p = ps[k];
+              if (p && p.wire) { out.push({ pub: p.pub || null, url: p.url || null, id: p.id || k }); }
+            }
+            return out;
+          },
+          route: function (pub) {
+            var p = m.route(pub);
+            if (!p) { return null; }
+            return { pub: p.pub || null, url: p.url || null, id: p.id || null };
+          },
+          xor: function (a, b) { return m.xor(a, b); },
+          closer: function (target, a, b) { return m.closer(target, a, b); },
+          ping: function (pub) {
+            var ps = opt.peers || {};
+            for (var k in ps) {
+              var p = ps[k];
+              if (p && p.pub === pub && p.wire) { m.ping(p); return; }
+            }
+          },
+          get stats() {
+            var h = m.hear;
+            return { msgs: (h && h.c) || 0, bytes: (h && h.d) || 0 };
+          },
+        };
+      },
+    });
   }
 
   const graph = {
@@ -9905,6 +9964,9 @@ defmod('./src/index.js', function(module, exp){
     }
     back(...args) {
       return this._graph.back(...args);
+    }
+    get mesh() {
+      return this._graph.mesh;
     }
   }
 

@@ -255,6 +255,9 @@ class ZEN {
   back(...args) {
     return this._graph.back(...args);
   }
+  get mesh() {
+    return this._graph.mesh;
+  }
 }
 
 mirrorStatics(ZEN, graph.core);

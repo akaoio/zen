@@ -623,7 +623,7 @@ function Mesh(root) {
   // ── relay: multi-hop ephemeral message routing ───────────────────────────
   // Subscribers receive { from, data } when a relay message is addressed to us.
   mesh._relay_handlers = [];
-  mesh.onRelay = function (fn) {
+  mesh.on = function (fn) {
     mesh._relay_handlers.push(fn);
     return function off() {
       var i = mesh._relay_handlers.indexOf(fn);
@@ -665,9 +665,15 @@ function Mesh(root) {
       var p = peers[k];
       if (p && p.pub === to && p.wire) { mesh.say(msg, p); return; }
     }
-    // Fall back to XOR-closest peer.
+    // Fall back to XOR-closest peer with known pub key.
     var next = mesh.route(to);
-    if (next) { mesh.say(msg, next); }
+    if (next) { mesh.say(msg, next); return; }
+    // No pub-key route found — flood all connected wired peers.
+    // This handles relay nodes that have no opt.pub (common for server hubs).
+    for (var fk in peers) {
+      var fp = peers[fk];
+      if (fp && fp.wire) { mesh.say(msg, fp); }
+    }
   };
 
   // Multi-hop relay message handler.
@@ -682,6 +688,7 @@ function Mesh(root) {
       for (var i = 0; i < mesh._relay_handlers.length; i++) {
         mesh._relay_handlers[i](payload);
       }
+      return;
       return;
     }
     // Preserve original msg # so dedup prevents loops across the mesh.
@@ -698,9 +705,10 @@ function Mesh(root) {
     // Single-hop XOR routing is unreliable when routing tables are incomplete
     // (e.g. inbound-only peers absent from DHT k-buckets). Flooding with TTL
     // guarantees delivery and dedup (#) prevents true loops.
+    // Do NOT require fpeer.pub — relay nodes may not advertise a pub key.
     for (var fk in peers) {
       var fpeer = peers[fk];
-      if (fpeer && fpeer.pub && fpeer.wire && fpeer !== peer) {
+      if (fpeer && fpeer.wire && fpeer !== peer) {
         mesh.say(fwd, fpeer);
       }
     }

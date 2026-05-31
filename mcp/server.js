@@ -222,7 +222,7 @@ export function attach(zen, { hwIdentity = null, initialPeers = [], ipc = false 
       publishStatus(di.ip || null, di.ip6 || null);
     }).catch(function() {});
 
-    mesh.onRelay(async function ({ from, data }) {
+    mesh.on(async function ({ from, data }) {
       if (!from || !data) return;
       let req;
       try {

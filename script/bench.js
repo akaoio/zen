@@ -55,7 +55,7 @@ connectPeers(receiver);
 const received   = new Map(); // id → latency
 const latencies  = [];
 
-rMesh.onRelay(({ data }) => {
+rMesh.on(({ data }) => {
   try {
     const { id, t } = JSON.parse(data);
     const rtt = Date.now() - t;

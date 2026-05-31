@@ -390,8 +390,7 @@ async function suitePush() {
 
   // browserB listens for push messages
   const received = [];
-  const meshB = browserB._opt.mesh;
-  const offRelay = meshB.onRelay(({ from, data }) => {
+  const offRelay = browserB._opt.mesh.on(({ from, data }) => {
     received.push({ from, data });
   });
 
