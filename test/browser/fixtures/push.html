@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ZEN Push Test</title>
+  </head>
+  <body>
+    <div id="ready">loading</div>
+    <div id="pub"></div>
+
+    <script type="module">
+      import ZEN from '/zen.js';
+
+      var params  = new URLSearchParams(location.search);
+      var relayUrl = params.get('relay') || 'ws://127.0.0.1:8767/zen';
+
+      var pair = await ZEN.pair();
+
+      var zen = new ZEN({
+        peers:        [relayUrl],
+        pub:          pair.pub,
+        localStorage: false,
+        axe:          false,
+        multicast:    false,
+      });
+
+      var received = [];
+      var waiters  = [];
+
+      zen.mesh.on(function (msg) {
+        var resolve = waiters.shift();
+        if (resolve) {
+          resolve(msg);
+        } else {
+          received.push(msg);
+        }
+      });
+
+      window.pushTests = {
+        myPub: pair.pub,
+
+        sendPush: function (to, data, opt) {
+          zen.push(to, data, opt);
+        },
+
+        waitForMessage: function (timeout) {
+          timeout = timeout || 8000;
+          if (received.length > 0) return Promise.resolve(received.shift());
+          return new Promise(function (resolve, reject) {
+            var timer = setTimeout(function () {
+              var i = waiters.indexOf(resolve);
+              if (i >= 0) waiters.splice(i, 1);
+              reject(new Error('waitForMessage timeout'));
+            }, timeout);
+            waiters.push(function (msg) {
+              clearTimeout(timer);
+              resolve(msg);
+            });
+          });
+        },
+
+        // Register an extra mesh.on handler and return its off() result via a promise.
+        // Calls fn once with the first payload, then calls off().
+        // Returns { called, from, data } after off() is invoked.
+        onceExtra: function (timeout) {
+          timeout = timeout || 8000;
+          return new Promise(function (resolve, reject) {
+            var timer = setTimeout(function () {
+              off();
+              resolve({ called: false });
+            }, timeout);
+            var off = zen.mesh.on(function (msg) {
+              clearTimeout(timer);
+              off();
+              resolve({ called: true, from: msg.from, data: msg.data });
+            });
+          });
+        },
+
+        meshNear: function () {
+          return (zen.mesh && zen.mesh.near) || 0;
+        },
+      };
+
+      document.getElementById('pub').textContent = pair.pub;
+      document.getElementById('ready').textContent = 'ready';
+    </script>
+  </body>
+</html>

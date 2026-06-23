@@ -11,6 +11,7 @@ var files = {
   "/": path.join(__dirname, "fixtures", "index.html"),
   "/relay-sync.html": path.join(__dirname, "fixtures", "relay-sync.html"),
   "/webrtc-p2p.html": path.join(__dirname, "fixtures", "webrtc-p2p.html"),
+  "/push.html": path.join(__dirname, "fixtures", "push.html"),
   "/zen.js": path.join(root, "zen.js"),
   "/webrtc.js": path.join(root, "webrtc.js"),
   "/crypto.wasm": path.join(root, "crypto.wasm"),
