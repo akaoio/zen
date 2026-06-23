@@ -258,6 +258,45 @@ zen.meta(cb)        // subscribe + receive full signature metadata
 zen.push(pub, data) // send an ephemeral P2P message to a peer (not stored)
 ```
 
+### `.push()` — ephemeral P2P messaging
+
+`zen.push(targetPub, data, opt)` sends a message directly to a peer identified by public key. The message is **not written to the graph** — it is routed hop-by-hop through the relay mesh and delivered only if the target is online.
+
+```js
+const pair = await ZEN.pair();
+
+// sender
+zen.push(pair.pub, "hello!");
+
+// with options
+zen.push(pair.pub, { type: "invite", room: "general" }, { ttl: 3 });
+```
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `targetPub` | string | Recipient's public key (45-char base62) |
+| `data` | any | Payload — string, object, or any JSON-serialisable value |
+| `opt.ttl` | number | Max relay hops before the message is dropped (default: **5**) |
+
+**Receiving messages:**
+
+```js
+const off = zen.mesh.on(function({ from, data }) {
+  console.log("from:", from);  // sender's public key
+  console.log("data:", data);  // payload
+});
+
+// unsubscribe
+off();
+```
+
+`zen.mesh.on()` returns an `off()` function. Multiple handlers can be registered; each `off()` removes only its own handler.
+
+**How routing works:** the mesh first checks if the target is a directly connected peer. If not, it forwards to the connected peer with the smallest XOR distance to `targetPub` (Kademlia-style greedy routing), decrementing TTL at each hop. If no peer has a known public key, the message is flooded to all connected peers. Relay nodes additionally use a Kademlia k-bucket DHT for globally-aware routing.
+
+**Use `zen.push` for:** chat messages, notifications, WebRTC signaling, presence pings — anything ephemeral.  
+**Use `zen.put` for:** data that must persist, survive disconnects, or be replicated across the graph.
+
 ### `.meta()` — signature metadata
 
 `zen.get(soul).get(key).meta(cb)` fires the callback on every update and passes a metadata object:
