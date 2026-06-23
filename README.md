@@ -262,14 +262,28 @@ zen.push(pub, data) // send an ephemeral P2P message to a peer (not stored)
 
 `zen.push(targetPub, data, opt)` sends a message directly to a peer identified by public key. The message is **not written to the graph** — it is routed hop-by-hop through the relay mesh and delivered only if the target is online.
 
-```js
-const pair = await ZEN.pair();
+**Both sender and receiver must initialise zen with their own public key** so the mesh knows who they are. Generate a keypair with `ZEN.pair()` and pass `pub` to the constructor:
 
-// sender
-zen.push(pair.pub, "hello!");
+```js
+// Each peer generates (or restores) their keypair
+const pair = await ZEN.pair();          // { pub, priv, epub, epriv }
+
+const zen = new ZEN({
+  peers: ["wss://relay.example.com/zen"],
+  pub: pair.pub,   // required — identifies this node in the mesh
+});
+```
+
+`ZEN.pair()` is a pure crypto function — it does not attach the keypair to a zen instance. You must pass `pub` explicitly. Without it the node cannot receive relay messages (the mesh has no identity to match against incoming `to` fields).
+
+**Sending:**
+
+```js
+// targetPub must be known in advance (shared out-of-band, stored in the graph, etc.)
+zen.push(targetPub, "hello!");
 
 // with options
-zen.push(pair.pub, { type: "invite", room: "general" }, { ttl: 3 });
+zen.push(targetPub, { type: "invite", room: "general" }, { ttl: 3 });
 ```
 
 | Argument | Type | Description |
@@ -278,11 +292,11 @@ zen.push(pair.pub, { type: "invite", room: "general" }, { ttl: 3 });
 | `data` | any | Payload — string, object, or any JSON-serialisable value |
 | `opt.ttl` | number | Max relay hops before the message is dropped (default: **5**) |
 
-**Receiving messages:**
+**Receiving:**
 
 ```js
 const off = zen.mesh.on(function({ from, data }) {
-  console.log("from:", from);  // sender's public key
+  console.log("from:", from);  // sender's public key (set by the sender via opt.pub)
   console.log("data:", data);  // payload
 });
 
