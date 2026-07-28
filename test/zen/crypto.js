@@ -1,8 +1,16 @@
 import assert from "assert";
 import ZEN from "../../zen.js";
 
+// Keep the storage stack (authenticated deep puts ack through the store),
+// but disable AXE / multicast / stats — in a shared mocha process they add
+// network scans and periodic writes that make timing-sensitive tests flaky.
 function makeZen() {
-  return new ZEN({ peers: [] });
+  return new ZEN({
+    peers: [],
+    axe: false,
+    multicast: false,
+    stats: false,
+  });
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────────────

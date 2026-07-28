@@ -12,8 +12,10 @@ var files = {
   "/relay-sync.html": path.join(__dirname, "fixtures", "relay-sync.html"),
   "/webrtc-p2p.html": path.join(__dirname, "fixtures", "webrtc-p2p.html"),
   "/push.html": path.join(__dirname, "fixtures", "push.html"),
-  "/zen.js": path.join(root, "zen.js"),
-  "/webrtc.js": path.join(root, "webrtc.js"),
+  // Serve the SHIPPED browser artifact (package.json "browser": zen.min.js)
+  // so browser tests validate what consumers actually load.
+  "/zen.js": path.join(root, "zen.min.js"),
+  "/webrtc.js": path.join(root, "lib", "webrtc.js"),
   "/crypto.wasm": path.join(root, "crypto.wasm"),
   "/pen.wasm": path.join(root, "pen.wasm"),
   "/lib/opfs.js": path.join(root, "lib", "opfs.js"),

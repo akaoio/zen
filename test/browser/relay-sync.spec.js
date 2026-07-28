@@ -1,23 +1,55 @@
 /**
- * Cross-relay browser sync tests
+ * Cross-relay browser sync tests — HERMETIC.
  *
- * Each test opens 3 browser pages simultaneously, each connected to a
- * different relay (zen / zen0 / zen1), then verifies data PUT on one
- * relay propagates and is received live on the other two.
+ * Three in-process relays are spawned locally (the public zen.akao.io
+ * relays are gone; depending on live infrastructure made a relay outage
+ * indistinguishable from a sync regression). Topology:
  *
- * Topology tested:
- *   zen.akao.io:8420   = relay A
- *   zen0.akao.io:8420 = relay B
- *   zen1.akao.io:8420 = relay C
+ *   zen  (A)  ←  zen0 (B) peers [A]  ←  zen1 (C) peers [B]
+ *
+ * Each test opens 3 browser pages, each connected to a different relay,
+ * then verifies data PUT on one relay propagates live to the other two —
+ * including multi-hop through the B↔C edge with A uninvolved.
  */
 
+import http from "http";
 import { test, expect } from "@playwright/test";
+import ZEN from "../../index.js"; // full Node ZEN — includes lib/wire.js
 
-const RELAYS = {
-  zen:   "wss://zen.akao.io:8420/zen",
-  zen0: "wss://zen0.akao.io:8420/zen",
-  zen1: "wss://zen1.akao.io:8420/zen",
-};
+const RELAYS = { zen: null, zen0: null, zen1: null };
+const relayHandles = [];
+
+async function startRelay(peers) {
+  const srv = http.createServer();
+  const zen = new ZEN({ web: srv, peers, localStorage: false, axe: false, multicast: false });
+  await new Promise((r) => srv.listen(0, r));
+  const url = "ws://127.0.0.1:" + srv.address().port + "/zen";
+  relayHandles.push(srv);
+  return { url, zen };
+}
+
+test.beforeAll(async () => {
+  const a = await startRelay([]);
+  const b = await startRelay([a.url]);
+  const c = await startRelay([b.url]);
+  RELAYS.zen  = a.url;
+  RELAYS.zen0 = b.url;
+  RELAYS.zen1 = c.url;
+});
+
+test.afterAll(async () => {
+  for (const srv of relayHandles) {
+    // Upgraded WS sockets live outside the http server's connection
+    // tracking (lib/websocket.js hand-rolls the upgrade), so srv.close()
+    // may never call back — begin closing, but don't wait forever; the
+    // worker process exits right after this hook anyway.
+    srv.closeAllConnections?.();
+    await Promise.race([
+      new Promise((r) => srv.close(r)),
+      new Promise((r) => setTimeout(r, 1000)),
+    ]);
+  }
+});
 
 function pageUrl(relay) {
   return (
@@ -26,8 +58,17 @@ function pageUrl(relay) {
   );
 }
 
+const openContexts = [];
+
+test.afterEach(async () => {
+  // Close every context opened by the test — leaked contexts keep WS
+  // connections to the relays and starve later tests.
+  while (openContexts.length) await openContexts.pop().close();
+});
+
 async function openRelayPage(browser, relay) {
   const ctx  = await browser.newContext({ ignoreHTTPSErrors: true });
+  openContexts.push(ctx);
   const page = await ctx.newPage();
   page.on("console", (msg) => {
     if (msg.type() === "error") console.error("[browser:" + relay + "]", msg.text());

@@ -14,9 +14,7 @@
 
 import assert from "assert";
 import { ZEN } from "../../zen.js";
-
-// lib/dht.js registers itself via ZEN.on("opt") when imported.
-import "../../lib/dht.js";
+import { start } from "../../lib/dht.js";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -39,10 +37,12 @@ function makeRoot(pid) {
  * Wire two meshes in-process.  Returns peer handles.
  */
 function wire(meshA, pubA, meshB, pubB) {
+  // pA is "peer A" as seen from B's realm: sending to it must deliver into
+  // MESH A, heard from the peer that represents B there (pB) — and vice versa.
   const pA = { id: "pa", pub: pubA, url: "mock://" + pubA.slice(0, 6),
-    wire: { send: (r) => meshB.hear(r, pB) } };
+    wire: { send: (r) => meshA.hear(r, pB) } };
   const pB = { id: "pb", pub: pubB, url: "mock://" + pubB.slice(0, 6),
-    wire: { send: (r) => meshA.hear(r, pA) } };
+    wire: { send: (r) => meshB.hear(r, pA) } };
   return { pA, pB };
 }
 
@@ -62,26 +62,19 @@ function fakePub(len) {
 
 /**
  * Build a fresh dht instance attached to a new root.
- * lib/dht.js's start() checks root.dht and opt.mesh — we bootstrap
- * manually here to avoid depending on ZEN.on("opt") firing order.
+ * The Zen.on("opt") hook fires during graph.create() — before we can set
+ * opt.mesh — so we call the exported start() directly once mesh/pub are
+ * in place. Deterministic: dht is ALWAYS defined, no silent skips.
  */
 function makeDHT(selfPub) {
-  // We invoke start() by temporarily monkey-patching: create a graph
-  // that already has mesh set, then import dht.js which already hooked
-  // ZEN.on("opt").  The simplest approach is to re-trigger via a fresh
-  // ZEN instance so the event fires with our root.
   const graph = ZEN.graph.create({ localStorage: false, peers: {}, WebSocket: false });
   const root  = graph._;
   const mesh  = root.opt.mesh || ZEN.Mesh(root);
   root.opt.mesh = mesh;
   root.opt.pid  = String.random(9);
   root.opt.pub  = selfPub || fakePub();
-  // dht.js already registered ZEN.on("opt"); that event fires inside
-  // graph.create() → which triggers lib/dht.js start(root).
-  // Because import order is: dht.js loads before this test runs each
-  // makeDHT() call, the handler is already registered.
-  // BUT: ZEN.on("opt") fires during graph.create(), and dht.js was
-  // imported at module load time (before makeDHT calls) — so it fires.
+  start(root);
+  if (!root.dht) throw new Error("dht failed to initialise — start() regressed");
   return { graph, root, mesh, dht: root.dht };
 }
 
@@ -90,7 +83,6 @@ function makeDHT(selfPub) {
 describe("dht.add() — k-bucket insertion", function () {
   it("adds a peer to the correct bucket", function () {
     const { dht, root } = makeDHT();
-    if (!dht) { return; } // skip if dht disabled / mesh missing
 
     const peer = fakePub();
     const url  = "wss://peer1.example.com:8420/zen";
@@ -104,7 +96,6 @@ describe("dht.add() — k-bucket insertion", function () {
 
   it("moves an existing entry to bucket tail on re-add (LRU)", function () {
     const { dht, root } = makeDHT();
-    if (!dht) { return; }
 
     const p1  = fakePub(), p2 = fakePub(), p3 = fakePub();
     const url = "wss://x.example.com:8420/zen";
@@ -123,7 +114,6 @@ describe("dht.add() — k-bucket insertion", function () {
   it("does not add self pub to buckets", function () {
     const self = fakePub();
     const { dht } = makeDHT(self);
-    if (!dht) { return; }
 
     dht.add(self, "wss://self.example.com:8420/zen");
     // Self XOR self = 0, bucketIdx returns -1 → not added.
@@ -137,7 +127,6 @@ describe("dht.add() — k-bucket insertion", function () {
 describe("dht.closest(target, K)", function () {
   it("returns results sorted by XOR distance ascending", function () {
     const { dht, root } = makeDHT();
-    if (!dht) { return; }
 
     const target = fakePub();
     const peers  = [fakePub(), fakePub(), fakePub(), fakePub(), fakePub()];
@@ -155,7 +144,6 @@ describe("dht.closest(target, K)", function () {
 
   it("returns at most K results", function () {
     const { dht } = makeDHT();
-    if (!dht) { return; }
 
     const url = "wss://node.example.com:8420/zen";
     for (var i = 0; i < 30; i++) { dht.add(fakePub(), url); }
@@ -166,7 +154,6 @@ describe("dht.closest(target, K)", function () {
 
   it("returns empty array when no peers known", function () {
     const { dht } = makeDHT();
-    if (!dht) { return; }
     assert.deepStrictEqual(dht.closest(fakePub(), 10), []);
   });
 });
@@ -183,7 +170,6 @@ describe("DHT FIND_NODE protocol (dam:dht fn/fn_r)", function () {
     // Create two roots with dht enabled.
     const A = makeDHT(pubA);
     const B = makeDHT(pubB);
-    if (!A.dht || !B.dht) { return done(); }
 
     // Populate B's buckets with 3 known peers.
     const knownPeers = [fakePub(), fakePub(), fakePub()];
@@ -225,7 +211,6 @@ describe("DHT FIND_NODE protocol (dam:dht fn/fn_r)", function () {
 
   it("ignores fn_r with unknown id (no pending callback)", function () {
     const { dht, mesh } = makeDHT();
-    if (!dht) { return; }
     // Should not throw.
     mesh.hear({ dam: "dht", type: "fn_r", id: "unknownXXX", nodes: [], "#": String.random(9) }, {});
   });
@@ -244,7 +229,6 @@ describe("mesh.route() — DHT-aware routing", function () {
   it("returns connected peer that is closest in XOR to target", function () {
     const selfPub = fakePub();
     const { dht, mesh, root } = makeDHT(selfPub);
-    if (!dht) { return; }
 
     const pubX  = fakePub();
     const pubY  = fakePub();
@@ -273,7 +257,6 @@ describe("mesh.route() — DHT-aware routing", function () {
 
   it("falls through to original route when bucket has no connected peers", function () {
     const { dht, mesh, root } = makeDHT();
-    if (!dht) { return; }
 
     const target = fakePub();
     // Bucket has an entry but no connected wire.
@@ -291,7 +274,6 @@ describe("DHT bucket population via mesh.hear[\"?\"]", function () {
   it("adds peer to bucket when ? message arrives with pub + url", function () {
     const selfPub = fakePub();
     const { dht, mesh } = makeDHT(selfPub);
-    if (!dht) { return; }
 
     const peerPub = fakePub();
     const peerUrl = "wss://remote.example.com:8420/zen";
@@ -316,7 +298,6 @@ describe("DHT bucket population via mesh.hear[\"?\"]", function () {
 
   it("ignores ? messages where peer has no pub", function () {
     const { dht, mesh } = makeDHT();
-    if (!dht) { return; }
 
     const sizeBefore = dht.closest(fakePub(), 1000).length;
     // Peer with no pub — DHT should not throw or add anything.

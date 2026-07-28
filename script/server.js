@@ -18,7 +18,7 @@ import {
 import { discoverPeers } from "../lib/bootstrap.js";
 import * as xdg from "../lib/xdg.js";
 import { hwid, DOMF, PORTF } from "../lib/discover.js";
-import { scanbg, mkpat, scanip6 } from "../lib/scan.js";
+import { scanbg, mkpat, scanip6, vprs } from "../lib/scan.js";
 import { getOrCreateIdentity } from "../lib/identity.js";
 import { buildStatus, signStatus } from "../lib/status.js";
 import { attach as attachMcp } from "../lib/mcp/server.js";
@@ -82,7 +82,7 @@ function screen(peers) {
   return peers.split(",").map((peer) => {
     const trimmed = peer.trim();
     // Accept http(s) and ws(s) schemes, including bracket-IPv6 format: ws://[::1]:8420/zen
-    if (!/^(https?|wss?):\/\/.+/i.test(trimmed)) {
+    if (!vprs(trimmed)) {
       throw new Error("Invalid peer URL: " + trimmed);
     }
     return trimmed;

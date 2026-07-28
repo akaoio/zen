@@ -1,62 +1,20 @@
 /**
- * test/discover.js — cross-platform tests for lib/discover.js
+ * test/discover.js — cross-platform tests for lib/discover.js + lib/scan.js
  *
- * Tests the IP discovery layer without relying on network access.
- * Validates:
- *   - nics() returns consistent shape on all platforms (Linux, Windows, macOS)
- *   - isGlobalIPv6() correctly classifies addresses (tested via disc() internals)
- *   - disc() returns the required { domain, ip, ip6, port, source } shape
- *   - hostInUrl() bracket-wrapping in lib/scan.js
+ * Tests the REAL implementations (imported, not copied):
+ *   - isGlobalIPv6() / nics()  from lib/discover.js
+ *   - hostInUrl() / vprs()     from lib/scan.js
+ *   - disc() return shape      from lib/discover.js
  *
  * Environment: set ZEN_TEST_NO_NETWORK=1 to skip STUN/HTTP fallbacks (for CI).
  */
 
 import assert from "assert";
-import os from "os";
 import net from "net";
-
-// ── nics() behaviour ───────────────────────────────────────────────────────
-
-function nics() {
-  const ifaces = os.networkInterfaces();
-  let v4 = null, v6 = null;
-
-  // isGlobalIPv6 inline (mirrors lib/discover.js)
-  function isGlobalIPv6(addr) {
-    if (!addr || !net.isIPv6(addr)) return false;
-    let canonical;
-    try { canonical = new URL("http://[" + addr + "]").hostname.slice(1, -1).toLowerCase(); } catch { return false; }
-    if (canonical === "::1") return false;
-    if (canonical.startsWith("fe80")) return false;
-    if (canonical.startsWith("fc") || canonical.startsWith("fd")) return false;
-    if (canonical.startsWith("ff")) return false;
-    if (canonical === "::") return false;
-    return true;
-  }
-
-  for (const list of Object.values(ifaces)) {
-    for (const a of list) {
-      if (a.internal) continue;
-      if (!v4 && a.family === "IPv4") v4 = a.address;
-      if (!v6 && a.family === "IPv6" && isGlobalIPv6(a.address)) v6 = a.address;
-    }
-  }
-  return { v4, v6 };
-}
+import { disc, isGlobalIPv6, nics } from "../lib/discover.js";
+import { hostInUrl, vprs } from "../lib/scan.js";
 
 // ── isGlobalIPv6 test cases ────────────────────────────────────────────────
-
-function isGlobalIPv6(addr) {
-  if (!addr || !net.isIPv6(addr)) return false;
-  let canonical;
-  try { canonical = new URL("http://[" + addr + "]").hostname.slice(1, -1).toLowerCase(); } catch { return false; }
-  if (canonical === "::1")    return false;
-  if (canonical.startsWith("fe80")) return false;
-  if (canonical.startsWith("fc") || canonical.startsWith("fd")) return false;
-  if (canonical.startsWith("ff")) return false;
-  if (canonical === "::") return false;
-  return true;
-}
 
 describe("isGlobalIPv6()", function () {
   it("rejects loopback ::1", function () {
@@ -120,13 +78,12 @@ describe("nics() — os.networkInterfaces() fallback", function () {
 
 // ── hostInUrl() — scan.js IPv6 bracket wrapping ───────────────────────────
 
-function hostInUrl(host) {
-  return net.isIPv6(host) ? "[" + host + "]" : host;
-}
-
 describe("hostInUrl()", function () {
   it("wraps IPv6 address in brackets", function () {
     assert.strictEqual(hostInUrl("2001:db8::1"), "[2001:db8::1]");
+  });
+  it("leaves an already-bracketed IPv6 address unchanged", function () {
+    assert.strictEqual(hostInUrl("[2001:db8::1]"), "[2001:db8::1]");
   });
   it("leaves IPv4 address unchanged", function () {
     assert.strictEqual(hostInUrl("192.168.1.1"), "192.168.1.1");
@@ -144,11 +101,7 @@ describe("hostInUrl()", function () {
   });
 });
 
-// ── vprs() regex — server.js peer URL validation ──────────────────────────
-
-function vprs(peer) {
-  return /^(https?|wss?):\/\/.+/i.test(peer);
-}
+// ── vprs() — peer URL validation (shared with script/server.js) ───────────
 
 describe("vprs() URL validation", function () {
   it("accepts ws://host:port/path", function () {
@@ -172,20 +125,17 @@ describe("vprs() URL validation", function () {
   it("rejects ftp:// scheme", function () {
     assert.ok(!vprs("ftp://host/path"));
   });
+  it("rejects null/undefined", function () {
+    assert.ok(!vprs(null));
+    assert.ok(!vprs(undefined));
+  });
 });
 
 // ── disc() integration shape ───────────────────────────────────────────────
-// Imports lib/discover.js and verifies the return shape.
 // Network calls (STUN, HTTP) are made unless ZEN_TEST_NO_NETWORK=1.
 
-describe("disc() — return shape", async function () {
+describe("disc() — return shape", function () {
   this.timeout(15000);
-
-  let disc;
-  before(async function () {
-    const mod = await import("../lib/discover.js");
-    disc = mod.disc;
-  });
 
   it("returns required fields", async function () {
     const r = await disc({ port: 8420, noSave: true });

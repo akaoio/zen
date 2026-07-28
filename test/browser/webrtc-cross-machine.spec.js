@@ -21,11 +21,14 @@ const RELAYS = {
   zen1: "wss://zen1.akao.io:8420/zen",
 };
 
+// Auth: use an SSH agent / key for x@zen0/zen1, or export SSHPASS and set
+// ZEN_SSHPASS=1 to route through `sshpass -e`. Never hardcode credentials here.
 function remoteRunnerCmd(host, relayKey) {
   const relay   = RELAYS[relayKey];
   const nvmInit = "source ~/.nvm/nvm.sh 2>/dev/null || true; nvm use 24 --silent 2>/dev/null || true";
+  const ssh     = process.env.ZEN_SSHPASS ? "sshpass -e ssh" : "ssh";
   return (
-    `sshpass -p 's2e2r0v9er@' ssh -o StrictHostKeyChecking=no x@${host} ` +
+    `${ssh} -o StrictHostKeyChecking=no x@${host} ` +
     `'${nvmInit}; cd ~/zen && node test/browser/webrtc-p2p-runner.js ` +
     `--relay=${relay} --min=1 --port=8767 --timeout=60000'`
   );
