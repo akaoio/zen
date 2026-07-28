@@ -76,19 +76,16 @@ jobs:
       - name: Browser tests
         run: npm run test:browser
 
-  # create github release
+  # create github release — distribution is github-install only (npm install github:akaoio/zen)
   release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      # create github release (which triggers the release workflows)
       - name: Release
-        uses: softprops/action-gh-release@v2 # Updated to v2 (latest stable version as of 2025)
-        # env:
-        #   GITHUB_TOKEN: ${{ secrets.PAT }}
+        uses: softprops/action-gh-release@v2
 
   #   # publish latest master or release to dockerhub
   #   dockerhub:
@@ -125,24 +122,3 @@ jobs:
   #     - name: Push
   #       run: docker push ${{ env.image }}
 
-  # publish release to npm
-  npm:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4 # Updated to v4
-
-      - name: Setup Node 24.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.x
-
-      - name: Publish
-        env:
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
-        run: |
-          npm config set //registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN
-          npm install
-          npm publish --access=public

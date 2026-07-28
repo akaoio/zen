@@ -1,24 +1,25 @@
-Every push or pull request will
+# Release
 
-- run the tests
+zen is distributed **via github only** — consumers install it with
 
-Every push to master will
+    npm install github:akaoio/zen
 
-- run the tests
-- publish the latest docker image to dockerhub
+There is no npm publish. Because a github install runs no build step,
+**every generated artifact must be committed**: `zen.js`, `zen.min.js`,
+`index.min.js`, and all touched `lib/*.min.js` / `*.wasm`.
 
-Creating a tag that starts with `v` will
+## Flow
 
-- create a new github release
-- publish the release to npm
-- publish the release to dockerhub
+1. Rebuild artifacts and verify:
 
-Creating a release from the github web interface will
+       npm run verify:release     # build:release && test:all
 
-- publish the release to npm
-- publish the release to dockerhub
+2. Bump `version` in `package.json`.
+3. Commit everything (source + regenerated artifacts).
+4. Tag with the bare version (matching existing tags like `1.0.31`):
 
-Creating the release for version `0.2021.001` from the command line works as follows
+       git tag 1.0.36
+       git push origin main --tags
 
-    git tag v0.2021.001
-    git push --tags
+CI runs the test matrix on every push/PR; a pushed tag additionally
+creates a github release.
