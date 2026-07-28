@@ -584,9 +584,12 @@ function Mesh(root) {
       if (msg.udpToken && !peer.udpToken) {
         peer.udpToken = msg.udpToken; // token we must send in UDP packets to this peer
       }
-      if (msg["@"]) {
-        return;
-      }
+    }
+    // An "@"-bearing message is an ack to our own "?" — never answer it,
+    // even when the sender has no pid (e.g. axe:false realms), or two
+    // pid-less peers ping-pong handshake acks forever.
+    if (msg["@"]) {
+      return;
     }
     var replyMsg = { dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] };
     if (opt.udpPort) { replyMsg.udp = opt.udpPort; } // advertise our UDP port in reply
@@ -728,11 +731,20 @@ function Mesh(root) {
     mesh.hi(one);
   };
 
-  root.on("create", function (root) {
+  if (root.once) {
+    // Mesh was created after this instance's "create" phase already ran
+    // (e.g. zen.attach() adding a transport at runtime). The create hook
+    // below would never fire, leaving puts unwired to the mesh and pid
+    // unset — wire directly instead.
     root.opt.pid = root.opt.pid || String.random(9);
-    this.to.next(root);
     root.on("out", mesh.say);
-  });
+  } else {
+    root.on("create", function (root) {
+      root.opt.pid = root.opt.pid || String.random(9);
+      this.to.next(root);
+      root.on("out", mesh.say);
+    });
+  }
 
   root.on("bye", function (peer, tmp) {
     peer = opt.peers[peer.id || peer] || peer;

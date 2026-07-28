@@ -9,6 +9,7 @@ import "./set.js";
 import "./meta.js";
 import "./mesh.js";
 import "./websocket.js";
+import "./port.js";
 import "./locstore.js";
 import ZEN from "./root.js";
 

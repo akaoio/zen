@@ -8158,9 +8158,12 @@ defmod('./src/mesh.js', function(module, exp){
         if (msg.udpToken && !peer.udpToken) {
           peer.udpToken = msg.udpToken; // token we must send in UDP packets to this peer
         }
-        if (msg["@"]) {
-          return;
-        }
+      }
+      // An "@"-bearing message is an ack to our own "?" — never answer it,
+      // even when the sender has no pid (e.g. axe:false realms), or two
+      // pid-less peers ping-pong handshake acks forever.
+      if (msg["@"]) {
+        return;
       }
       var replyMsg = { dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] };
       if (opt.udpPort) { replyMsg.udp = opt.udpPort; } // advertise our UDP port in reply
@@ -8302,11 +8305,20 @@ defmod('./src/mesh.js', function(module, exp){
       mesh.hi(one);
     };
 
-    root.on("create", function (root) {
+    if (root.once) {
+      // Mesh was created after this instance's "create" phase already ran
+      // (e.g. zen.attach() adding a transport at runtime). The create hook
+      // below would never fire, leaving puts unwired to the mesh and pid
+      // unset — wire directly instead.
       root.opt.pid = root.opt.pid || String.random(9);
-      this.to.next(root);
       root.on("out", mesh.say);
-    });
+    } else {
+      root.on("create", function (root) {
+        root.opt.pid = root.opt.pid || String.random(9);
+        this.to.next(root);
+        root.on("out", mesh.say);
+      });
+    }
 
     root.on("bye", function (peer, tmp) {
       peer = opt.peers[peer.id || peer] || peer;
@@ -8546,6 +8558,95 @@ defmod('./src/websocket.js', function(module, exp){
     u;
 });
 
+defmod('./src/port.js', function(module, exp){
+  var ZEN = reqmod('./src/root.js').default;
+  var __mesh = reqmod('./src/mesh.js').default;
+  var Zen = ZEN;
+  Zen.Mesh = Zen.Mesh || __mesh;
+
+  // zen.attach(port, opts) — wire this graph to another ZEN realm over a
+  // MessagePort-like channel: browser MessagePort, Worker, or Node
+  // worker_threads MessagePort/Worker. Both realms call attach() on their
+  // own end of the channel; the DAM "?" handshake then runs in both
+  // directions exactly as it does for an accepted socket (lib/wire.js).
+  //
+  // Isomorphic contract (the only capabilities used):
+  //   port.postMessage(raw)                      — outbound
+  //   port.on("message", fn)                     — inbound, Node EventEmitter style
+  //   port.addEventListener("message", fn)       — inbound, browser style
+  //   port.start()                               — browser MessagePort only
+  //
+  // Payloads are the mesh's own JSON strings — structured-clone safe.
+  //
+  // opts: { id } — optional stable peer id; omit to let the handshake assign one.
+  // Returns a detach() function that unhooks the listener and says bye,
+  // or null when the chain has no root or the port is unusable.
+  function attach(root, port, opts) {
+    opts = opts || {};
+    if (!root || !port || typeof port.postMessage !== "function") {
+      return null;
+    }
+    var opt = root.opt;
+    var mesh = (opt.mesh = opt.mesh || Zen.Mesh(root));
+
+    var peer = {
+      id: opts.id,
+      wire: port,
+      say: function (raw) {
+        try {
+          port.postMessage(raw);
+        } catch (e) {
+          (peer.queue = peer.queue || []).push(raw);
+        }
+      },
+    };
+
+    function hear(msg) {
+      var raw = msg && msg.data !== undefined ? msg.data : msg;
+      mesh.hear(raw, peer);
+    }
+
+    function bye() {
+      mesh.bye(peer);
+    }
+
+    var node = typeof port.on === "function";
+    if (node) {
+      port.on("message", hear);
+      port.on("close", bye);
+    } else {
+      port.addEventListener("message", hear);
+      if (typeof port.start === "function") {
+        port.start();
+      }
+    }
+
+    mesh.hi(peer);
+
+    return function detach() {
+      if (node) {
+        if (typeof port.off === "function") {
+          port.off("message", hear);
+          port.off("close", bye);
+        }
+      } else {
+        port.removeEventListener("message", hear);
+      }
+      bye();
+    };
+  }
+
+  if (!ZEN.chain.attach) {
+    ZEN.chain.attach = function (port, opts) {
+      var at = this._;
+      var root = at && at.root;
+      return attach(root, port, opts);
+    };
+  }
+
+  exp.default = attach;
+});
+
 defmod('./src/locstore.js', function(module, exp){
   var Zen = reqmod('./src/root.js').default;
   var jsonAsync = reqmod('./src/json.js').default;
@@ -8701,6 +8802,7 @@ defmod('./src/graph.js', function(module, exp){
   reqmod('./src/meta.js');
   reqmod('./src/mesh.js');
   reqmod('./src/websocket.js');
+  reqmod('./src/port.js');
   reqmod('./src/locstore.js');
   var ZEN = reqmod('./src/root.js').default;
   function consumeAsyncResult(zen) {
