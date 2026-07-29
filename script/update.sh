@@ -86,6 +86,16 @@ fi
 # Capture current commit for rollback
 PREV_COMMIT=$(git -C "$INSTALL_DIR" rev-parse HEAD)
 
+# Stamp file records the commit the SERVICE was last (re)started at — not the
+# commit git last pulled. We restart when the running service is behind the
+# working tree (HEAD != stamp), so a tree advanced out-of-band (a manual pull,
+# a push from this very checkout) still triggers a restart on the next run,
+# instead of being masked by a no-op "already up to date" pull.
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zen"
+STAMP="$STATE_DIR/deployed-commit-${SERVICE_NAME}"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+DEPLOYED_COMMIT=$(cat "$STAMP" 2>/dev/null || echo "")
+
 rollback() {
     log_warn "Update failed, rolling back to $PREV_COMMIT..."
     git -C "$INSTALL_DIR" checkout "$PREV_COMMIT" || true
@@ -101,6 +111,8 @@ restart_service() {
             sleep 2
             if systemctl is-active --quiet "$SERVICE_NAME"; then
                 log_info "Service restarted successfully"
+                # Record the commit now running so future runs can detect drift.
+                git -C "$INSTALL_DIR" rev-parse HEAD > "$STAMP" 2>/dev/null || true
             else
                 log_warn "Service may have failed. Check: journalctl -u $SERVICE_NAME -n 50"
             fi
@@ -121,17 +133,23 @@ run git -C "$INSTALL_DIR" pull origin "$VERSION"
 
 NEW_COMMIT=$(git -C "$INSTALL_DIR" rev-parse HEAD)
 
-if [ "$PREV_COMMIT" = "$NEW_COMMIT" ]; then
-    log_info "Already up to date ($(git -C "$INSTALL_DIR" log -1 --format='%h %s'))"
-    log_info "  No code changes; skipping restart."
+# Restart when the running service is behind the working tree, regardless of
+# whether this run's pull changed anything.
+if [ "$DEPLOYED_COMMIT" = "$NEW_COMMIT" ] && systemctl is-active --quiet "$SERVICE_NAME"; then
+    log_info "Already deployed ($(git -C "$INSTALL_DIR" log -1 --format='%h %s'))"
+    log_info "  Service already running this commit; skipping restart."
     log_info "ZEN update check completed!"
     log_info "  Logs: journalctl -u $SERVICE_NAME -f"
     exit 0
 fi
 
-PREV_SHORT=$(printf '%.7s' "$PREV_COMMIT")
-NEW_SHORT=$(printf '%.7s' "$NEW_COMMIT")
-log_info "Updated: $PREV_SHORT → $NEW_SHORT"
+if [ "$PREV_COMMIT" != "$NEW_COMMIT" ]; then
+    PREV_SHORT=$(printf '%.7s' "$PREV_COMMIT")
+    NEW_SHORT=$(printf '%.7s' "$NEW_COMMIT")
+    log_info "Updated: $PREV_SHORT → $NEW_SHORT"
+else
+    log_info "Working tree unchanged, but service is behind — redeploying $(printf '%.7s' "$NEW_COMMIT")"
+fi
 log_info "$(git -C "$INSTALL_DIR" log -1 --format='  %s (%cr)' HEAD)"
 
 # Resolve npm: system PATH first, then nvm default, then any nvm version
