@@ -14,6 +14,7 @@ import { ethers } from "ethers"
 
 // zen chains module — source (not bundled)
 import evm, {
+    connector,
     rpc,
     Wallet,
     Contract,
@@ -738,6 +739,11 @@ describe("parseAbi", function () {
         assert.strictEqual(await contract.balanceOf(TEST_ADDR), 123n)
     })
 
+
+    it("connector.getAddress checksums like ethers", async function () {
+        const lower = TEST_ADDR.toLowerCase()
+        assert.strictEqual(await connector.getAddress(lower), ethers.getAddress(lower))
+    })
 
     it("staticCall simulates a write through eth_call and decodes the returns", async function () {
         const seen = {}
