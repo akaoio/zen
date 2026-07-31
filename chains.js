@@ -10750,6 +10750,10 @@ defmod('./lib/chains/evm.js', function(module, exp){
           this._chainId = BigInt(await this.send("eth_chainId", []))
           return this._chainId
       }
+      async getBlockNumber() {
+          return BigInt(await this.send("eth_blockNumber", []))
+      }
+
 
       async getBlock(tag) {
           const t = typeof tag === "number" ? "0x" + tag.toString(16) : tag
@@ -11009,6 +11013,7 @@ defmod('./lib/chains/evm.js', function(module, exp){
       }
 
       async getChainId() { return BigInt(await this.send("eth_chainId", [])) }
+      async getBlockNumber() { return BigInt(await this.send("eth_blockNumber", [])) }
       async getBlock(tag) {
           const t = typeof tag === "number" ? "0x" + tag.toString(16) : tag
           return _enrichBlock(await this.send("eth_getBlockByNumber", [t, false]))

@@ -299,6 +299,11 @@ describe("evm: provider + wallet (ganache)", function () {
         assert.strictEqual(await zenProv.getChainId(), 1337n)
     })
 
+    it("getBlockNumber matches ethers", async function () {
+        const [zen, eth] = await Promise.all([zenProv.getBlockNumber(), ethersProv.getBlockNumber()])
+        assert.strictEqual(zen.toString(), String(eth))
+    })
+
     it("getBalance matches ethers", async function () {
         const [zen, eth] = await Promise.all([
             zenProv.getBalance(TEST_ADDR),
