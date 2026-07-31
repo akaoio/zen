@@ -484,6 +484,33 @@ describe("evm: event decoding (V3 Collect)", function () {
         assert.strictEqual(rv.amount1.toString(),  amount1.toString())
     })
 
+    it("interface.parseLog decodes a matching log ethers-Result-shaped, null otherwise", async function () {
+        const contract = new Contract(TEST_ADDR, [COLLECT_EVENT], null)
+
+        const tokenId = 42n
+        const amount0 = 100000000000000000n
+        const amount1 = 250000000n
+        const topic0  = ethers.id("Collect(uint256,address,uint256,uint256)")
+        const topic1  = "0x" + tokenId.toString(16).padStart(64, "0")
+        const data    = ethers.AbiCoder.defaultAbiCoder().encode(
+            ["address", "uint256", "uint256"],
+            [TEST_ADDR, amount0, amount1]
+        )
+
+        const parsed = await contract.interface.parseLog({ topics: [topic0, topic1], data })
+        assert.strictEqual(parsed.name, "Collect")
+        // positional, like an ethers Result…
+        assert.strictEqual(parsed.args[0].toString(), tokenId.toString())
+        assert.strictEqual(parsed.args[2].toString(), amount0.toString())
+        // …with the fragment's names attached
+        assert.strictEqual(parsed.args.tokenId.toString(), tokenId.toString())
+        assert.strictEqual(parsed.args.amount1.toString(), amount1.toString())
+
+        // a log no fragment matches parses to null — the ethers v6 semantic
+        const unknown = await contract.interface.parseLog({ topics: [ethers.id("Nope()")], data: "0x" })
+        assert.strictEqual(unknown, null)
+    })
+
     it("decodeReceiptEvents wires events into receipt by name", async function () {
         const { decodeReceiptEvents: dre } = await import("../../lib/chains/evm.js")
 
