@@ -268,9 +268,58 @@ describe("evm: transaction signing (EIP-155)", function () {
         const raw1 = await signTransaction({ ...base, nonce: 1n }, TEST_PRIV, 1n)
         assert.notStrictEqual(raw0, raw1)
     })
+
+
+    it("signTransaction type-2 matches ethers when priced with fee caps", async function () {
+        const common = {
+            nonce: 3n,
+            maxPriorityFeePerGas: 1500000000n, // 1.5 gwei
+            maxFeePerGas: 30000000000n,        // 30 gwei
+            gasLimit: 21000n,
+            to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            value: 1000000000000000000n
+        }
+        const zenRaw  = await signTransaction({ ...common, data: "0x" }, TEST_PRIV, 1n)
+        const ethersW = new ethers.Wallet(TEST_PRIV)
+        const ethRaw  = await ethersW.signTransaction({ ...common, nonce: 3, chainId: 1, type: 2 })
+        assert.strictEqual(zenRaw.slice(0, 4), "0x02", "must carry the 0x02 envelope")
+        assert.strictEqual(zenRaw.toLowerCase(), ethRaw.toLowerCase())
+    })
 })
 
 // ─── 6. Provider + Wallet via ganache ────────────────────────────────────────
+
+describe("evm: per-call timeout", function () {
+    it("Provider.send rejects a hung endpoint within the timeout", async function () {
+        const http = await import("node:http")
+        const server = http.createServer(() => {}) // accepts, never responds
+        await new Promise(r => server.listen(0, r))
+        const port = server.address().port
+        const p = rpc(`http://127.0.0.1:${port}`, null, { timeout: 300 })
+        const started = Date.now()
+        await assert.rejects(p.send("eth_blockNumber", []), /RPC timeout 300ms/)
+        assert.ok(Date.now() - started < 2000, "should reject near the deadline, not hang")
+        server.close()
+    })
+
+    it("a healthy endpoint is unaffected by the timeout option", async function () {
+        const http = await import("node:http")
+        const server = http.createServer((req, res) => {
+            let body = ""
+            req.on("data", c => body += c)
+            req.on("end", () => {
+                const { id } = JSON.parse(body)
+                res.setHeader("content-type", "application/json")
+                res.end(JSON.stringify({ jsonrpc: "2.0", id, result: "0x10" }))
+            })
+        })
+        await new Promise(r => server.listen(0, r))
+        const port = server.address().port
+        const p = rpc(`http://127.0.0.1:${port}`, null, { timeout: 5000 })
+        assert.strictEqual(await p.send("eth_blockNumber", []), "0x10")
+        server.close()
+    })
+})
 
 describe("evm: provider + wallet (ganache)", function () {
     this.timeout(60000)
@@ -334,6 +383,20 @@ describe("evm: provider + wallet (ganache)", function () {
         // formula (2 * baseFee + priority) is also ethers' own, so compare it too.
         assert.strictEqual(zen.maxPriorityFeePerGas.toString(), eth.maxPriorityFeePerGas.toString())
         assert.strictEqual(zen.maxFeePerGas.toString(), eth.maxFeePerGas.toString())
+    })
+
+    it("Wallet auto-selects EIP-1559 on a post-london chain and it mines", async function () {
+        // ganache forks nothing here but is post-london, so getFeeData returns
+        // caps and the wallet must sign type-2 without being told to.
+        const value  = 10n ** 16n
+        const before = await zenProv.getBalance(RECIPIENT)
+        const wallet = await Wallet.create(TEST_PRIV, zenProv)
+        const txResp = await wallet.sendTransaction({ to: RECIPIENT, value })
+        const rec    = await txResp.wait()
+        assert.strictEqual(Number(rec.status), 1, "type-2 transfer did not mine")
+        // type-2 receipts report type 2
+        const full = await zenProv.getTransactionReceipt?.(rec.transactionHash ?? rec.hash) ?? rec
+        assert.strictEqual((await zenProv.getBalance(RECIPIENT)) - before, value)
     })
 
     it("Wallet.create + sendTransaction: native ETH transfer", async function () {

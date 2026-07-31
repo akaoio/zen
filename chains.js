@@ -10726,19 +10726,33 @@ defmod('./lib/chains/evm.js', function(module, exp){
   }
 
   class Provider {
-      constructor(url, network) {
+      constructor(url, network, opts) {
           this.url = url
           this.network = network || null
           this._chainId = network?.chainId ? BigInt(network.chainId) : null
+          // A silent endpoint — one that accepts the socket and never answers —
+          // would otherwise hang the call and everything awaiting it forever.
+          this._timeout = opts?.timeout ?? 30000
       }
 
       async send(method, params = []) {
           const id = _globalReqId++
-          const res = await fetch(this.url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ jsonrpc: "2.0", id, method, params })
-          })
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), this._timeout)
+          let res
+          try {
+              res = await fetch(this.url, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+                  signal: controller.signal
+              })
+          } catch (err) {
+              if (err?.name === "AbortError") throw new Error("RPC timeout " + this._timeout + "ms: " + this.url)
+              throw err
+          } finally {
+              clearTimeout(timer)
+          }
           if (!res.ok) throw new Error("RPC HTTP " + res.status + ": " + this.url)
           const json = await res.json()
           if (json.error) throw new Error("RPC [" + json.error.code + "] " + json.error.message)
@@ -10860,14 +10874,15 @@ defmod('./lib/chains/evm.js', function(module, exp){
       }
   }
 
-  function rpc(url, network) { return new Provider(url, network) }
+  function rpc(url, network, opts) { return new Provider(url, network, opts) }
 
   // ─── WebSocket Provider ───────────────────────────────────────────────────────
 
   class WsProvider {
-      constructor(url, network) {
+      constructor(url, network, opts) {
           this.url = url
           this.network = network || null
+          this._timeout = opts?.timeout ?? 30000
           this._ws = null
           this._pending = new Map()
           this._subs = new Map()
@@ -10973,7 +10988,15 @@ defmod('./lib/chains/evm.js', function(module, exp){
           await this._connect()
           return new Promise((resolve, reject) => {
               const id = this._reqId++
-              this._pending.set(id, { resolve, reject })
+              // Same deadline as the http provider: a socket that connects but
+              // never replies must fail the call, not wedge it.
+              const timer = setTimeout(() => {
+                  if (this._pending.delete(id)) reject(new Error("RPC timeout " + this._timeout + "ms: " + this.url))
+              }, this._timeout)
+              this._pending.set(id, {
+                  resolve: v => { clearTimeout(timer); resolve(v) },
+                  reject: e => { clearTimeout(timer); reject(e) }
+              })
               this._ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }))
           })
       }
@@ -11054,27 +11077,43 @@ defmod('./lib/chains/evm.js', function(module, exp){
       }
   }
 
-  function wsRpc(url, network) { return new WsProvider(url, network) }
+  function wsRpc(url, network, opts) { return new WsProvider(url, network, opts) }
 
   // ─── EIP-155 transaction signing ─────────────────────────────────────────────
 
   async function signTransaction(tx, privOrPair, chainId) {
       const cid      = typeof chainId === "bigint" ? chainId : BigInt(chainId)
       const nonce    = typeof tx.nonce    === "bigint" ? tx.nonce    : BigInt(tx.nonce    ?? 0)
-      const gasPrice = typeof tx.gasPrice === "bigint" ? tx.gasPrice : BigInt(tx.gasPrice ?? 0)
       const gasLimit = typeof tx.gasLimit === "bigint" ? tx.gasLimit : BigInt(tx.gasLimit ?? 21000)
       const to20     = tx.to ? hexToBytes(tx.to) : new Uint8Array(0)
       const value    = typeof tx.value === "bigint" ? tx.value : BigInt(tx.value ?? 0)
       const data     = tx.data ? hexToBytes(tx.data) : new Uint8Array(0)
 
-      // EIP-155: pre-signing RLP includes chainId, 0, 0
-      const unsigned = rlpEncode([nonce, gasPrice, gasLimit, to20, value, data, cid, 0n, 0n])
-      const hashHex  = await ZEN.hash(unsigned, null, null, {name: "keccak256", encode: "hex", input: "raw"})
       // Accept a pre-computed ZEN pair (from Wallet._pair) or a raw privHex string.
       // Using a cached pair avoids a redundant secp256k1 scalar multiply per transaction.
-      const pair     = (privOrPair && typeof privOrPair === "object" && privOrPair.pub)
+      const pair = (privOrPair && typeof privOrPair === "object" && privOrPair.pub)
           ? privOrPair
           : await ZEN.pair(null, {priv: privOrPair, format: "evm"})
+
+      // EIP-1559 (type-2) when the caller priced the transaction with fee caps.
+      // The envelope is a 0x02 byte before the RLP, y-parity is the raw 0/1
+      // recovery id rather than EIP-155's chainId-folded v, and the access list
+      // is empty — nothing zen signs today needs one.
+      if (tx.maxFeePerGas != null || tx.maxPriorityFeePerGas != null) {
+          const maxFee      = BigInt(tx.maxFeePerGas ?? 0)
+          const maxPriority = BigInt(tx.maxPriorityFeePerGas ?? 0)
+          const payload  = [cid, nonce, maxPriority, maxFee, gasLimit, to20, value, data, []]
+          const unsigned = concatBytes(new Uint8Array([0x02]), rlpEncode(payload))
+          const hashHex  = await ZEN.hash(unsigned, null, null, {name: "keccak256", encode: "hex", input: "raw"})
+          const sig      = await ZEN.sign("0x" + hashHex, pair, null, {prehash: true, encode: "raw"})
+          const signed   = concatBytes(new Uint8Array([0x02]), rlpEncode([...payload, BigInt(sig.v), BigInt(sig.r), BigInt(sig.s)]))
+          return bytesToHex(signed)
+      }
+
+      // EIP-155 legacy (type-0): pre-signing RLP includes chainId, 0, 0
+      const gasPrice = typeof tx.gasPrice === "bigint" ? tx.gasPrice : BigInt(tx.gasPrice ?? 0)
+      const unsigned = rlpEncode([nonce, gasPrice, gasLimit, to20, value, data, cid, 0n, 0n])
+      const hashHex  = await ZEN.hash(unsigned, null, null, {name: "keccak256", encode: "hex", input: "raw"})
       const sig      = await ZEN.sign("0x" + hashHex, pair, null, {prehash: true, encode: "raw"})
 
       const vBig   = cid * 2n + 35n + BigInt(sig.v)   // EIP-155 replay protection
@@ -11118,8 +11157,7 @@ defmod('./lib/chains/evm.js', function(module, exp){
           await this._ready
 
           const chainId  = await provider.getChainId()
-          const nonce    = tx.nonce    != null ? BigInt(tx.nonce)    : await provider.getTransactionCount(this.address, "latest")
-          const gasPrice = tx.gasPrice != null ? BigInt(tx.gasPrice) : await provider.getGasPrice()
+          const nonce    = tx.nonce != null ? BigInt(tx.nonce) : await provider.getTransactionCount(this.address, "latest")
           let   gasLimit = tx.gasLimit != null ? BigInt(tx.gasLimit) : null
 
           if (!gasLimit) {
@@ -11131,7 +11169,21 @@ defmod('./lib/chains/evm.js', function(module, exp){
               }
           }
 
-          const raw  = await signTransaction({ ...tx, nonce, gasPrice, gasLimit }, this._pair, chainId)
+          // Fee selection. A caller who priced the transaction gets exactly what
+          // they asked for. Otherwise ask the provider: type-2 when the chain is
+          // post-London (getFeeData returns fee caps), legacy when it is not.
+          const fee = { ...tx }
+          if (tx.maxFeePerGas == null && tx.maxPriorityFeePerGas == null && tx.gasPrice == null) {
+              const data = await provider.getFeeData()
+              if (data.maxFeePerGas != null) {
+                  fee.maxFeePerGas = data.maxFeePerGas
+                  fee.maxPriorityFeePerGas = data.maxPriorityFeePerGas
+              } else {
+                  fee.gasPrice = data.gasPrice
+              }
+          }
+
+          const raw  = await signTransaction({ ...fee, nonce, gasLimit }, this._pair, chainId)
           const hash = await provider.sendRawTransaction(raw)
 
           const wait = async () => {

@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.0.38 — 2026-08-01
+
+### EVM chains
+
+- **EIP-1559 (type-2) transaction signing** (#33): `signTransaction` signs a type-2 envelope — `0x02 || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, [], yParity, r, s])` — when the transaction is priced with fee caps, and legacy type-0 otherwise, so pre-London chains are untouched. `Wallet.sendTransaction` now selects the type itself: a caller's explicit pricing wins, and absent that it asks `getFeeData` and signs type-2 on a post-London chain, legacy on a pre-London one. Until now `getFeeData`'s 1559 fields (1.0.37) could be read but never signed. Verified byte-equal to ethers' `type: 2` output, and a wallet-driven transfer mines type-2 on ganache.
+- **Per-call timeout on both providers** (#34): `rpc(url, network, opts)` and `wsRpc(...)` take `opts.timeout` (default 30s). `Provider.send` aborts the fetch and throws `RPC timeout <ms>ms: <url>`; `WsProvider.send` rejects the pending call on the same deadline. A silent endpoint — one that accepts the socket and never answers — used to hang the call and everything awaiting it; akao's pool scanner sat ten minutes on exactly this.
+- **`getBlockNumber` on both providers**: `eth_blockNumber`, BigInt out. The endpoint-health probe akao's scanners use.
+
 ## 1.0.37 — 2026-07-31
 
 ### EVM chains
