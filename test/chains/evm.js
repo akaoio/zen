@@ -315,6 +315,21 @@ describe("evm: provider + wallet (ganache)", function () {
         assert.ok(typeof gp === "bigint" && gp > 0n, "gasPrice should be positive bigint")
     })
 
+    it("getFeeData carries EIP-1559 fields on a london chain", async function () {
+        const fees = await zenProv.getFeeData()
+        assert.ok(typeof fees.gasPrice === "bigint" && fees.gasPrice > 0n, "gasPrice")
+        assert.ok(typeof fees.maxPriorityFeePerGas === "bigint" && fees.maxPriorityFeePerGas > 0n, "priority fee should be set — ganache is post-london")
+        assert.ok(typeof fees.maxFeePerGas === "bigint" && fees.maxFeePerGas > fees.maxPriorityFeePerGas, "max fee should exceed the priority fee by the base-fee headroom")
+    })
+
+    it("getFeeData agrees with ethers on the priority fee", async function () {
+        const [zen, eth] = await Promise.all([zenProv.getFeeData(), ethersProv.getFeeData()])
+        // Same node, same block: identical priority quote. The max-fee headroom
+        // formula (2 * baseFee + priority) is also ethers' own, so compare it too.
+        assert.strictEqual(zen.maxPriorityFeePerGas.toString(), eth.maxPriorityFeePerGas.toString())
+        assert.strictEqual(zen.maxFeePerGas.toString(), eth.maxFeePerGas.toString())
+    })
+
     it("Wallet.create + sendTransaction: native ETH transfer", async function () {
         const value  = 10n ** 17n   // 0.1 ETH
         const before = await zenProv.getBalance(RECIPIENT)

@@ -2,6 +2,10113 @@ const mods = Object.create(null);
 function defmod(id, fn){ mods[id] = { fn, exports: {}, loaded: false }; }
 function reqmod(id){ var m = mods[id]; if(!m) throw new Error('chains: missing module ' + id); if(!m.loaded){ m.loaded=true; m.fn(m, m.exports); } return m.exports; }
 
+defmod('./zen.js', function(module, exp){
+  const mods = Object.create(null);
+  function defmod(id, fn){ mods[id] = { fn: fn, exports: {}, loaded: false }; }
+  function reqmod(id){ var mod = mods[id]; if(!mod){ throw new Error('Missing module: ' + id); } if(!mod.loaded){ mod.loaded = true; mod.fn(mod, mod.exports); } return mod.exports; }
+
+  defmod('./src/base64.js', function(module, exp){
+    // Patch root.btoa/root.atob to use URL-safe base64 (no +//, no padding).
+    // Native btoa/atob are available in all modern browsers and Node.js 16+.
+
+    var root =
+      typeof globalThis !== "undefined"
+        ? globalThis
+        : typeof global !== "undefined"
+          ? global
+          : typeof window !== "undefined"
+            ? window
+            : this;
+    var nativeBtoa = root.btoa && root.btoa.bind(root);
+    var nativeAtob = root.atob && root.atob.bind(root);
+    if (nativeBtoa) {
+      root.btoa = function (data) {
+        return nativeBtoa(data)
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/g, "");
+      };
+    }
+    if (nativeAtob) {
+      root.atob = function (data) {
+        var tmp = data.replace(/-/g, "+").replace(/_/g, "/");
+        while (tmp.length % 4) {
+          tmp += "=";
+        }
+        return nativeAtob(tmp);
+      };
+    }
+  });
+
+  defmod('./src/array.js', function(module, exp){
+    reqmod('./src/base64.js');
+    // This is Array extended to have .toString(['utf8'|'hex'|'base64'])
+    function ZenArray() {}
+    Object.assign(ZenArray, { from: Array.from });
+    ZenArray.prototype = Object.create(Array.prototype);
+    ZenArray.prototype.toString = function (enc, start, end) {
+      enc = enc || "utf8";
+      start = start || 0;
+      const length = this.length;
+      if (enc === "hex") {
+        const buf = new Uint8Array(this);
+        return [...Array(((end && end + 1) || length) - start).keys()]
+          .map((i) => buf[i + start].toString(16).padStart(2, "0"))
+          .join("");
+      }
+      if (enc === "utf8") {
+        return Array.from({ length: (end || length) - start }, (_, i) =>
+          String.fromCharCode(this[i + start]),
+        ).join("");
+      }
+      if (enc === "base64") {
+        return btoa(this);
+      }
+    };
+
+    exp.default = ZenArray;
+  });
+
+  defmod('./src/buffer.js', function(module, exp){
+    reqmod('./src/base64.js');
+    var __array = reqmod('./src/array.js').default;
+    // This is Buffer implementation used in ZEN. Functionality is mostly
+    // compatible with NodeJS 'safe-buffer' and is used for encoding conversions
+    // between binary and 'hex' | 'utf8' | 'base64'
+    // See documentation and validation for safe implementation in:
+    // https://github.com/feross/safe-buffer#update
+    var ZenArray = __array;
+    function SafeBuffer(...props) {
+      console.warn("new SafeBuffer() is deprecated, please use SafeBuffer.from()");
+      return SafeBuffer.from(...props);
+    }
+    SafeBuffer.prototype = Object.create(Array.prototype);
+    Object.assign(SafeBuffer, {
+      // (data, enc) where typeof data === 'string' then enc === 'utf8'|'hex'|'base64'
+      from() {
+        if (!Object.keys(arguments).length || arguments[0] == null) {
+          throw new TypeError(
+            "First argument must be a string, Buffer, ArrayBuffer, Array, or array-like object.",
+          );
+        }
+        const input = arguments[0];
+        let buf;
+        if (typeof input === "string") {
+          const enc = arguments[1] || "utf8";
+          if (enc === "hex") {
+            const bytes = input
+              .match(/([\da-fA-F]{2})/g)
+              .map((byte) => parseInt(byte, 16));
+            if (!bytes || !bytes.length) {
+              throw new TypeError("Invalid first argument for type 'hex'.");
+            }
+            buf = ZenArray.from(bytes);
+          } else if (enc === "utf8" || "binary" === enc) {
+            // EDIT BY MARK: I think this is safe, tested it against a couple "binary" strings. This lets SafeBuffer match NodeJS Buffer behavior more where it safely btoas regular strings.
+            const length = input.length;
+            const words = new Uint16Array(length);
+            Array.from(
+              { length: length },
+              (_, i) => (words[i] = input.charCodeAt(i)),
+            );
+            buf = ZenArray.from(words);
+          } else if (enc === "base64") {
+            const dec = atob(input);
+            const length = dec.length;
+            const bytes = new Uint8Array(length);
+            Array.from(
+              { length: length },
+              (_, i) => (bytes[i] = dec.charCodeAt(i)),
+            );
+            buf = ZenArray.from(bytes);
+          } else {
+            console.info("SafeBuffer.from unknown encoding: " + enc);
+          }
+          return buf;
+        }
+        const length = input.byteLength ? input.byteLength : input.length;
+        if (length) {
+          let buf;
+          if (input instanceof ArrayBuffer) {
+            buf = new Uint8Array(input);
+          }
+          return ZenArray.from(buf || input);
+        }
+      },
+      // This is 'safe-buffer.alloc' sans encoding support
+      alloc(length, fill = 0 /*, enc*/) {
+        return ZenArray.from(
+          new Uint8Array(Array.from({ length: length }, () => fill)),
+        );
+      },
+      // This is normal UNSAFE 'buffer.alloc' or 'new Buffer(length)' - don't use!
+      allocUnsafe(length) {
+        return ZenArray.from(new Uint8Array(Array.from({ length: length })));
+      },
+      // This puts together array of array like members
+      concat(arr) {
+        // octet array
+        if (!Array.isArray(arr)) {
+          throw new TypeError(
+            "First argument must be Array containing ArrayBuffer or Uint8Array instances.",
+          );
+        }
+        return ZenArray.from(
+          arr.reduce((ret, item) => ret.concat(Array.from(item)), []),
+        );
+      },
+    });
+    SafeBuffer.prototype.from = SafeBuffer.from;
+    SafeBuffer.prototype.toString = ZenArray.prototype.toString;
+
+    exp.default = SafeBuffer;
+  });
+
+  defmod('./src/json.js', function(module, exp){
+    function ensureJsonAsync() {
+      JSON.parseAsync =
+        JSON.parseAsync ||
+        function (text, cb, reviver) {
+          try {
+            cb(undefined, JSON.parse(text, reviver));
+          } catch (error) {
+            cb(error);
+          }
+        };
+      JSON.stringifyAsync =
+        JSON.stringifyAsync ||
+        function (value, cb, replacer, space) {
+          try {
+            cb(undefined, JSON.stringify(value, replacer, space));
+          } catch (error) {
+            cb(error);
+          }
+        };
+    }
+
+    function parseAsync(text, cb, reviver) {
+      ensureJsonAsync();
+      return JSON.parseAsync(text, cb, reviver);
+    }
+
+    function stringifyAsync(value, cb, replacer, space) {
+      ensureJsonAsync();
+      return JSON.stringifyAsync(value, cb, replacer, space);
+    }
+
+    function createJsonPair(note) {
+      const mark = typeof note === "function" ? note : function () {};
+      return {
+        parse: function (text, cb, reviver) {
+          const started = +new Date();
+          return parseAsync(
+            text,
+            function (error, raw) {
+              cb(error, raw, mark(+new Date() - started));
+            },
+            reviver,
+          );
+        },
+        json: function (value, cb, replacer, space) {
+          const started = +new Date();
+          return stringifyAsync(
+            value,
+            function (error, raw) {
+              cb(error, raw, mark(+new Date() - started));
+            },
+            replacer,
+            space,
+          );
+        },
+      };
+    }
+
+    exp.default = { ensureJsonAsync, parseAsync, stringifyAsync, createJsonPair };
+  });
+
+  defmod('./src/shim.js', function(module, exp){
+    var BufferApi = reqmod('./src/buffer.js').default;
+    var jsonAsync = reqmod('./src/json.js').default;
+    const globalScope =
+      typeof globalThis !== "undefined"
+        ? globalThis
+        : typeof global !== "undefined"
+          ? global
+          : typeof window !== "undefined"
+            ? window
+            : {};
+    const api = { Buffer: globalScope.Buffer || BufferApi };
+    const empty = {};
+
+    jsonAsync.ensureJsonAsync();
+
+    api.parse = function (text, reviver) {
+      return new Promise(function (resolve, reject) {
+        jsonAsync.parseAsync(
+          text,
+          function (error, raw) {
+            error ? reject(error) : resolve(raw);
+          },
+          reviver,
+        );
+      });
+    };
+
+    api.stringify = function (value, replacer, space) {
+      return new Promise(function (resolve, reject) {
+        jsonAsync.stringifyAsync(
+          value,
+          function (error, raw) {
+            error ? reject(error) : resolve(raw);
+          },
+          replacer,
+          space,
+        );
+      });
+    };
+
+    if (!api.TextEncoder) {
+      api.TextEncoder = globalScope.TextEncoder;
+    }
+    if (!api.TextDecoder) {
+      api.TextDecoder = globalScope.TextDecoder;
+    }
+
+    api.crypto = globalScope.crypto;
+    api.subtle =
+      (globalScope.crypto || empty).subtle ||
+      (globalScope.crypto || empty).webkitSubtle;
+    api.random = function (len) {
+      var c = api.crypto || globalScope.crypto;
+      return api.Buffer.from(
+        c.getRandomValues(new Uint8Array(api.Buffer.alloc(len))),
+      );
+    };
+
+    // JS utility shims (ported from zen/shim.js)
+    String.random =
+      String.random ||
+      function (l, c) {
+        var s = "";
+        l = l || 24;
+        c = c || "0123456789ABCDEFGHIJKLMNOPQRSTUVWXZabcdefghijklmnopqrstuvwxyz";
+        while (l-- > 0) {
+          s += c.charAt(Math.floor(Math.random() * c.length));
+        }
+        return s;
+      };
+    String.match =
+      String.match ||
+      function (t, o) {
+        var tmp, u;
+        if ("string" !== typeof t) {
+          return false;
+        }
+        if ("string" == typeof o) {
+          o = { "=": o };
+        }
+        o = o || {};
+        tmp = o["="] || o["*"] || o[">"] || o["<"];
+        if (t === tmp) {
+          return true;
+        }
+        if (u !== o["="]) {
+          return false;
+        }
+        tmp = o["*"] || o[">"];
+        if (t.slice(0, (tmp || "").length) === tmp) {
+          return true;
+        }
+        if (u !== o["*"]) {
+          return false;
+        }
+        if (u !== o[">"] && u !== o["<"]) {
+          return t >= o[">"] && t <= o["<"] ? true : false;
+        }
+        if (u !== o[">"] && t >= o[">"]) {
+          return true;
+        }
+        if (u !== o["<"] && t <= o["<"]) {
+          return true;
+        }
+        return false;
+      };
+    String.hash =
+      String.hash ||
+      function (s, c) {
+        if (typeof s !== "string") {
+          return;
+        }
+        c = c || 0;
+        if (!s.length) {
+          return c;
+        }
+        for (var i = 0, l = s.length, n; i < l; ++i) {
+          n = s.charCodeAt(i);
+          c = (c << 5) - c + n;
+          c |= 0;
+        }
+        return c;
+      };
+    var has = Object.prototype.hasOwnProperty;
+    Object.plain =
+      Object.plain ||
+      function (o) {
+        return o
+          ? (o instanceof Object && o.constructor === Object) ||
+              Object.prototype.toString.call(o).match(/^\[object (\w+)\]$/)[1] ===
+                "Object"
+          : false;
+      };
+    Object.empty =
+      Object.empty ||
+      function (o, n) {
+        for (var k in o) {
+          if (has.call(o, k) && (!n || -1 == n.indexOf(k))) {
+            return false;
+          }
+        }
+        return true;
+      };
+
+    function createImmediateFallback(sT, undefinedValue) {
+      if (typeof MessageChannel == "" + undefinedValue) {
+        return sT;
+      }
+      var channel = new MessageChannel();
+      var fn;
+      channel.port1.onmessage = function (e) {
+        "" == e.data && fn();
+      };
+      return function (q) {
+        fn = q;
+        channel.port2.postMessage("");
+      };
+    }
+
+    let undefinedValue;
+    const timeoutApi = setTimeout;
+    let pollLast = 0;
+    let pollSpin = 0;
+    let pollActive = 0;
+    const immediateApi =
+      (typeof setImmediate !== "" + undefinedValue && setImmediate) ||
+      createImmediateFallback(timeoutApi, undefinedValue);
+    const clockApi = (timeoutApi.check = timeoutApi.check ||
+      (typeof performance !== "" + undefinedValue && performance) || {
+        now: function () {
+          return +new Date();
+        },
+      });
+    timeoutApi.hold = timeoutApi.hold || 9;
+    timeoutApi.poll =
+      timeoutApi.poll ||
+      function (task) {
+        if (pollActive) {
+          immediateApi(
+            function () {
+              pollLast = clockApi.now();
+              pollActive = 1;
+              try {
+                task();
+              } finally {
+                pollActive = 0;
+              }
+            },
+            (pollSpin = 0),
+          );
+          return;
+        }
+        if (timeoutApi.hold >= clockApi.now() - pollLast && pollSpin++ < 3333) {
+          pollActive = 1;
+          try {
+            task();
+          } finally {
+            pollActive = 0;
+          }
+          return;
+        }
+        immediateApi(
+          function () {
+            pollLast = clockApi.now();
+            pollActive = 1;
+            try {
+              task();
+            } finally {
+              pollActive = 0;
+            }
+          },
+          (pollSpin = 0),
+        );
+      };
+
+    const pollApi = timeoutApi.poll;
+    let turnIndex = 0;
+    let turnTask;
+    let turnQueue = [];
+    const drainTurnQueue = function () {
+      if ((turnTask = turnQueue[turnIndex++])) {
+        turnTask();
+      }
+      if (turnIndex == turnQueue.length || 99 == turnIndex) {
+        turnQueue = turn.s = turnQueue.slice(turnIndex);
+        turnIndex = 0;
+      }
+      if (turnQueue.length) {
+        // Bypass pollActive check for continuation: use direct call with spin-based yielding
+        if (timeoutApi.hold >= clockApi.now() - pollLast && pollSpin++ < 3333) {
+          drainTurnQueue();
+        } else {
+          immediateApi(function () {
+            pollLast = clockApi.now();
+            pollSpin = 0;
+            drainTurnQueue();
+          }, 0);
+        }
+      }
+    };
+    const turn = (timeoutApi.turn =
+      timeoutApi.turn ||
+      function (task) {
+        1 == turnQueue.push(task) && pollApi(drainTurnQueue);
+      });
+    turn.s = turnQueue;
+
+    const turnApi = timeoutApi.turn;
+    timeoutApi.each =
+      timeoutApi.each ||
+      function (list, fn, done, size) {
+        size = size || 9;
+        function next(batch, batchLength, result) {
+          if ((batchLength = (batch = (list || []).splice(0, size)).length)) {
+            for (var i = 0; i < batchLength; i++) {
+              if (undefinedValue !== (result = fn(batch[i]))) {
+                break;
+              }
+            }
+            if (undefinedValue === result) {
+              turnApi(next);
+              return;
+            }
+          }
+          done && done(result);
+        }
+        next();
+      };
+
+    api.toBytes = function toBytes(data) {
+      if (data instanceof Uint8Array) {
+        return data;
+      }
+      if (data instanceof ArrayBuffer) {
+        return new Uint8Array(data);
+      }
+      if (data && data.buffer instanceof ArrayBuffer) {
+        return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength);
+      }
+      return new api.TextEncoder().encode(typeof data === "string" ? data : String(data));
+    };
+
+    exp.default = api;
+  });
+
+  defmod('./src/valid.js', function(module, exp){
+    // Valid values are a subset of JSON: null, binary, number (!Infinity), text,
+    // or a soul relation. Arrays need special algorithms to handle concurrency,
+    // so they are not supported directly. Use an extension that supports them if
+    // needed but research their problems first.
+    exp.default = function (v) {
+      // "deletes", nulling out keys.
+      return (
+        v === null ||
+        "string" === typeof v ||
+        "boolean" === typeof v ||
+        // we want +/- Infinity to be, but JSON does not support it, sad face.
+        // can you guess what v === v checks for? ;)
+        ("number" === typeof v && v != Infinity && v != -Infinity && v === v) ||
+        (!!v && "string" == typeof v["#"] && Object.keys(v).length === 1 && v["#"])
+      );
+    }
+  });
+
+  defmod('./src/state.js', function(module, exp){
+    reqmod('./src/shim.js');
+    function State() {
+      var t = +new Date();
+      if (last < t) {
+        return ((N = 0), (last = t + State.drift));
+      }
+      return (last = t + (N += 1) / D + State.drift);
+    }
+    State.drift = 0;
+    var NI = -Infinity,
+      N = 0,
+      D = 999,
+      last = NI,
+      u; // WARNING! In the future, on machines that are D times faster than 2016AD machines, you will want to increase D by another several orders of magnitude so the processing speed never out paces the decimal resolution (increasing an integer effects the state accuracy).
+    State.is = function (n, k, o) {
+      // convenience function to get the state on a key on a node and return it.
+      var tmp = (k && n && n._ && n._[">"]) || o;
+      if (!tmp) {
+        return;
+      }
+      return "number" == typeof (tmp = tmp[k]) ? tmp : NI;
+    };
+    State.ify = function (n, k, s, v, soul) {
+      // put a key's state on a node.
+      (n = n || {})._ = n._ || {}; // safety check or init.
+      if (soul) {
+        n._["#"] = soul;
+      } // set a soul if specified.
+      var tmp = n._[">"] || (n._[">"] = {}); // grab the states data.
+      if (u !== k && k !== "_") {
+        if ("number" == typeof s) {
+          tmp[k] = s;
+        } // add the valid state.
+        if (u !== v) {
+          n[k] = v;
+        } // Note: Not its job to check for valid values!
+      }
+      return n;
+    };
+    exp.default = State;
+  });
+
+  defmod('./src/onto.js', function(module, exp){
+    // On event emitter generic javascript utility.
+    function onto(tag, arg, as) {
+      if (!tag) {
+        return { to: onto };
+      }
+      var u,
+        f = "function" == typeof arg,
+        tag =
+          (this.tag || (this.tag = {}))[tag] ||
+          (f &&
+            (this.tag[tag] = {
+              tag: tag,
+              to: (onto._ = {
+                next: function (arg) {
+                  var tmp;
+                  if ((tmp = this.to)) {
+                    tmp.next(arg);
+                  }
+                },
+              }),
+            }));
+      if (f) {
+        var be = {
+          off:
+            onto.off ||
+            (onto.off = function () {
+              if (this.next === onto._.next) {
+                return !0;
+              }
+              if (this === this.the.last) {
+                this.the.last = this.back;
+              }
+              this.to.back = this.back;
+              this.next = onto._.next;
+              this.back.to = this.to;
+              if (this.the.last === this.the) {
+                delete this.on.tag[this.the.tag];
+              }
+            }),
+          to: onto._,
+          next: arg,
+          the: tag,
+          on: this,
+          as: as,
+        };
+        (be.back = tag.last || tag).to = be;
+        return (tag.last = be);
+      }
+      if ((tag = tag.to) && u !== arg) {
+        tag.next(arg);
+      }
+      return tag;
+    }
+
+    exp.default = onto;
+  });
+
+  defmod('./src/dup.js', function(module, exp){
+    reqmod('./src/shim.js');
+    function Dup(opt) {
+      var dup = { s: new Map() },
+        s = dup.s;
+      opt = opt || { max: 999, age: 1000 * 9 }; //*/ 1000 * 9 * 3};
+      dup.check = function (id) {
+        if (!s.has(id)) {
+          return false;
+        }
+        return dt(id);
+      };
+      var dt = (dup.track = function (id) {
+        var it = s.get(id);
+        if (!it) {
+          // Evict oldest entry when at capacity (Map is insertion-ordered → first key = oldest).
+          if (s.size >= opt.max) { s.delete(s.keys().next().value); }
+          it = {}; s.set(id, it);
+        }
+        it.was = dup.now = +new Date();
+        if (!dup.to) {
+          dup.to = setTimeout(dup.drop, opt.age + 9);
+        }
+        if (dt.ed) {
+          dt.ed(id);
+        }
+        return it;
+      });
+      dup.drop = function (age) {
+        dup.to = null;
+        dup.now = +new Date();
+        var l = [...s.keys()];
+        console.STAT &&
+          console.STAT(dup.now, +new Date() - dup.now, "dup drop keys"); // prev ~20% CPU 7% RAM 300MB // now ~25% CPU 7% RAM 500MB
+        setTimeout.each(
+          l,
+          function (id) {
+            var it = s.get(id);
+            if (it && (age || opt.age) > dup.now - it.was) {
+              return;
+            }
+            s.delete(id);
+          },
+          0,
+          99,
+        );
+      };
+      return dup;
+    }
+
+    exp.default = Dup;
+  });
+
+  defmod('./src/ask.js', function(module, exp){
+    reqmod('./src/onto.js');
+    function ask(cb, as) {
+      if (!this.on) {
+        return;
+      }
+      var lack = (this.opt || {}).lack || 9000;
+      if (!("function" == typeof cb)) {
+        if (!cb) {
+          return;
+        }
+        var id = cb["#"] || cb,
+          tmp = (this.tag || "")[id];
+        if (!tmp) {
+          return;
+        }
+        if (as) {
+          tmp = this.on(id, as);
+          clearTimeout(tmp.err);
+          tmp.err = setTimeout(function () {
+            tmp.off();
+          }, lack);
+        }
+        return true;
+      }
+      var id = (as && as["#"]) || random(9);
+      if (!cb) {
+        return id;
+      }
+      var to = this.on(id, cb, as);
+      to.err =
+        to.err ||
+        setTimeout(function () {
+          to.off();
+          to.next({ err: "Error: No ACK yet.", lack: true });
+        }, lack);
+      return id;
+    };
+    var random = String.random;
+
+    exp.default = ask;
+  });
+
+  defmod('./src/root.js', function(module, exp){
+    reqmod('./src/shim.js');
+    var __valid = reqmod('./src/valid.js').default;
+    var __state = reqmod('./src/state.js').default;
+    var __onto = reqmod('./src/onto.js').default;
+    var __dup = reqmod('./src/dup.js').default;
+    var __ask = reqmod('./src/ask.js').default;
+    function Zen(o) {
+      if (o instanceof Zen) {
+        return (this._ = { $: this }).$;
+      }
+      if (!(this instanceof Zen)) {
+        return new Zen(o);
+      }
+      return Zen.create((this._ = { $: this, opt: o }));
+    }
+
+    Zen.is = function ($) {
+      return $ instanceof Zen || ($ && $._ && $ === $._.$) || false;
+    };
+
+    Zen.version = 0.202;
+
+    Zen.chain = Zen.prototype;
+    Zen.chain.toJSON = function () {};
+
+    Zen.valid = __valid;
+    Zen.state = __state;
+    Zen.on = __onto;
+    Zen.dup = __dup;
+    Zen.ask = __ask;
+
+    {
+      Zen.create = function (at) {
+        at.root = at.root || at;
+        at.graph = at.graph || {};
+        at.on = at.on || Zen.on;
+        at.ask = at.ask || Zen.ask;
+        at.dup = at.dup || Zen.dup();
+        var zen = at.$.opt(at.opt);
+        if (!at.once) {
+          at.on("in", universe, at);
+          at.on("out", universe, at);
+          at.on("put", map, at);
+          Zen.on("create", at);
+          at.on("create", at);
+        }
+        at.once = 1;
+        return zen;
+      };
+      function universe(msg) {
+        // TODO: BUG! msg.out = null being set!
+        //if(!F){ var eve = this; setTimeout(function(){ universe.call(eve, msg,1) },Math.random() * 100);return; } // ADD F TO PARAMS!
+        if (!msg) {
+          return;
+        }
+        if (msg.out === universe) {
+          this.to.next(msg);
+          return;
+        }
+        var eve = this,
+          as = eve.as,
+          at = as.at || as,
+          zen = at.$,
+          dup = at.dup,
+          tmp,
+          DBG = msg.DBG;
+        (tmp = msg["#"]) || (tmp = msg["#"] = text_rand(9));
+        if (dup.check(tmp)) {
+          return;
+        }
+        dup.track(tmp);
+        tmp = msg._;
+        msg._ = "function" == typeof tmp ? tmp : function () {};
+        (msg.$ && msg.$ === (msg.$._ || "").$) || (msg.$ = zen);
+        if (msg["@"] && !msg.put) {
+          ack(msg);
+        }
+        if (!at.ask(msg["@"], msg)) {
+          // is this machine listening for an ack?
+          DBG && (DBG.u = +new Date());
+          if (msg.put) {
+            put(msg);
+            return;
+          } else if (msg.get) {
+            Zen.on.get(msg, zen);
+          }
+        }
+        DBG && (DBG.uc = +new Date());
+        eve.to.next(msg);
+        DBG && (DBG.ua = +new Date());
+        if (msg.nts || msg.NTS) {
+          return;
+        } // TODO: This shouldn't be in core, but fast way to prevent NTS spread. Delete this line after all peers have upgraded to newer versions.
+        msg.out = universe;
+        at.on("out", msg);
+        DBG && (DBG.ue = +new Date());
+      }
+      function put(msg) {
+        if (!msg) {
+          return;
+        }
+        var ctx = msg._ || "",
+          root = (ctx.root = ((ctx.$ = msg.$ || "")._ || "").root);
+        if (msg["@"] && ctx.faith && !ctx.miss) {
+          // TODO: AXE may split/route based on 'put' what should we do here? Detect @ in AXE? I think we don't have to worry, as DAM will route it on @.
+          msg.out = universe;
+          root.on("out", msg);
+          return;
+        }
+        ctx.latch = root.hatch;
+        ctx.match = root.hatch = [];
+        var put = msg.put;
+        var DBG = (ctx.DBG = msg.DBG),
+          S = +new Date();
+        courtesyTime = courtesyTime || S;
+        if (put["#"] && put["."]) {
+          return; // leaf-format message emitted by ham() — already processed; map.js handles graph write.
+        }
+        DBG && (DBG.p = S);
+        ctx["#"] = msg["#"];
+        ctx.msg = msg;
+        ctx.all = 0;
+        ctx.stun = 1;
+        var nl = Object.keys(put); //.sort(); // TODO: This is unbounded operation, large graphs will be slower. Write our own CPU scheduled sort? Or somehow do it in below? Keys itself is not O(1) either, create ES5 shim over ?weak map? or custom which is constant.
+        console.STAT &&
+          console.STAT(S, ((DBG || ctx).pk = +new Date()) - S, "put sort");
+        var ni = 0,
+          nj,
+          kl,
+          soul,
+          node,
+          states,
+          err,
+          tmp;
+        function pop(o) {
+          if (nj != ni) {
+            nj = ni;
+            if (!(soul = nl[ni])) {
+              console.STAT &&
+                console.STAT(S, ((DBG || ctx).pd = +new Date()) - S, "put");
+              fire(ctx);
+              return;
+            }
+            if (!(node = put[soul])) {
+              err = ERR + cut(soul) + "no node.";
+            } else if (!(tmp = node._)) {
+              err = ERR + cut(soul) + "no meta.";
+            } else if (soul !== tmp["#"]) {
+              err = ERR + cut(soul) + "soul not same.";
+            } else if (!(states = tmp[">"])) {
+              err = ERR + cut(soul) + "no state.";
+            }
+            kl = Object.keys(node || {}); // TODO: .keys( is slow
+          }
+          if (err) {
+            msg.err = ctx.err = err; // invalid data should error and stun the message.
+            fire(ctx);
+            //console.log("handle error!", err) // handle!
+            return;
+          }
+          var i = 0,
+            key;
+          o = o || 0;
+          while (o++ < 9 && (key = kl[i++])) {
+            if ("_" === key) {
+              continue;
+            }
+            var val = node[key],
+              state = states[key];
+            if (u === state) {
+              err = ERR + cut(key) + "on" + cut(soul) + "no state.";
+              break;
+            }
+            if (!valid(val)) {
+              err =
+                ERR + cut(key) + "on" + cut(soul) + "bad " + typeof val + cut(val);
+              break;
+            }
+            //ctx.all++; //ctx.ack[soul+key] = '';
+            ham(val, key, soul, state, msg);
+            ++courtesy; // courtesy count;
+          }
+          if ((kl = kl.slice(i)).length) {
+            turn(pop);
+            return;
+          }
+          ++ni;
+          kl = null;
+          pop(o);
+        }
+        pop();
+      }
+      Zen.on.put = put;
+      // TODO: MARK!!! clock below, reconnect sync, ZEN certify wire merge, User.auth taking multiple times, // msg put, put, say ack, hear loop...
+      // WASIS BUG! local peer not ack. .off other people: .open
+      function ham(val, key, soul, state, msg) {
+        var ctx = msg._ || "",
+          root = ctx.root,
+          graph = root.graph,
+          lot,
+          tmp;
+        var vertex = graph[soul] || empty,
+          was = state_is(vertex, key, 1),
+          known = vertex[key];
+
+        var DBG = ctx.DBG;
+        if ((tmp = console.STAT)) {
+          if (!graph[soul] || !known) {
+            tmp.has = (tmp.has || 0) + 1;
+          }
+        }
+
+        var now = State(),
+          u;
+        if (state > now) {
+          if ((tmp = state - now) > Ham.max) {
+            msg.err = ctx.err =
+              ERR + cut(key) + "on" + cut(soul) + "state too far in future.";
+            fire(ctx);
+            back(ctx);
+            return;
+          }
+          setTimeout(
+            function () {
+              ham(val, key, soul, state, msg);
+            },
+            tmp > MD ? MD : tmp,
+          ); // Max Defer 32bit. :(
+          console.STAT &&
+            console.STAT(((DBG || ctx).Hf = +new Date()), tmp, "future");
+          return;
+        }
+        if (state < was) {
+          return;
+        } // but some chains have a cache miss that need to re-fire. // TODO: Improve in future. // for AXE this would reduce rebroadcast, but ZEN does it on message forwarding. // TURNS OUT CACHE MISS WAS NOT NEEDED FOR NEW CHAINS ANYMORE!!! DANGER DANGER DANGER, ALWAYS RETURN! (or am I missing something?)
+        if (!ctx.faith) {
+          // TODO: BUG? Can this be used for cache miss as well? // Yes this was a bug, need to check cache miss for RAD tests, but should we care about the faith check now? Probably not.
+          if (state === was && (val === known || L(val) <= L(known))) {
+            /*console.log("same");*/ /*same;*/ if (!ctx.miss) {
+              return;
+            }
+          } // same
+        }
+        ctx.stun++; // TODO: 'forget' feature in ZEN tied to this, bad approach, but hacked in for now. Any changes here must update there.
+        var aid = msg["#"] + ctx.all++,
+          id = {
+            toString: function () {
+              return aid;
+            },
+            _: ctx,
+          };
+        id.toJSON = id.toString; // this *trick* makes it compatible between old & new versions.
+        root.dup.track(id)["#"] = msg["#"]; // fixes new OK acks for RPC like RTC.
+        DBG && (DBG.ph = DBG.ph || +new Date());
+        root.on("put", {
+          "#": id,
+          "@": msg["@"],
+          put: { "#": soul, ".": key, ":": val, ">": state },
+          ok: msg.ok,
+          _: ctx,
+        });
+      }
+      function map(msg) {
+        var DBG;
+        if ((DBG = (msg._ || "").DBG)) {
+          DBG.pa = +new Date();
+          DBG.pm = DBG.pm || +new Date();
+        }
+        var eve = this,
+          root = eve.as,
+          graph = root.graph,
+          ctx = msg._,
+          put = msg.put,
+          soul = put["#"],
+          key = put["."],
+          val = put[":"],
+          state = put[">"],
+          id = msg["#"],
+          tmp;
+        if ((tmp = ctx.msg) && (tmp = tmp.put) && (tmp = tmp[soul])) {
+          state_ify(tmp, key, state, val, soul);
+        } // necessary! or else out messages do not get ZEN transforms.
+        //var bytes = ((graph[soul]||'')[key]||'').length||1;
+        graph[soul] = state_ify(graph[soul], key, state, val, soul);
+        if ((tmp = (root.next || "")[soul])) {
+          //tmp.bytes = (tmp.bytes||0) + ((val||'').length||1) - bytes;
+          //if(tmp.bytes > 2**13){ Zen.log.once('byte-limit', "Note: In the future, ZEN peers will enforce a ~4KB query limit. Please see https://zen.eco/docs/Page") }
+          tmp.on("in", msg);
+        }
+        fire(ctx);
+        eve.to.next(msg);
+      }
+      function fire(ctx, msg) {
+        var root;
+        if (ctx.stop) {
+          return;
+        }
+        if (0 < --ctx.stun && !ctx.err) {
+          return;
+        } // decrement always runs; early-return only if stun still positive AND no error.
+        if (ctx.stun < 0) { ctx.stun = 0; } // defensive: ctx.stop below prevents double-fire, but guard underflow
+        ctx.stop = 1;
+        if (!(root = ctx.root)) {
+          return;
+        }
+        var tmp = ctx.match;
+        tmp.end = 1;
+        if (tmp === root.hatch) {
+          if (!(tmp = ctx.latch) || tmp.end) {
+            delete root.hatch;
+          } else {
+            root.hatch = tmp;
+          }
+        }
+        ctx.hatch && ctx.hatch(); // TODO: rename/rework how put & this interact.
+        setTimeout.each(ctx.match, function (cb) {
+          cb && cb();
+        });
+        if (!(msg = ctx.msg) || ctx.err || msg.err) {
+          return;
+        }
+        msg.out = universe;
+        ctx.root.on("out", msg);
+
+        courtesyCheck(); // courtesy check;
+      }
+      function ack(msg) {
+        // aggregate ACKs.
+        var id = msg["@"] || "",
+          ctx,
+          ok,
+          tmp;
+        if (!(ctx = id._)) {
+          var dup =
+            (dup = msg.$) && (dup = dup._) && (dup = dup.root) && (dup = dup.dup);
+          if (!(dup = dup.check(id))) {
+            return;
+          }
+          msg["@"] = dup["#"] || msg["@"]; // This doesn't do anything anymore, backtrack it to something else?
+          return;
+        }
+        ctx.acks = (ctx.acks || 0) + 1;
+        if ((ctx.err = msg.err)) {
+          msg["@"] = ctx["#"];
+          fire(ctx); // TODO: BUG? How it skips/stops propagation of msg if any 1 item is error, this would assume a whole batch/resync has same malicious intent.
+        }
+        ctx.ok = msg.ok || ctx.ok;
+        if (!ctx.stop && !ctx.crack) {
+          ctx.crack =
+            ctx.match &&
+            ctx.match.push(function () {
+              back(ctx);
+            });
+        } // handle synchronous acks. NOTE: If a storage peer ACKs synchronously then the PUT loop has not even counted up how many items need to be processed, so ctx.STOP flags this and adds only 1 callback to the end of the PUT loop.
+        back(ctx);
+      }
+      function back(ctx) {
+        if (!ctx || !ctx.root) {
+          return;
+        }
+        if (ctx.stun || (ctx.acks || 0) !== ctx.all) {
+          return;
+        } // normalize acks: undefined treated as 0 before first storage ack arrives.
+        ctx.root.on("in", {
+          "@": ctx["#"],
+          err: ctx.err,
+          ok: ctx.err ? u : ctx.ok || { "": 1 },
+        });
+      }
+
+      var ERR = "Error: Invalid graph!";
+      var cut = function (s) {
+        return " '" + ("" + s).slice(0, 9) + "...' ";
+      };
+      var L = JSON.stringify,
+        MD = 2147483647,
+        State = Zen.state;
+      var Ham = ham;
+      Ham.max = 1000 * 60 * 60 * 24 * 7; // 1 week: legit clock skew is seconds, not days.
+      let courtesy = 0,
+        courtesyTime,
+        courtesyCheck = function () {
+          if (
+            courtesy > 999 &&
+            courtesy / -(courtesyTime - (courtesyTime = +new Date())) > 1
+          ) {
+            Zen.window &&
+              console.log(
+                "Warning: You're syncing 1K+ records a second, faster than DOM can update - consider limiting query.",
+              );
+            courtesyCheck = function () {
+              courtesy = 0;
+            };
+          }
+        };
+    }
+
+    {
+      Zen.on.get = function (msg, zen) {
+        var root = zen._,
+          get = msg.get,
+          soul = get["#"],
+          node = root.graph[soul],
+          has = get["."];
+        var next = root.next || (root.next = {}),
+          at = next[soul];
+
+        // TODO: Azarattum bug, what is in graph is not same as what is in next. Fix!
+
+        // queue concurrent GETs?
+        // TODO: consider tagging original message into dup for DAM.
+        // TODO: ^ above? In chat app, 12 messages resulted in same peer asking for `#user.pub` 12 times. (same with #user GET too, yipes!) // DAM note: This also resulted in 12 replies from 1 peer which all had same ##hash but none of them deduped because each get was different.
+        // TODO: Moving quick hacks fixing these things to axe for now.
+        // TODO: a lot of GET #foo then GET #foo."" happening, why?
+        // TODO: DAM's ## hash check, on same get ACK, producing multiple replies still, maybe JSON vs YSON?
+        // TMP note for now: viMZq1slG was chat LEX query #.
+        /*if(zen !== (tmp = msg.$) && (tmp = (tmp||'')._)){
+                    if(tmp.Q){ tmp.Q[msg['#']] = ''; return } // chain does not need to ask for it again.
+                    tmp.Q = {};
+                }*/
+        /*if(u === has){
+                    if(at.Q){
+                        //at.Q[msg['#']] = '';
+                        //return;
+                    }
+                    at.Q = {};
+                }*/
+        var ctx = msg._ || {},
+          DBG = (ctx.DBG = msg.DBG);
+        DBG && (DBG.g = +new Date());
+        //console.log("GET:", get, node, has, at);
+        //if(!node && !at){ return root.on('get', msg) }
+        //if(has && node){ // replace 2 below lines to continue dev?
+        if (!node) {
+          return root.on("get", msg);
+        }
+        if (has) {
+          if ("string" != typeof has || u === node[has]) {
+            if (!((at || "").next || "")[has]) {
+              root.on("get", msg);
+              return;
+            }
+          }
+          node = state_ify({}, has, state_is(node, has), node[has], soul);
+          // If we have a key in-memory, do we really need to fetch?
+          // Maybe... in case the in-memory key we have is a local write
+          // we still need to trigger a pull/merge from peers.
+        }
+        //Zen.window? Zen.obj.copy(node) : node; // HNPERF: If !browser bump Performance? Is this too dangerous to reference root graph? Copy / shallow copy too expensive for big nodes. Zen.obj.to(node); // 1 layer deep copy // Zen.obj.copy(node); // too slow on big nodes
+        node && ack(msg, node);
+        root.on("get", msg); // send GET to storage adapters.
+      };
+      function ack(msg, node) {
+        var S = +new Date(),
+          ctx = msg._ || {},
+          DBG = (ctx.DBG = msg.DBG);
+        var to = msg["#"],
+          id = text_rand(9),
+          keys = Object.keys(node || "").sort(),
+          soul = ((node || "")._ || "")["#"],
+          kl = keys.length,
+          j = 0,
+          root = msg.$._.root,
+          F = node === root.graph[soul];
+        console.STAT &&
+          console.STAT(S, ((DBG || ctx).gk = +new Date()) - S, "got keys");
+        // PERF: Consider commenting this out to force disk-only reads for perf testing? // TODO: .keys( is slow
+        function go() {
+          S = +new Date();
+          var i = 0,
+            k,
+            put = {},
+            tmp;
+          while (i < 9 && (k = keys[i++])) {
+            state_ify(put, k, state_is(node, k), node[k], soul);
+          }
+          keys = keys.slice(i);
+          (tmp = {})[soul] = put;
+          put = tmp;
+          var faith;
+          if (F) {
+            faith = function () {};
+            faith.ram = faith.faith = true;
+          } // HNPERF: We're testing performance improvement by skipping going through security again, but this should be audited.
+          tmp = keys.length;
+          console.STAT &&
+            console.STAT(S, -(S - (S = +new Date())), "got copied some");
+          DBG && (DBG.ga = +new Date());
+          root.on("in", {
+            "@": to,
+            "#": id,
+            put: put,
+            "%": tmp ? (id = text_rand(9)) : u,
+            $: root.$,
+            _: faith,
+            DBG: DBG,
+          });
+          console.STAT && console.STAT(S, +new Date() - S, "got in");
+          if (!tmp) {
+            return;
+          }
+          setTimeout.turn(go);
+        }
+        node && go();
+        if (!node) {
+          root.on("in", { "@": msg["#"] });
+        } // TODO: I don't think I like this, the default lS adapter uses this but "not found" is a sensitive issue, so should probably be handled more carefully/individually.
+      }
+      Zen.on.get.ack = ack;
+    }
+
+    {
+      Zen.chain.opt = function (opt) {
+        opt = opt || {};
+        var zen = this,
+          at = zen._,
+          tmp = opt.peers || opt;
+        if (!Object.plain(opt)) {
+          opt = {};
+        }
+        if (!Object.plain(at.opt)) {
+          at.opt = opt;
+        }
+        if ("string" == typeof tmp) {
+          tmp = [tmp];
+        }
+        if (!Object.plain(at.opt.peers)) {
+          at.opt.peers = {};
+        }
+        if (tmp instanceof Array) {
+          opt.peers = {};
+          tmp.forEach(function (url) {
+            var p = {};
+            p.id = p.url = url;
+            opt.peers[url] = at.opt.peers[url] = at.opt.peers[url] || p;
+          });
+        }
+        obj_each(opt, function each(k) {
+          var v = this[k];
+          if (
+            (this && this.hasOwnProperty(k)) ||
+            "string" == typeof v ||
+            Object.empty(v)
+          ) {
+            this[k] = v;
+            return;
+          }
+          if (v && v.constructor !== Object && !(v instanceof Array)) {
+            return;
+          }
+          obj_each(v, each);
+        });
+        at.opt.from = opt;
+        Zen.on("opt", at);
+        at.opt.uuid =
+          at.opt.uuid ||
+          function uuid(l) {
+            return (
+              Zen.state().toString(36).replace(".", "") + String.random(l || 12)
+            );
+          };
+        return zen;
+      };
+    }
+
+    var obj_each = function (o, f) {
+        Object.keys(o).forEach(f, o);
+      },
+      text_rand = String.random,
+      turn = setTimeout.turn,
+      valid = Zen.valid,
+      state_is = Zen.state.is,
+      state_ify = Zen.state.ify,
+      u,
+      empty = {},
+      C;
+
+    Zen.log = function () {
+      var log = C && (typeof process !== "undefined" && !Zen.window ? C.error : C.log);
+      return (
+        !Zen.log.off && "function" == typeof log && log.apply(C, arguments),
+        [].slice.call(arguments).join(" ")
+      );
+    };
+    Zen.log.once = function (w, s, o) {
+      return (((o = Zen.log.once)[w] = o[w] || 0), o[w]++ || Zen.log(s));
+    };
+
+    typeof globalThis !== "undefined" &&
+    typeof window === "undefined" &&
+    typeof WorkerGlobalScope !== "undefined"
+      ? ((globalThis.Zen = Zen).window = globalThis)
+      : typeof window !== "undefined"
+        ? ((window.Zen = Zen).window = window)
+        : undefined;
+    (globalThis.Zen = Zen).globalThis = globalThis;
+    try {
+      if (typeof MODULE !== "undefined") {
+        MODULE.exports = Zen;
+      }
+    } catch (e) {}
+
+    (Zen.window || {}).console = (Zen.window || {}).console || {
+      log: function () {},
+    };
+    (C = typeof console !== "undefined" ? console : { log: function () {} }).only =
+      function (i, s) {
+        var log = C && C.log;
+        return (
+          C.only.i &&
+          i === C.only.i &&
+          C.only.i++ &&
+          (("function" == typeof log && log.apply(C, arguments)) || s)
+        );
+      };
+
+    exp.default = Zen;
+  });
+
+  defmod('./src/crypto.js', function(module, exp){
+    // src/crypto.js — Lazy loader and JS bridge for crypto.wasm.
+    //
+    // Usage:
+    //   import bridge from "./crypto.js";
+    //   await bridge.ready;
+    //   const hash = bridge.keccak256(bytes);  // synchronous once ready
+    //
+    // All primitive calls are synchronous after the initial WASM load.
+    // The module exposes typed wrappers that handle WASM memory management.
+
+    const __cryptoWasmURL = new URL("./crypto.wasm", import.meta.url);
+
+    let _wasm = null;
+
+    function _load() {
+      if (
+        typeof process !== "undefined" &&
+        process.versions &&
+        process.versions.node
+      ) {
+        return import("node:fs/promises")
+          .then((mod) => (mod.readFile || (mod.default || {}).readFile)(__cryptoWasmURL))
+          .then((bytes) => WebAssembly.instantiate(bytes, {}))
+          .then((r) => {
+            _wasm = r;
+          });
+      }
+      if (typeof fetch !== "undefined") {
+        return fetch(__cryptoWasmURL)
+          .then((r) => {
+            if (!r.ok)
+              throw new Error("crypto.wasm fetch failed: " + r.status + " " + r.url);
+            return r.arrayBuffer();
+          })
+          .then((buf) => WebAssembly.instantiate(buf, {}))
+          .then((r) => {
+            _wasm = r;
+          });
+      }
+      return Promise.reject(new Error("crypto_wasm_bridge: cannot load crypto.wasm"));
+    }
+
+    // ── Internal helpers ─────────────────────────────────────────────────────────
+
+    function _exports() {
+      return _wasm.instance.exports;
+    }
+
+    function _view() {
+      return new Uint8Array(_wasm.instance.exports.memory.buffer);
+    }
+
+    function _write(bytes) {
+      const ex = _exports();
+      ex.alloc_reset();
+      const ptr = ex.alloc(bytes.length);
+      _view().set(bytes, ptr);
+      return ptr;
+    }
+
+    function _alloc(size) {
+      return _exports().alloc(size);
+    }
+
+    function _read(ptr, len) {
+      return _view().slice(ptr, ptr + len);
+    }
+
+    // ── Public typed wrappers ────────────────────────────────────────────────────
+
+    const bridge = {
+      ready: _load(),
+
+      /** SHA-256: Uint8Array → Uint8Array (32 bytes) */
+      sha256(data) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const inPtr = ex.alloc(data.length);
+        _view().set(data, inPtr);
+        const outPtr = ex.alloc(32);
+        ex.sha256(inPtr, data.length, outPtr);
+        return _view().slice(outPtr, outPtr + 32);
+      },
+
+      /** Keccak-256: Uint8Array → Uint8Array (32 bytes) */
+      keccak256(data) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const inPtr = ex.alloc(data.length);
+        _view().set(data, inPtr);
+        const outPtr = ex.alloc(32);
+        ex.keccak256(inPtr, data.length, outPtr);
+        return _view().slice(outPtr, outPtr + 32);
+      },
+
+      /** RIPEMD-160: Uint8Array → Uint8Array (20 bytes) */
+      ripemd160(data) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const inPtr = ex.alloc(data.length);
+        _view().set(data, inPtr);
+        const outPtr = ex.alloc(20);
+        ex.ripemd160(inPtr, data.length, outPtr);
+        return _view().slice(outPtr, outPtr + 20);
+      },
+
+      /** HMAC-SHA-256: (key: Uint8Array, data: Uint8Array) → Uint8Array (32 bytes) */
+      hmacSha256(key, data) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const kPtr = ex.alloc(key.length);
+        _view().set(key, kPtr);
+        const dPtr = ex.alloc(data.length);
+        _view().set(data, dPtr);
+        const outPtr = ex.alloc(32);
+        ex.hmac_sha256(kPtr, key.length, dPtr, data.length, outPtr);
+        return _view().slice(outPtr, outPtr + 32);
+      },
+
+      /** Base62 encode: 32-byte Uint8Array → 44-char Uint8Array (ASCII) */
+      b62Encode(bytes32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const inPtr = ex.alloc(32);
+        _view().set(bytes32, inPtr);
+        const outPtr = ex.alloc(44);
+        ex.b62_enc(inPtr, outPtr);
+        return _view().slice(outPtr, outPtr + 44);
+      },
+
+      /** Base62 decode: 44-char string/Uint8Array → 32-byte Uint8Array or null */
+      b62Decode(input44) {
+        const ex = _exports();
+        const bytes =
+          typeof input44 === "string"
+            ? new TextEncoder().encode(input44)
+            : input44;
+        ex.alloc_reset();
+        const inPtr = ex.alloc(44);
+        _view().set(bytes.subarray(0, 44), inPtr);
+        const outPtr = ex.alloc(32);
+        const ok = ex.b62_dec(inPtr, outPtr);
+        return ok === 0 ? _view().slice(outPtr, outPtr + 32) : null;
+      },
+
+      // ── secp256k1 ──────────────────────────────────────────────────────────────
+
+      /** scalar × G → {x: Uint8Array(32), y: Uint8Array(32)} or null */
+      k1MultG(scalar32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const sPtr = ex.alloc(32);
+        _view().set(scalar32, sPtr);
+        const outPtr = ex.alloc(64);
+        if (!ex.k1_mult_g(sPtr, outPtr)) return null;
+        const v = _view();
+        return { x: v.slice(outPtr, outPtr + 32), y: v.slice(outPtr + 32, outPtr + 64) };
+      },
+
+      /** scalar × point → {x, y} or null */
+      k1Mult(scalar32, px32, py32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const sPtr = ex.alloc(32);
+        _view().set(scalar32, sPtr);
+        const pxPtr = ex.alloc(32);
+        _view().set(px32, pxPtr);
+        const pyPtr = ex.alloc(32);
+        _view().set(py32, pyPtr);
+        const outPtr = ex.alloc(64);
+        if (!ex.k1_mult(sPtr, pxPtr, pyPtr, outPtr)) return null;
+        const v = _view();
+        return { x: v.slice(outPtr, outPtr + 32), y: v.slice(outPtr + 32, outPtr + 64) };
+      },
+
+      /** point + point → {x, y} or null */
+      k1Add(ax32, ay32, bx32, by32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const axPtr = ex.alloc(32); _view().set(ax32, axPtr);
+        const ayPtr = ex.alloc(32); _view().set(ay32, ayPtr);
+        const bxPtr = ex.alloc(32); _view().set(bx32, bxPtr);
+        const byPtr = ex.alloc(32); _view().set(by32, byPtr);
+        const outPtr = ex.alloc(64);
+        if (!ex.k1_add(axPtr, ayPtr, bxPtr, byPtr, outPtr)) return null;
+        const v = _view();
+        return { x: v.slice(outPtr, outPtr + 32), y: v.slice(outPtr + 32, outPtr + 64) };
+      },
+
+      /** RFC 6979 deterministic k for secp256k1 → Uint8Array(32) */
+      k1DetK(priv32, hash32, attempt) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const privPtr = ex.alloc(32); _view().set(priv32, privPtr);
+        const hashPtr = ex.alloc(32); _view().set(hash32, hashPtr);
+        const outPtr = ex.alloc(32);
+        ex.k1_det_k(privPtr, hashPtr, attempt || 0, outPtr);
+        return _view().slice(outPtr, outPtr + 32);
+      },
+
+      // ── P-256 ──────────────────────────────────────────────────────────────────
+
+      p2MultG(scalar32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const sPtr = ex.alloc(32); _view().set(scalar32, sPtr);
+        const outPtr = ex.alloc(64);
+        if (!ex.p2_mult_g(sPtr, outPtr)) return null;
+        const v = _view();
+        return { x: v.slice(outPtr, outPtr + 32), y: v.slice(outPtr + 32, outPtr + 64) };
+      },
+
+      p2Mult(scalar32, px32, py32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const sPtr = ex.alloc(32); _view().set(scalar32, sPtr);
+        const pxPtr = ex.alloc(32); _view().set(px32, pxPtr);
+        const pyPtr = ex.alloc(32); _view().set(py32, pyPtr);
+        const outPtr = ex.alloc(64);
+        if (!ex.p2_mult(sPtr, pxPtr, pyPtr, outPtr)) return null;
+        const v = _view();
+        return { x: v.slice(outPtr, outPtr + 32), y: v.slice(outPtr + 32, outPtr + 64) };
+      },
+
+      p2Add(ax32, ay32, bx32, by32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const axPtr = ex.alloc(32); _view().set(ax32, axPtr);
+        const ayPtr = ex.alloc(32); _view().set(ay32, ayPtr);
+        const bxPtr = ex.alloc(32); _view().set(bx32, bxPtr);
+        const byPtr = ex.alloc(32); _view().set(by32, byPtr);
+        const outPtr = ex.alloc(64);
+        if (!ex.p2_add(axPtr, ayPtr, bxPtr, byPtr, outPtr)) return null;
+        const v = _view();
+        return { x: v.slice(outPtr, outPtr + 32), y: v.slice(outPtr + 32, outPtr + 64) };
+      },
+
+      p2DetK(priv32, hash32, attempt) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const privPtr = ex.alloc(32); _view().set(priv32, privPtr);
+        const hashPtr = ex.alloc(32); _view().set(hash32, hashPtr);
+        const outPtr = ex.alloc(32);
+        ex.p2_det_k(privPtr, hashPtr, attempt || 0, outPtr);
+        return _view().slice(outPtr, outPtr + 32);
+      },
+
+      // ── Shared ──────────────────────────────────────────────────────────────────
+
+      /** Compressed point encoding: (x32, y32) → Uint8Array(33) */
+      compactPoint(x32, y32) {
+        const ex = _exports();
+        ex.alloc_reset();
+        const xPtr = ex.alloc(32); _view().set(x32, xPtr);
+        const yPtr = ex.alloc(32); _view().set(y32, yPtr);
+        const outPtr = ex.alloc(33);
+        ex.compact_point(xPtr, yPtr, outPtr);
+        return _view().slice(outPtr, outPtr + 33);
+      },
+    };
+
+    exp.default = bridge;
+  });
+
+  defmod('./src/base62.js', function(module, exp){
+    var bridge = reqmod('./src/crypto.js').default;
+    let _wasmReady = false;
+    bridge.ready.then(() => { _wasmReady = true; }).catch(() => {});
+
+    function bito(n) {
+      const hex = n.toString(16).padStart(64, "0");
+      const out = new Uint8Array(32);
+      for (let i = 0; i < 32; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      return out;
+    }
+
+    function _32ToBi(arr) {
+      let hex = "";
+      for (let i = 0; i < 32; i++) hex += arr[i].toString(16).padStart(2, "0");
+      return BigInt("0x" + hex);
+    }
+
+    const ALPHA = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const ALPHA_MAP = {};
+    for (let i = 0; i < ALPHA.length; i++) {
+      ALPHA_MAP[ALPHA[i]] = i;
+    }
+    const PUB_LEN = 44;
+
+    function biToB62(n) {
+      if (typeof n !== "bigint" || n < 0n) {
+        throw new Error("biToB62: input must be non-negative BigInt");
+      }
+      if (_wasmReady) {
+        const out = bridge.b62Encode(bito(n));
+        let s = "";
+        for (let i = 0; i < 44; i++) s += String.fromCharCode(out[i]);
+        return s;
+      }
+      let out = "";
+      let value = n;
+      while (value > 0n) {
+        out = ALPHA[Number(value % 62n)] + out;
+        value = value / 62n;
+      }
+      while (out.length < PUB_LEN) {
+        out = "0" + out;
+      }
+      if (out.length > PUB_LEN) {
+        throw new Error("biToB62: value too large for " + PUB_LEN + "-char base62");
+      }
+      return out;
+    }
+
+    function b62ToBI(s) {
+      if (typeof s !== "string" || s.length !== PUB_LEN) {
+        throw new Error("b62ToBI: expected " + PUB_LEN + "-char base62 string");
+      }
+      if (!/^[A-Za-z0-9]+$/.test(s)) {
+        throw new Error("b62ToBI: invalid base62 characters");
+      }
+      if (_wasmReady) {
+        const decoded = bridge.b62Decode(s);
+        if (!decoded) throw new Error("b62ToBI: invalid base62");
+        return _32ToBi(decoded);
+      }
+      let n = 0n;
+      for (let i = 0; i < s.length; i++) {
+        const c = ALPHA_MAP[s[i]];
+        if (c === undefined) {
+          throw new Error("b62ToBI: unknown char " + s[i]);
+        }
+        n = n * 62n + BigInt(c);
+      }
+      return n;
+    }
+
+    // Fixed-length constants for AES-GCM wire format fields.
+    // IV  = 15 bytes → 21 base62 chars  (62^21 > 256^15)
+    // salt =  9 bytes → 13 base62 chars  (62^13 > 256^9)
+    const IV_B62_LEN = 21;
+    const S_B62_LEN  = 13;
+
+    // Encode an AES-GCM ciphertext buffer (arbitrary length) into base62.
+    // Format: 1-char prefix = last-chunk byte count (1-32, ALPHA-indexed),
+    //         then ceil(buf.length/32) × 44-char base62 chunks (each chunk is
+    //         32 bytes zero-left-padded and encoded as biToB62).
+    // The prefix lets the decoder reconstruct exact byte length without any extra metadata.
+    function bufToB62Ct(buf) {
+      if (!buf || buf.length === 0) return ALPHA[0]; // edge: 0-byte output
+      const lastLen = ((buf.length - 1) % 32) + 1;  // 1..32
+      let out = ALPHA[lastLen];                       // 1-char prefix
+      for (let i = 0; i < buf.length; i += 32) {
+        const srcLen = Math.min(32, buf.length - i);
+        const chunk = new Uint8Array(32);             // zero-padded 32 bytes
+        for (let j = 0; j < srcLen; j++) chunk[32 - srcLen + j] = buf[i + j]; // left-pad
+        out += biToB62(_32ToBi(chunk));
+      }
+      return out;
+    }
+
+    // Decode a bufToB62Ct-encoded string back to a Uint8Array.
+    function b62CtToBuf(s) {
+      if (!s || s.length < 2) return new Uint8Array(0);
+      const lastLen = ALPHA_MAP[s[0]];  // 1..32
+      if (lastLen === undefined || lastLen === 0) return new Uint8Array(0);
+      const data = s.slice(1);
+      const numChunks = data.length / 44;
+      const result = [];
+      for (let i = 0; i < numChunks; i++) {
+        const chunk44 = data.slice(i * 44, (i + 1) * 44);
+        const bytes = bito(b62ToBI(chunk44));   // 32 bytes, big-endian
+        if (i < numChunks - 1) {
+          for (let j = 0; j < 32; j++) result.push(bytes[j]);
+        } else {
+          // Last chunk: the real data occupies the rightmost lastLen bytes.
+          for (let j = 32 - lastLen; j < 32; j++) result.push(bytes[j]);
+        }
+      }
+      return new Uint8Array(result);
+    }
+
+    // Encode an arbitrary-length buffer as a single base62 BigInt, padded to exactly `len` chars.
+    function bufToB62Fixed(buf, len) {
+      let hex = "";
+      for (let i = 0; i < buf.length; i++) hex += ("0" + buf[i].toString(16)).slice(-2);
+      let n = BigInt("0x" + (hex || "0"));
+      let out = "";
+      while (n > 0n) { out = ALPHA[Number(n % 62n)] + out; n = n / 62n; }
+      while (out.length < len) out = "0" + out;
+      if (out.length > len) throw new Error("bufToB62Fixed: value overflows " + len + " chars");
+      return out;
+    }
+
+    // Decode a base62 string back to a fixed-length Uint8Array.
+    function b62ToBuf(s, byteLen) {
+      let n = 0n;
+      for (let i = 0; i < s.length; i++) {
+        const c = ALPHA_MAP[s[i]];
+        if (c === undefined) throw new Error("b62ToBuf: invalid base62 char '" + s[i] + "'");
+        n = n * 62n + BigInt(c);
+      }
+      const hex = n.toString(16).padStart(byteLen * 2, "0");
+      const result = new Uint8Array(byteLen);
+      for (let i = 0; i < byteLen; i++) result[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      return result;
+    }
+
+    function bufToB62(buf) {
+      if (_wasmReady) {
+        let out = "";
+        for (let i = 0; i < buf.length; i += 32) {
+          const chunk = new Uint8Array(32);
+          const slice = buf.slice(i, Math.min(i + 32, buf.length));
+          chunk.set(slice, 32 - slice.length);
+          const enc = bridge.b62Encode(chunk);
+          for (let j = 0; j < 44; j++) out += String.fromCharCode(enc[j]);
+        }
+        return out;
+      }
+      let out = "";
+      for (let i = 0; i < buf.length; i += 32) {
+        const end = Math.min(i + 32, buf.length);
+        let hex = "";
+        for (let p = 0; p < 32 - (end - i); p++) {
+          hex += "00";
+        }
+        for (let j = i; j < end; j++) {
+          hex += ("0" + buf[j].toString(16)).slice(-2);
+        }
+        out += biToB62(BigInt("0x" + hex));
+      }
+      return out;
+    }
+
+    const base62 = {
+      ALPHA,
+      biToB62,
+      b62ToBI,
+      bufToB62,
+      bufToB62Fixed,
+      bufToB62Ct,
+      b62ToBuf,
+      b62CtToBuf,
+      IV_B62_LEN,
+      S_B62_LEN,
+      PUB_LEN,
+    };
+    exp.default = base62;
+
+
+    exp.bito = bito;
+  });
+
+  defmod('./src/settings.js', function(module, exp){
+    var base62 = reqmod('./src/base62.js').default;
+    const settings = {};
+    settings.pbkdf2 = { hash: { name: "SHA-256" }, iter: 100000, ks: 64 };
+    settings.ecdsa = {
+      pair: { name: "ECDSA", namedCurve: "secp256k1" },
+      sign: { name: "ECDSA", hash: { name: "SHA-256" } },
+    };
+    settings.ecdh = { name: "ECDH", namedCurve: "secp256k1" };
+
+    settings.keyToJwk = function (keyBytes) {
+      const keyB64 = keyBytes.toString("base64");
+      return {
+        kty: "oct",
+        k: keyB64.replace(/\+/g, "-").replace(/\//g, "_").replace(/\=/g, ""),
+        ext: false,
+        alg: "A256GCM",
+      };
+    };
+
+    // Compact wire format detector.
+    // Signed secp256k1:   <86 base62 chars><v 0|1>:<message>
+    // Signed other curve: <86 base62 chars><v 0|1>/<curve>:<message>
+    // Encrypted:          <ct_b62>.<iv_b62_21>.<s_b62_13>
+    const _SIG_HEAD = /^[0-9A-Za-z]{86}[01]/;
+    const _B62_PART = /^[A-Za-z0-9]+$/;
+    const IV_B62_LEN = 21;
+    const S_B62_LEN  = 13;
+
+    settings.check = function (t) {
+      if (typeof t !== "string") {
+        return false;
+      }
+      // Signed: check first (must come before encrypted check)
+      if (t.length >= 88 && _SIG_HEAD.test(t) && (t[87] === ":" || t[87] === "/")) {
+        return true;
+      }
+      // Encrypted base62: 3 dot-separated parts; iv is always 21 chars, s always 13 chars
+      const dparts = t.split(".");
+      if (
+        dparts.length === 3 &&
+        dparts[0].length > 0 &&
+        dparts[1].length === IV_B62_LEN &&
+        dparts[2].length === S_B62_LEN &&
+        _B62_PART.test(dparts[0]) &&
+        _B62_PART.test(dparts[1]) &&
+        _B62_PART.test(dparts[2])
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    settings.parse = async function (t) {
+      if (typeof t !== "string") {
+        return t;
+      }
+      // Signed: check first
+      if (t.length >= 88 && _SIG_HEAD.test(t)) {
+        const decodeMsg = (b62) => new TextDecoder().decode(base62.b62CtToBuf(b62));
+        if (t[87] === ":") {
+          // secp256k1: message is base62-encoded
+          return { s: t.slice(0, 86), v: parseInt(t[86]), m: decodeMsg(t.slice(88)) };
+        }
+        if (t[87] === "/") {
+          // non-secp256k1: <sig86><v>/<curve>:<msg_b62>
+          const rest = t.slice(88);
+          const ci = rest.indexOf(":");
+          if (ci !== -1) {
+            return { s: t.slice(0, 86), v: parseInt(t[86]), c: rest.slice(0, ci), m: decodeMsg(rest.slice(ci + 1)) };
+          }
+        }
+      }
+      // Encrypted base62 (new): 3 dot-separated parts; iv=21 chars, s=13 chars
+      const dparts = t.split(".");
+      if (
+        dparts.length === 3 &&
+        dparts[0].length > 0 &&
+        dparts[1].length === IV_B62_LEN &&
+        dparts[2].length === S_B62_LEN &&
+        _B62_PART.test(dparts[0]) &&
+        _B62_PART.test(dparts[1]) &&
+        _B62_PART.test(dparts[2])
+      ) {
+        return { ct: dparts[0], iv: dparts[1], s: dparts[2], _enc: "base62" };
+      }
+      // Fallback: try JSON parse (handles serialised objects, numbers, booleans, null)
+      try {
+        return JSON.parse(t);
+      } catch (e) {}
+      return t;
+    };
+
+    exp.default = settings;
+  });
+
+  defmod('./src/sha256.js', function(module, exp){
+    var shim = reqmod('./src/shim.js').default;
+    async function sha256(data, algorithm) {
+      const text = typeof data === "string" ? data : await shim.stringify(data);
+      const hash = await shim.subtle.digest(
+        { name: algorithm || "SHA-256" },
+        new shim.TextEncoder().encode(text),
+      );
+      return shim.Buffer.from(hash);
+    }
+
+    exp.default = sha256;
+  });
+
+  defmod('./src/aeskey.js', function(module, exp){
+    var shim = reqmod('./src/shim.js').default;
+    var settings = reqmod('./src/settings.js').default;
+    var sha256 = reqmod('./src/sha256.js').default;
+    async function aeskey(key, salt, opt) {
+      opt = opt || {};
+      const combo = key + (salt || shim.random(8)).toString("utf8");
+      const hash = shim.Buffer.from(await sha256(combo), "binary");
+      const jwkKey = settings.keyToJwk(hash);
+      return await shim.subtle.importKey(
+        "jwk",
+        jwkKey,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"],
+      );
+    }
+
+    exp.default = aeskey;
+  });
+
+  defmod('./src/keccak256.js', function(module, exp){
+    var shim = reqmod('./src/shim.js').default;
+    var bridge = reqmod('./src/crypto.js').default;
+    async function keccak256(data) {
+      await bridge.ready;
+      const bytes = shim.toBytes(data);
+      return shim.Buffer.from(bridge.keccak256(bytes));
+    }
+
+    exp.default = keccak256;
+  });
+
+  defmod('./src/err.js', function(module, exp){
+    // Shared error-handling helpers for async crypto functions.
+
+    function cryptoErr(e, cb) {
+      if (cb) {
+        try {
+          cb();
+        } catch (x) {
+          console.log(x);
+        }
+        return;
+      }
+      throw e;
+    }
+
+    function cbOk(cb, val) {
+      if (cb) {
+        try {
+          cb(val);
+        } catch (x) {
+          console.log(x);
+        }
+      }
+      return val;
+    }
+
+
+
+    exp.cryptoErr = cryptoErr;
+    exp.cbOk = cbOk;
+  });
+
+  defmod('./src/hash.js', function(module, exp){
+    var shim = reqmod('./src/shim.js').default;
+    var settings = reqmod('./src/settings.js').default;
+    var sha256 = reqmod('./src/sha256.js').default;
+    var keccak256 = reqmod('./src/keccak256.js').default;
+    var base62 = reqmod('./src/base62.js').default;
+    var { cryptoErr, cbOk } = reqmod('./src/err.js');
+    function normhash(name) {
+      const raw = (name || "").toString();
+      const slim = raw.toLowerCase().replace(/[\s_-]/g, "");
+      if (!slim) {
+        return "";
+      }
+      if (slim === "keccak" || slim === "keccak256") {
+        return "KECCAK-256";
+      }
+      if (slim === "sha1") {
+        return "SHA-1";
+      }
+      if (slim === "sha256") {
+        return "SHA-256";
+      }
+      if (slim === "sha384") {
+        return "SHA-384";
+      }
+      if (slim === "sha512") {
+        return "SHA-512";
+      }
+      return raw;
+    }
+
+    function ishash(name) {
+      const n = normhash(name);
+      return n === "KECCAK-256" || n.indexOf("SHA-") === 0;
+    }
+
+    function encbuf(data, enc) {
+      if (enc === "base62") {
+        return base62.bufToB62(data);
+      }
+      if (enc === "base64") {
+        return shim.Buffer.from(data).toString("base64");
+      }
+      return shim.Buffer.from(data).toString(enc);
+    }
+
+    async function digest(data, name) {
+      const n = normhash(name);
+      if (n === "KECCAK-256") {
+        return keccak256(data);
+      }
+      return sha256(data, n || undefined);
+    }
+
+    function intToB62(n) {
+      const A = base62.ALPHA;
+      if (n === 0) return A[0];
+      let s = "";
+      while (n > 0) {
+        s = A[n % 62] + s;
+        n = Math.floor(n / 62);
+      }
+      return s;
+    }
+
+    async function hash(data, pair, cb, opt) {
+      try {
+        opt = opt || {};
+        let salt = (pair || {}).pub || pair;
+        const enc = opt.encode || "base62";
+
+        if (salt instanceof Function) {
+          cb = salt;
+          salt = undefined;
+        }
+
+        // Mining mode: loop with base62-encoded nonces until hash(proof) meets pow
+        // requirements. The nonce is bound to data (the key) so it cannot be replayed
+        // on different keys. The nonce is stored separately in msg.put["^"].
+        // data may be a function(nonce)=>string for flexible proof formats, or a string
+        // in which case proof = data + ":" + nonce.
+        if (opt.pow) {
+          const pow = opt.pow;
+          const prefix = (pow.unit || "0").repeat(
+            pow.difficulty != null ? pow.difficulty : 1,
+          );
+          const subOpt = Object.assign({}, opt);
+          delete subOpt.pow;
+          const isFn = typeof data === "function";
+          const base = isFn ? null : (typeof data === "string" ? data : await shim.stringify(data));
+          let counter = 0;
+          while (true) {
+            const nonce = intToB62(counter);
+            const proof = isFn ? data(nonce) : base + ":" + nonce;
+            const h = await hash(proof, null, null, subOpt);
+            if ((h || "").indexOf(prefix) === 0) {
+              return cbOk(cb, { hash: h, nonce, proof });
+            }
+            counter++;
+            if (counter % 1000 === 0) {
+              await new Promise((r) => setTimeout.turn(r));
+            }
+          }
+        }
+
+        if (data instanceof ArrayBuffer) {
+          data = new Uint8Array(data);
+        }
+        if (opt.input === "raw" && data instanceof Uint8Array) {
+          // Pass raw bytes directly to hash algorithm without string conversion.
+          // Required for EVM use cases: keccak256(rlpEncodedBytes).
+          if (!ishash(opt.name)) {
+            throw new Error("opt.input='raw' requires a hash algorithm via opt.name");
+          }
+          let hashed = shim.Buffer.from(await digest(data, opt.name), "binary");
+          hashed = encbuf(hashed, enc);
+          return cbOk(cb, hashed);
+        }
+        if (data instanceof Uint8Array) {
+          data = new shim.TextDecoder("utf-8").decode(data);
+        }
+        data = typeof data === "string" ? data : await shim.stringify(data);
+
+        if (ishash(opt.name)) {
+          let hashed = shim.Buffer.from(await digest(data, opt.name), "binary");
+          hashed = encbuf(hashed, enc);
+          return cbOk(cb, hashed);
+        }
+
+        if (typeof salt === "number") {
+          salt = salt.toString();
+        }
+        if (typeof opt.salt === "number") {
+          opt.salt = opt.salt.toString();
+        }
+        salt = salt || shim.random(9);
+
+        // HKDF: fast key derivation for already-high-entropy key material.
+        // Use when input is a strong seed (e.g. WebAuthn-derived), NOT a password.
+        // ~1000x faster than PBKDF2 because there are no iterations.
+        if ((opt.name || "").toUpperCase() === "HKDF") {
+          const te = new shim.TextEncoder();
+          const hkdfKey = await (shim.ossl || shim.subtle).importKey(
+            "raw",
+            te.encode(data),
+            "HKDF",
+            false,
+            ["deriveBits"],
+          );
+          const hkdfBits = await (shim.ossl || shim.subtle).deriveBits(
+            {
+              name: "HKDF",
+              hash: opt.hash || settings.pbkdf2.hash,
+              salt: te.encode(opt.salt || salt),
+              info: te.encode(opt.info || ""),
+            },
+            hkdfKey,
+            opt.length || settings.pbkdf2.ks * 8,
+          );
+          data = shim.random(data.length);
+          let hkdfOut = shim.Buffer.from(hkdfBits, "binary");
+          hkdfOut = encbuf(hkdfOut, enc);
+          return cbOk(cb, hkdfOut);
+        }
+
+        const key = await (shim.ossl || shim.subtle).importKey(
+          "raw",
+          new shim.TextEncoder().encode(data),
+          { name: opt.name || "PBKDF2" },
+          false,
+          ["deriveBits"],
+        );
+        const bits = await (shim.ossl || shim.subtle).deriveBits(
+          {
+            name: opt.name || "PBKDF2",
+            iterations: opt.iterations || settings.pbkdf2.iter,
+            salt: new shim.TextEncoder().encode(opt.salt || salt),
+            hash: opt.hash || settings.pbkdf2.hash,
+          },
+          key,
+          opt.length || settings.pbkdf2.ks * 8,
+        );
+        data = shim.random(data.length);
+        let out = shim.Buffer.from(bits, "binary");
+        out = encbuf(out, enc);
+        return cbOk(cb, out);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+    exp.default = hash;
+  });
+
+  defmod('./src/curves/utils.js', function(module, exp){
+    function createCurveCore(config) {
+      const curve = config.curve;
+      const P = config.P;
+      const N = config.N;
+      const A = config.A;
+      const B = config.B;
+      const G = config.G;
+      const HALF_N = N >> 1n;
+      const shim = config.shim;
+      const base62 = config.base62;
+      const settings = config.settings;
+      const sha256 = config.sha256;
+      const extras = config.extras || {};
+
+      function mod(a, m) {
+        return ((a % m) + m) % m;
+      }
+
+      function modPow(base, exp, modn) {
+        let result = 1n;
+        let value = mod(base, modn);
+        let power = exp;
+        while (power > 0n) {
+          if (power & 1n) {
+            result = mod(result * value, modn);
+          }
+          value = mod(value * value, modn);
+          power >>= 1n;
+        }
+        return result;
+      }
+
+      function modInv(a, modn) {
+        if (!a) {
+          throw new Error("Inverse does not exist");
+        }
+        return modPow(mod(a, modn), modn - 2n, modn);
+      }
+
+      function isPoint(point) {
+        return (
+          !!point && typeof point.x === "bigint" && typeof point.y === "bigint"
+        );
+      }
+
+      function isOnCurve(point) {
+        if (!isPoint(point)) {
+          return false;
+        }
+        if (point.x < 0n || point.x >= P || point.y < 0n || point.y >= P) {
+          return false;
+        }
+        return (
+          mod(
+            point.y * point.y - (point.x * point.x * point.x + A * point.x + B),
+            P,
+          ) === 0n
+        );
+      }
+
+      function pointAdd(left, right) {
+        if (!left) {
+          return right;
+        }
+        if (!right) {
+          return left;
+        }
+        if (left.x === right.x && mod(left.y + right.y, P) === 0n) {
+          return null;
+        }
+        let slope;
+        if (left.x === right.x && left.y === right.y) {
+          slope = mod(
+            (3n * mod(left.x * left.x, P) + A) * modInv(2n * left.y, P),
+            P,
+          );
+        } else {
+          slope = mod((right.y - left.y) * modInv(right.x - left.x, P), P);
+        }
+        const x = mod(slope * slope - left.x - right.x, P);
+        const y = mod(slope * (left.x - x) - left.y, P);
+        return { x, y };
+      }
+
+      // ── Jacobian coordinate helpers ────────────────────────────────────────────
+      // Jacobian (X:Y:Z) represents affine (X/Z², Y/Z³). Infinity ↔ Z=0.
+      // Avoids one modInv per point addition (only one at the end per scalar mult).
+
+      function fadd(a, b) { return mod(a + b, P); }
+      function fsub(a, b) { return mod(a - b, P); }
+      function fmul(a, b) { return mod(a * b, P); }
+
+      // Jacobian doubling. Uses dbl-2007-bl formulas from hyperelliptic.org/EFD.
+      function jacobianDouble(X1, Y1, Z1) {
+        if (!Z1) return [0n, 1n, 0n];
+        const XX = fmul(X1, X1);
+        const YY = fmul(Y1, Y1);
+        const YYYY = fmul(YY, YY);
+        const ZZ = fmul(Z1, Z1);
+        const X1pYY = fadd(X1, YY);
+        const S = fadd(
+          fsub(fsub(fmul(X1pYY, X1pYY), XX), YYYY),
+          fsub(fsub(fmul(X1pYY, X1pYY), XX), YYYY),
+        );
+        const M = A === 0n
+          ? fmul(3n, XX)
+          : fadd(fmul(3n, XX), fmul(A, fmul(ZZ, ZZ)));
+        const T = fsub(fmul(M, M), fadd(S, S));
+        const Y3 = fsub(fmul(M, fsub(S, T)), fmul(8n, YYYY));
+        const Y1pZ1 = fadd(Y1, Z1);
+        const Z3 = fsub(fsub(fmul(Y1pZ1, Y1pZ1), YY), ZZ);
+        return [T, Y3, Z3];
+      }
+
+      // Jacobian + affine mixed addition. Uses madd-2007-bl formulas.
+      function jacobianMixedAdd(X1, Y1, Z1, x2, y2) {
+        if (!Z1) return [x2, y2, 1n];
+        const Z1Z1 = fmul(Z1, Z1);
+        const U2 = fmul(x2, Z1Z1);
+        const S2 = fmul(y2, fmul(Z1, Z1Z1));
+        const H = fsub(U2, X1);
+        if (!H) {
+          if (!fsub(S2, Y1)) return jacobianDouble(X1, Y1, Z1);
+          return [0n, 1n, 0n];
+        }
+        const HH = fmul(H, H);
+        const I = fadd(fadd(HH, HH), fadd(HH, HH));
+        const J = fmul(H, I);
+        const r = fadd(fsub(S2, Y1), fsub(S2, Y1));
+        const V = fmul(X1, I);
+        const X3 = fsub(fsub(fmul(r, r), J), fadd(V, V));
+        const Y3 = fsub(fmul(r, fsub(V, X3)), fadd(fmul(Y1, J), fmul(Y1, J)));
+        const Z3 = fmul(fadd(Z1, Z1), H);
+        return [X3, Y3, Z3];
+      }
+
+      // Convert Jacobian (X:Y:Z) back to affine {x, y}. One modInv.
+      function jacobianToAffine(X, Y, Z) {
+        if (!Z) return null;
+        const Zinv = modInv(Z, P);
+        const Zinv2 = fmul(Zinv, Zinv);
+        const Zinv3 = fmul(Zinv, Zinv2);
+        return { x: fmul(X, Zinv2), y: fmul(Y, Zinv3) };
+      }
+
+      // Jacobian scalar × arbitrary affine point (MSB-first double-and-add).
+      // ~39× faster than affine double-and-add: 255 doubles + ~128 mixed adds + 1 modInv.
+      function pointMultiply(scalar, point) {
+        const n = mod(scalar, N);
+        if (!n || !point) return null;
+        let [RX, RY, RZ] = [0n, 1n, 0n];
+        const bits = n.toString(2);
+        for (let i = 0; i < bits.length; i++) {
+          if (RZ) [RX, RY, RZ] = jacobianDouble(RX, RY, RZ);
+          if (bits[i] === "1") [RX, RY, RZ] = jacobianMixedAdd(RX, RY, RZ, point.x, point.y);
+        }
+        return jacobianToAffine(RX, RY, RZ);
+      }
+
+      // Precomputed power-of-2 multiples of G: gPowers[i] = 2^i * G (affine).
+      // Built once per curve instance; ~82ms first call, free afterwards.
+      let gPowers = null;
+      function ensureGPowers() {
+        if (gPowers) return;
+        gPowers = [];
+        let pt = G;
+        for (let i = 0; i < 256; i++) {
+          gPowers.push(pt);
+          pt = pointAdd(pt, pt);
+        }
+      }
+
+      // Fixed-base scalar × G using precomputed gPowers + Jacobian accumulator.
+      // ~28× faster than affine: ~128 mixed adds + 1 modInv (no doublings needed).
+      function pointMultiplyG(scalar) {
+        ensureGPowers();
+        let n = mod(scalar, N);
+        if (!n) return null;
+        let [RX, RY, RZ] = [0n, 1n, 0n];
+        for (let i = 0; i < 256; i++) {
+          if (n & 1n) [RX, RY, RZ] = jacobianMixedAdd(RX, RY, RZ, gPowers[i].x, gPowers[i].y);
+          n >>= 1n;
+          if (!n) break;
+        }
+        return jacobianToAffine(RX, RY, RZ);
+      }
+
+      function bytesToBigInt(bytes) {
+        return BigInt(
+          "0x" +
+            (Array.from(bytes)
+              .map(function (byte) {
+                return byte.toString(16).padStart(2, "0");
+              })
+              .join("") || "0"),
+        );
+      }
+
+      function bigIntToBytes(num, length) {
+        let hex = num.toString(16);
+        if (hex.length % 2) {
+          hex = "0" + hex;
+        }
+        const raw = shim.Buffer.from(hex, "hex");
+        if (!length) {
+          return new Uint8Array(raw);
+        }
+        if (raw.length > length) {
+          return new Uint8Array(raw.slice(raw.length - length));
+        }
+        const out = new Uint8Array(length);
+        out.set(raw, length - raw.length);
+        return out;
+      }
+
+      function concatBytes() {
+        const chunks = Array.prototype.slice.call(arguments).map(function (chunk) {
+          if (chunk instanceof Uint8Array) {
+            return chunk;
+          }
+          if (Array.isArray(chunk)) {
+            return Uint8Array.from(chunk);
+          }
+          if (typeof chunk === "number") {
+            return Uint8Array.from([chunk]);
+          }
+          if (chunk && chunk.buffer instanceof ArrayBuffer) {
+            return new Uint8Array(
+              chunk.buffer,
+              chunk.byteOffset || 0,
+              chunk.byteLength,
+            );
+          }
+          return new Uint8Array(0);
+        });
+        const length = chunks.reduce(function (total, chunk) {
+          return total + chunk.length;
+        }, 0);
+        const out = new Uint8Array(length);
+        let offset = 0;
+        chunks.forEach(function (chunk) {
+          out.set(chunk, offset);
+          offset += chunk.length;
+        });
+        return out;
+      }
+
+      function assertScalar(value, name) {
+        if (value <= 0n || value >= N) {
+          throw new Error((name || "Scalar") + " out of range");
+        }
+        return value;
+      }
+
+      function parseScalar(value, name) {
+        if (typeof value === "bigint") {
+          return assertScalar(value, name);
+        }
+        if (typeof value !== "string" || !value) {
+          throw new Error((name || "Scalar") + " must be a string");
+        }
+        let scalar;
+        if (/^[A-Za-z0-9]{44}$/.test(value)) {
+          scalar = base62.b62ToBI(value);                   // zen base62 (44 chars)
+        } else if (/^0x[0-9a-fA-F]{64}$/.test(value)) {
+          scalar = BigInt(value);                            // EVM/BTC 0x-prefixed hex (32 bytes)
+        } else {
+          throw new Error((name || "Scalar") + " format not recognised");
+        }
+        return assertScalar(scalar, name);
+      }
+
+      function scalarToString(value) {
+        return base62.biToB62(assertScalar(value));
+      }
+
+      // Recover y from x and parity bit (works for any curve where p ≡ 3 mod 4)
+      function liftX(x, parity) {
+        const rhs = mod(x * x * x + A * x + B, P);
+        let y = modPow(rhs, (P + 1n) >> 2n, P);
+        if ((y & 1n) !== parity) {
+          y = P - y;
+        }
+        return y;
+      }
+
+      // Recover public key point from ECDSA (v, r, s) + hash bytes
+      // pub = u1*G + u2*R  where u1 = -z*r^-1, u2 = s*r^-1 mod N
+      function recoverPub(v, r, s, hashBytes) {
+        const z = mod(bytesToBigInt(hashBytes), N);
+        const ry = liftX(r, BigInt(v) & 1n);
+        const R = { x: r, y: ry };
+        if (!isOnCurve(R)) throw new Error("Recovery: R not on curve");
+        const rinv = modInv(r, N);
+        const u1 = mod((N - mod(z, N)) * rinv, N);
+        const u2 = mod(s * rinv, N);
+        const point = pointAdd(pointMultiplyG(u1), pointMultiply(u2, R));
+        if (!point || !isOnCurve(point)) throw new Error("Recovery failed");
+        return point;
+      }
+
+      function pointToPub(point) {
+        if (!isOnCurve(point)) {
+          throw new Error("Invalid public point");
+        }
+        // Compressed: 44-char base62 x + "0"/"1" parity of y  →  45 chars total
+        return base62.biToB62(point.x) + (point.y & 1n ? "1" : "0");
+      }
+
+      function parsePub(pub) {
+        if (typeof pub !== "string") {
+          throw new Error("Public key must be a string");
+        }
+        let point;
+        if (pub.length === 45 && /^[A-Za-z0-9]{44}[01]$/.test(pub)) {
+          // Current compressed format: 44-char base62 x + "0"/"1" parity
+          const x = base62.b62ToBI(pub.slice(0, 44));
+          const parity = BigInt(pub[44]);
+          const y = liftX(x, parity);
+          point = { x, y };
+        } else if (pub.length === 132 && /^0x04[0-9a-fA-F]{128}$/.test(pub)) {
+          // EVM uncompressed pubkey: 0x04 + 32-byte x + 32-byte y
+          point = {
+            x: BigInt("0x" + pub.slice(4, 68)),
+            y: BigInt("0x" + pub.slice(68)),
+          };
+        } else if (pub.length === 68 && /^0x0[23][0-9a-fA-F]{64}$/.test(pub)) {
+          // BTC/hex compressed pubkey: 0x02/03 + 32-byte x
+          const x = BigInt("0x" + pub.slice(4));
+          const parity = BigInt(parseInt(pub[3]) & 1);
+          point = { x, y: liftX(x, parity) };
+        } else {
+          throw new Error("Unrecognized public key format");
+        }
+        if (!isOnCurve(point)) {
+          throw new Error("Public key is not on " + curve);
+        }
+        return point;
+      }
+
+      function publicFromPrivate(priv) {
+        const point = pointMultiplyG(assertScalar(priv, "Private key"));
+        if (!point || !isOnCurve(point)) {
+          throw new Error("Could not derive public key");
+        }
+        return point;
+      }
+
+      function compactPoint(point) {
+        return concatBytes(
+          [point.y & 1n ? 0x03 : 0x02],
+          bigIntToBytes(point.x, 32),
+        );
+      }
+
+      async function shaBytes(data) {
+        return new Uint8Array(await sha256(data));
+      }
+
+      async function hmacSha256(keyBytes, dataBytes) {
+        const key = await shim.subtle.importKey(
+          "raw",
+          keyBytes,
+          { name: "HMAC", hash: { name: "SHA-256" } },
+          false,
+          ["sign"],
+        );
+        return new Uint8Array(await shim.subtle.sign("HMAC", key, dataBytes));
+      }
+
+      async function deterministicK(priv, hashBytes, attempt) {
+        const x = bigIntToBytes(priv, 32);
+        const h1 = bigIntToBytes(bytesToBigInt(hashBytes) % N, 32);
+        const extra = attempt
+          ? Uint8Array.from([attempt & 255])
+          : new Uint8Array(0);
+        let K = new Uint8Array(32);
+        let V = new Uint8Array(32).fill(1);
+        K = await hmacSha256(K, concatBytes(V, [0], x, h1, extra));
+        V = await hmacSha256(K, V);
+        K = await hmacSha256(K, concatBytes(V, [1], x, h1, extra));
+        V = await hmacSha256(K, V);
+        while (true) {
+          V = await hmacSha256(K, V);
+          const candidate = bytesToBigInt(V);
+          if (candidate > 0n && candidate < N) {
+            return candidate;
+          }
+          K = await hmacSha256(K, concatBytes(V, [0]));
+          V = await hmacSha256(K, V);
+        }
+      }
+
+      async function hashToScalar(seed, label) {
+        const digest = await shaBytes(
+          concatBytes(shim.toBytes(label), shim.toBytes(seed)),
+        );
+        return (bytesToBigInt(digest) % (N - 1n)) + 1n;
+      }
+
+      async function randomScalar() {
+        return (bytesToBigInt(shim.random(32)) % (N - 1n)) + 1n;
+      }
+
+      async function normalizeMessage(data) {
+        if (typeof data === "string") {
+          return settings.check(data) ? data : await settings.parse(data);
+        }
+        return data;
+      }
+
+      function parseSignature(sigBytes) {
+        if (sigBytes.length !== 64) {
+          throw new Error("Invalid signature length");
+        }
+        const r = bytesToBigInt(sigBytes.slice(0, 32));
+        const s = bytesToBigInt(sigBytes.slice(32));
+        if (r <= 0n || r >= N || s <= 0n || s >= N) {
+          throw new Error("Signature out of range");
+        }
+        return { r, s };
+      }
+
+      async function finalize(result, opt, cb) {
+        const out = opt && opt.raw ? result : await shim.stringify(result);
+        if (cb) {
+          try {
+            cb(out);
+          } catch (e) {
+            console.log(e);
+          }
+        }
+        return out;
+      }
+
+      return Object.assign(
+        {
+          curve,
+          P,
+          N,
+          A,
+          B,
+          G,
+          HALF_N,
+          shim,
+          base62,
+          settings,
+          mod,
+          modPow,
+          modInv,
+          isPoint,
+          isOnCurve,
+          pointAdd,
+          pointMultiply,
+          pointMultiplyG,
+          bytesToBigInt,
+          bigIntToBytes,
+          concatBytes,
+          parseScalar,
+          assertScalar,
+          scalarToString,
+          liftX,
+          recoverPub,
+          pointToPub,
+          parsePub,
+          publicFromPrivate,
+          compactPoint,
+          shaBytes,
+          hmacSha256,
+          deterministicK,
+          hashToScalar,
+          randomScalar,
+          normalizeMessage,
+          parseSignature,
+          finalize,
+        },
+        extras,
+      );
+    }
+
+    exp.default = createCurveCore;
+  });
+
+  defmod('./src/curves/secp256k1.js', function(module, exp){
+    var shim = reqmod('./src/shim.js').default;
+    var base62 = reqmod('./src/base62.js').default;
+    var settings = reqmod('./src/settings.js').default;
+    var aeskey = reqmod('./src/aeskey.js').default;
+    var sha256 = reqmod('./src/sha256.js').default;
+    var hash = reqmod('./src/hash.js').default;
+    var createCurveCore = reqmod('./src/curves/utils.js').default;
+    var bridge = reqmod('./src/crypto.js').default;
+    const P = BigInt(
+      "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",
+    );
+    const N = BigInt(
+      "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
+    );
+    const A = 0n;
+    const B = 7n;
+    const G = {
+      x: BigInt(
+        "0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798",
+      ),
+      y: BigInt(
+        "0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8",
+      ),
+    };
+    const core = createCurveCore({
+      curve: "secp256k1",
+      P,
+      N,
+      A,
+      B,
+      G,
+      shim,
+      base62,
+      settings,
+      sha256,
+      extras: { aeskey, hash },
+    });
+
+    // Wire WASM fast-path once the bridge is ready.
+    // Falls back to BigInt automatically if WASM is unavailable.
+    bridge.ready.then(function () {
+      function toB(bi) { return core.bigIntToBytes(bi, 32); }
+      function fromB(u8) { return core.bytesToBigInt(u8); }
+
+      // WASM deterministicK is synchronous and ~40× faster than the HMAC-SHA256 JS path.
+      core.deterministicK = function (priv, hashBytes, attempt) {
+        return Promise.resolve(fromB(bridge.k1DetK(toB(priv), hashBytes, attempt || 0)));
+      };
+    }).catch(function () { /* WASM unavailable — BigInt fallback remains active */ });
+
+    exp.default = core;
+  });
+
+  defmod('./src/curves/p256.js', function(module, exp){
+    // P-256 / secp256r1 curve — same Weierstrass math as secp256k1, different constants.
+    // A = P - 3 (i.e. -3 mod P), so the doubling formula includes the A term.
+    var shim = reqmod('./src/shim.js').default;
+    var base62 = reqmod('./src/base62.js').default;
+    var sha256 = reqmod('./src/sha256.js').default;
+    var settings = reqmod('./src/settings.js').default;
+    var aeskey = reqmod('./src/aeskey.js').default;
+    var hash = reqmod('./src/hash.js').default;
+    var createCurveCore = reqmod('./src/curves/utils.js').default;
+    var bridge = reqmod('./src/crypto.js').default;
+    const P = BigInt(
+      "0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF",
+    );
+    const N = BigInt(
+      "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
+    );
+    const A = P - 3n; // -3 mod P
+    const B = BigInt(
+      "0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B",
+    );
+    const G = {
+      x: BigInt(
+        "0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296",
+      ),
+      y: BigInt(
+        "0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5",
+      ),
+    };
+    const core = createCurveCore({
+      curve: "p256",
+      P,
+      N,
+      A,
+      B,
+      G,
+      shim,
+      base62,
+      settings,
+      sha256,
+      extras: { aeskey, hash },
+    });
+
+    // Wire WASM fast-path once the bridge is ready.
+    bridge.ready.then(function () {
+      function toB(bi) { return core.bigIntToBytes(bi, 32); }
+      function fromB(u8) { return core.bytesToBigInt(u8); }
+
+      core.deterministicK = function (priv, hashBytes, attempt) {
+        return Promise.resolve(fromB(bridge.p2DetK(toB(priv), hashBytes, attempt || 0)));
+      };
+    }).catch(function () { /* WASM unavailable — BigInt fallback remains active */ });
+
+    exp.default = core;
+  });
+
+  defmod('./src/curves.js', function(module, exp){
+    var secp256k1 = reqmod('./src/curves/secp256k1.js').default;
+    var p256 = reqmod('./src/curves/p256.js').default;
+    const MAP = { secp256k1, p256, secp256r1: p256 };
+
+    function crv(name) {
+      return MAP[name] || MAP.secp256k1;
+    }
+
+    exp.default = crv;
+  });
+
+  defmod('./src/verify.js', function(module, exp){
+    var crv = reqmod('./src/curves.js').default;
+    var { cryptoErr, cbOk } = reqmod('./src/err.js');
+    async function verify(data, pair, cb, opt) {
+      try {
+        opt = opt || {};
+        const c0 = crv(); // secp256k1 — for settings.parse (curve-independent)
+        const msg = await c0.settings.parse(data);
+        if (pair === false) {
+          const raw = await c0.settings.parse(msg.m);
+          return cbOk(cb, raw);
+        }
+        const pub = pair && pair.pub ? pair.pub : pair;
+        // Curve priority: embedded in signed data → pair.curve → opt.curve → secp256k1
+        const c = crv((msg && msg.c) || (pair && pair.curve) || opt.curve);
+        const h = await c.shaBytes(msg.m);
+        const sigBytes = new Uint8Array(c.base62.b62ToBuf(msg.s || "0".repeat(86), 64));
+        const { r, s } = c.parseSignature(sigBytes);
+        let pt;
+        if (pub) {
+          pt = c.parsePub(pub);
+        } else {
+          if (msg.v === undefined || msg.v === null) {
+            throw new Error("Public key or recovery bit (v) required");
+          }
+          if (typeof c.recoverPub !== "function") {
+            throw new Error("Curve does not support public key recovery");
+          }
+          pt = c.recoverPub(msg.v, r, s, h);
+        }
+        const z = c.mod(c.bytesToBigInt(h), c.N);
+        const w = c.modInv(s, c.N);
+        const u1 = c.mod(z * w, c.N);
+        const u2 = c.mod(r * w, c.N);
+        const res = c.pointAdd(c.pointMultiplyG(u1), c.pointMultiply(u2, pt));
+        if (!res || c.mod(res.x, c.N) !== r) {
+          throw new Error("Signature did not match");
+        }
+        const out =
+          typeof msg.m === "string" && c.settings.check(msg.m)
+            ? msg.m
+            : await c.settings.parse(msg.m);
+        return cbOk(cb, out);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = verify;
+
+    exp.verify = verify;
+  });
+
+  defmod('./src/ripemd160.js', function(module, exp){
+    // Pure RIPEMD-160 implementation — no dependencies, no WebCrypto.
+    // Spec: https://homes.esat.kuleuven.be/~bosselae/ripemd160.html
+    var bridge = reqmod('./src/crypto.js').default;
+    let _wasmReady = false;
+    bridge.ready.then(() => { _wasmReady = true; }).catch(() => {});
+
+    const KL = [0x00000000, 0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xa953fd4e];
+    const KR = [0x50a28be6, 0x5c4dd124, 0x6d703ef3, 0x7a6d76e9, 0x00000000];
+
+    // Message word indices
+    const ML = [
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 7, 4, 13, 1, 10, 6, 15,
+      3, 12, 0, 9, 5, 2, 14, 11, 8, 3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11,
+      5, 12, 1, 9, 11, 10, 0, 8, 12, 4, 13, 3, 7, 15, 14, 5, 6, 2, 4, 0, 5, 9, 7,
+      12, 2, 10, 14, 1, 3, 8, 11, 6, 15, 13,
+    ];
+    const MR = [
+      5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12, 6, 11, 3, 7, 0, 13, 5,
+      10, 14, 15, 8, 12, 4, 9, 1, 2, 15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0,
+      4, 13, 8, 6, 4, 1, 3, 11, 15, 0, 5, 12, 2, 13, 9, 7, 10, 14, 12, 15, 10, 4, 1,
+      5, 8, 7, 6, 2, 13, 14, 0, 3, 9, 11,
+    ];
+
+    // Shift amounts
+    const SL = [
+      11, 14, 15, 12, 5, 8, 7, 9, 11, 13, 14, 15, 6, 7, 9, 8, 7, 6, 8, 13, 11, 9, 7,
+      15, 7, 12, 15, 9, 11, 7, 13, 12, 11, 13, 6, 7, 14, 9, 13, 15, 14, 8, 13, 6, 5,
+      12, 7, 5, 11, 12, 14, 15, 14, 15, 9, 8, 9, 14, 5, 6, 8, 6, 5, 12, 9, 15, 5,
+      11, 6, 8, 13, 12, 5, 12, 13, 14, 11, 8, 5, 6,
+    ];
+    const SR = [
+      8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14, 14, 12, 6, 9, 13, 15, 7, 12, 8,
+      9, 11, 7, 7, 12, 7, 6, 15, 13, 11, 9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14,
+      13, 13, 7, 5, 15, 5, 8, 11, 14, 14, 6, 14, 6, 9, 12, 9, 12, 5, 15, 8, 8, 5,
+      12, 9, 12, 5, 14, 6, 8, 13, 6, 5, 15, 13, 11, 11,
+    ];
+
+    function rotl(x, n) {
+      return ((x << n) | (x >>> (32 - n))) >>> 0;
+    }
+
+    // Round selection functions (left: f1..f5, right: f5..f1)
+    const FL = [
+      (x, y, z) => (x ^ y ^ z) >>> 0,
+      (x, y, z) => ((x & y) | (~x & z)) >>> 0,
+      (x, y, z) => ((x | ~y) ^ z) >>> 0,
+      (x, y, z) => ((x & z) | (y & ~z)) >>> 0,
+      (x, y, z) => (x ^ (y | ~z)) >>> 0,
+    ];
+    const FR = [FL[4], FL[3], FL[2], FL[1], FL[0]];
+
+    function ripemd160(data) {
+      const bytes =
+        data instanceof Uint8Array
+          ? data
+          : data instanceof ArrayBuffer
+            ? new Uint8Array(data)
+            : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+
+      if (_wasmReady) {
+        return bridge.ripemd160(bytes);
+      }
+
+      const len = bytes.length;
+      const bitLen = len * 8;
+      const padLen = (len + 9 + 63) & ~63;
+      const padded = new Uint8Array(padLen);
+      padded.set(bytes);
+      padded[len] = 0x80;
+      const dv = new DataView(padded.buffer);
+      dv.setUint32(padLen - 8, bitLen >>> 0, true);
+      dv.setUint32(padLen - 4, Math.floor(bitLen / 0x100000000), true);
+
+      let h0 = 0x67452301,
+        h1 = 0xefcdab89,
+        h2 = 0x98badcfe,
+        h3 = 0x10325476,
+        h4 = 0xc3d2e1f0;
+
+      for (let off = 0; off < padLen; off += 64) {
+        const M = [];
+        for (let i = 0; i < 16; i++) M[i] = dv.getUint32(off + i * 4, true);
+
+        let al = h0,
+          bl = h1,
+          cl = h2,
+          dl = h3,
+          el = h4;
+        let ar = h0,
+          br = h1,
+          cr = h2,
+          dr = h3,
+          er = h4;
+
+        for (let i = 0; i < 80; i++) {
+          const r = (i / 16) | 0;
+          const sumL = (al + FL[r](bl, cl, dl) + M[ML[i]] + KL[r]) >>> 0;
+          const tl = (rotl(sumL, SL[i]) + el) >>> 0;
+          al = el;
+          el = dl;
+          dl = rotl(cl, 10);
+          cl = bl;
+          bl = tl;
+
+          const sumR = (ar + FR[r](br, cr, dr) + M[MR[i]] + KR[r]) >>> 0;
+          const tr = (rotl(sumR, SR[i]) + er) >>> 0;
+          ar = er;
+          er = dr;
+          dr = rotl(cr, 10);
+          cr = br;
+          br = tr;
+        }
+
+        const T = (h1 + cl + dr) >>> 0;
+        h1 = (h2 + dl + er) >>> 0;
+        h2 = (h3 + el + ar) >>> 0;
+        h3 = (h4 + al + br) >>> 0;
+        h4 = (h0 + bl + cr) >>> 0;
+        h0 = T;
+      }
+
+      const out = new DataView(new ArrayBuffer(20));
+      out.setUint32(0, h0, true);
+      out.setUint32(4, h1, true);
+      out.setUint32(8, h2, true);
+      out.setUint32(12, h3, true);
+      out.setUint32(16, h4, true);
+      return new Uint8Array(out.buffer);
+    }
+
+    exp.default = ripemd160;
+  });
+
+  defmod('./src/format.js', function(module, exp){
+    // Format converters for zen.pair() output.
+    // Receives raw BigInt scalars and {x,y} curve points; returns {curve, pub, priv, address}.
+    var keccak256 = reqmod('./src/keccak256.js').default;
+    var ripemd160 = reqmod('./src/ripemd160.js').default;
+    var shim = reqmod('./src/shim.js').default;
+    var { bito } = reqmod('./src/base62.js');
+    // ── shared helpers ────────────────────────────────────────────────────────────
+
+    function toHex(bytes) {
+      return Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    // Binary SHA-256 — uses WebCrypto directly on raw bytes (NOT via sha256.js JSON path)
+    async function sha256Bytes(bytes) {
+      const hash = await shim.subtle.digest(
+        "SHA-256",
+        bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
+      );
+      return new Uint8Array(hash);
+    }
+
+    // Base58Check encode
+    const B58_ALPHA = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    function base58Encode(bytes) {
+      const digits = [0];
+      for (let i = 0; i < bytes.length; i++) {
+        let carry = bytes[i];
+        for (let j = 0; j < digits.length; j++) {
+          carry += digits[j] * 256;
+          digits[j] = carry % 58;
+          carry = Math.floor(carry / 58);
+        }
+        while (carry) {
+          digits.push(carry % 58);
+          carry = Math.floor(carry / 58);
+        }
+      }
+      let result = "";
+      for (let i = 0; i < bytes.length && bytes[i] === 0; i++) result += "1";
+      for (let i = digits.length - 1; i >= 0; i--) result += B58_ALPHA[digits[i]];
+      return result;
+    }
+
+    async function base58Check(payload) {
+      const h1 = await sha256Bytes(payload);
+      const h2 = await sha256Bytes(h1);
+      const out = new Uint8Array(payload.length + 4);
+      out.set(payload);
+      out.set(h2.slice(0, 4), payload.length);
+      return base58Encode(out);
+    }
+
+    // ── EVM format ────────────────────────────────────────────────────────────────
+
+    async function evmAddress(pub) {
+      const xBytes = bito(pub.x);
+      const yBytes = bito(pub.y);
+      const raw = new Uint8Array(64);
+      raw.set(xBytes, 0);
+      raw.set(yBytes, 32);
+      // keccak256 of raw 64-byte uncompressed key (without 04 prefix)
+      const hash = await keccak256(raw);
+      const addrHex = toHex(hash.slice(-20));
+      // EIP-55 checksum
+      const ckHash = toHex(await keccak256(addrHex));
+      let addr = "0x";
+      for (let i = 0; i < 40; i++) {
+        addr +=
+          parseInt(ckHash[i], 16) >= 8 ? addrHex[i].toUpperCase() : addrHex[i];
+      }
+      return addr;
+    }
+
+    function evmPrivHex(priv) {
+      return "0x" + toHex(bito(priv));
+    }
+
+    function evmEncPub(pub) {
+      // Uncompressed pubkey: 0x04 + 32-byte x + 32-byte y
+      const out = new Uint8Array(65);
+      out[0] = 0x04;
+      out.set(bito(pub.x), 1);
+      out.set(bito(pub.y), 33);
+      return "0x" + toHex(out);
+    }
+
+    // ── BTC format ────────────────────────────────────────────────────────────────
+
+    function compressedPubBytes(pub) {
+      const out = new Uint8Array(33);
+      out[0] = pub.y & 1n ? 0x03 : 0x02;
+      out.set(bito(pub.x), 1);
+      return out;
+    }
+
+    async function btcAddress(pub) {
+      // P2PKH mainnet: Base58Check(0x00 + RIPEMD160(SHA256(compressed_pubkey)))
+      const compressed = compressedPubBytes(pub);
+      const sha = await sha256Bytes(compressed);
+      const ripd = ripemd160(sha);
+      const payload = new Uint8Array(21);
+      payload[0] = 0x00;
+      payload.set(ripd, 1);
+      return base58Check(payload);
+    }
+
+    async function btcWIF(priv) {
+      // WIF mainnet compressed: Base58Check(0x80 + 32-byte-priv + 0x01)
+      const privBytes = bito(priv);
+      const payload = new Uint8Array(34);
+      payload[0] = 0x80;
+      payload.set(privBytes, 1);
+      payload[33] = 0x01;
+      return base58Check(payload);
+    }
+
+    function btcCompressedHex(pub) {
+      return "0x" + toHex(compressedPubBytes(pub));
+    }
+
+    // ── main export ───────────────────────────────────────────────────────────────
+
+    async function applyFormat(format, curveName, core, raw) {
+      const { signPriv, signPub } = raw;
+      const out = { curve: curveName };
+
+      if (format === "zen") {
+        if (signPriv) out.priv = core.scalarToString(signPriv);
+        if (signPub)  out.pub  = core.pointToPub(signPub);
+        if (signPub)  out.address = await evmAddress(signPub);
+        return out;
+      }
+
+      if (format === "evm") {
+        if (signPub)  out.pub     = evmEncPub(signPub);       // 0x04 + 128 hex (uncompressed)
+        if (signPriv) out.priv    = evmPrivHex(signPriv);     // 0x + 64 hex
+        if (signPub)  out.address = await evmAddress(signPub); // 0x EIP-55 checksum
+        return out;
+      }
+
+      if (format === "btc") {
+        if (signPub)  out.pub     = btcCompressedHex(signPub); // 0x02/03 + 64 hex
+        if (signPriv) out.priv    = await btcWIF(signPriv);    // WIF compressed
+        if (signPub)  out.address = await btcAddress(signPub); // P2PKH base58
+        return out;
+      }
+
+      throw new Error("Unknown format: " + format + ". Supported: zen, evm, btc");
+    }
+
+    exp.default = applyFormat;
+  });
+
+  defmod('./src/recover.js', function(module, exp){
+    var crv = reqmod('./src/curves.js').default;
+    var applyFormat = reqmod('./src/format.js').default;
+    var { cryptoErr, cbOk } = reqmod('./src/err.js');
+    // Parse a raw ECDSA signature for prehash mode.
+    // Accepts: { r, s, v } object  OR  65-byte "0x..." hex string (r32 + s32 + v1).
+    function parseRawSig(data) {
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        let v = typeof data.v === "bigint" ? Number(data.v) : Number(data.v);
+        if (v >= 27) v -= 27;
+        const r = typeof data.r === "bigint" ? data.r : BigInt(data.r);
+        const s = typeof data.s === "bigint" ? data.s : BigInt(data.s);
+        return { r, s, v };
+      }
+      const hex = typeof data === "string" && data.startsWith("0x") ? data.slice(2) : String(data);
+      if (hex.length !== 130) throw new Error("ZEN.recover prehash: expected 65-byte hex sig (130 hex chars)");
+      const bytes = new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+      let v = bytes[64];
+      if (v >= 27) v -= 27;
+      const toBigInt = (arr) => arr.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n);
+      return { r: toBigInt(bytes.slice(0, 32)), s: toBigInt(bytes.slice(32, 64)), v };
+    }
+
+    // Parse a pre-hashed digest — accepts 32-byte Uint8Array or "0x..." hex string.
+    function parseHashBytes(hash) {
+      if (hash instanceof Uint8Array) return hash;
+      const hex = typeof hash === "string" && hash.startsWith("0x") ? hash.slice(2) : String(hash);
+      return new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+    }
+
+    async function recover(data, cb, opt) {
+      try {
+        opt = opt || {};
+
+        if (opt.prehash) {
+          // Prehash mode: data = raw sig {r,s,v} or 65-byte hex; opt.hash = pre-hashed digest bytes/hex.
+          // Mirrors ZEN.sign(digest, pair, null, { prehash: true, encode: "raw" }) on the verify side.
+          if (!opt.hash) throw new Error("ZEN.recover prehash: opt.hash (pre-hashed digest) is required");
+          const curveName = opt.curve || "secp256k1";
+          const c = crv(curveName);
+          const hashBytes = parseHashBytes(opt.hash);
+          const { r, s, v } = parseRawSig(data);
+          const point = c.recoverPub(v, r, s, hashBytes);
+          if (opt.format === "evm" || opt.format === "btc") {
+            const out = await applyFormat(opt.format, c.curve, c, { signPriv: null, signPub: point });
+            return cbOk(cb, out.address);
+          }
+          const pub = c.pointToPub(point);
+          return cbOk(cb, pub);
+        }
+
+        // Original ZEN-format path: data is a ZEN signed string (base62 + embedded message).
+        const c0 = crv();
+        const msg = await c0.settings.parse(data);
+        if (!msg || msg.v === undefined || msg.v === null) {
+          throw new Error("No recovery bit (v) in signature");
+        }
+        const c = crv((msg && msg.c) || opt.curve);
+        const h = await c.shaBytes(msg.m);
+        const sigBytes = new Uint8Array(c.base62.b62ToBuf(msg.s || "0".repeat(86), 64));
+        const { r, s } = c.parseSignature(sigBytes);
+        const point = c.recoverPub(msg.v, r, s, h);
+        const pub = c.pointToPub(point);
+        return cbOk(cb, pub);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = recover;
+
+    exp.recover = recover;
+  });
+
+  defmod('./src/sign.js', function(module, exp){
+    var crv = reqmod('./src/curves.js').default;
+    var { cryptoErr } = reqmod('./src/err.js');
+    async function sign(data, pair, cb, opt) {
+      try {
+        opt = opt || {};
+        if (data === undefined) {
+          throw new Error("`undefined` not allowed.");
+        }
+        if (!pair || typeof pair === "function" || !pair.priv) {
+          throw new Error("No signing key.");
+        }
+        const c = crv(pair.curve);
+        let msg, h;
+        if (opt.prehash) {
+          // Accept pre-hashed bytes (Uint8Array or 0x-prefixed hex string).
+          // Used for EVM transaction signing where the hash is keccak256(rlpEncoded).
+          if (data instanceof Uint8Array) {
+            h = data;
+          } else {
+            const hex = typeof data === "string" && data.startsWith("0x") ? data.slice(2) : data;
+            h = new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+          }
+        } else {
+          msg = await c.normalizeMessage(data);
+          h = await c.shaBytes(msg);
+        }
+        const priv = c.parseScalar(pair.priv, "Signing key");
+        for (let i = 0; i < 16; i++) {
+          const k = await c.deterministicK(priv, h, i);
+          const pt = c.pointMultiplyG(k);
+          if (!pt) {
+            continue;
+          }
+          const r = c.mod(pt.x, c.N);
+          if (!r) {
+            continue;
+          }
+          let s = c.mod(
+            c.modInv(k, c.N) * (c.mod(c.bytesToBigInt(h), c.N) + r * priv),
+            c.N,
+          );
+          if (!s) {
+            continue;
+          }
+          let v = Number(pt.y & 1n);
+          if (s > c.HALF_N) {
+            s = c.N - s;
+            v ^= 1;
+          }
+          if (opt.encode === "raw") {
+            // Return raw {r, s, v} for EVM RLP transaction construction.
+            return c.finalize(
+              {
+                r: "0x" + r.toString(16).padStart(64, "0"),
+                s: "0x" + s.toString(16).padStart(64, "0"),
+                v,
+              },
+              { raw: true },
+              cb,
+            );
+          }
+          const sig = c.concatBytes(c.bigIntToBytes(r, 32), c.bigIntToBytes(s, 32));
+          const sigB62 = c.base62.bufToB62Fixed(sig, 86);
+          const msgStr = typeof msg === "string" ? msg : await c.shim.stringify(msg);
+          const msgB62 = c.base62.bufToB62Ct(new c.shim.TextEncoder().encode(msgStr));
+          const out =
+            c.curve !== "secp256k1"
+              ? sigB62 + v + "/" + c.curve + ":" + msgB62
+              : sigB62 + v + ":" + msgB62;
+          return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
+        }
+        throw new Error("Failed to sign");
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = sign;
+
+    exp.sign = sign;
+  });
+
+  defmod('./src/security.js', function(module, exp){
+    var ZEN = reqmod('./src/root.js').default;
+    var verify = reqmod('./src/verify.js').default;
+    var recover = reqmod('./src/recover.js').default;
+    var hash = reqmod('./src/hash.js').default;
+    var sign = reqmod('./src/sign.js').default;
+    var settings = reqmod('./src/settings.js').default;
+    var u;
+    var Zen = ZEN;
+
+    // --------------- pack / unpack ---------------
+
+    settings.pack = function (d, cb, k, n, s) {
+      // pack for verifying
+      if (settings.check(d)) {
+        return cb(d);
+      }
+      var f = 0,
+        tmp;
+      if (d && d["#"] && d["."] && d[">"]) {
+        tmp = d[":"];
+        f = 1;
+      }
+      JSON.parseAsync(f ? tmp : d, function (err, meta) {
+        var sig = u !== (meta || "")[":"] && (meta || "")["~"];
+        if (!sig) {
+          cb(d);
+          return;
+        }
+        cb({
+          m: {
+            "#": s || d["#"],
+            ".": k || d["."],
+            ":": (meta || "")[":"],
+            ">": d[">"] || (Zen.state && Zen.state.is ? Zen.state.is(n, k) : 0),
+          },
+          s: sig,
+          v: (meta || "").v,
+          c: (meta || "").c,
+        });
+      });
+    };
+
+    settings.unpack = function (d, k, n) {
+      if (u === d) {
+        return;
+      }
+      if (d && u !== (tmp = d[":"])) {
+        return tmp;
+      }
+      k = k || settings.fall_key;
+      if (!n && settings.fall_val) {
+        n = {};
+        n[k] = settings.fall_val;
+      }
+      if (!k || !n) {
+        return;
+      }
+      if (d === n[k]) {
+        return d;
+      }
+      if (!settings.check(n[k])) {
+        return d;
+      }
+      var soul = (n && n._ && n._["#"]) || settings.fall_soul;
+      var s =
+        (Zen.state && Zen.state.is ? Zen.state.is(n, k) : 0) || settings.fall_state;
+      if (
+        d &&
+        4 === d.length &&
+        soul === d[0] &&
+        k === d[1] &&
+        fl(s) === fl(d[3])
+      ) {
+        return d[2];
+      }
+      if (s < settings.shuffle_attack) {
+        return d;
+      }
+    };
+    var fl = Math.floor;
+    var tmp;
+    settings.shuffle_attack = 1546329600000;
+
+    settings.pub = function (s) {
+      if (!s) {
+        return;
+      }
+      s = s.split("~")[1];
+      if (!s) {
+        return;
+      }
+      if ("@" === (s[0] || "")[0]) {
+        return;
+      }
+      if (/^[A-Za-z0-9]{44}[01]/.test(s)) {
+        return s.slice(0, 45);
+      }
+      var parts = s.split(/[^\w_-]/).slice(0, 2);
+      if (!parts || 2 !== parts.length) {
+        return;
+      }
+      return parts.slice(0, 2).join(".");
+    };
+
+    // --------------- zen security middleware ---------------
+
+    var valid = Zen && Zen.valid;
+    var link_is = function (d, l) {
+      return "string" == typeof (l = valid && valid(d)) && l;
+    };
+
+    function check(msg) {
+      var eve = this,
+        at = eve.as,
+        put = msg.put,
+        soul = put["#"],
+        key = put["."],
+        val = put[":"],
+        state = put[">"],
+        id = msg["#"];
+      if (!soul || !key) {
+        return;
+      }
+
+      // In-memory user-graph GET replies tag their internal context with `faith`
+      // so signed account data can reuse already-verified graph state without
+      // re-entering the async pub check.
+      if (
+        (msg._ || "").faith &&
+        "function" == typeof msg._ &&
+        ("~" === soul || "~/" === soul.slice(0, 2) || settings.pub(soul))
+      ) {
+        check.pipe.faith({ eve: eve, msg: msg, put: put, at: at });
+        return;
+      }
+
+      var no = function (why) {
+        at.on("in", { "@": id, err: (msg.err = why) });
+      };
+
+      var ctx = {
+        eve: eve,
+        msg: msg,
+        at: at,
+        put: put,
+        soul: soul,
+        key: key,
+        val: val,
+        state: state,
+        id: id,
+        no: no,
+        pub: null,
+      };
+      var pipeline = [check.pipe.forget];
+
+      if ("~" === soul || "~/" === soul.slice(0, 2)) {
+        pipeline.push(check.pipe.shard);
+      } else if ((tmp = settings.pub(soul))) {
+        ctx.pub = tmp;
+        pipeline.push(check.pipe.pub);
+      } else if (0 <= soul.indexOf("#")) {
+        pipeline.push(check.pipe.hash);
+      } else {
+        pipeline.push(check.pipe.any);
+      }
+
+      var required = pipeline[1];
+      for (var pi = 0; pi < check.plugins.length; pi++) {
+        check.plugins[pi](ctx, pipeline);
+      }
+      if (required && pipeline.indexOf(required) < 0) {
+        return no("Security stage removed.");
+      }
+      check.run(pipeline, ctx);
+    }
+
+    check.run = function (stages, ctx) {
+      var no = ctx.no;
+      var i = 0;
+      var next = function () {
+        if (i >= stages.length) {
+          return;
+        }
+        var stage = stages[i++];
+        var spent = false;
+        var once = function () {
+          if (!spent) {
+            spent = true;
+            next();
+          }
+        };
+        try {
+          stage(ctx, once, no);
+        } catch (e) {
+          no((e && e.message) || String(e));
+        }
+      };
+      next();
+    };
+
+    check.pipe = {
+      faith: function (ctx) {
+        var eve = ctx.eve,
+          msg = ctx.msg,
+          put = ctx.put;
+        settings.pack(put, function (raw) {
+          verify(raw, false, function (data) {
+            put["="] = settings.unpack(data);
+            eve.to.next(msg);
+          });
+        });
+      },
+      forget: function (ctx, next) {
+        var soul = ctx.soul,
+          state = ctx.state,
+          msg = ctx.msg,
+          tmp2;
+        if (0 <= soul.indexOf("<?")) {
+          tmp2 = parseFloat(soul.split("<?")[1] || "");
+          if (tmp2 && state < Zen.state() - tmp2 * 1000) {
+            (tmp2 = msg._) && tmp2.stun && tmp2.stun--;
+            return;
+          }
+        }
+        next();
+      },
+      shard: function (ctx, next, reject) {
+        check.shard(
+          ctx.eve,
+          ctx.msg,
+          ctx.val,
+          ctx.key,
+          ctx.soul,
+          ctx.at,
+          reject,
+          ctx.at.user || "",
+        );
+      },
+      pub: function (ctx, next, reject) {
+        check.pub(
+          ctx.eve,
+          ctx.msg,
+          ctx.val,
+          ctx.key,
+          ctx.soul,
+          ctx.at,
+          reject,
+          ctx.at.user || "",
+          ctx.pub,
+        );
+      },
+      hash: function (ctx, next, reject) {
+        check.hash(ctx.eve, ctx.msg, ctx.val, ctx.key, ctx.soul, ctx.at, reject);
+      },
+      any: function (ctx, next, reject) {
+        check.any(
+          ctx.eve,
+          ctx.msg,
+          ctx.val,
+          ctx.key,
+          ctx.soul,
+          ctx.at,
+          reject,
+          ctx.at.user || "",
+        );
+      },
+    };
+    Object.freeze(check.pipe);
+
+    check.plugins = [];
+    check.use = function (fn) {
+      check.plugins.push(fn);
+    };
+
+    function initZenOpt(msg, ctx) {
+      var o = Object.assign({}, ctx);
+      try {
+        Object.defineProperty(msg._, "zen", {
+          value: o,
+          enumerable: false,
+          configurable: true,
+          writable: true,
+        });
+      } catch (e) {
+        msg._.zen = o;
+      }
+      return o;
+    }
+
+    check.$zen = function (msg, user, pub) {
+      var scope = msg._ || {};
+      var ctx = scope.opt || (scope.msg || {}).opt || {};
+      var opt = scope.zen || initZenOpt(msg, ctx);
+      var zen = (user && user._) || {};
+      var is = (user && user.is) || {};
+      var authenticator = opt.authenticator || zen.zen;
+      var upub = opt.pub || (authenticator || {}).pub || is.pub || pub;
+      if (!scope.done) {
+        delete ctx.authenticator;
+        delete ctx.pub;
+        scope.done = true;
+      }
+      return { opt: opt, authenticator: authenticator, upub: upub };
+    };
+
+    check.next = function (eve, msg, no) {
+      JSON.stringifyAsync(msg.put[":"], function (err, s) {
+        if (err) {
+          return no(err || "Stringify error.");
+        }
+        msg.put[":"] = s;
+        return eve.to.next(msg);
+      });
+    };
+
+    check.auth = function (msg, no, authenticator, done) {
+      settings.pack(msg.put, function (packed) {
+        if (!authenticator) {
+          return no("Missing authenticator");
+        }
+        if (typeof authenticator === "function") {
+          Promise.resolve(authenticator(packed))
+            .then(async function (result) {
+              if (u === result) {
+                return no("Signature fail.");
+              }
+              var data =
+                typeof result === "string" ? await settings.parse(result) : result;
+              if (!data || !data.m || !data.s) {
+                return no("Invalid signature format");
+              }
+              var mObj = typeof data.m === "string" ? JSON.parse(data.m) : data.m;
+              var parsed = settings.unpack(mObj);
+              msg.put[":"] = { ":": parsed, "~": data.s, v: data.v, c: data.c };
+              msg.put["="] = parsed;
+              done(parsed);
+            })
+            .catch(function (e) {
+              no(e && e.message ? e.message : "Auth error");
+            });
+          return;
+        }
+        sign(
+          packed,
+          authenticator,
+          async function (data) {
+            if (u === data) {
+              return no("Signature fail.");
+            }
+            var sigData =
+              typeof data === "string" ? await settings.parse(data) : data;
+            if (!sigData || !sigData.m || !sigData.s) {
+              return no("Invalid signature format");
+            }
+            var mObj = typeof sigData.m === "string" ? JSON.parse(sigData.m) : sigData.m;
+            var parsed = settings.unpack(mObj);
+            msg.put[":"] = { ":": parsed, "~": sigData.s, v: sigData.v, c: sigData.c };
+            msg.put["="] = parsed;
+            done(parsed);
+          },
+          { raw: 1 },
+        );
+      });
+    };
+
+    check.$vfy = function (
+      eve,
+      msg,
+      key,
+      soul,
+      pub,
+      no,
+      certificate,
+      certificant,
+      cb,
+    ) {
+      var certOk = typeof certificate === "string"
+        ? settings.check(certificate)
+        : (certificate && certificate.m && certificate.s);
+      if (!certOk || !certificant || !pub) {
+        return;
+      }
+      return verify(certificate, pub, function (data) {
+        if (
+          u !== data &&
+          u !== data.e &&
+          msg.put[">"] &&
+          msg.put[">"] > parseFloat(data.e)
+        ) {
+          return no("Certificate expired.");
+        }
+        if (
+          u !== data &&
+          data.c &&
+          data.w &&
+          (data.c === certificant ||
+            (Array.isArray(data.c) && data.c.indexOf(certificant) > -1))
+        ) {
+          var path =
+            soul.indexOf("/") > -1
+              ? soul.replace(soul.substring(0, soul.indexOf("/") + 1), "")
+              : "";
+          String.match = String.match || (Zen.text && Zen.text.match);
+          var w = Array.isArray(data.w)
+            ? data.w
+            : typeof data.w === "object" || typeof data.w === "string"
+              ? [data.w]
+              : [];
+          for (var lex of w) {
+            if (
+              (String.match(path, lex["#"]) && String.match(key, lex["."])) ||
+              (!lex["."] && String.match(path, lex["#"])) ||
+              (!lex["#"] && String.match(key, lex["."])) ||
+              String.match(path ? path + "/" + key : key, lex["#"] || lex)
+            ) {
+              if (
+                lex["+"] &&
+                lex["+"].indexOf("*") > -1 &&
+                path &&
+                path.indexOf(certificant) == -1 &&
+                key.indexOf(certificant) == -1
+              ) {
+                return no(
+                  'Path "' +
+                    path +
+                    '" or key "' +
+                    key +
+                    '" must contain string "' +
+                    certificant +
+                    '".',
+                );
+              }
+              if (
+                data.wb &&
+                (typeof data.wb === "string" || (data.wb || {})["#"])
+              ) {
+                var root = eve.as.root.$.back(-1);
+                if (typeof data.wb === "string" && "~" !== data.wb.slice(0, 1)) {
+                  root = root.get("~" + pub);
+                }
+                return root
+                  .get(data.wb)
+                  .get(certificant)
+                  .once(function (value) {
+                    if (value && (value === 1 || value === true)) {
+                      return no("Certificant " + certificant + " blocked.");
+                    }
+                    return cb(data);
+                  });
+              }
+              return cb(data);
+            }
+          }
+          return no("Certificate verification fail.");
+        }
+      });
+    };
+
+    check.guard = function (eve, msg, key, soul, at, no, data, next) {
+      if (0 > key.indexOf("#")) {
+        return next();
+      }
+      check.hash(eve, msg, data, key, soul, at, no, next);
+    };
+
+    check.hash = function (eve, msg, val, key, soul, at, no, yes) {
+      function base64ToHex(data) {
+        var binaryStr = atob(data),
+          a = [];
+        for (var i = 0; i < binaryStr.length; i++) {
+          var h = binaryStr.charCodeAt(i).toString(16);
+          a.push(h.length === 1 ? "0" + h : h);
+        }
+        return a.join("");
+      }
+      var hashKey = key.split("#").pop();
+      yes =
+        yes ||
+        function () {
+          eve.to.next(msg);
+        };
+      if (!hashKey || hashKey === key) {
+        return yes();
+      }
+      hash(
+        val,
+        null,
+        function (b64hash) {
+          var hexhash = base64ToHex(b64hash),
+            b64slice = b64hash.slice(-20),
+            hexslice = hexhash.slice(-20);
+          if (
+            [b64hash, b64slice, hexhash, hexslice].some(function (item) {
+              return item.endsWith(hashKey);
+            })
+          ) {
+            return yes();
+          }
+          no("Data hash not same as hash!");
+        },
+        { name: "SHA-256" },
+      );
+    };
+
+    check.$sh = {
+      pub: 45,
+      cut: 2,
+      min: 1,
+      root: "~",
+      pre: "~/",
+      bad: /[^0-9a-zA-Z]/,
+    };
+    check.$sh.max = Math.ceil(check.$sh.pub / check.$sh.cut);
+
+    check.$seg = function (seg, short) {
+      if ("string" != typeof seg || !seg) {
+        return;
+      }
+      if (short) {
+        if (seg.length < check.$sh.min || seg.length > check.$sh.cut) {
+          return;
+        }
+      } else {
+        if (seg.length !== check.$sh.cut) {
+          return;
+        }
+      }
+      if (check.$sh.bad.test(seg)) {
+        return;
+      }
+      return 1;
+    };
+    check.$path = function (soul) {
+      if (check.$sh.root === soul) {
+        return [];
+      }
+      if (check.$sh.pre !== (soul || "").slice(0, 2)) {
+        return;
+      }
+      if ("/" === soul.slice(-1) || 0 <= soul.indexOf("//")) {
+        return;
+      }
+      var path = soul.slice(2).split("/");
+      for (var i = 0; i < path.length; i++) {
+        if (!check.$seg(path[i])) {
+          return;
+        }
+      }
+      return path;
+    };
+    check.$kid = function (soul, key) {
+      if (check.$sh.root === soul) {
+        return check.$sh.pre + key;
+      }
+      return soul + "/" + key;
+    };
+    check.$pub = function (soul, key) {
+      var path = check.$path(soul);
+      if (!path) {
+        return;
+      }
+      return path.join("") + key;
+    };
+    check.$leaf = function (soul, key) {
+      var pub = check.$pub(soul, key);
+      if (!pub || pub.length !== check.$sh.pub) {
+        return;
+      }
+      if (settings.pub("~" + pub) !== pub) {
+        return;
+      }
+      return pub;
+    };
+
+    check.$tag = async function (msg, cert, upub, $verify, next) {
+      var _cert = await settings.parse(cert);
+      if (_cert && _cert.m && _cert.s) {
+        $verify(_cert, upub, function (_) {
+          msg.put[":"]["+"] = _cert;
+          next();
+        });
+      }
+    };
+
+    check.pass = function (eve, msg, raw, data, $verify, writerPub) {
+      if (raw["+"] && raw["+"]["m"] && raw["+"]["s"] && writerPub) {
+        return $verify(raw["+"], writerPub, function (_) {
+          msg.put["="] = data;
+          return eve.to.next(msg);
+        });
+      }
+      msg.put["="] = data;
+      return eve.to.next(msg);
+    };
+
+    check.pub = async function (eve, msg, val, key, soul, at, no, user, pub, conf) {
+      conf = conf || {};
+      var $verify = function (certificate, certificant, cb) {
+        return check.$vfy(
+          eve,
+          msg,
+          key,
+          soul,
+          pub,
+          no,
+          certificate,
+          certificant,
+          cb,
+        );
+      };
+      var $next = function () {
+        return check.next(eve, msg, no);
+      };
+      var sec = check.$zen(msg, user, pub);
+      var opt = sec.opt,
+        authenticator = sec.authenticator,
+        upub = sec.upub;
+      var cert = conf.nocert ? u : opt.cert;
+      var $expect = function (data) {
+        if (u === conf.want) {
+          return 1;
+        }
+        if (data === conf.want) {
+          return 1;
+        }
+        no(conf.err || "Unexpected payload.");
+      };
+      var raw = (await settings.parse(val)) || {};
+      var $hash = function (data, next2) {
+        check.guard(eve, msg, key, soul, at, no, data, next2);
+      };
+
+      if ("pub" === key && "~" + pub === soul) {
+        if (val === pub) {
+          return eve.to.next(msg);
+        }
+        return no("Account not same!");
+      }
+
+      if (
+        ((user && user.is) || authenticator) &&
+        upub &&
+        !raw["~"] &&
+        (pub === upub || (pub !== upub && cert))
+      ) {
+        check.auth(msg, no, authenticator, function (data) {
+          if (!$expect(data)) {
+            return;
+          }
+          $hash(data, function () {
+            if (pub !== upub && cert) {
+              return check.$tag(msg, cert, upub, $verify, $next);
+            }
+            $next();
+          });
+        });
+        return;
+      }
+
+      settings.pack(msg.put, function (packed) {
+        recover(packed).then(function (signerPub) {
+          verify(packed, signerPub, function (data) {
+            data = settings.unpack(data);
+            if (u === data) {
+              return no("Unverified data.");
+            }
+            if (!$expect(data)) {
+              return;
+            }
+            var lnk = link_is(data);
+            if (lnk && pub === settings.pub(lnk)) {
+              (at.zen.own[lnk] = at.zen.own[lnk] || {})[pub] = 1;
+            }
+            $hash(data, function () {
+              check.pass(eve, msg, raw, data, $verify, signerPub);
+            });
+          });
+        }).catch(function () {
+          no("Cannot recover signer identity.");
+        });
+      });
+    };
+
+    check.shard = async function (eve, msg, val, key, soul, at, no, user) {
+      var path = check.$path(soul),
+        link = link_is(val),
+        expected,
+        leaf,
+        raw;
+      if (!path) {
+        return no("Invalid shard soul path.");
+      }
+      if (!check.$seg(key, 1)) {
+        return no("Invalid shard key.");
+      }
+      if (path.length + 1 > check.$sh.max) {
+        return no("Invalid shard depth.");
+      }
+      leaf = check.$leaf(soul, key);
+      if (leaf) {
+        if (!link) {
+          return no("Shard leaf value must be a link.");
+        }
+        if (link !== "~" + leaf) {
+          return no("Shard leaf link must point to ~pub.");
+        }
+        var lsec = check.$zen(msg, user, leaf);
+        var lauthenticator = lsec.authenticator,
+          lupub = lsec.upub || (lauthenticator || {}).pub;
+        if (!lauthenticator) {
+          return no("Shard leaf requires authenticator.");
+        }
+        if (lupub !== leaf) {
+          return no("Shard leaf authenticator pub mismatch.");
+        }
+        check.auth(msg, no, lauthenticator, function (data) {
+          if (link_is(data) !== link) {
+            return no("Shard leaf signed payload mismatch.");
+          }
+          msg.put["="] = { "#": link };
+          check.next(eve, msg, no);
+        });
+        return;
+      }
+      expected = check.$kid(soul, key);
+      var prefix = check.$pub(soul, key);
+      raw = link ? {} : (await settings.parse(val)) || {};
+      var hasSignature = !link && raw && typeof raw === "object" && raw["~"];
+      if (!hasSignature) {
+        if (!link) {
+          return no("Shard intermediate value must be link.");
+        }
+        if (link !== expected) {
+          return no("Invalid shard link target.");
+        }
+        var sec2 = check.$zen(msg, user);
+        var authenticator2 = sec2.authenticator;
+        var authPub = sec2.upub || (authenticator2 || {}).pub;
+        if (!authenticator2) {
+          return no("Shard intermediate requires authenticator.");
+        }
+        if ("string" !== typeof authPub || authPub.length !== check.$sh.pub) {
+          return no("Invalid shard intermediate pub.");
+        }
+        if (settings.pub("~" + authPub) !== authPub) {
+          return no("Invalid shard intermediate pub format.");
+        }
+        if (0 !== authPub.indexOf(prefix)) {
+          return no("Shard pub prefix mismatch.");
+        }
+        check.auth(msg, no, authenticator2, function (data) {
+          if (link_is(data) !== expected) {
+            return no("Shard intermediate signed payload mismatch.");
+          }
+          msg.put["="] = { "#": expected };
+          check.next(eve, msg, no);
+        });
+        return;
+      }
+      var existing = ((at.graph || {})[soul] || {})[key];
+      if (existing) {
+        var existingParsed = await settings.parse(existing);
+        if (existingParsed && link_is(existingParsed[":"]) === expected) {
+          msg.put["="] = { "#": expected };
+          return eve.to.next(msg);
+        }
+      }
+      if (link_is(raw[":"]) !== expected) {
+        return no("Invalid shard link target.");
+      }
+      settings.pack(msg.put, function (packed) {
+        recover(packed).then(function (signerPub) {
+          if ("string" !== typeof signerPub || signerPub.length !== check.$sh.pub) {
+            return no("Invalid shard intermediate pub.");
+          }
+          if (settings.pub("~" + signerPub) !== signerPub) {
+            return no("Invalid shard intermediate pub format.");
+          }
+          if (0 !== signerPub.indexOf(prefix)) {
+            return no("Shard pub prefix mismatch.");
+          }
+          verify(packed, signerPub, function (data) {
+            data = settings.unpack(data);
+            if (u === data) {
+              return no("Invalid shard intermediate signature.");
+            }
+            if (link_is(data) !== expected) {
+              return no("Shard intermediate payload mismatch.");
+            }
+            msg.put["="] = data;
+            eve.to.next(msg);
+          });
+        }).catch(function () {
+          no("Cannot recover shard signer pub.");
+        });
+      });
+    };
+
+    check.any = function (eve, msg, val, key, soul, at, no) {
+      if (at.opt.secure) {
+        return no("Soul missing public key at '" + key + "'.");
+      }
+      at.on("secure", function (msg2) {
+        this.off();
+        if (!at.opt.secure) {
+          return eve.to.next(msg2);
+        }
+        no("Data cannot be changed.");
+      }).on.on("secure", msg);
+    };
+
+    // --------------- zen plugin ---------------
+
+    Zen.on("opt", function (at) {
+      if (!at.zen) {
+        at.zen = { own: {} };
+        at.on("put", check, at);
+      }
+      this.to.next(at);
+    });
+
+    // --------------- exports ---------------
+
+    var security = {
+      check: check,
+      opt: settings,
+      verify: verify,
+      recover: recover,
+      hash: hash,
+      sign: sign,
+    };
+
+    exp.default = security;
+  });
+
+  defmod('./src/pen.js', function(module, exp){
+    var SecurityMod = reqmod('./src/security.js').default;
+    var base62 = reqmod('./src/base62.js').default;
+    const __penWasmURL = new URL("./pen.wasm", import.meta.url);
+    {
+      var runtime = SecurityMod;
+
+      // ── WASM init ───────────────────────────────────────────────────────────────
+
+      var _wasm = null;
+      var pen = {};
+
+      function createPenReady() {
+        if (
+          typeof process !== "undefined" &&
+          process.versions &&
+          process.versions.node
+        ) {
+          return import("node:fs/promises")
+            .then(function (mod) {
+              var readFile = mod.readFile || (mod.default || {}).readFile;
+              if (!readFile) {
+                throw new Error("pen: fs.readFile unavailable");
+              }
+              return readFile(__penWasmURL);
+            })
+            .then(function (bytes) {
+              return WebAssembly.instantiate(bytes, {}).then(function (r) {
+                _wasm = r;
+              });
+            });
+        }
+        if (typeof fetch !== "undefined") {
+          return fetch(__penWasmURL)
+            .then(function (r) {
+              if (!r.ok)
+                throw new Error(
+                  "pen: fetch pen.wasm failed: " + r.status + " " + r.url,
+                );
+              return r.arrayBuffer();
+            })
+            .then(function (buf) {
+              return WebAssembly.instantiate(buf, {});
+            })
+            .then(function (r) {
+              _wasm = r;
+            });
+        }
+        return Promise.reject(
+          new Error("pen: cannot load pen.wasm in this environment"),
+        );
+      }
+
+      pen.ready = createPenReady();
+
+      function _view() {
+        return new Uint8Array(_wasm.instance["exports"].memory.buffer);
+      }
+
+      // ── Wire encoding ────────────────────────────────────────────────────────────
+
+      var _enc =
+        typeof TextEncoder !== "undefined"
+          ? new TextEncoder()
+          : {
+              encode: function (s) {
+                var buf = Buffer.from(s, "utf8");
+                return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+              },
+            };
+
+      function _writeReg(view, offset, val) {
+        if (val === null || val === undefined) {
+          view[offset++] = 0;
+          return offset;
+        }
+        if (typeof val === "boolean") {
+          view[offset++] = 1;
+          view[offset++] = val ? 1 : 0;
+          return offset;
+        }
+        if (typeof val === "number") {
+          if (
+            Number.isInteger(val) &&
+            val >= -0x8000000000000000 &&
+            val <= 0x7fffffffffffffff
+          ) {
+            view[offset++] = 2;
+            var lo = val >>> 0;
+            var hi = Math.floor(val / 0x100000000);
+            view[offset++] = lo & 0xff;
+            view[offset++] = (lo >> 8) & 0xff;
+            view[offset++] = (lo >> 16) & 0xff;
+            view[offset++] = (lo >> 24) & 0xff;
+            var hlo = hi >>> 0;
+            view[offset++] = hlo & 0xff;
+            view[offset++] = (hlo >> 8) & 0xff;
+            view[offset++] = (hlo >> 16) & 0xff;
+            view[offset++] = (hlo >> 24) & 0xff;
+            return offset;
+          } else {
+            view[offset++] = 3;
+            var dv = new DataView(view.buffer, view.byteOffset + offset, 8);
+            dv.setFloat64(0, val, true);
+            offset += 8;
+            return offset;
+          }
+        }
+        if (typeof val === "string") {
+          view[offset++] = 4;
+          var encoded = _enc.encode(val);
+          var slen = encoded.length;
+          view[offset++] = slen & 0xff;
+          view[offset++] = (slen >> 8) & 0xff;
+          view[offset++] = (slen >> 16) & 0xff;
+          view[offset++] = (slen >> 24) & 0xff;
+          for (var i = 0; i < slen; i++) view[offset++] = encoded[i];
+          return offset;
+        }
+        view[offset++] = 0;
+        return offset;
+      }
+
+      // ── run ──────────────────────────────────────────────────────────────────────
+
+      pen.run = function (bytecode, regs) {
+        if (!_wasm) throw new Error("pen: not ready. await pen.ready first.");
+        var exp = _wasm.instance.exports;
+        var view = _view();
+
+        exp.free();
+
+        var base = exp.mem();
+        var bclen = bytecode.length;
+        view[base + 0] = bclen & 0xff;
+        view[base + 1] = (bclen >> 8) & 0xff;
+        view[base + 2] = (bclen >> 16) & 0xff;
+        view[base + 3] = (bclen >> 24) & 0xff;
+
+        for (var i = 0; i < bclen; i++) view[base + 4 + i] = bytecode[i];
+
+        var regOff = base + 4 + bclen;
+        var nregs = regs ? regs.length : 0;
+        view[regOff + 0] = nregs & 0xff;
+        view[regOff + 1] = (nregs >> 8) & 0xff;
+        view[regOff + 2] = (nregs >> 16) & 0xff;
+        view[regOff + 3] = (nregs >> 24) & 0xff;
+
+        var off = regOff + 4;
+        for (var j = 0; j < nregs; j++) off = _writeReg(view, off, regs[j]);
+
+        var result = exp.run();
+        if (result === 1) return true;
+        if (result === 0) return false;
+        if (result === -2) throw new Error("PEN: bad version byte");
+        if (result === -3) throw new Error("PEN: max recursion depth exceeded");
+        throw new Error("PEN: runtime error (" + result + ")");
+      };
+
+      // ── pack / unpack (bytecode ↔ base62) ────────────────────────────────────────
+      // Used to store bytecode as the soul/node-ID in ZEN graph.
+      // Soul format: '$' + pen.pack(bytecode)
+      // e.g. '$abc123...' (variable length base62)
+
+      var B62_MAP = {};
+      for (var _i = 0; _i < base62.ALPHA.length; _i++) B62_MAP[base62.ALPHA[_i]] = _i;
+
+      function b62enc(n) {
+        if (n === 0n) return base62.ALPHA[0];
+        var s = "";
+        while (n > 0n) {
+          s = base62.ALPHA[Number(n % 62n)] + s;
+          n = n / 62n;
+        }
+        return s;
+      }
+
+      function b62dec(s) {
+        var n = 0n;
+        for (var i = 0; i < s.length; i++) n = n * 62n + BigInt(B62_MAP[s[i]] || 0);
+        return n;
+      }
+
+      pen.pack = function (buf) {
+        var hex = "01";
+        for (var i = 0; i < buf.length; i++)
+          hex += ("0" + buf[i].toString(16)).slice(-2);
+        return b62enc(BigInt("0x" + hex));
+      };
+
+      pen.unpack = function (s) {
+        var n = b62dec(s);
+        var hex = n.toString(16);
+        if (hex.length % 2) hex = "0" + hex;
+        var bytes = [];
+        for (var i = 0; i < hex.length; i += 2)
+          bytes.push(parseInt(hex.slice(i, i + 2), 16));
+        return new Uint8Array(bytes.slice(1)); // drop sentinel 0x01
+      };
+
+      // ── Bytecode builder ─────────────────────────────────────────────────────────
+
+      var bc = (pen.bc = {});
+
+      bc.uleb = function (n) {
+        var bytes = [];
+        n = n >>> 0;
+        do {
+          var b = n & 0x7f;
+          n >>>= 7;
+          if (n !== 0) b |= 0x80;
+          bytes.push(b);
+        } while (n !== 0);
+        return bytes;
+      };
+      bc.sleb = function (n) {
+        var bytes = [],
+          more = true;
+        while (more) {
+          var b = n & 0x7f;
+          n >>= 7;
+          if ((n === 0 && (b & 0x40) === 0) || (n === -1 && (b & 0x40) !== 0))
+            more = false;
+          else b |= 0x80;
+          bytes.push(b);
+        }
+        return bytes;
+      };
+
+      bc.prog = function (root) {
+        return new Uint8Array([0x01].concat(root));
+      };
+      bc.null_ = function () {
+        return [0x00];
+      };
+      bc.true_ = function () {
+        return [0x01];
+      };
+      bc.false_ = function () {
+        return [0x02];
+      };
+      bc.str = function (s) {
+        var bytes = Array.from(_enc.encode(s));
+        return [0x03].concat(bc.uleb(bytes.length)).concat(bytes);
+      };
+      bc.uint = function (n) {
+        return [0x04].concat(bc.uleb(n));
+      };
+      bc.int = function (n) {
+        return [0x07].concat(bc.sleb(n));
+      };
+      bc.f64 = function (n) {
+        var buf = new ArrayBuffer(8);
+        new DataView(buf).setFloat64(0, n, false);
+        return [0x08].concat(Array.from(new Uint8Array(buf)));
+      };
+      bc.pass = function () {
+        return [0x23];
+      };
+      bc.fail = function () {
+        return [0x24];
+      };
+      bc.reg = function (n) {
+        return [0x10, n];
+      };
+      bc.r0 = function () {
+        return [0xf0];
+      };
+      bc.r1 = function () {
+        return [0xf1];
+      };
+      bc.r2 = function () {
+        return [0xf2];
+      };
+      bc.r3 = function () {
+        return [0xf3];
+      };
+      bc.r4 = function () {
+        return [0xf4];
+      };
+      bc.r5 = function () {
+        return [0xf5];
+      };
+      bc.r6 = function () {
+        return [0x10, 6];
+      }; // path register
+      bc.local = function (n) {
+        return [0xf8 + n];
+      };
+      bc.intn = function (n) {
+        return n >= 0 && n <= 15 ? [0xe0 + n] : bc.uint(n);
+      };
+
+      bc.and = function (exprs) {
+        return [0x20, exprs.length].concat(...exprs);
+      };
+      bc.or = function (exprs) {
+        return [0x21, exprs.length].concat(...exprs);
+      };
+      bc.not = function (a) {
+        return [0x22].concat(a);
+      };
+
+      bc.eq = function (a, b) {
+        return [0x30].concat(a, b);
+      };
+      bc.ne = function (a, b) {
+        return [0x31].concat(a, b);
+      };
+      bc.lt = function (a, b) {
+        return [0x32].concat(a, b);
+      };
+      bc.gt = function (a, b) {
+        return [0x33].concat(a, b);
+      };
+      bc.lte = function (a, b) {
+        return [0x34].concat(a, b);
+      };
+      bc.gte = function (a, b) {
+        return [0x35].concat(a, b);
+      };
+
+      bc.add = function (a, b) {
+        return [0x40].concat(a, b);
+      };
+      bc.sub = function (a, b) {
+        return [0x41].concat(a, b);
+      };
+      bc.mul = function (a, b) {
+        return [0x42].concat(a, b);
+      };
+      bc.divu = function (a, b) {
+        return [0x43].concat(a, b);
+      };
+      bc.mod = function (a, b) {
+        return [0x44].concat(a, b);
+      };
+      bc.abs = function (a) {
+        return [0x46].concat(a);
+      };
+      bc.neg = function (a) {
+        return [0x47].concat(a);
+      };
+
+      bc.len = function (a) {
+        return [0x50].concat(a);
+      };
+      bc.slice = function (a, s, e) {
+        return [0x51].concat(a, s, e);
+      };
+      bc.seg = function (a, sep, idx) {
+        return [0x52].concat(a, [sep.charCodeAt(0)], idx);
+      };
+      bc.tonum = function (a) {
+        return [0x53].concat(a);
+      };
+      bc.tostr = function (a) {
+        return [0x54].concat(a);
+      };
+      bc.concat = function (a, b) {
+        return [0x55].concat(a, b);
+      };
+      bc.pre = function (a, b) {
+        return [0x56].concat(a, b);
+      };
+      bc.suf = function (a, b) {
+        return [0x57].concat(a, b);
+      };
+      bc.inc = function (a, b) {
+        return [0x58].concat(a, b);
+      };
+      bc.upper = function (a) {
+        return [0x5a].concat(a);
+      };
+      bc.lower = function (a) {
+        return [0x5b].concat(a);
+      };
+
+      bc.iss = function (a) {
+        return [0x60].concat(a);
+      };
+      bc.isn = function (a) {
+        return [0x61].concat(a);
+      };
+      bc.isx = function (a) {
+        return [0x62].concat(a);
+      };
+      bc.isb = function (a) {
+        return [0x63].concat(a);
+      };
+      bc.lng = function (a, mn, mx) {
+        return [0x64].concat(a, [mn, mx]);
+      };
+
+      bc.let_ = function (slot, def, body) {
+        return [0x70, slot].concat(def, body);
+      };
+      bc.if_ = function (c, t, e) {
+        return [0x71].concat(c, t, e);
+      };
+      bc.segr = function (reg, sep, idx) {
+        return [0x80, reg, sep.charCodeAt(0), idx];
+      };
+      bc.segrn = function (reg, sep, idx) {
+        return [0x81, reg, sep.charCodeAt(0), idx];
+      };
+
+      // ── treeskip: advance pos past one expression node without evaluating ─────────
+      // Used by scanpolicy to find where the root expression ends, so policy bytes
+      // appended after the tree can be scanned without false positives.
+
+      function treeskip(bytecode, pos) {
+        var op = bytecode[pos++];
+        if (op === 0x00 || op === 0x01 || op === 0x02 || op === 0x23 || op === 0x24)
+          return pos;
+        if (op === 0x03) {
+          // ULEB128-encoded length
+          var len = 0, shift = 0, b;
+          do {
+            b = bytecode[pos++];
+            len |= (b & 0x7f) << shift;
+            shift += 7;
+          } while (b & 0x80);
+          return pos + len;
+        } // string
+        if (op === 0x04 || op === 0x07) {
+          while (bytecode[pos++] & 0x80) {}
+          return pos;
+        } // varint
+        if (op === 0x08) return pos + 8; // f64
+        if (op === 0x10) return pos + 1; // reg(n)
+        if (op === 0x20 || op === 0x21) {
+          // and/or
+          var n = bytecode[pos++];
+          for (var i = 0; i < n; i++) pos = treeskip(bytecode, pos);
+          return pos;
+        }
+        if (op === 0x22) return treeskip(bytecode, pos); // not
+        if (op >= 0x30 && op <= 0x35) {
+          pos = treeskip(bytecode, pos);
+          return treeskip(bytecode, pos);
+        } // 2-arg compare
+        if (op >= 0x40 && op <= 0x45) {
+          pos = treeskip(bytecode, pos);
+          return treeskip(bytecode, pos);
+        } // 2-arg arith
+        if (op === 0x46 || op === 0x47) return treeskip(bytecode, pos); // abs/neg
+        if (op === 0x50) return treeskip(bytecode, pos); // len
+        if (op === 0x51) {
+          pos = treeskip(bytecode, pos);
+          pos = treeskip(bytecode, pos);
+          return treeskip(bytecode, pos);
+        } // slice
+        if (op === 0x52) {
+          pos = treeskip(bytecode, pos);
+          pos++;
+          return treeskip(bytecode, pos);
+        } // seg
+        if (op === 0x53 || op === 0x54) return treeskip(bytecode, pos); // tonum/tostr
+        if (op >= 0x55 && op <= 0x59) {
+          pos = treeskip(bytecode, pos);
+          return treeskip(bytecode, pos);
+        } // 2-arg string
+        if (op === 0x5a || op === 0x5b) return treeskip(bytecode, pos); // upper/lower
+        if (op >= 0x60 && op <= 0x63) return treeskip(bytecode, pos); // type checks
+        if (op === 0x64) return treeskip(bytecode, pos) + 2; // lng: expr + [min][max]
+        if (op === 0x70) {
+          pos++;
+          pos = treeskip(bytecode, pos);
+          return treeskip(bytecode, pos);
+        } // let
+        if (op === 0x71) {
+          pos = treeskip(bytecode, pos);
+          pos = treeskip(bytecode, pos);
+          return treeskip(bytecode, pos);
+        } // if
+        if (op === 0x80 || op === 0x81) return pos + 3; // segr/segrn macros
+        if (op >= 0xe0 && op <= 0xef) return pos; // intn shorthands
+        if ((op >= 0xf0 && op <= 0xf5) || op >= 0xf8) return pos; // reg shorthands
+        return pos; // unknown — stop here (policy byte or EOF)
+      }
+
+      function readuleb(bytes, pos) {
+        var value = 0,
+          shift = 0,
+          b = 0;
+        do {
+          if (pos >= bytes.length) return null;
+          b = bytes[pos++];
+          value |= (b & 0x7f) << shift;
+          shift += 7;
+        } while (b & 0x80);
+        return { value: value >>> 0, next: pos };
+      }
+
+      // ── scanpolicy: extract tail opcodes appended after expression root ───────────
+      // Tail bytes (0xC0..) are appended AFTER the complete expression tree.
+      // We use treeskip() to find where the tree ends, avoiding false positives from
+      // integer/string byte values within the expression that happen to overlap tail opcodes.
+
+      function scanpolicy(bytecode) {
+        var p = { sign: false, cert: null, open: false, pow: null };
+        if (!bytecode || bytecode.length < 2) return p;
+        var pos = treeskip(bytecode, 1); // skip version byte + root expression
+        for (var i = pos; i < bytecode.length; ) {
+          var op = bytecode[i++];
+          if (op === 0xc0) {
+            p.sign = true;
+            continue;
+          }
+          if (op === 0xc1) {
+            var clen = bytecode[i++] || 0,
+              pub = "";
+            if (i + clen > bytecode.length) return p;
+            for (var cj = 0; cj < clen; cj++)
+              pub += String.fromCharCode(bytecode[i++]);
+            p.cert = pub;
+            continue;
+          }
+          if (op === 0xc3) {
+            p.open = true;
+            continue;
+          }
+          if (op === 0xc4) {
+            var pfield = bytecode[i++],
+              pdiff = bytecode[i++];
+            var ulen = bytecode[i++] || 0,
+              unit = "";
+            if (i + ulen > bytecode.length) return p;
+            for (var ui = 0; ui < ulen; ui++)
+              unit += String.fromCharCode(bytecode[i++]);
+            p.pow = { field: pfield, difficulty: pdiff, unit: unit || "0" };
+            continue;
+          }
+          break;
+        }
+        return p;
+      }
+
+      pen.scanpolicy = scanpolicy;
+
+      // ── applypolicy: enforce policy after predicate passes ────────────────────────
+      // Handles sign (SGN/0xC0), cert (CRT/0xC1), open (NOA/0xC3), and no-policy.
+      // PoW (0xC4) is handled in penStage before calling applypolicy.
+
+      function applypolicy(policy, ctx, reject, writer) {
+        var eve = ctx.eve,
+          msg = ctx.msg;
+        var chk = runtime.check;
+
+        if (policy.cert) {
+          var raw = {};
+          try {
+            raw = JSON.parse(ctx.val) || {};
+          } catch (e) {}
+          if (!raw["+"]) return reject("PEN: cert required");
+          function verifyCert(signerPub) {
+            if (!signerPub) return reject("PEN: cannot recover signer pub for cert verification");
+            chk.$vfy(
+              eve,
+              msg,
+              ctx.key,
+              ctx.soul,
+              policy.cert,
+              reject,
+              raw["+"],
+              signerPub,
+              function () {
+                chk.next(eve, msg, reject);
+              },
+            );
+          }
+          if (writer) {
+            // Writer pub is already known (new write with authenticator)
+            verifyCert(writer);
+          } else {
+            // Peer re-propagation: recover from packed write signature.
+            // Use ctx.put (the specific node for this soul/key), not msg.put (the full delta).
+            runtime.opt.pack(ctx.put, function (packed) {
+              runtime.recover(packed).then(verifyCert).catch(function () {
+                reject("PEN: cannot recover signer pub for cert verification");
+              });
+            });
+          }
+          return;
+        }
+
+        if (policy.sign) {
+          // Signature was already verified and msg.put updated in penStage before
+          // the predicate ran — just forward.
+          return chk.next(eve, msg, reject);
+        }
+
+        // open or no policy: forward directly without stringify
+        eve.to.next(msg);
+      }
+
+      // ── penStage: pipeline stage for !-soul validation ────────────────────────────
+
+      function penStage(ctx, next, reject) {
+        // Cache-miss re-propagation: data was already verified on original write.
+        // The PoW nonce is stripped by ham(), so re-verification would fail anyway.
+        // This mirrors the faith fast-path that security.js uses for ~/* souls.
+        var msgCtx = ctx.msg && ctx.msg._;
+        var isMiss = msgCtx && msgCtx.miss;
+        if (isMiss) {
+          return next();
+        }
+        var soul = ctx.soul;
+        var slashIdx = soul.indexOf("/");
+        var pencode = slashIdx >= 0 ? soul.slice(1, slashIdx) : soul.slice(1);
+        var pathpart = slashIdx >= 0 ? soul.slice(slashIdx + 1) : "";
+        var bytecode;
+        try {
+          bytecode = pen.unpack(pencode);
+        } catch (e) {
+          return reject("PEN: invalid soul encoding");
+        }
+        if (!bytecode || bytecode.length < 2) return reject("PEN: empty bytecode");
+        if (bytecode.length > 512) return reject("PEN: bytecode too large");
+
+        var policy = scanpolicy(bytecode);
+        var sec =
+          runtime.check && runtime.check.$zen
+            ? runtime.check.$zen(ctx.msg, (ctx.at && ctx.at.user) || "", null)
+            : {};
+        var writer = sec.upub || (sec.authenticator || {}).pub || "";
+
+        // Auto-mine if opt.pow is a policy object {unit, difficulty} and no nonce yet.
+        // Must be called AFTER signing so ctx.val is already the verified plaintext.
+        // Peers re-propagating already have the nonce in ctx.put["^"], so this is a no-op for them.
+        function mineIfNeeded(cb) {
+          var pow = sec.opt && sec.opt.pow;
+          if (pow && typeof pow === "object" && !ctx.put["^"]) {
+            var proofBlock = JSON.stringify({
+              "#": ctx.put["#"] || "",
+              ".": ctx.put["."] || "",
+              ":": ctx.val,
+              ">": ctx.put[">"] || 0,
+            });
+            runtime.hash(
+              function (nonce) { return proofBlock + ":" + nonce; },
+              null,
+              function (result) {
+                ctx.put["^"] = result.nonce;
+                cb();
+              },
+              {
+                pow: {
+                  unit: pow.unit || "0",
+                  difficulty: pow.difficulty != null ? pow.difficulty : 3,
+                },
+                name: "SHA-256",
+                encode: "hex",
+              },
+            );
+          } else {
+            cb();
+          }
+        }
+
+        // Run bytecode predicates with ctx.val (must be verified plaintext by this point)
+        // then hand off to applypolicy for final forwarding.
+        function runPredicate() {
+          var regs = [
+            ctx.key,
+            ctx.val,   // R[1]: verified plaintext when sign:true, raw otherwise
+            soul,
+            ctx.state || 0,
+            Date.now(),
+            writer,
+            pathpart,     // R[6]: path after pencode/ in soul
+            ctx.put["^"] || "", // R[7]: PoW nonce
+          ];
+
+          pen.ready.then(function () {
+            var ok;
+            try {
+              ok = pen.run(bytecode, regs);
+            } catch (e) {
+              return reject("PEN VM: " + (e.message || e));
+            }
+            if (!ok) return reject("PEN: predicate failed");
+
+            if (policy.pow) {
+              // Verify SHA-256(canonical_block + ":" + nonce) meets difficulty.
+              // The canonical block is {#, ., :, >} — the same data used during signing.
+              // Binding nonce to the full block (soul + key + val + state) prevents
+              // replay across different keys or values.
+              var nonce = regs[7] || ""; // R[7] is always the PoW nonce
+              var proofBlock = JSON.stringify({
+                "#": ctx.put["#"] || "",
+                ".": ctx.put["."] || "",
+                ":": ctx.val,
+                ">": ctx.put[">"] || 0,
+              });
+              var proof = proofBlock + ":" + nonce;
+              return runtime.hash(
+                proof,
+                null,
+                function (hash) {
+                  var punit = policy.pow.unit || "0";
+                  var pdiff =
+                    policy.pow.difficulty != null ? policy.pow.difficulty : 1;
+                  var prefix = punit.repeat(pdiff);
+                  if ((hash || "").indexOf(prefix) !== 0)
+                    return reject("PEN: PoW insufficient");
+                  applypolicy(policy, ctx, reject, writer);
+                },
+                { name: "SHA-256", encode: "hex" },
+              );
+            }
+
+            applypolicy(policy, ctx, reject, writer);
+          });
+        }
+
+        // For sign:true, verify and unpack BEFORE running the predicate so that:
+        //   - ctx.val is the verified plaintext (not the raw signed blob)
+        //   - msg.put[":"] and msg.put["="] are set consistently with check.auth
+        if (policy.sign) {
+          var chk = runtime.check;
+          var msg = ctx.msg;
+
+          if (sec.authenticator) {
+            // New write: sign first, check.auth updates msg.put[":"] and msg.put["="]
+            chk.auth(msg, reject, sec.authenticator, function (parsed) {
+              ctx.val = parsed;
+              mineIfNeeded(runPredicate);
+            });
+            return;
+          }
+          // Peer re-propagation: verify existing signature then unpack.
+          // If check.auth already ran (new-write path), msg.put[":"] is an object
+          // with a "~" signature field — use it directly without recovery.
+          var putVal = ctx.put[":"];
+          if (putVal && typeof putVal === "object" && putVal["~"]) {
+            ctx.val = putVal[":"];
+            mineIfNeeded(runPredicate);
+            return;
+          }
+          runtime.opt.pack(ctx.put, function (packed) {
+            // Fallback: raw signed string in the put — try public key recovery.
+            runtime.recover(packed).then(function (signerPub) {
+              runtime.verify(packed, signerPub || sec.upub || null, function (data) {
+                data = runtime.opt.unpack(data);
+                if (data === void 0) return reject("PEN: valid signature required");
+                var sig = (packed && packed.s) || "";
+                ctx.put[":"] = { ":": data, "~": sig, v: packed && packed.v, c: packed && packed.c };
+                ctx.put["="] = data;
+                ctx.val = data;
+                mineIfNeeded(runPredicate);
+              });
+            }).catch(function () {
+              reject("PEN: cannot recover signer pub");
+            });
+          });
+          return;
+        }
+
+        mineIfNeeded(runPredicate);
+      }
+
+      if (runtime && runtime.check && runtime.check.use) {
+        runtime.check.use(function (ctx, pipeline) {
+          if (!ctx.soul || ctx.soul[0] !== "!") return;
+          pipeline.splice(1, 0, penStage);
+        });
+      }
+
+      // ── runtime.pen() — bytecode compiler ─────────────────────────────────────────
+      // Compiles a high-level spec to bytecode and returns the soul string '!<base62>'
+      //
+      // spec.key   — expr to validate ctx.key   (R[0])
+      // spec.val   — expr to validate ctx.val   (R[1])
+      // spec.soul  — expr to validate ctx.soul  (R[2], full soul string)
+      // spec.state — expr to validate ctx.state (R[3])
+      // spec.path  — expr to validate path after pencode/ in soul (R[6])
+      //              e.g. soul '!abc/foo/bar' → path 'foo/bar'
+      //
+      // expr formats:
+      //   "string"                      → EQ(field, str)
+      //   { eq, ne, pre, suf, inc }     → string predicates
+      //   { lt, gt, lte, gte }          → numeric comparisons
+      //   { and, or, not }              → logical combinators
+      //   { type: 'string|number|...' } → ISS/ISN/ISX/ISB
+      //   { length: [min, max] }        → LNG
+      //   { seg: {sep,idx,of,match} }   → SEG
+      //   { let: {bind,def,body} }      → LET
+      //   { if: {cond,then,else} }      → IF
+      //   { reg: n }                    → REG(n) for LET locals
+      //   { divu, mod, add, sub, mul }  → arithmetic
+      //   { tonum, tostr }              → coercion
+
+      function compileExpr(x, field_reg) {
+        if (x === undefined || x === null) return bc.pass();
+        if (typeof x === "boolean") return x ? bc.pass() : bc.fail();
+        if (typeof x === "number") return bc.intn(x);
+        if (typeof x === "string") return bc.eq(field_reg, bc.str(x));
+
+        var r = field_reg;
+
+        if (x.and)
+          return bc.and(
+            x.and.map(function (e) {
+              return compileExpr(e, r);
+            }),
+          );
+        if (x.or)
+          return bc.or(
+            x.or.map(function (e) {
+              return compileExpr(e, r);
+            }),
+          );
+        if (x.not) return bc.not(compileExpr(x.not, r));
+
+        if (x.eq !== undefined) {
+          if (Array.isArray(x.eq))
+            return bc.eq(compileVal(x.eq[0]), compileVal(x.eq[1]));
+          return bc.eq(r, bc.str(String(x.eq)));
+        }
+        if (x.ne !== undefined) {
+          if (Array.isArray(x.ne))
+            return bc.ne(compileVal(x.ne[0]), compileVal(x.ne[1]));
+          return bc.ne(r, bc.str(String(x.ne)));
+        }
+        if (x.pre !== undefined) return bc.pre(r, bc.str(String(x.pre)));
+        if (x.suf !== undefined) return bc.suf(r, bc.str(String(x.suf)));
+        if (x.inc !== undefined) return bc.inc(r, bc.str(String(x.inc)));
+
+        if (x.lt !== undefined) {
+          if (Array.isArray(x.lt))
+            return bc.lt(compileVal(x.lt[0]), compileVal(x.lt[1]));
+          return bc.lt(r, bc.uint(x.lt));
+        }
+        if (x.gt !== undefined) {
+          if (Array.isArray(x.gt))
+            return bc.gt(compileVal(x.gt[0]), compileVal(x.gt[1]));
+          return bc.gt(r, bc.uint(x.gt));
+        }
+        if (x.lte !== undefined) {
+          if (Array.isArray(x.lte))
+            return bc.lte(compileVal(x.lte[0]), compileVal(x.lte[1]));
+          return bc.lte(r, bc.uint(x.lte));
+        }
+        if (x.gte !== undefined) {
+          if (Array.isArray(x.gte))
+            return bc.gte(compileVal(x.gte[0]), compileVal(x.gte[1]));
+          return bc.gte(r, bc.uint(x.gte));
+        }
+
+        if (x.type) {
+          var t = x.type;
+          if (t === "string") return bc.iss(r);
+          if (t === "number") return bc.isn(r);
+          if (t === "null") return bc.isx(r);
+          if (t === "bool") return bc.isb(r);
+        }
+
+        if (x.length) return bc.lng(r, x.length[0], x.length[1]);
+
+        if (x.seg) {
+          var s = x.seg;
+          var src = s.of ? compileVal(s.of) : r;
+          var segexpr = bc.seg(src, s.sep || "_", compileVal({ num: s.idx || 0 }));
+          if (s.match) return compileExpr(s.match, segexpr);
+          return segexpr;
+        }
+
+        if (x.let) {
+          var l = x.let;
+          return bc.let_(l.bind, compileVal(l.def), compileExpr(l.body, r));
+        }
+
+        if (x.if) {
+          return bc.if_(
+            compileExpr(x.if.cond, r),
+            compileExpr(x.if.then, r),
+            compileExpr(x.if.else, r),
+          );
+        }
+
+        if (x.reg !== undefined) return bc.reg(x.reg);
+
+        if (x.divu) return bc.divu(compileVal(x.divu[0]), compileVal(x.divu[1]));
+        if (x.mod) return bc.mod(compileVal(x.mod[0]), compileVal(x.mod[1]));
+        if (x.add) return bc.add(compileVal(x.add[0]), compileVal(x.add[1]));
+        if (x.sub) return bc.sub(compileVal(x.sub[0]), compileVal(x.sub[1]));
+        if (x.mul) return bc.mul(compileVal(x.mul[0]), compileVal(x.mul[1]));
+
+        if (x.tonum) return bc.tonum(compileVal(x.tonum));
+        if (x.tostr) return bc.tostr(compileVal(x.tostr));
+
+        return bc.pass();
+      }
+
+      function compileVal(x) {
+        if (typeof x === "number") return bc.uint(x);
+        if (typeof x === "string") return bc.str(x);
+        if (x && x.reg !== undefined) return bc.reg(x.reg);
+        if (x && x.divu)
+          return bc.divu(compileVal(x.divu[0]), compileVal(x.divu[1]));
+        if (x && x.mod) return bc.mod(compileVal(x.mod[0]), compileVal(x.mod[1]));
+        if (x && x.add) return bc.add(compileVal(x.add[0]), compileVal(x.add[1]));
+        if (x && x.sub) return bc.sub(compileVal(x.sub[0]), compileVal(x.sub[1]));
+        if (x && x.tonum) return bc.tonum(compileVal(x.tonum));
+        if (x && x.seg) {
+          var s = x.seg;
+          var src = s.of ? compileVal(s.of) : bc.r0();
+          return bc.seg(src, s.sep || "_", compileVal({ num: s.idx || 0 }));
+        }
+        if (x && x.num !== undefined)
+          return bc.intn(x.num) ? bc.intn(x.num) : bc.uint(x.num);
+        return bc.null_();
+      }
+
+      runtime.pen = function (spec) {
+        var parts = [];
+
+        if (spec.key) parts.push(compileExpr(spec.key, bc.r0()));
+        if (spec.val) parts.push(compileExpr(spec.val, bc.r1()));
+        if (spec.soul) parts.push(compileExpr(spec.soul, bc.r2()));
+        if (spec.state) parts.push(compileExpr(spec.state, bc.r3()));
+        if (spec.path) parts.push(compileExpr(spec.path, bc.r6()));
+
+        var root =
+          parts.length === 0
+            ? bc.pass()
+            : parts.length === 1
+              ? parts[0]
+              : bc.and(parts);
+
+        // Build predicate bytecode, then append tail bytes AFTER expression root.
+        // Tail bytes (0xC0..) are unreachable by WASM VM (which stops after root
+        // expression), and are extracted by scanpolicy() on the ZEN bridge layer.
+        var pred = Array.from(bc.prog(root));
+
+        if (spec.sign) pred.push(0xc0);
+        if (spec.cert) {
+          var cpub = Array.from(_enc.encode(String(spec.cert).slice(0, 255)));
+          pred.push(0xc1, cpub.length);
+          for (var ci = 0; ci < cpub.length; ci++) pred.push(cpub[ci]);
+        }
+        if (spec.open) pred.push(0xc3);
+        if (spec.pow) {
+          var powfield = 7; // R[7] is always reserved for PoW nonce; field is not user-configurable
+          var powdiff =
+            (spec.pow.difficulty != null ? spec.pow.difficulty : 1) & 0xff;
+          var powunit = spec.pow.unit ? String(spec.pow.unit).slice(0, 255) : "";
+          var powubytes = Array.from(_enc.encode(powunit));
+          pred.push(0xc4, powfield, powdiff, powubytes.length);
+          for (var pi = 0; pi < powubytes.length; pi++) pred.push(powubytes[pi]);
+        }
+        return "!" + pen.pack(new Uint8Array(pred));
+      };
+
+      // ── runtime.candle() — temporal window helper ─────────────────────────────────
+      // Returns an expr (for use in spec.key) that validates the candle number
+      // embedded at a key segment is within [current - back, current + fwd].
+      //
+      // opts: { seg: 0, sep: '_', size: 300000, back: 100, fwd: 2 }
+
+      runtime.candle = function (opts) {
+        var seg = opts.seg !== undefined ? opts.seg : 0;
+        var sep = opts.sep || "_";
+        var size = opts.size || 300000;
+        var back = opts.back !== undefined ? opts.back : 100;
+        var fwd = opts.fwd !== undefined ? opts.fwd : 2;
+
+        return {
+          let: {
+            bind: 0,
+            def: { divu: [{ reg: 4 }, size] }, // local[0] = floor(now / size)
+            body: {
+              let: {
+                bind: 1,
+                def: { tonum: { seg: { sep: sep, idx: seg, of: { reg: 0 } } } }, // local[1] = candle from key
+                body: {
+                  and: [
+                    { gte: [{ reg: 129 }, { sub: [{ reg: 128 }, back] }] },
+                    { lte: [{ reg: 129 }, { add: [{ reg: 128 }, fwd] }] },
+                  ],
+                },
+              },
+            },
+          },
+        };
+      };
+
+      pen.pen = function (spec) {
+        return runtime.pen(spec);
+      };
+      pen.candle = function (opts) {
+        return runtime.candle(opts);
+      };
+    }
+    exp.default = pen;
+  });
+
+  defmod('./src/pair.js', function(module, exp){
+    var crv = reqmod('./src/curves.js').default;
+    var applyFormat = reqmod('./src/format.js').default;
+    var { cryptoErr, cbOk } = reqmod('./src/err.js');
+    async function derivepriv(c, priv, seed, label) {
+      for (let i = 0; i < 100; i++) {
+        const off = await c.hashToScalar(seed, label + (i ? i : ""));
+        const d = c.mod(priv + off, c.N);
+        if (d !== 0n) {
+          return d;
+        }
+      }
+      throw new Error("Failed to derive non-zero private key");
+    }
+
+    async function derivepub(c, pt, seed, label) {
+      for (let i = 0; i < 100; i++) {
+        const off = await c.hashToScalar(seed, label + (i ? i : ""));
+        const d = c.pointAdd(pt, c.pointMultiply(off, c.G));
+        if (d) {
+          return d;
+        }
+      }
+      throw new Error("Failed to derive valid public key");
+    }
+
+    async function pair(cb, opt) {
+      try {
+        opt = opt || {};
+        const curveName = opt.curve || "secp256k1";
+        const c = crv(curveName);
+        if (opt.curve && c.curve !== curveName && curveName !== "secp256r1") {
+          throw new Error("Unknown curve: " + curveName);
+        }
+        const format = opt.format || "zen";
+        // Use c.curve as the canonical name for deterministic labels so that
+        // aliases (secp256r1 → p256) produce the same key from the same seed.
+        const labelCurve = c.curve;
+
+        let spriv = null,
+          spub = null;
+
+        if (opt.seed && (opt.priv || opt.pub)) {
+          // Additive derivation from existing key + seed
+          if (opt.priv) {
+            const basePriv = opt.priv;
+            spriv = await derivepriv(
+              c,
+              c.parseScalar(basePriv, "Signing key"),
+              opt.seed,
+              "ZEN.DERIVE|sign|",
+            );
+            spub = c.publicFromPrivate(spriv);
+          }
+          if (opt.pub) {
+            const basePub = opt.pub;
+            spub = await derivepub(
+              c,
+              c.parsePub(basePub),
+              opt.seed,
+              "ZEN.DERIVE|sign|",
+            );
+          }
+        } else {
+          // Generate fresh or restore from private / seed
+          const rawPriv = opt.priv;
+          spriv = rawPriv ? c.parseScalar(rawPriv, "Signing key") : null;
+
+          // Seed labels use canonical c.curve so aliases (secp256r1 ≡ p256) share the same key.
+          // For secp256k1: 'ZEN|secp256k1|sign|' matches the original hardcoded value — backward compat.
+          if (!spriv && opt.seed) {
+            spriv = await c.hashToScalar(opt.seed, "ZEN|" + labelCurve + "|sign|");
+          }
+          const rawPub = opt.pub;
+          if (!spriv && !rawPub) {
+            spriv = await c.randomScalar();
+          }
+
+          if (spriv) {
+            spub = c.publicFromPrivate(spriv);
+          } else if (rawPub) {
+            spub = c.parsePub(rawPub);
+          }
+        }
+
+        // Single keypair — sign and encrypt use the same key
+        const out = await applyFormat(format, labelCurve, c, {
+          signPriv: spriv,
+          signPub: spub,
+          encPriv: spriv,
+          encPub: spub,
+        });
+        return cbOk(cb, out);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = pair;
+
+    exp.pair = pair;
+  });
+
+  defmod('./src/encrypt.js', function(module, exp){
+    var crv = reqmod('./src/curves.js').default;
+    var { cryptoErr } = reqmod('./src/err.js');
+    async function encrypt(data, pair, cb, opt) {
+      try {
+        opt = opt || {};
+        const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
+        // Normalize pair.priv to canonical base62 so that different format
+        // representations of the same scalar (zen, evm) produce the same key.
+        // Falls back to raw string for formats parseScalar can't handle (e.g. BTC WIF).
+        const rawKey = (pair && pair.priv) || pair;
+        let key = rawKey;
+        if (pair && pair.priv) {
+          try {
+            key = c.scalarToString(c.parseScalar(pair.priv, "Encryption key"));
+          } catch (_) {
+            key = pair.priv;
+          }
+        }
+        if (data === undefined) {
+          throw new Error("`undefined` not allowed.");
+        }
+        if (!key) {
+          throw new Error("No encryption key.");
+        }
+        const message =
+          typeof data === "string" ? data : await c.shim.stringify(data);
+        const rand = { s: c.shim.random(9), iv: c.shim.random(15) };
+        const aes = await c.aeskey(key, rand.s, opt);
+        const ct = await c.shim.subtle.encrypt(
+          {
+            name: opt.name || "AES-GCM",
+            iv: new Uint8Array(rand.iv),
+          },
+          aes,
+          new c.shim.TextEncoder().encode(message),
+        );
+        const out =
+          c.base62.bufToB62Ct(new Uint8Array(ct)) +
+          "." +
+          c.base62.bufToB62Fixed(rand.iv, c.base62.IV_B62_LEN) +
+          "." +
+          c.base62.bufToB62Fixed(rand.s, c.base62.S_B62_LEN);
+        return c.finalize(out, Object.assign({}, opt, { raw: true }), cb);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = encrypt;
+
+    exp.encrypt = encrypt;
+  });
+
+  defmod('./src/decrypt.js', function(module, exp){
+    var crv = reqmod('./src/curves.js').default;
+    var { cryptoErr, cbOk } = reqmod('./src/err.js');
+    async function decrypt(data, pair, cb, opt) {
+      try {
+        opt = opt || {};
+        const c = crv((pair && typeof pair === "object" && pair.curve) || "secp256k1");
+        // Normalize pair.priv to canonical base62 so that different format
+        // representations of the same scalar (zen, evm) can decrypt each other.
+        // Falls back to raw string for formats parseScalar can't handle (e.g. BTC WIF).
+        const rawKey = (pair && pair.priv) || pair;
+        let key = rawKey;
+        if (pair && pair.priv) {
+          try {
+            key = c.scalarToString(c.parseScalar(pair.priv, "Decryption key"));
+          } catch (_) {
+            key = pair.priv;
+          }
+        }
+        if (!key) {
+          throw new Error("No decryption key.");
+        }
+        const parsed = await c.settings.parse(data);
+        const enc = parsed._enc || opt.encode || "base64";
+        let salt, iv, ct;
+        if (enc === "base62") {
+          salt = c.shim.Buffer.from(c.base62.b62ToBuf(parsed.s, 9));
+          iv   = c.shim.Buffer.from(c.base62.b62ToBuf(parsed.iv, 15));
+          ct   = c.base62.b62CtToBuf(parsed.ct);
+        } else {
+          salt = c.shim.Buffer.from(parsed.s, enc);
+          iv   = c.shim.Buffer.from(parsed.iv, enc);
+          ct   = c.shim.Buffer.from(parsed.ct, enc);
+        }
+        const aes = await c.aeskey(key, salt, opt);
+        const decrypted = await c.shim.subtle.decrypt(
+          {
+            name: opt.name || "AES-GCM",
+            iv: new Uint8Array(iv),
+            tagLength: 128,
+          },
+          aes,
+          new Uint8Array(ct),
+        );
+        const out = await c.settings.parse(
+          new c.shim.TextDecoder("utf8").decode(decrypted),
+        );
+        return cbOk(cb, out);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = decrypt;
+
+    exp.decrypt = decrypt;
+  });
+
+  defmod('./src/secret.js', function(module, exp){
+    var crv = reqmod('./src/curves.js').default;
+    var { cryptoErr, cbOk } = reqmod('./src/err.js');
+    async function secret(peer, pair, cb, opt) {
+      try {
+        opt = opt || {};
+        const privKey = (pair && pair.priv) || null;
+        if (!pair || !privKey) {
+          throw new Error("No secret mix.");
+        }
+        const c = crv(pair.curve);
+        const peerPub = (peer && peer.pub) || peer;
+        const pt = c.parsePub(peerPub);
+        const priv = c.parseScalar(privKey, "Signing key");
+        const shared = c.pointMultiply(priv, pt);
+        if (!shared) {
+          throw new Error("Could not derive shared secret");
+        }
+        const h = await c.shaBytes(c.compactPoint(shared));
+        const out = c.base62.bufToB62(h);
+        return cbOk(cb, out);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = secret;
+
+    exp.secret = secret;
+  });
+
+  defmod('./src/certify.js', function(module, exp){
+    var sign = reqmod('./src/sign.js').default;
+    var { cryptoErr, cbOk } = reqmod('./src/err.js');
+    /*
+      The Certify Protocol was made out of love by a Vietnamese code enthusiast.
+      Vietnamese people around the world deserve respect!
+      IMPORTANT: A Certificate is like a Signature. No one knows who (authority)
+      created/signed a cert until you put it into their graph.
+    */
+
+    // RAD/LEX object key detection
+    var RAD = ["+", "#", ".", "=", "*", ">", "<"];
+    function israd(obj) {
+      if (!obj || typeof obj !== "object") {
+        return false;
+      }
+      for (var i = 0; i < RAD.length; i++) {
+        if (RAD[i] in obj) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Normalize certificants → pub_string | [pub_string, ...]
+    // Wildcard (*) is not supported and will be rejected.
+    function normcerts(raw) {
+      if (!raw) {
+        return null;
+      }
+      if (typeof raw === "string") {
+        if (raw.indexOf("*") > -1) {
+          console.log("Wildcard certificant (*) is not supported.");
+          return null;
+        }
+        return raw;
+      }
+      if (!Array.isArray(raw) && typeof raw === "object" && raw.pub) {
+        return raw.pub;
+      }
+      if (Array.isArray(raw)) {
+        // single element short-circuit
+        if (raw.length === 1 && raw[0]) {
+          var x = raw[0];
+          if (typeof x === "string") {
+            return x;
+          }
+          if (typeof x === "object" && x.pub) {
+            return x.pub;
+          }
+          return null;
+        }
+        var list = [];
+        var hasWildcard = false;
+        raw.forEach(function (x) {
+          if (typeof x === "string" && x.indexOf("*") > -1) {
+            hasWildcard = true;
+          } else if (typeof x === "string") {
+            list.push(x);
+          } else if (x && typeof x === "object" && x.pub) {
+            list.push(x.pub);
+          }
+        });
+        if (hasWildcard) {
+          console.log("Wildcard certificant (*) is not supported.");
+          return null;
+        }
+        return list.length > 0 ? list : null;
+      }
+      return null;
+    }
+
+    async function certify(certs, pol, auth, cb, opt) {
+      try {
+        opt = opt || {};
+        pol = pol || {};
+
+        var c = normcerts(certs);
+        if (!c) {
+          console.log("No certificant found.");
+          return;
+        }
+
+        var r = pol.read ? pol.read : null;
+        var w = pol.write
+          ? pol.write
+          : typeof pol === "string" || Array.isArray(pol) || israd(pol)
+            ? pol
+            : null;
+
+        if (!r && !w) {
+          console.log("No policy found.");
+          return;
+        }
+
+        var expiry =
+          opt.expiry !== undefined && opt.expiry !== null
+            ? parseFloat(opt.expiry)
+            : null;
+
+        var blk = opt.block || opt.blacklist || opt.ban || {};
+        var rb =
+          blk.read && (typeof blk.read === "string" || (blk.read || {})["#"])
+            ? blk.read
+            : null;
+        var wb =
+          typeof blk === "string"
+            ? blk
+            : blk.write && (typeof blk.write === "string" || (blk.write || {})["#"])
+              ? blk.write
+              : null;
+
+        var data = JSON.stringify(
+          Object.assign(
+            { c: c },
+            expiry ? { e: expiry } : {},
+            r ? { r: r } : {},
+            w ? { w: w } : {},
+            rb ? { rb: rb } : {},
+            wb ? { wb: wb } : {},
+          ),
+        );
+
+        var cert = await sign(data, auth, null, { raw: 1 });
+        // cert is now a compact signed string; no additional wrapping needed
+        var out = cert;
+        return cbOk(cb, out);
+      } catch (e) {
+        return cryptoErr(e, cb);
+      }
+    }
+
+
+    exp.default = certify;
+
+    exp.certify = certify;
+  });
+
+  defmod('./src/keyid.js', function(module, exp){
+    var shim = reqmod('./src/shim.js').default;
+    var crv = reqmod('./src/curves.js').default;
+    async function sha1hash(bytes) {
+      const crypto = shim.ossl || shim.subtle;
+      return crypto.digest({ name: "SHA-1" }, new Uint8Array(bytes));
+    }
+
+    async function keyid(pub, curve) {
+      const c = crv(curve || "secp256k1");
+      let point;
+      try {
+        point = c.parsePub(pub);
+      } catch (e) {
+        // try p256 if secp256k1 fails
+        point = crv("p256").parsePub(pub);
+      }
+      const xBytes = c.bigIntToBytes(point.x, 32);
+      const yBytes = c.bigIntToBytes(point.y, 32);
+      const pb = shim.Buffer.concat([
+        shim.Buffer.from(xBytes),
+        shim.Buffer.from(yBytes),
+      ]);
+      const id = shim.Buffer.concat([
+        shim.Buffer.from([0x99, pb.length / 0x100, pb.length % 0x100]),
+        pb,
+      ]);
+      const hash = shim.Buffer.from(await sha1hash(id), "binary");
+      return hash.toString("hex", hash.length - 8);
+    }
+
+    exp.default = keyid;
+  });
+
+  defmod('./src/book.js', function(module, exp){
+    // TODO: BUG! Unbuild will make these globals... CHANGE unbuild to wrap files in a function.
+    // Book is a replacement for JS objects, maps, dictionaries.
+    var sT = setTimeout,
+      B =
+        sT.Book ||
+        (sT.Book = function (text) {
+          var b = function book(word, is) {
+            var has = b.all[word],
+              p;
+            if (is === undefined) {
+              return (has && has.is) || b.get(has || word);
+            }
+            if (has) {
+              if ((p = has.page)) {
+                p.size += size(is) - size(has.is);
+                p.text = "";
+              }
+              has.text = "";
+              has.is = is;
+              return b;
+            }
+            //b.all[word] = {is: word}; return b;
+            return b.set(word, is);
+          };
+          // TODO: if from text, preserve the separator symbol.
+          b.list = [
+            {
+              from: text,
+              size: (text || "").length,
+              substring: sub,
+              toString: to,
+              book: b,
+              get: b,
+              read: list,
+            },
+          ];
+          b.page = page;
+          b.set = set;
+          b.get = get;
+          b.all = {};
+          return b;
+        }),
+      PAGE = 2 ** 12;
+
+    function page(word) {
+      var b = this,
+        l = b.list,
+        i = spot(word, l, b.parse),
+        p = l[i];
+      if ("string" == typeof p) {
+        l[i] = p = {
+          size: -1,
+          first: b.parse ? b.parse(p) : p,
+          substring: sub,
+          toString: to,
+          book: b,
+          get: b,
+          read: list,
+        };
+      } // TODO: test, how do we arrive at this condition again?
+      //p.i = i;
+      return p;
+      // TODO: BUG! What if we get the page, it turns out to be too big & split, we must then RE get the page!
+    }
+    function get(word) {
+      if (!word) {
+        return;
+      }
+      if (undefined !== word.is) {
+        return word.is;
+      } // JS falsey values!
+      var b = this,
+        has = b.all[word];
+      if (has) {
+        return has.is;
+      }
+      // get does an exact match, so we would have found it already, unless parseless page:
+      var page = b.page(word),
+        l,
+        has,
+        a,
+        i;
+      if (!page || !page.from) {
+        return;
+      } // no parseless data
+      return got(word, page);
+    }
+    function got(word, page) {
+      var b = page.book,
+        l,
+        has,
+        a,
+        i;
+      if ((l = from(page))) {
+        has = l[(got.i = i = spot(word, l, B.decode))];
+      } // TODO: POTENTIAL BUG! This assumes that each word on a page uses the same serializer/formatter/structure. // TOOD: BUG!!! Not actually, but if we want to do non-exact radix-like closest-word lookups on a page, we need to check limbo & potentially sort first.
+      // parseless may return -1 from actual value, so we may need to test both. // TODO: Double check? I think this is correct.
+      if (has && word == has.word) {
+        return (b.all[word] = has).is;
+      }
+      if ("string" != typeof has) {
+        has = l[(got.i = i += 1)];
+      }
+      if (has && word == has.word) {
+        return (b.all[word] = has).is;
+      }
+      a = slot(has); // Escape!
+      if (word != B.decode(a[0])) {
+        has = l[(got.i = i += 1)]; // edge case bug?
+        a = slot(has); // edge case bug?
+        if (word != B.decode(a[0])) {
+          return;
+        }
+      }
+      has =
+        l[i] =
+        b.all[word] =
+          {
+            word: "" + word,
+            is: B.decode(a[1]),
+            page: page,
+            substring: subt,
+            toString: tot,
+          }; // TODO: convert to a JS value!!! Maybe index! TODO: BUG word needs a page!!!! TODO: Check for other types!!!
+      return has.is;
+    }
+
+    function spot(word, sorted, parse) {
+      parse =
+        parse ||
+        spot.no ||
+        (spot.no = function (t) {
+          return t;
+        }); // TODO: BUG???? Why is there substring()||0 ? // TODO: PERF!!! .toString() is +33% faster, can we combine it with the export?
+      var L = sorted,
+        min = 0,
+        page,
+        found,
+        l = (word = "" + word).length,
+        max = L.length,
+        i = max / 2;
+      while (
+        (word < (page = (parse(L[(i = i >> 0)]) || "").substring()) ||
+          (parse(L[i + 1]) || "").substring() <= word) &&
+        i != min
+      ) {
+        // L[i] <= word < L[i+1]
+        i += page <= word ? (max - (min = i)) / 2 : -((max = i) - min) / 2;
+      }
+      return i;
+    }
+
+    function from(a, t, l) {
+      if ("string" != typeof a.from) {
+        return a.from;
+      }
+      //(l = a.from = (t = a.from||'').substring(1, t.length-1).split(t[0])); // slot
+      l = a.from = slot((t = t || a.from || ""));
+      return l;
+    }
+    function list(each) {
+      each =
+        each ||
+        function (x) {
+          return x;
+        };
+      var i = 0,
+        l = sort(this),
+        w,
+        r = [],
+        p = this.book.parse || function () {};
+      //while(w = l[i++]){ r.push(each(slot(w)[1], p(w)||w, this)) }
+      while ((w = l[i++])) {
+        r.push(each(this.get((w = w.word || p(w) || w)), w, this));
+      } // TODO: BUG! PERF?
+      return r;
+    }
+
+    function set(word, is) {
+      // TODO: Perf on random write is decent, but short keys or seq seems significantly slower.
+      var b = this,
+        has = b.all[word];
+      if (has) {
+        return b(word, is);
+      } // updates to in-memory items will always match exactly.
+      var page = b.page((word = "" + word)),
+        tmp; // before we assume this is an insert tho, we need to check
+      if (page && page.from) {
+        // if it could be an update to an existing word from parseless.
+        b.get(word);
+        if (b.all[word]) {
+          return b(word, is);
+        }
+      }
+      // MUST be an insert:
+      has = b.all[word] = {
+        word: word,
+        is: is,
+        page: page,
+        substring: subt,
+        toString: tot,
+      };
+      page.first = page.first < word ? page.first : word;
+      if (!page.limbo) {
+        page.limbo = [];
+      }
+      page.limbo.push(has);
+      b(word, is);
+      page.size += size(word) + size(is);
+      if ((b.PAGE || PAGE) < page.size) {
+        split(page, b);
+      }
+      return b;
+    }
+
+    function split(p, b) {
+      // TODO: use closest hash instead of half.
+      //console.time();
+      //var S = performance.now();
+      var L = sort(p),
+        l = L.length,
+        i = (l / 2) >> 0,
+        j = i,
+        half = L[j],
+        tmp;
+      //console.timeEnd();
+      var next = {
+          first: half.substring(),
+          size: 0,
+          substring: sub,
+          toString: to,
+          book: b,
+          get: b,
+          read: list,
+        },
+        f = (next.from = []);
+      while ((tmp = L[i++])) {
+        f.push(tmp);
+        next.size += (tmp.is || "").length || 1;
+        tmp.page = next;
+      }
+      p.from = p.from.slice(0, j);
+      p.size -= next.size;
+      b.list.splice(spot(next.first, b.list) + 1, 0, next); // TODO: BUG! Make sure next.first is decoded text. // TODO: BUG! spot may need parse too?
+      //console.timeEnd();
+      if (b.split) {
+        b.split(next, p);
+      }
+      //console.log(S = (performance.now() - S), 'split');
+      //console.BIG = console.BIG > S? console.BIG : S;
+    }
+
+    function slot(t) {
+      return heal((t = t || "").substring(1, t.length - 1).split(t[0]), t[0]);
+    }
+    B.slot = slot; // TODO: check first=last & pass `s`.
+    function heal(l, s) {
+      var i, e;
+      if (0 > (i = l.indexOf(""))) {
+        return l;
+      } // ~700M ops/sec on 4KB of Math.random()s, even faster if escape does exist.
+      if ("" == l[0] && 1 == l.length) {
+        return [];
+      } // annoying edge cases! how much does this slow us down?
+      //if((c=i+2+parseInt(l[i+1])) != c){ return [] } // maybe still faster than below?
+      if (
+        (e = i + 2 + parseInt((e = l[i + 1]).substring(0, e.indexOf('"')) || e)) !=
+        e
+      ) {
+        return [];
+      } // NaN check in JS is weird.
+      l[i] = l.slice(i, e).join(s || "|"); // rejoin the escaped value
+      return l.slice(0, i + 1).concat(heal(l.slice(e), s)); // merge left with checked right.
+    }
+
+    function size(t) {
+      return (t || "").length || 1;
+    } // bits/numbers less size? Bug or feature?
+    function subt(i, j) {
+      return this.word;
+    }
+    //function tot(){ return this.text = this.text || "'"+(this.word)+"'"+(this.is)+"'" }
+    function tot() {
+      var tmp = {};
+      //if((tmp = this.page) && tmp.saving){ delete tmp.book.all[this.word]; } // TODO: BUG! Book can't know about RAD, this was from RAD, so this MIGHT be correct but we need to refactor. Make sure to add tests that will re-trigger this.
+      return (this.text =
+        this.text || ":" + B.encode(this.word) + ":" + B.encode(this.is) + ":");
+      tmp[this.word] = this.is;
+      return (this.text = this.text || B.encode(tmp, "|", ":").slice(1, -1));
+      //return this.text = this.text || "'"+(this.word)+"'"+(this.is)+"'";
+    }
+    function sub(i, j) {
+      return (
+        this.first ||
+        this.word ||
+        B.decode((from(this) || "")[0] || "")
+      ).substring(i, j);
+    }
+    function to() {
+      return (this.text = this.text || text(this));
+    }
+    function text(p) {
+      // PERF: read->[*] : text->"*" no edit waste 1 time perf.
+      if (p.limbo) {
+        sort(p);
+      } // TODO: BUG? Empty page meaning? undef, '', '||'?
+      return "string" == typeof p.from
+        ? p.from
+        : "|" + (p.from || []).join("|") + "|";
+    }
+
+    function sort(p, l) {
+      var f = (p.from = "string" == typeof p.from ? slot(p.from) : p.from || []);
+      if (!(l = l || p.limbo)) {
+        return f;
+      }
+      return mix(p).sort(function (a, b) {
+        return (a.word || B.decode("" + a)) < (b.word || B.decode("" + b)) ? -1 : 1;
+      });
+    }
+    function mix(p, l) {
+      // TODO: IMPROVE PERFORMANCE!!!! l[j] = i is 5X+ faster than .push(
+      l = l || p.limbo || [];
+      p.limbo = null;
+      var j = 0,
+        i,
+        f = p.from;
+      while ((i = l[j++])) {
+        if (got(i.word, p)) {
+          f[got.i] = i; // TODO: Trick: allow for a ZEN'S HAM CRDT hook here.
+        } else {
+          f.push(i);
+        }
+      }
+      return f;
+    }
+
+    B.encode = function (d, s, u) {
+      s = s || "|";
+      u = u || String.fromCharCode(32);
+      switch (typeof d) {
+        case "string": // text
+          var i = d.indexOf(s),
+            c = 0;
+          while (i != -1) {
+            c++;
+            i = d.indexOf(s, i + 1);
+          }
+          return (c ? s + c : "") + '"' + d;
+        case "number":
+          return d < 0 ? "" + d : "+" + d;
+        case "boolean":
+          return d ? "+" : "-";
+        case "object":
+          if (!d) {
+            return " ";
+          } // TODO: BUG!!! Nested objects don't slot correctly
+          var l = Object.keys(d).sort(),
+            i = 0,
+            t = s,
+            k,
+            v;
+          while ((k = l[i++])) {
+            t += u + B.encode(k, s, u) + u + B.encode(d[k], s, u) + u + s;
+          }
+          return t;
+      }
+    };
+    B.decode = function (t, s) {
+      s = s || "|";
+      if ("string" != typeof t) {
+        return;
+      }
+      switch (t) {
+        case " ":
+          return null;
+        case "-":
+          return false;
+        case "+":
+          return true;
+      }
+      switch (t[0]) {
+        case "-":
+        case "+":
+          return parseFloat(t);
+        case '"':
+          return t.slice(1);
+      }
+      return t.slice(t.indexOf('"') + 1);
+    };
+
+    B.hash = function (s, c) {
+      // via SO
+      if (typeof s !== "string") {
+        return;
+      }
+      c = c || 0; // CPU schedule hashing by
+      if (!s.length) {
+        return c;
+      }
+      for (var i = 0, l = s.length, n; i < l; ++i) {
+        n = s.charCodeAt(i);
+        c = (c << 5) - c + n;
+        c |= 0;
+      }
+      return c;
+    };
+
+    function record(key, val) {
+      return key + B.encode(val) + "%" + key.length;
+    }
+    function decord(t) {
+      var o = {},
+        i = t.lastIndexOf("%"),
+        c = parseFloat(t.slice(i + 1));
+      o[t.slice(0, c)] = B.decode(t.slice(c, i));
+      return o;
+    }
+
+    exp.default = B;
+  });
+
+  defmod('./src/chain.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    // WARNING: ZEN is very simple, but the JavaScript chaining API around ZEN
+    // is complicated and was extremely hard to build. If you port ZEN to another
+    // language, consider implementing an easier API to build.
+    var Zen = __root;
+    Zen.chain.chain = function (sub) {
+      var zen = this,
+        at = zen._,
+        chain = new (sub || zen).constructor(zen),
+        cat = chain._,
+        root;
+      cat.root = root = at.root;
+      cat.id = ++root.once;
+      cat.back = zen._;
+      cat.on = Zen.on;
+      cat.on("in", Zen.on.in, cat); // For 'in' if I add my own listeners to each then I MUST do it before in gets called. If I listen globally for all incoming data instead though, regardless of individual listeners, I can transform the data there and then as well.
+      cat.on("out", Zen.on.out, cat); // However for output, there isn't really the global option. I must listen by adding my own listener individually BEFORE this one is ever called.
+      return chain;
+    };
+
+    function output(msg) {
+      var put,
+        get,
+        at = this.as,
+        back = at.back,
+        root = at.root,
+        tmp;
+      if (!msg.$) {
+        msg.$ = at.$;
+      }
+      this.to.next(msg);
+      if (at.err) {
+        at.on("in", { put: (at.put = u), $: at.$ });
+        return;
+      }
+      if ((get = msg.get)) {
+        /*if(u !== at.put){
+    			at.on('in', at);
+    			return;
+    		}*/
+        if (root.pass) {
+          root.pass[at.id] = at;
+        } // will this make for buggy behavior elsewhere?
+        if (at.lex) {
+          Object.keys(at.lex).forEach(
+            function (k) {
+              tmp[k] = at.lex[k];
+            },
+            (tmp = msg.get = msg.get || {}),
+          );
+        }
+        if (get["#"] || at.soul) {
+          get["#"] = get["#"] || at.soul;
+          //root.graph[get['#']] = root.graph[get['#']] || {_:{'#':get['#'],'>':{}}};
+          msg["#"] || (msg["#"] = text_rand(9)); // A3120 ?
+          back = sget(root, get["#"])._;
+          if (!(get = get["."])) {
+            // soul
+            tmp = back.ask && back.ask[""]; // check if we have already asked for the full node
+            (back.ask || (back.ask = {}))[""] = back; // add a flag that we are now.
+            if (u !== back.put) {
+              // if we already have data,
+              back.on("in", back); // send what is cached down the chain
+              if (tmp) {
+                return;
+              } // and don't ask for it again.
+            }
+            msg.$ = back.$;
+          } else if (obj_has(back.put, get)) {
+            // TODO: support #LEX !
+            tmp = back.ask && back.ask[get];
+            (back.ask || (back.ask = {}))[get] = back.$.get(get)._;
+            back.on("in", {
+              get: get,
+              put: {
+                "#": back.soul,
+                ".": get,
+                ":": back.put[get],
+                ">": state_is(root.graph[back.soul], get),
+              },
+            });
+            if (tmp) {
+              return;
+            }
+          }
+          /*put = (back.$.get(get)._);
+    				if(!(tmp = put.ack)){ put.ack = -1 }
+    				back.on('in', {
+    					$: back.$,
+    					put: Zen.state.ify({}, get, Zen.state(back.put, get), back.put[get]),
+    					get: back.get
+    				});
+    				if(tmp){ return }
+    			} else
+    			if('string' != typeof get){
+    				var put = {}, meta = (back.put||{})._;
+    				Zen.obj.map(back.put, function(v,k){
+    					if(!Zen.text.match(k, get)){ return }
+    					put[k] = v;
+    				})
+    				if(!Zen.obj.empty(put)){
+    					put._ = meta;
+    					back.on('in', {$: back.$, put: put, get: back.get})
+    				}
+    				if(tmp = at.lex){
+    					tmp = (tmp._) || (tmp._ = function(){});
+    					if(back.ack < tmp.ask){ tmp.ask = back.ack }
+    					if(tmp.ask){ return }
+    					tmp.ask = 1;
+    				}
+    			}
+    			*/
+          root.ask(ack, msg); // A3120 ?
+          return root.on("in", msg);
+        }
+        //if(root.now){ root.now[at.id] = root.now[at.id] || true; at.pass = {} }
+        if (get["."]) {
+          if (at.get) {
+            msg = { get: { ".": at.get }, $: at.$ };
+            (back.ask || (back.ask = {}))[at.get] = msg.$._; // TODO: PERFORMANCE? More elegant way?
+            return back.on("out", msg);
+          }
+          msg = { get: at.lex ? msg.get : {}, $: at.$ };
+          return back.on("out", msg);
+        }
+        (at.ask || (at.ask = {}))[""] = at; //at.ack = at.ack || -1;
+        if (at.get) {
+          get["."] = at.get;
+          (back.ask || (back.ask = {}))[at.get] = msg.$._; // TODO: PERFORMANCE? More elegant way?
+          return back.on("out", msg);
+        }
+      }
+      return back.on("out", msg);
+    }
+    Zen.on.out = output;
+
+    function input(msg, cat) {
+      cat = cat || this.as; // TODO: V8 may not be able to optimize functions with different parameter calls, so try to do benchmark to see if there is any actual difference.
+      var root = cat.root,
+        zen = msg.$ || (msg.$ = cat.$),
+        at = (zen || "")._ || empty,
+        tmp = msg.put || "",
+        soul = tmp["#"],
+        key = tmp["."],
+        change = u !== tmp["="] ? tmp["="] : tmp[":"],
+        state = tmp[">"] || -Infinity,
+        sat; // eve = event, at = data at, cat = chain at, sat = sub at (children chains).
+      if (
+        u !== msg.put &&
+        (u === tmp["#"] ||
+          u === tmp["."] ||
+          (u === tmp[":"] && u === tmp["="]) ||
+          u === tmp[">"])
+      ) {
+        // convert from old format
+        if (!valid(tmp)) {
+          if (!(soul = ((tmp || "")._ || "")["#"])) {
+            console.log("chain not yet supported for", tmp, "...", msg, cat);
+            return;
+          }
+          zen = sget(cat.root, soul);
+          return setTimeout.each(Object.keys(tmp).sort(), function (k) {
+            // TODO: .keys( is slow // BUG? ?Some re-in logic may depend on this being sync?
+            if ("_" == k || u === (state = state_is(tmp, k))) {
+              return;
+            }
+            cat.on("in", {
+              $: zen,
+              put: { "#": soul, ".": k, "=": tmp[k], ">": state },
+              VIA: msg,
+            });
+          });
+        }
+        cat.on("in", {
+          $: at.back.$,
+          put: {
+            "#": (soul = at.back.soul),
+            ".": (key = at.has || at.get),
+            "=": tmp,
+            ">": state_is(at.back.put, key),
+          },
+          via: msg,
+        }); // TODO: This could be buggy! It assumes/approxes data, other stuff could have corrupted it.
+        return;
+      }
+      if ((msg.seen || "")[cat.id]) {
+        return;
+      }
+      (msg.seen || (msg.seen = function () {}))[cat.id] = cat; // help stop some infinite loops
+
+      if (cat !== at) {
+        // don't worry about this when first understanding the code, it handles changing contexts on a message. A soul chain will never have a different context.
+        Object.keys(msg).forEach(
+          function (k) {
+            tmp[k] = msg[k];
+          },
+          (tmp = {}),
+        ); // make copy of message
+        tmp.get = cat.get || tmp.get;
+        if (!cat.soul && !cat.has) {
+          // if we do not recognize the chain type
+          tmp.$$$ = tmp.$$$ || cat.$; // make a reference to wherever it came from.
+        } else if (at.soul) {
+          // a has (property) chain will have a different context sometimes if it is linked (to a soul chain). Anything that is not a soul or has chain, will always have different contexts.
+          tmp.$ = cat.$;
+          tmp.$$ = tmp.$$ || at.$;
+        }
+        msg = tmp; // use the message with the new context instead;
+      }
+      unlink(msg, cat);
+
+      if (
+        (cat.soul /* && (cat.ask||'')['']*/ || msg.$$) &&
+        state >= state_is(root.graph[soul], key)
+      ) {
+        // The root has an in-memory cache of the graph, but if our peer has asked for the data then we want a per deduplicated chain copy of the data that might have local edits on it.
+        (tmp = sget(root, soul)._).put = state_ify(
+          tmp.put,
+          key,
+          state,
+          change,
+          soul,
+        );
+      }
+      if (
+        !at.soul /*&& (at.ask||'')['']*/ &&
+        state >= state_is(root.graph[soul], key) &&
+        (sat = (sget(root, soul)._.next || "")[key])
+      ) {
+        // Same as above here, but for other types of chains. // TODO: Improve perf by preventing echoes recaching.
+        sat.put = change; // update cache
+        if ("string" == typeof (tmp = valid(change))) {
+          sat.put = sget(root, tmp)._.put || change; // share same cache as what we're linking to.
+        }
+      }
+
+      this.to && this.to.next(msg); // 1st API job is to call all chain listeners.
+      // TODO: Make input more reusable by only doing these (some?) calls if we are a chain we recognize? This means each input listener would be responsible for when listeners need to be called, which makes sense, as they might want to filter.
+      cat.any &&
+        setTimeout.each(
+          Object.keys(cat.any),
+          function (any) {
+            (any = cat.any[any]) && any(msg);
+          },
+          0,
+          99,
+        ); // 1st API job is to call all chain listeners. // TODO: .keys( is slow // BUG: Some re-in logic may depend on this being sync.
+      cat.echo &&
+        setTimeout.each(
+          Object.keys(cat.echo),
+          function (lat) {
+            (lat = cat.echo[lat]) && lat.on("in", msg);
+          },
+          0,
+          99,
+        ); // & linked at chains // TODO: .keys( is slow // BUG: Some re-in logic may depend on this being sync.
+
+      if (((msg.$$ || "")._ || at).soul) {
+        // comments are linear, but this line of code is non-linear, so if I were to comment what it does, you'd have to read 42 other comments first... but you can't read any of those comments until you first read this comment. What!? // shouldn't this match link's check?
+        // is there cases where it is a $$ that we do NOT want to do the following?
+        if ((sat = cat.next) && (sat = sat[key])) {
+          // TODO: possible trick? Maybe have `ionmap` code set a sat? // TODO: Maybe we should do `cat.ask` instead? I guess does not matter.
+          tmp = {};
+          Object.keys(msg).forEach(function (k) {
+            tmp[k] = msg[k];
+          });
+          tmp.$ = (msg.$$ || msg.$).get((tmp.get = key));
+          delete tmp.$$;
+          delete tmp.$$$;
+          sat.on("in", tmp);
+        }
+      }
+
+      link(msg, cat);
+    }
+    Zen.on.in = input;
+
+    function link(msg, cat) {
+      cat = cat || this.as || msg.$._;
+      if (msg.$$ && this !== Zen.on) {
+        return;
+      } // $$ means we came from a link, so we are at the wrong level, thus ignore it unless overruled manually by being called directly.
+      if (!msg.put || cat.soul) {
+        return;
+      } // But you cannot overrule being linked to nothing, or trying to link a soul chain - that must never happen.
+      var put = msg.put || "",
+        link = put["="] || put[":"],
+        tmp;
+      var root = cat.root,
+        tat = sget(root, put["#"]).get(put["."])._;
+      if ("string" != typeof (link = valid(link))) {
+        if (this === Zen.on) {
+          (tat.echo || (tat.echo = {}))[cat.id] = cat;
+        } // allow some chain to explicitly force linking to simple data.
+        return; // by default do not link to data that is not a link.
+      }
+      if (
+        (tat.echo || (tat.echo = {}))[cat.id] && // we've already linked ourselves so we do not need to do it again. Except... (annoying implementation details)
+        !(root.pass || "")[cat.id]
+      ) {
+        return;
+      } // if a new event listener was added, we need to make a pass through for it. The pass will be on the chain, not always the chain passed down.
+      if ((tmp = root.pass)) {
+        if (tmp[link + cat.id]) {
+          return;
+        }
+        tmp[link + cat.id] = 1;
+      } // But the above edge case may "pass through" on a circular graph causing infinite passes, so we hackily add a temporary check for that.
+
+      (tat.echo || (tat.echo = {}))[cat.id] = cat; // set ourself up for the echo! // TODO: BUG? Echo to self no longer causes problems? Confirm.
+
+      if (cat.has) {
+        cat.link = link;
+      }
+      var sat = sget(root, (tat.link = link))._; // grab what we're linking to.
+      (sat.echo || (sat.echo = {}))[tat.id] = tat; // link it.
+      var tmp = cat.ask || ""; // ask the chain for what needs to be loaded next!
+      if (tmp[""] || cat.lex) {
+        // we might need to load the whole thing // TODO: cat.lex probably has edge case bugs to it, need more test coverage.
+        sat.on("out", { get: { "#": link } });
+      }
+      setTimeout.each(
+        Object.keys(tmp),
+        function (get, sat) {
+          // if sub chains are asking for data. // TODO: .keys( is slow // BUG? ?Some re-in logic may depend on this being sync?
+          if (!get || !(sat = tmp[get])) {
+            return;
+          }
+          sat.on("out", { get: { "#": link, ".": get } }); // go get it.
+        },
+        0,
+        99,
+      );
+    }
+    Zen.on.link = link;
+
+    function unlink(msg, cat) {
+      // ugh, so much code for seemingly edge case behavior.
+      var put = msg.put || "",
+        change = u !== put["="] ? put["="] : put[":"],
+        root = cat.root,
+        link,
+        tmp;
+      if (u === change) {
+        // 1st edge case: If we have a brand new database, no data will be found.
+        // TODO: BUG! because emptying cache could be async from below, make sure we are not emptying a newer cache. So maybe pass an Async ID to check against?
+        // TODO: BUG! What if this is a map? // Warning! Clearing things out needs to be robust against sync/async ops, or else you'll see `map val get put` test catastrophically fail because map attempts to link when parent graph is streamed before child value gets set. Need to differentiate between lack acks and force clearing.
+        if (cat.soul && u !== cat.put) {
+          return;
+        } // data may not be found on a soul, but if a soul already has data, then nothing can clear the soul as a whole.
+        //if(!cat.has){ return }
+        tmp = (msg.$$ || msg.$ || "")._ || "";
+        if (msg["@"] && (u !== tmp.put || u !== cat.put)) {
+          return;
+        } // a "not found" from other peers should not clear out data if we have already found it.
+        //if(cat.has && u === cat.put && !(root.pass||'')[cat.id]){ return } // if we are already unlinked, do not call again, unless edge case. // TODO: BUG! This line should be deleted for "unlink deeply nested".
+        if ((link = cat.link || msg.linked)) {
+          delete (sget(root, link)._.echo || "")[cat.id];
+        }
+        if (cat.has) {
+          // TODO: Empty out links, maps, echos, acks/asks, etc.?
+          cat.link = null;
+        }
+        cat.put = u; // empty out the cache if, for example, alice's car's color no longer exists (relative to alice) if alice no longer has a car.
+        // TODO: BUG! For maps, proxy this so the individual sub is triggered, not all subs.
+        setTimeout.each(
+          Object.keys(cat.next || ""),
+          function (get, sat) {
+            // empty out all sub chains. // TODO: .keys( is slow // BUG? ?Some re-in logic may depend on this being sync? // TODO: BUG? This will trigger deeper put first, does put logic depend on nested order? // TODO: BUG! For map, this needs to be the isolated child, not all of them.
+            if (!(sat = cat.next[get])) {
+              return;
+            }
+            //if(cat.has && u === sat.put && !(root.pass||'')[sat.id]){ return } // if we are already unlinked, do not call again, unless edge case. // TODO: BUG! This line should be deleted for "unlink deeply nested".
+            if (link) {
+              delete (sget(root, link).get(get)._.echo || "")[sat.id];
+            }
+            sat.on("in", { get: get, put: u, $: sat.$ }); // TODO: BUG? Add recursive seen check?
+          },
+          0,
+          99,
+        );
+        return;
+      }
+      if (cat.soul) {
+        return;
+      } // a soul cannot unlink itself.
+      if (msg.$$) {
+        return;
+      } // a linked chain does not do the unlinking, the sub chain does. // TODO: BUG? Will this cancel maps?
+      link = valid(change); // need to unlink anytime we are not the same link, though only do this once per unlink (and not on init).
+      tmp = msg.$._ || "";
+      if (link === tmp.link || (cat.has && !tmp.link)) {
+        if ((root.pass || "")[cat.id] && "string" !== typeof link) {
+        } else {
+          return;
+        }
+      }
+      delete (tmp.echo || "")[cat.id];
+      unlink(
+        {
+          get: cat.get,
+          put: u,
+          $: msg.$,
+          linked: (msg.linked = msg.linked || tmp.link),
+        },
+        cat,
+      ); // unlink our sub chains.
+    }
+    Zen.on.unlink = unlink;
+
+    function ack(msg, ev) {
+      //if(!msg['%'] && (this||'').off){ this.off() } // do NOT memory leak, turn off listeners! Now handled by .ask itself
+      // manhattan:
+      var as = this.as,
+        at = as.$._,
+        root = at.root,
+        get = as.get || "",
+        tmp = (msg.put || "")[get["#"]] || "";
+      if (!msg.put || ("string" == typeof get["."] && u === tmp[get["."]])) {
+        if (u !== at.put) {
+          return;
+        }
+        if (!at.soul && !at.has) {
+          return;
+        } // TODO: BUG? For now, only core-chains will handle not-founds, because bugs creep in if non-core chains are used as $ but we can revisit this later for more powerful extensions.
+        at.ack = (at.ack || 0) + 1;
+        at.on("in", {
+          get: at.get,
+          put: (at.put = u),
+          $: at.$,
+          "@": msg["@"],
+        });
+        /*(tmp = at.Q) && setTimeout.each(Object.keys(tmp), function(id){ // TODO: Temporary testing, not integrated or being used, probably delete.
+    			Object.keys(msg).forEach(function(k){ tmp[k] = msg[k] }, tmp = {}); tmp['@'] = id; // copy message
+    			root.on('in', tmp);
+    		}); delete at.Q;*/
+        return;
+      }
+      (msg._ || {}).miss = 1;
+      Zen.on.put(msg);
+      return; // eom
+    }
+
+    var empty = {},
+      u,
+      text_rand = String.random,
+      valid = Zen.valid,
+      obj_has = function (o, k) {
+        return o && Object.prototype.hasOwnProperty.call(o, k);
+      },
+      state = Zen.state,
+      state_is = state.is,
+      state_ify = state.ify;
+    function sget(root, soul) {
+      root._sl = 1;
+      var g = root.$.get(soul);
+      root._sl = 0;
+      return g;
+    }
+  });
+
+  defmod('./src/back.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    var Zen = __root;
+    Zen.chain.back = function (n, opt) {
+      var tmp;
+      n = n || 1;
+      if (-1 === n || Infinity === n) {
+        return this._.root.$;
+      } else if (1 === n) {
+        return (this._.back || this._).$;
+      }
+      var zen = this,
+        at = zen._;
+      if (typeof n === "string") {
+        n = n.split(".");
+      }
+      if (n instanceof Array) {
+        var i = 0,
+          l = n.length,
+          tmp = at;
+        for (i; i < l; i++) {
+          tmp = (tmp || empty)[n[i]];
+        }
+        if (u !== tmp) {
+          return opt ? zen : tmp;
+        } else if ((tmp = at.back)) {
+          return tmp.$.back(n, opt);
+        }
+        return;
+      }
+      if ("function" == typeof n) {
+        var yes,
+          tmp = { back: at };
+        while ((tmp = tmp.back) && u === (yes = n(tmp, opt))) {}
+        return yes;
+      }
+      if ("number" == typeof n) {
+        return (at.back || at).$.back(n - 1);
+      }
+      return this;
+    };
+    var empty = {},
+      u;
+  });
+
+  defmod('./src/put.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    var Zen = __root;
+    var PUT_CONTEXT = Symbol("put-context");
+    Zen.chain.put = function (data, cb, opt, as) {
+      // I rewrote it :)
+      var zen = this,
+        at = zen._,
+        root = at.root;
+      opt = options(opt);
+      as = as || context(zen, data, cb);
+      attachWritePromise(as, zen, cb);
+      if (opt.acks != null && as.acks == null) { as.acks = opt.acks; }
+      as.root = at.root;
+      as.run || (as.run = root.once);
+      stun(as, at.id); // set a flag for reads to check if this chain is writing.
+      as.via = as.via || zen;
+      as.data = as.data || data;
+      as.soul || (as.soul = at.soul || ("string" == typeof cb && cb));
+      var s = (as.state = u !== as.state ? as.state : Zen.state());
+      if ("function" == typeof data) {
+        data(function (d) {
+          as.data = d;
+          zen.put(u, u, u, as);
+        });
+        return zen;
+      }
+      if (!as.soul) {
+        return (get(as, opt), zen);
+      }
+      as.$ = root.$.get(as.soul); // TODO: This may not allow user chaining and similar?
+      as.todo = [{ it: as.data, ref: as.$ }];
+      as.turn = as.turn || turn;
+      as.ran = as.ran || function (a) { ran(a, opt); };
+      //var path = []; as.via.back(at => { at.get && path.push(at.get.slice(0,9)) }); path = path.reverse().join('.');
+      // TODO: Perf! We only need to stun chains that are being modified, not necessarily written to.
+      function walk() {
+        var to = as.todo,
+          at = to.pop(),
+          d = at.it,
+          cid = at.ref && at.ref._.id,
+          v,
+          k,
+          cat,
+          tmp,
+          g;
+        stun(as, at.ref);
+        if ((tmp = at.todo)) {
+          k = tmp.pop();
+          d = d[k];
+          if (tmp.length) {
+            to.push(at);
+          }
+        }
+        k && (to.path || (to.path = [])).push(k);
+        if (!(v = valid(d)) && !(g = Zen.is(d))) {
+          if (!Object.plain(d)) {
+            ran.err(
+              as,
+              "Invalid data: " +
+                check(d) +
+                " at " +
+                (as.via.back(
+                  function (at) {
+                    at.get && tmp.push(at.get);
+                  },
+                  (tmp = []),
+                ) || tmp.join(".")) +
+                "." +
+                (to.path || []).join("."),
+            );
+            return;
+          }
+          var seen = as.seen || (as.seen = []),
+            i = seen.length;
+          while (i--) {
+            if (d === (tmp = seen[i]).it) {
+              v = d = tmp.link;
+              break;
+            }
+          }
+        }
+        if (k && v) {
+          at.node = state_ify(at.node, k, s, d);
+        } // handle soul later.
+        else {
+          if (!as.seen) {
+            ran.err(as, "Data at root of graph must be a node (an object).");
+            return;
+          }
+          as.seen.push(
+            (cat = {
+              it: d,
+              link: {},
+              todo: g ? [] : Object.keys(d).sort().reverse(),
+              path: (to.path || []).slice(),
+              up: at,
+            }),
+          ); // Any perf reasons to CPU schedule this .keys( ?
+          at.node = state_ify(at.node, k, s, cat.link);
+          !g && cat.todo.length && to.push(cat);
+          // ---------------
+          var id = as.seen.length;
+          (as.wait || (as.wait = {}))[id] = "";
+          tmp = (cat.ref = g ? d : k ? at.ref.get(k) : at.ref)._;
+          (tmp = (d && (d._ || "")["#"]) || tmp.soul || tmp.link)
+            ? resolve({ soul: tmp })
+            : cat.ref.get(resolve, {
+                run: as.run,
+                /*hatch: 0,*/ v2020: 1,
+                out: { get: { ".": " " } },
+              }); // TODO: BUG! This should be resolve ONLY soul to prevent full data from being loaded. // Fixed now?
+          //setTimeout(function(){ if(F){ return } console.log("I HAVE NOT BEEN CALLED!", path, id, cat.ref._.id, k) }, 9000); var F; // MAKE SURE TO ADD F = 1 below!
+          function resolve(msg, eve) {
+            var end = cat.link["#"];
+            if (eve) {
+              eve.off();
+              eve.rid(msg);
+            } // TODO: Too early! Check all peers ack not found.
+            // TODO: BUG maybe? Make sure this does not pick up a link change wipe, that it uses the changign link instead.
+            var soul =
+              end ||
+              msg.soul ||
+              (tmp = (msg.$$ || msg.$)._ || "").soul ||
+              tmp.link ||
+              ((tmp = tmp.put || "")._ || "")["#"] ||
+              tmp["#"] ||
+              ((tmp = msg.put || "") && msg.$$
+                ? tmp["#"]
+                : (tmp["="] || tmp[":"] || "")["#"]);
+            !end && stun(as, msg.$);
+            if (!soul && !at.link["#"]) {
+              // check soul link above us
+              (at.wait || (at.wait = [])).push(function () {
+                resolve(msg, eve);
+              }); // wait
+              return;
+            }
+            if (!soul) {
+              soul = [];
+              (msg.$$ || msg.$).back(function (at) {
+                if ((tmp = at.soul || at.link)) {
+                  return soul.push(tmp);
+                }
+                soul.push(at.get);
+              });
+              soul = soul.reverse().join("/");
+            }
+            cat.link["#"] = soul;
+            !g &&
+              (((as.graph || (as.graph = {}))[soul] =
+                cat.node || (cat.node = { _: {} }))._["#"] = soul);
+            delete as.wait[id];
+            cat.wait &&
+              setTimeout.each(cat.wait, function (cb) {
+                cb && cb();
+              });
+            as.ran(as);
+          }
+          // ---------------
+        }
+        if (!to.length) {
+          return as.ran(as);
+        }
+        as.turn(walk);
+      }
+      walk();
+      return zen;
+    };
+
+    function context(zen, data, cb) {
+      var ctx = {};
+      ctx[PUT_CONTEXT] = 1;
+      ctx.data = data;
+      ctx.ack = cb;
+      ctx.via = zen;
+      return ctx;
+    }
+
+    function attachWritePromise(as, zen, cb) {
+      var ack = as.ack || cb,
+        at = zen && zen._,
+        p;
+      if (!as.writePromise) {
+        p = new Promise(function (resolve, reject) {
+          as.writeResolve = resolve;
+          as.writeReject = reject;
+        });
+        p.catch(noop);
+        as.writePromise = p;
+        if (at) {
+          at.asyncResult = { promise: p, kind: "write" };
+        }
+      }
+      if (as.writeWrapped) {
+        return;
+      }
+      as.writeWrapped = 1;
+      as.ack = function (msg, eve) {
+        try {
+          if (ack) {
+            ack.call(this, msg, eve);
+          }
+        } finally {
+          settleWritePromise(as, zen, msg);
+        }
+      };
+    }
+
+    function settleWritePromise(as, zen, ack) {
+      if (as.writeDone) {
+        return;
+      }
+      as.writeDone = 1;
+      if (ack && ack.err) {
+        as.writeReject(new Error(ack.err));
+        return;
+      }
+      as.writeResolve({ ref: zen, ack: ack });
+    }
+
+    function options(opt) {
+      if (!opt || "object" != typeof opt) {
+        return {};
+      }
+      return Object.assign({}, opt);
+    }
+
+    function stun(as, id) {
+      if (!id) {
+        return;
+      }
+      id = (id._ || "").id || id;
+      var run = as.root.stun || (as.root.stun = { on: Zen.on }),
+        test = {},
+        tmp;
+      as.stun || (as.stun = run.on("stun", function () {}));
+      if ((tmp = run.on("" + id))) {
+        tmp.the.last.next(test);
+      }
+      if (test.run >= as.run) {
+        return;
+      }
+      run.on("" + id, function (test) {
+        if (as.stun.end) {
+          this.off();
+          this.to.next(test);
+          return;
+        }
+        test.run = test.run || as.run;
+        test.stun = test.stun || as.stun;
+        return;
+        if (this.to.to) {
+          this.the.last.next(test);
+          return;
+        }
+        test.stun = as.stun;
+      });
+    }
+
+    function ran(as, opt) {
+      if (as.err) {
+        ran.end(as.stun, as.root);
+        return;
+      } // move log handle here.
+      if (as.todo.length || as.end || !Object.empty(as.wait)) {
+        return;
+      }
+      as.end = 1;
+      //(as.retry = function(){ as.acks = 0;
+      var cat = as.$.back(-1)._,
+        root = cat.root,
+        ask = cat.ask(function (ack) {
+          root.on("ack", ack);
+          if (ack.err && !ack.lack) {
+            Zen.log(ack);
+          }
+          if (++acks > (as.acks || 0)) {
+            this.off();
+          } // Adjustable ACKs! Only 1 by default.
+          if (!as.ack) {
+            return;
+          }
+          as.ack(ack, this);
+        }, opt),
+        acks = 0,
+        stun = as.stun,
+        tmp;
+      (tmp = function () {
+        // this is not official yet, but quick solution to hack in for now.
+        if (!stun) {
+          return;
+        }
+        ran.end(stun, root);
+        setTimeout.each(Object.keys((stun = stun.add || "")), function (cb) {
+          if ((cb = stun[cb])) {
+            cb();
+          }
+        }); // resume the stunned reads // Any perf reasons to CPU schedule this .keys( ?
+      }).hatch = tmp; // this is not official yet ^
+      //console.log(1, "PUT", as.run, as.graph);
+      if (as.ack && !as.ok) {
+        as.ok = as.acks || 9;
+      } // TODO: In future! Remove this! This is just old API support.
+      as.via._.on("out", {
+        put: (as.out = as.graph),
+        ok: as.ok && { "@": as.ok + 1 },
+        opt: opt,
+        "#": ask,
+        _: tmp,
+      });
+      //})();
+    }
+    ran.end = function (stun, root) {
+      stun.end = noop; // like with the earlier id, cheaper to make this flag a function so below callbacks do not have to do an extra type check.
+      if (stun.the.to === stun && stun === stun.the.last) {
+        delete root.stun;
+      }
+      stun.off();
+    };
+    ran.err = function (as, err) {
+      (as.ack || noop).call(as, (as.out = { err: (as.err = Zen.log(err)) }));
+      as.ran(as);
+    };
+
+    function get(as, opt) {
+      var at = as.via._,
+        tmp;
+      as.via = as.via.back(function (at) {
+        if (at.soul || !at.get) {
+          return at.$;
+        }
+        tmp = as.data;
+        (as.data = {})[at.get] = tmp;
+      });
+      if (!as.via || !as.via._.soul) {
+        as.via = at.root.$.get(
+          ((as.data || "")._ || "")["#"] || at.$.back("opt.uuid")(),
+        );
+      }
+      as.via.put(as.data, as.ack, opt, as);
+    }
+    function check(d, tmp) {
+      return (d && (tmp = d.constructor) && tmp.name) || typeof d;
+    }
+
+    var u,
+      empty = {},
+      noop = function () {},
+      turn = setTimeout.turn,
+      valid = Zen.valid,
+      state_ify = Zen.state.ify;
+    var iife = function (fn, as) {
+      fn.call(as || empty);
+    };
+  });
+
+  defmod('./src/get.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    var Zen = __root;
+
+    Zen.chain.get = function (key, cb, as) {
+      var zen, tmp;
+      if (typeof key === "string") {
+        if (key.length == 0) {
+          (zen = this.chain())._.err = { err: Zen.log("0 length key!", key) };
+          if (cb) {
+            cb.call(zen, zen._.err);
+          }
+          return zen;
+        }
+        var back = this,
+          cat = back._;
+        var next = cat.next || empty;
+        if (
+          back === cat.root.$ &&
+          key.indexOf("/") >= 0 &&
+          !cat.root._sl &&
+          !cat.root.graph[key]
+        ) {
+          var parts = key.split("/"),
+            i = 0,
+            cur = back._,
+            ok = 1;
+          while (i < parts.length) {
+            if (!(cur.next || {})[parts[i]]) {
+              ok = 0;
+              break;
+            }
+            cur = cur.next[parts[i++]].$._;
+          }
+          if (ok) {
+            var nav = back;
+            i = 0;
+            while (i < parts.length) {
+              nav = nav.get(parts[i++]);
+            }
+            return nav;
+          }
+        }
+        if (!(zen = next[key])) {
+          zen = key && cache(key, back);
+        }
+        zen = zen && zen.$;
+      } else if ("function" == typeof key) {
+        if (true === cb) {
+          return (soul(this, key, cb, as), this);
+        }
+        zen = this;
+        var cat = zen._,
+          opt = cb || {},
+          root = cat.root,
+          id;
+        opt.at = cat;
+        opt.ok = key;
+        var wait = {}; // can we assign this to the at instead, like in once?
+        //var path = []; cat.$.back(at => { at.get && path.push(at.get.slice(0,9))}); path = path.reverse().join('.');
+        function any(msg, eve, f) {
+          if (any.stun) {
+            return;
+          }
+          if ((tmp = root.pass) && !tmp[id]) {
+            return;
+          }
+          var at = msg.$._,
+            sat = (msg.$$ || "")._,
+            data = (sat || at).put,
+            odd = !at.has && !at.soul,
+            test = {},
+            link,
+            tmp;
+          if (odd || u === data) {
+            // handles non-core
+            data =
+              u === ((tmp = msg.put) || "")["="]
+                ? u === (tmp || "")[":"]
+                  ? tmp
+                  : tmp[":"]
+                : tmp["="];
+          }
+          if ((link = "string" == typeof (tmp = Zen.valid(data)))) {
+            data = u === (tmp = root.$.get(tmp)._.put) ? (opt.not ? u : data) : tmp;
+          }
+          if (opt.not && u === data) {
+            return;
+          }
+          if (u === opt.stun) {
+            if ((tmp = root.stun) && tmp.on) {
+              cat.$.back(function (a) {
+                // our chain stunned?
+                tmp.on("" + a.id, (test = {}));
+                if ((test.run || 0) < any.id) {
+                  return test;
+                } // if there is an earlier stun on gapless parents/self.
+              });
+              !test.run && tmp.on("" + at.id, (test = {})); // this node stunned?
+              !test.run && sat && tmp.on("" + sat.id, (test = {})); // linked node stunned?
+              if (any.id > test.run) {
+                if (!test.stun || test.stun.end) {
+                  test.stun = tmp.on("stun");
+                  test.stun = test.stun && test.stun.last;
+                }
+                if (test.stun && !test.stun.end) {
+                  //if(odd && u === data){ return }
+                  //if(u === msg.put){ return } // "not found" acks will be found if there is stun, so ignore these.
+                  (test.stun.add || (test.stun.add = {}))[id] = function () {
+                    any(msg, eve, 1);
+                  }; // add ourself to the stun callback list that is called at end of the write.
+                  return;
+                }
+              }
+            }
+            if (/*odd &&*/ u === data) {
+              f = 0;
+            } // if data not found, keep waiting/trying.
+            /*if(f && u === data){
+    					cat.on('out', opt.out);
+    					return;
+    				}*/
+            if ((tmp = root.hatch) && !tmp.end && u === opt.hatch && !f) {
+              // quick hack! // What's going on here? Because data is streamed, we get things one by one, but a lot of developers would rather get a callback after each batch instead, so this does that by creating a wait list per chain id that is then called at the end of the batch by the hatch code in the root put listener.
+              if (wait[at.$._.id]) {
+                return;
+              }
+              wait[at.$._.id] = 1;
+              tmp.push(function () {
+                any(msg, eve, 1);
+              });
+              return;
+            }
+            wait = {}; // end quick hack.
+          }
+          // call:
+          if (root.pass) {
+            if (root.pass[id + at.id]) {
+              return;
+            }
+            root.pass[id + at.id] = 1;
+          }
+          if (opt.v2020) {
+            opt.ok(msg, eve || any);
+            return;
+          }
+          opt.ok.call(at.$, data, at.get, msg, eve || any);
+        }
+        any.at = cat;
+        //(cat.any||(cat.any=function(msg){ setTimeout.each(Object.keys(cat.any||''), function(act){ (act = cat.any[act]) && act(msg) },0,99) }))[id = String.random(7)] = any; // maybe switch to this in future?
+        (cat.any || (cat.any = {}))[(id = String.random(7))] = any;
+        any.off = function () {
+          any.stun = 1;
+          if (!cat.any) {
+            return;
+          }
+          delete cat.any[id];
+        };
+        any.rid = rid; // logic from old version, can we clean it up now?
+        any.id = opt.run || ++root.once; // used in callback to check if we are earlier than a write. // will this ever cause an integer overflow?
+        tmp = root.pass;
+        (root.pass = {})[id] = 1; // Explanation: test trade-offs want to prevent recursion so we add/remove pass flag as it gets fulfilled to not repeat, however map map needs many pass flags - how do we reconcile?
+        opt.out = opt.out || { get: {} };
+        cat.on("out", opt.out);
+        root.pass = tmp;
+        return zen;
+      } else if ("number" == typeof key) {
+        return this.get("" + key, cb, as);
+      } else if ("string" == typeof (tmp = valid(key))) {
+        return this.get(tmp, cb, as);
+      } else if ((tmp = this.get.next)) {
+        zen = tmp(this, key);
+      }
+      if (!zen) {
+        (zen = this.chain())._.err = { err: Zen.log("Invalid get request!", key) }; // CLEAN UP
+        if (cb) {
+          cb.call(zen, zen._.err);
+        }
+        return zen;
+      }
+      if (cb && "function" == typeof cb) {
+        zen.get(cb, as);
+      }
+      return zen;
+    };
+    function cache(key, back) {
+      var cat = back._,
+        next = cat.next,
+        zen = back.chain(),
+        at = zen._;
+      if (!next) {
+        next = cat.next = {};
+      }
+      next[(at.get = key)] = at;
+      if (back === cat.root.$) {
+        at.soul = key;
+        //at.put = {};
+      } else if (cat.soul || cat.has) {
+        at.has = key;
+        //if(obj_has(cat.put, key)){
+        //at.put = cat.put[key];
+        //}
+      }
+      return at;
+    }
+    function soul(zen, cb, opt, as) {
+      var cat = zen._,
+        acks = 0,
+        tmp;
+      if ((tmp = cat.soul || cat.link)) {
+        return cb(tmp, as, cat);
+      }
+      if (cat.jam) {
+        return cat.jam.push([cb, as]);
+      }
+      cat.jam = [[cb, as]];
+      zen.get(
+        function go(msg, eve) {
+          if (
+            u === msg.put &&
+            !cat.root.opt.super &&
+            (tmp = Object.keys(cat.root.opt.peers).length) &&
+            ++acks <= tmp
+          ) {
+            // TODO: super should not be in core code, bring AXE up into core instead to fix? // TODO: .keys( is slow
+            return;
+          }
+          eve.rid(msg);
+          var at = ((at = msg.$) && at._) || {},
+            i = 0,
+            as;
+          tmp = cat.jam;
+          delete cat.jam; // tmp = cat.jam.splice(0, 100);
+          //if(tmp.length){ process.nextTick(function(){ go(msg, eve) }) }
+          while ((as = tmp[i++])) {
+            //Zen.obj.map(tmp, function(as, cb){
+            var cb = as[0],
+              id;
+            as = as[1];
+            cb &&
+              cb(
+                (id =
+                  at.link ||
+                  at.soul ||
+                  Zen.valid(msg.put) ||
+                  ((msg.put || {})._ || {})["#"]),
+                as,
+                msg,
+                eve,
+              );
+          } //);
+        },
+        { out: { get: { ".": true } }, v2020: true },
+      );
+      return zen;
+    }
+    function rid(at) {
+      var cat = this.at || this.on;
+      if (!at || cat.soul || cat.has) {
+        return this.off();
+      }
+      if (!(at = (at = (at = at.$ || at)._ || at).id)) {
+        return;
+      }
+      var map = cat.map,
+        tmp,
+        seen;
+      //if(!map || !(tmp = map[at]) || !(tmp = tmp.at)){ return }
+      if ((tmp = (seen = this.seen || (this.seen = {}))[at])) {
+        return true;
+      }
+      seen[at] = true;
+      //tmp.echo[cat.id] = {}; // TODO: Warning: This unsubscribes ALL of this chain's listeners from this link, not just the one callback event.
+      //obj.del(map, at); // TODO: Warning: This unsubscribes ALL of this chain's listeners from this link, not just the one callback event.
+      return;
+    }
+    var empty = {},
+      valid = Zen.valid,
+      u;
+  });
+
+  defmod('./src/on.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    var Zen = __root;
+    Zen.chain.on = function (tag, arg, eas, as) {
+      // don't rewrite!
+      var zen = this,
+        cat = zen._,
+        root = cat.root,
+        act,
+        off,
+        id,
+        tmp;
+      if (typeof tag === "string") {
+        if (!arg) {
+          return cat.on(tag);
+        }
+        act = cat.on(tag, arg, eas || cat, as);
+        if (eas && eas.$) {
+          trackSub(eas, act);
+        }
+        return zen;
+      }
+      var opt = arg;
+      (opt = true === opt ? { change: true } : opt || {}).not = 1;
+      opt.on = 1;
+      //opt.at = cat;
+      //opt.ok = tag;
+      //opt.last = {};
+      var wait = {}; // can we assign this to the at instead, like in once?
+      zen.get(tag, opt);
+      /*zen.get(function on(data,key,msg,eve){ var $ = this;
+    		if(tmp = root.hatch){ // quick hack!
+    			if(wait[$._.id]){ return } wait[$._.id] = 1;
+    			tmp.push(function(){on.call($, data,key,msg,eve)});
+    			return;
+    		}; wait = {}; // end quick hack.
+    		tag.call($, data,key,msg,eve);
+    	}, opt); // TODO: PERF! Event listener leak!!!?*/
+      /*
+    	function one(msg, eve){
+    		if(one.stun){ return }
+    		var at = msg.$._, data = at.put, tmp;
+    		if(tmp = at.link){ data = root.$.get(tmp)._.put }
+    		if(opt.not===u && u === data){ return }
+    		if(opt.stun===u && (tmp = root.stun) && (tmp = tmp[at.id] || tmp[at.back.id]) && !tmp.end){ // Remember! If you port this into `.get(cb` make sure you allow stun:0 skip option for `.put(`.
+    			tmp[id] = function(){one(msg,eve)};
+    			return;
+    		}
+    		//tmp = one.wait || (one.wait = {}); console.log(tmp[at.id] === ''); if(tmp[at.id] !== ''){ tmp[at.id] = tmp[at.id] || setTimeout(function(){tmp[at.id]='';one(msg,eve)},1); return } delete tmp[at.id];
+    		// call:
+    		if(opt.as){
+    			opt.ok.call(opt.as, msg, eve || one);
+    		} else {
+    			opt.ok.call(at.$, data, msg.get || at.get, msg, eve || one);
+    		}
+    	};
+    	one.at = cat;
+    	(cat.act||(cat.act={}))[id = String.random(7)] = one;
+    	one.off = function(){ one.stun = 1; if(!cat.act){ return } delete cat.act[id] }
+    	cat.on('out', {get: {}});*/
+      return zen;
+    };
+    // Rules:
+    // 1. If cached, should be fast, but not read while write.
+    // 2. Should not retrigger other listeners, should get triggered even if nothing found.
+    // 3. If the same callback passed to many different once chains, each should resolve - an unsubscribe from the same callback should not effect the state of the other resolving chains, if you do want to cancel them all early you should mutate the callback itself with a flag & check for it at top of callback
+    Zen.chain.once = function (cb, opt) {
+      opt = opt || {}; // avoid rewriting
+      if (!cb) {
+        return none(this, opt);
+      }
+      var zen = this,
+        cat = zen._,
+        root = cat.root,
+        data = cat.put,
+        id = String.random(7),
+        one,
+        tmp;
+      zen.get(
+        function (data, key, msg, eve) {
+          var $ = this,
+            at = $._,
+            one = at.one || (at.one = {});
+          if (eve.stun) {
+            return;
+          }
+          if ("" === one[id]) {
+            return;
+          }
+          if (true === (tmp = Zen.valid(data))) {
+            once();
+            return;
+          }
+          if ("string" == typeof tmp) {
+            clearTimeout((cat.one || "")[id]);
+            clearTimeout(one[id]);
+            one[id] = setTimeout(once, opt.wait || 99);
+            return;
+          }
+          clearTimeout((cat.one || "")[id]); // clear "not found" since they only get set on cat.
+          clearTimeout(one[id]);
+          one[id] = setTimeout(once, opt.wait || 99); // TODO: Bug? This doesn't handle plural chains.
+          function once(f) {
+            if (!at.has && !at.soul) {
+              at = { put: data, get: key };
+            } // handles non-core messages.
+            if (u === (tmp = at.put)) {
+              tmp = ((msg.$$ || "")._ || "").put;
+            }
+            if ("string" == typeof Zen.valid(tmp)) {
+              var linkAt = root.$.get(tmp)._;
+              tmp = linkAt.put;
+              if (tmp === u && !f) {
+                one[id] = setTimeout(function () {
+                  once(1);
+                }, opt.wait || 99); // TODO: Quick fix. Maybe use ack count for more predictable control?
+                return;
+              }
+              // Merge linked node's raw put into at so msg.put reflects destination node,
+              // but preserve at.get (original key) so callback key arg stays correct.
+              at = { get: at.get, put: linkAt.put, soul: linkAt.soul, has: linkAt.has };
+            }
+            if (!f && tmp && "object" == typeof tmp && Object.keys(tmp).length === 1 && "_" in tmp) {
+              one[id] = setTimeout(function () {
+                once(1);
+              }, opt.wait || 99); // Node initialized with soul metadata but fields not yet loaded from disk.
+              return;
+            }
+            //console.log("AND VANISHED", data);
+            if (eve.stun) {
+              return;
+            }
+            if ("" === one[id]) {
+              return;
+            }
+            one[id] = "";
+            if (cat.soul || cat.has) {
+              eve.off();
+            } // TODO: Plural chains? // else { ?.off() } // better than one check?
+            cb.call($, tmp, at.get, msg);
+            clearTimeout(one[id]); // clear "not found" since they only get set on cat. // TODO: This was hackily added, is it necessary or important? Probably not, in future try removing this. Was added just as a safety for the `&& !f` check.
+          }
+        },
+        { on: 1 },
+      );
+      return zen;
+    };
+    function none(zen, opt, chain) {
+      Zen.log.once(
+        "valonce",
+        "Chainable val is experimental, its behavior and API may change moving forward. Please play with it and report bugs and ideas on how to improve it.",
+      );
+      (chain = zen.chain())._.nix = zen.once(function (data, key) {
+        chain._.on("in", this._);
+      });
+      chain._.lex = zen._.lex; // TODO: Better approach in future? This is quick for now.
+      return chain;
+    }
+
+    Zen.chain.off = function () {
+      // make off more aggressive. Warning, it might backfire!
+      var zen = this,
+        at = zen._,
+        tmp;
+      var cat = at.back;
+      if (!cat) {
+        return;
+      }
+      at.ack = 0; // so can resubscribe.
+      clearTimers(at.one);
+      if ((tmp = at.any)) {
+        Object.keys(tmp).forEach(function (id) {
+          tmp[id] && tmp[id].off && tmp[id].off();
+        });
+        delete at.any;
+      }
+      if ((tmp = at.subs)) {
+        at.subs = [];
+        tmp.slice().forEach(function (sub) {
+          sub && sub.off && sub.off();
+        });
+      }
+      if ((tmp = at.jam)) {
+        delete at.jam;
+        tmp.length = 0;
+      }
+      if ((tmp = cat.next)) {
+        if (tmp[at.get]) {
+          delete tmp[at.get];
+        } else {
+        }
+      }
+      // TODO: delete cat.one[map.id]?
+      if ((tmp = cat.any)) {
+        delete cat.any;
+        cat.any = {};
+      }
+      if ((tmp = cat.ask)) {
+        delete tmp[at.get];
+      }
+      if ((tmp = cat.put)) {
+        delete tmp[at.get];
+      }
+      if ((tmp = at.soul)) {
+        delete cat.root.graph[tmp];
+      }
+      if ((tmp = at.map)) {
+        Object.keys(tmp).forEach(function (i, at) {
+          at = tmp[i]; //obj_map(tmp, function(at){
+          if (at.link) {
+            cat.root.$.get(at.link).off();
+          }
+        });
+      }
+      if ((tmp = at.next)) {
+        Object.keys(tmp).forEach(function (i, neat) {
+          neat = tmp[i]; //obj_map(tmp, function(neat){
+          neat.$.off();
+        });
+      }
+      at.on("off", {});
+      return zen;
+    };
+    function trackSub(eas, act, subs, off) {
+      subs = eas.subs || (eas.subs = []);
+      subs.push(act);
+      off = act.off;
+      act.off = function () {
+        var i = subs.indexOf(act);
+        if (i >= 0) {
+          subs.splice(i, 1);
+        }
+        return off && off.call(this);
+      };
+    }
+    function clearTimers(map) {
+      Object.keys(map || {}).forEach(function (id) {
+        clearTimeout(map[id]);
+        delete map[id];
+      });
+    }
+    var empty = {},
+      noop = function () {},
+      u;
+  });
+
+  defmod('./src/map.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    var Zen = __root,
+      next = Zen.chain.get.next;
+    Zen.chain.get.next = function (zen, lex) {
+      var tmp;
+      if (!Object.plain(lex)) {
+        return (next || noop)(zen, lex);
+      }
+      if ((tmp = ((tmp = lex["#"]) || "")["="] || tmp)) {
+        return zen.get(tmp);
+      }
+      (tmp = zen.chain()._).lex = lex; // LEX!
+      zen.on("in", function (eve) {
+        if (
+          String.match(eve.get || (eve.put || "")["."], lex["."] || lex["#"] || lex)
+        ) {
+          tmp.on("in", eve);
+        }
+        this.to.next(eve);
+      });
+      return tmp.$;
+    };
+    Zen.chain.map = function (cb, opt, t) {
+      var zen = this,
+        cat = zen._,
+        lex,
+        chain;
+      if (Object.plain(cb)) {
+        lex = cb["."] ? cb : { ".": cb };
+        cb = u;
+      }
+      if (!cb) {
+        if ((chain = cat.each)) {
+          return chain;
+        }
+        (cat.each = chain = zen.chain())._.lex = lex || chain._.lex || cat.lex;
+        chain._.nix = zen.back("nix");
+        zen.on("in", map, chain._);
+        return chain;
+      }
+      Zen.log.once(
+        "mapfn",
+        "Map functions are experimental, their behavior and API may change moving forward. Please play with it and report bugs and ideas on how to improve it.",
+      );
+      chain = zen.chain();
+      zen.map().on(function (data, key, msg, eve) {
+        var next = (cb || noop).call(this, data, key, msg, eve);
+        if (u === next) {
+          return;
+        }
+        if (data === next) {
+          return chain._.on("in", msg);
+        }
+        if (Zen.is(next)) {
+          return chain._.on("in", next._);
+        }
+        var tmp = {};
+        Object.keys(msg.put).forEach(function (k) {
+          tmp[k] = msg.put[k];
+        }, tmp);
+        tmp["="] = next;
+        chain._.on("in", { get: key, put: tmp });
+      });
+      return chain;
+    };
+    function map(msg) {
+      this.to.next(msg);
+      var cat = this.as,
+        zen = msg.$,
+        at = zen._,
+        put = msg.put,
+        tmp;
+      if (!at.soul && !msg.$$) {
+        return;
+      } // this line took hundreds of tries to figure out. It only works if core checks to filter out above chains during link tho. This says "only bother to map on a node" for this layer of the chain. If something is not a node, map should not work.
+      if (
+        (tmp = cat.lex) &&
+        !String.match(msg.get || (put || "")["."], tmp["."] || tmp["#"] || tmp)
+      ) {
+        return;
+      }
+      Zen.on.link(msg, cat);
+    }
+    var noop = function () {},
+      event = { stun: noop, off: noop },
+      u;
+  });
+
+  defmod('./src/set.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    var Zen = __root;
+    Zen.chain.set = function (item, cb, opt) {
+      var zen = this,
+        root = zen.back(-1),
+        soul,
+        tmp;
+      cb = cb || function () {};
+      opt = opt || {};
+      opt.item = opt.item || item;
+      if ((soul = ((item || "")._ || "")["#"])) {
+        (item = {})["#"] = soul;
+      } // check if node, make link.
+      if ("string" == typeof (tmp = Zen.valid(item))) {
+        return zen.get((soul = tmp)).put(item, cb, opt);
+      } // check if link
+      if (!Zen.is(item)) {
+        if (Object.plain(item)) {
+          item = root.get((soul = zen.back("opt.uuid")())).put(item);
+        }
+        return zen.get(soul || root.back("opt.uuid")(7)).put(item, cb, opt);
+      }
+      zen.put(function (go) {
+        item.get(function (soul, o, msg) {
+          // TODO: BUG! We no longer have this option? & go error not handled?
+          if (!soul) {
+            return cb.call(zen, {
+              err: Zen.log('Only a node can be linked! Not "' + msg.put + '"!'),
+            });
+          }
+          (tmp = {})[soul] = { "#": soul };
+          go(tmp);
+        }, true);
+      });
+      return item;
+    };
+  });
+
+  defmod('./src/meta.js', function(module, exp){
+    var ZEN = reqmod('./src/root.js').default;
+    var settings = reqmod('./src/settings.js').default;
+    var recover = reqmod('./src/recover.js').default;
+    var u;
+    var Zen = ZEN;
+
+    /**
+     * .meta(cb) — subscribe to a node and receive full signature metadata.
+     *
+     * Callback signature: cb({ val, key, pub, sig, v, state, soul })
+     *
+     *   val   — verified plaintext value
+     *   key   — graph key
+     *   pub   — public key of the writer (recovered from signature or extracted from soul)
+     *   sig   — 86-char base62 ECDSA signature, or null if unsigned
+     *   state — HAM state timestamp (ms)
+     *   soul  — node soul (address)
+     *
+     * For ~pub namespaces the soul owner is returned as pub when no other signer
+     * can be determined.  For !pen and other namespaces the pub key is recovered
+     * asynchronously from the embedded signature.
+     * For unsigned data pub/sig/v are null.
+     */
+    Zen.chain.meta = function (cb, opt) {
+      if (!cb) {
+        var zen = this;
+        return new Promise(function (resolve) {
+          zen.meta(resolve);
+        });
+      }
+      var zen = this;
+      (opt = opt || {}).not = 1;
+      opt.on = 1;
+      zen.get(function (val, key, msg) {
+        var put = msg && msg.put;
+        if (u === put) {
+          return;
+        }
+        var soul = put["#"];
+        var state = put[">"];
+
+        // Extract raw signed slot
+        var raw = put[":"];
+        var rawObj = raw && typeof raw === "object" ? raw : null;
+        if (!rawObj && typeof raw === "string") {
+          try {
+            rawObj = JSON.parse(raw);
+          } catch (e) {}
+        }
+        var sig = rawObj ? rawObj["~"] || null : null;
+
+        // Fast path: extract pub from soul only when it is an actual public key
+        // (45-char base62 ending in 0|1).  Tilde-shard souls like ~as/df/gh return
+        // a path fragment from settings.pub() which is NOT a real pub key — reject those.
+        var rawPub = settings.pub(soul);
+        var pub = (rawPub && /^[A-Za-z0-9]{44}[01]/.test(rawPub)) ? rawPub : null;
+
+        var done = function (resolvedPub) {
+          cb.call(zen, {
+            val: val,
+            key: key,
+            pub: resolvedPub !== u ? resolvedPub : null,
+            sig: sig,
+            state: state,
+            soul: soul,
+          });
+        };
+
+        if (pub) {
+          return done(pub);
+        }
+
+        // Async fallback: recover pub from embedded signature via settings.pack
+        if (sig !== null) {
+          settings.pack(put, function (packed) {
+            if (packed && packed.s) {
+              recover(packed)
+                .then(function (recovered) {
+                  done(recovered);
+                })
+                .catch(function () {
+                  done(null);
+                });
+            } else {
+              done(null);
+            }
+          });
+        } else {
+          done(null);
+        }
+      }, opt);
+      return zen;
+    };
+  });
+
+  defmod('./src/mesh.js', function(module, exp){
+    reqmod('./src/shim.js');
+    var jsonAsync = reqmod('./src/json.js').default;
+    var __base62 = reqmod('./src/base62.js').default;
+    // Build reverse-lookup map from the canonical alphabet in base62.js.
+    var B62M = (function (a) {
+      var m = {};
+      for (var i = 0; i < a.length; i++) m[a[i]] = i;
+      return m;
+    })(__base62.ALPHA);
+    function b62bi(s) {
+      // Decode any-length base62 string to BigInt (null on invalid input).
+      // Note: base62.b62ToBI enforces exactly 44 chars and throws — pub keys are
+      // 45 chars (33-byte secp256k1), so we need a length-agnostic variant here.
+      if (typeof s !== "string" || !s.length) return null;
+      var n = 0n;
+      for (var i = 0; i < s.length; i++) {
+        var c = B62M[s[i]];
+        if (c === undefined) return null;
+        n = n * 62n + BigInt(c);
+      }
+      return n;
+    }
+
+    var noop = function () {};
+    var pair = jsonAsync.createJsonPair(function (d) {
+      return json.sucks(d);
+    });
+    var parse = pair.parse;
+    var json = pair.json;
+    json.sucks = function (d) {
+      if (d > 99) {
+        console.log(
+          "Warning: JSON blocking CPU detected. Add `zen/lib/yson.js` to fix.",
+        );
+        json.sucks = noop;
+      }
+    };
+
+    function Mesh(root) {
+      var mesh = function () {};
+      var opt = root.opt || {};
+      opt.log = opt.log || console.log;
+      opt.gap = opt.gap || opt.wait || 0;
+      opt.max = opt.max || (opt.memory ? opt.memory * 999 * 999 : 300000000) * 0.3;
+      opt.pack = opt.pack || opt.max * 0.01 * 0.01;
+      opt.puff = opt.puff || 9; // IDEA: do a start/end benchmark, divide ops/result.
+      var puff = setTimeout.turn || setTimeout;
+
+      var dup = root.dup,
+        dup_check = dup.check,
+        dup_track = dup.track;
+
+      var ST = +new Date(),
+        LT = ST;
+
+      var hear = (mesh.hear = function (raw, peer) {
+        if (!raw) {
+          return;
+        }
+        if (opt.max <= raw.length) {
+          return mesh.say({ dam: "!", err: "Message too big!" }, peer);
+        }
+        if (mesh === this) {
+          /*if('string' == typeof raw){ try{
+                        var stat = console.STAT || {};
+                        //console.log('HEAR:', peer.id, (raw||'').slice(0,250), ((raw||'').length / 1024 / 1024).toFixed(4));
+
+                        //console.log(setTimeout.turn.s.length, 'stacks', parseFloat((-(LT - (LT = +new Date))/1000).toFixed(3)), 'sec', parseFloat(((LT-ST)/1000 / 60).toFixed(1)), 'up', stat.peers||0, 'peers', stat.has||0, 'has', stat.memhused||0, stat.memused||0, stat.memax||0, 'heap mem max');
+                    }catch(e){ console.log('DBG err', e) }}*/
+          hear.d += raw.length || 0;
+          ++hear.c;
+        } // STATS!
+        var S = (peer.SH = +new Date());
+        var tmp = raw[0],
+          msg;
+        //raw && raw.slice && console.log("hear:", ((peer.wire||'').headers||'').origin, raw.length, raw.slice && raw.slice(0,50)); //tc-iamunique-tc-package-ds1
+        if ("[" === tmp) {
+          parse(raw, function (err, msg) {
+            if (err || !msg) {
+              return mesh.say({ dam: "!", err: "DAM JSON parse error." }, peer);
+            }
+            console.STAT &&
+              console.STAT(+new Date(), msg.length, "# on hear batch");
+            var P = opt.puff;
+            function go() {
+              var S = +new Date();
+              var i = 0,
+                m;
+              while (i < P && (m = msg[i++])) {
+                mesh.hear(m, peer);
+              }
+              msg = msg.slice(i); // slicing after is faster than shifting during.
+              console.STAT && console.STAT(S, +new Date() - S, "hear loop");
+              flush(peer); // force send all synchronously batched acks.
+              if (!msg.length) {
+                return;
+              }
+              puff(go, 0);
+            }
+            go();
+          });
+          raw = ""; //
+          return;
+        }
+        if ("{" === tmp || ((raw["#"] || Object.plain(raw)) && (msg = raw))) {
+          if (msg) {
+            return hear.one(msg, peer, S);
+          }
+          parse(raw, function (err, msg) {
+            if (err || !msg) {
+              return mesh.say({ dam: "!", err: "DAM JSON parse error." }, peer);
+            }
+            hear.one(msg, peer, S);
+          });
+          return;
+        }
+      });
+      hear.one = function (msg, peer, S) {
+        // S here is temporary! Undo.
+        var id, hash, tmp, ash, DBG;
+        if (msg.DBG) {
+          msg.DBG = DBG = { DBG: msg.DBG };
+        }
+        DBG && (DBG.h = S);
+        DBG && (DBG.hp = +new Date());
+        if (!(id = msg["#"])) {
+          id = msg["#"] = String.random(9);
+        }
+        if ((tmp = dup_check(id))) {
+          return;
+        }
+        // DAM logic: dedup by content hash for pre-hashed messages (## set by sender).
+        if (
+          hash &&
+          (tmp = msg["@"] || (msg.get && id)) &&
+          dup.check((ash = tmp + hash))
+        ) {
+          return;
+        } // Imagine A <-> B <=> (C & D), C & D reply with same ACK but have different IDs, B can use hash to dedup. Or if a GET has a hash already, we shouldn't ACK if same.
+        (msg._ = function () {}).via = mesh.leap = peer;
+        if ((tmp = msg["><"]) && "string" == typeof tmp) {
+          tmp
+            .slice(0, 99)
+            .split(",")
+            .forEach(
+              function (k) {
+                this[k] = 1;
+              },
+              (msg._.yo = {}),
+            );
+        } // Peers already sent to, do not resend.
+        // DAM ^
+        if ((tmp = msg.dam)) {
+          (dup_track(id) || {}).via = peer;
+          if ((tmp = mesh.hear[tmp])) {
+            tmp(msg, peer, root);
+          }
+          return;
+        }
+        if ((tmp = msg.ok)) {
+          msg._.near = tmp["/"];
+        }
+        var S = +new Date();
+        DBG && (DBG.is = S);
+        peer.SI = id;
+        dup_track.ed = function (d) {
+          if (id !== d) {
+            return;
+          }
+          dup_track.ed = 0;
+          if (!(d = dup.s.get(id))) {
+            return;
+          }
+          d.via = peer;
+          if (msg.get) {
+            d.it = msg;
+          }
+        };
+        root.on("in", (mesh.last = msg));
+        DBG && (DBG.hd = +new Date());
+        console.STAT &&
+          console.STAT(
+            S,
+            +new Date() - S,
+            msg.get ? "msg get" : msg.put ? "msg put" : "msg",
+          );
+        dup_track(id); // in case 'in' does not call track.
+        if (ash) {
+          dup_track(ash);
+        } //dup.track(tmp+hash, true).it = it(msg);
+        mesh.leap = mesh.last = null; // warning! mesh.leap could be buggy.
+      };
+      var tomap = function (k, i, m) {
+        m(k, true);
+      };
+      hear.c = hear.d = 0;
+
+      {
+        var loop;
+        mesh.hash = function (msg, peer) {
+          var h, s, t;
+          var S = +new Date();
+          json(
+            msg.put,
+            function hash(err, text) {
+              var ss = (s || (s = t = text || "")).slice(0, 32768); // 1024 * 32
+              h = String.hash(ss, h);
+              s = s.slice(32768);
+              if (s) {
+                puff(hash, 0);
+                return;
+              }
+              console.STAT && console.STAT(S, +new Date() - S, "say json+hash");
+              msg._.$put = t;
+              msg["##"] = h;
+              mesh.say(msg, peer);
+              delete msg._.$put;
+            },
+            sort,
+          );
+        };
+        function sort(k, v) {
+          var tmp;
+          if (!(v instanceof Object)) {
+            return v;
+          }
+          Object.keys(v)
+            .sort()
+            .forEach(sorta, { to: (tmp = {}), on: v });
+          return tmp;
+        }
+        function sorta(k) {
+          this.to[k] = this.on[k];
+        }
+
+        var say = (mesh.say = function (msg, peer) {
+          var tmp;
+          if ((tmp = this) && (tmp = tmp.to) && tmp.next) {
+            tmp.next(msg);
+          } // compatible with middleware adapters.
+          if (!msg) {
+            return false;
+          }
+          var id,
+            hash,
+            raw,
+            ack = msg["@"];
+          //if(opt.super && (!ack || !msg.put)){ return } // TODO: MANHATTAN STUB //OBVIOUSLY BUG! But squelch relay. // :( get only is 100%+ CPU usage :(
+          var meta = msg._ || (msg._ = function () {});
+          var DBG = msg.DBG,
+            S = +new Date();
+          meta.y = meta.y || S;
+          if (!peer) {
+            DBG && (DBG.y = S);
+          }
+          if (!(id = msg["#"])) {
+            id = msg["#"] = String.random(9);
+          }
+          !loop && dup_track(id); //.it = it(msg); // track for 9 seconds, default. Earth<->Mars would need more! // always track, maybe move this to the 'after' logic if we split function.
+          //if(msg.put && (msg.err || (dup.s[id]||'').err)){ return false } // TODO: in theory we should not be able to stun a message, but for now going to check if it can help network performance preventing invalid data to relay.
+          if (!(hash = msg["##"]) && u !== msg.put && !meta.via && ack) {
+            mesh.hash(msg, peer);
+            return;
+          } // TODO: Should broadcasts be hashed?
+          if (!peer && ack) {
+            peer =
+              (tmp = dup.s.get(ack)) &&
+              (tmp.via || ((tmp = tmp.it) && (tmp = tmp._) && tmp.via));
+          } // mesh.leap fallback removed — race condition with async mesh.raw; dup.s.via is reliable.
+          if (!peer && ack) {
+            // still no peer, then ack daisy chain 'tunnel' got lost.
+            if (dup.s.has(ack)) {
+              return;
+            } // in dups but no peer hints that this was ack to ourself, ignore.
+            console.STAT &&
+              console.STAT(+new Date(), "total no peer to ack to"); // Dropping lost ACKs is protocol fine now.
+            return false;
+          } // TODO: Temporary? If ack via trace has been lost, acks will go to all peers, which trashes browser bandwidth. Not relaying the ack will force sender to ask for ack again. Note, this is technically wrong for mesh behavior.
+          if (ack && !msg.put && !hash && ((dup.s.get(ack) || "").it || "")["##"]) {
+            return false;
+          } // If we're saying 'not found' but a relay had data, do not bother sending our not found. // Is this correct, return false? // NOTE: ADD PANIC TEST FOR THIS!
+          if (!peer && mesh.way) {
+            return mesh.way(msg);
+          }
+          DBG && (DBG.yh = +new Date());
+          if (!(raw = meta.raw)) {
+            mesh.raw(msg, peer);
+            return;
+          }
+          DBG && (DBG.yr = +new Date());
+          if (!peer || !peer.id) {
+            if (!Object.plain(peer || opt.peers)) {
+              return false;
+            }
+            var S = +new Date();
+            var P = opt.puff,
+              ps = opt.peers,
+              pl = Object.keys(peer || opt.peers || {}); // TODO: .keys( is slow
+            console.STAT && console.STAT(S, +new Date() - S, "peer keys");
+            function go() {
+              var S = +new Date();
+              //Type.obj.map(peer || opt.peers, each); // in case peer is a peer list.
+              loop = 1;
+              var wr = meta.raw;
+              meta.raw = raw; // quick perf hack
+              var i = 0,
+                p;
+              while (i < 9 && (p = (pl || "")[i++])) {
+                if (!(p = ps[p] || (peer || "")[p])) {
+                  continue;
+                }
+                mesh.say(msg, p);
+              }
+              meta.raw = wr;
+              loop = 0;
+              pl = pl.slice(i); // slicing after is faster than shifting during.
+              console.STAT && console.STAT(S, +new Date() - S, "say loop");
+              if (!pl.length) {
+                return;
+              }
+              puff(go, 0);
+              ack && dup_track(ack); // keep for later
+            }
+            go();
+            return;
+          }
+          // TODO: PERF: consider splitting function here, so say loops do less work.
+          if (!peer.wire && mesh.wire && !peer._noReconnect) {
+            mesh.wire(peer);
+          }
+          if (id === peer.last) {
+            return;
+          }
+          peer.last = id; // was it just sent?
+          if (peer === meta.via) {
+            return false;
+          } // don't send back to self.
+          if (
+            (tmp = meta.yo) &&
+            (tmp[peer.url] || tmp[peer.pid] || tmp[peer.id]) /*&& !o*/
+          ) {
+            return false;
+          }
+          console.STAT &&
+            console.STAT(
+              S,
+              ((DBG || meta).yp = +new Date()) - (meta.y || S),
+              "say prep",
+            );
+          !loop && ack && dup_track(ack); // streaming long responses needs to keep alive the ack.
+          if (peer.batch) {
+            peer.tail = (tmp = peer.tail || 0) + raw.length;
+            if (peer.tail <= opt.pack) {
+              peer.batch += (tmp ? "," : "") + raw;
+              return;
+            }
+            flush(peer);
+          }
+          peer.batch = "["; // Prevents double JSON!
+          var ST = +new Date();
+          setTimeout(function () {
+            console.STAT && console.STAT(ST, +new Date() - ST, "0ms TO");
+            flush(peer);
+          }, opt.gap); // TODO: queuing/batching might be bad for low-latency video game performance! Allow opt out?
+          send(raw, peer);
+          console.STAT &&
+            ack === peer.SI &&
+            console.STAT(S, +new Date() - peer.SH, "say ack");
+        });
+        mesh.say.c = mesh.say.d = 0;
+        // TODO: this caused a out-of-memory crash!
+        mesh.raw = function (msg, peer) {
+          // TODO: Clean this up / delete it / move logic out!
+          if (!msg) {
+            return "";
+          }
+          var meta = msg._ || {},
+            put,
+            tmp;
+          if ((tmp = meta.raw)) {
+            return tmp;
+          }
+          if ("string" == typeof msg) {
+            return msg;
+          }
+          var hash = msg["##"],
+            ack = msg["@"];
+          if (hash && ack) {
+            if (!meta.via && dup_check(ack + hash)) {
+              return false;
+            } // for our own out messages, memory & storage may ack the same thing, so dedup that. Tho if via another peer, we already tracked it upon hearing, so this will always trigger false positives, so don't do that!
+            if ((tmp = (dup.s.get(ack) || "").it)) {
+              if (!tmp["##"]) {
+                tmp["##"] = hash;
+              } // if none, add our hash to ask so anyone we relay to can dedup. // NOTE: May only check against 1st ack chunk, 2nd+ won't know and still stream back to relaying peers which may then dedup. Any way to fix this wasted bandwidth? I guess force rate limiting breaking change, that asking peer has to ask for next lexical chunk.
+              // NOTE: removed "hash === tmp['##'] → return false" — this incorrectly dropped the WS client reply
+              // when multicast path ran first (via this.to.next) and set tmp['##'] before the unicast reply path ran.
+            }
+          }
+          if (!msg.dam && !msg["@"]) {
+            var i = 0,
+              to = [];
+            tmp = opt.peers;
+            for (var k in tmp) {
+              var p = tmp[k]; // TODO: Make it up peers instead!
+              to.push(p.url || p.pid || p.id);
+              if (++i > 6) {
+                break;
+              }
+            }
+            if (i > 1 && !peer) {
+              msg["><"] = to.join();
+            } // Only set yo-list for broadcasts (peer=null); targeted sends must not include unrelated peers.
+          }
+          if (msg.put && (tmp = msg.ok)) {
+            msg.ok = {
+              "@": (tmp["@"] || 1) - 1,
+              "/": tmp["/"] == msg._.near ? mesh.near : tmp["/"],
+            };
+          }
+          if ((put = meta.$put)) {
+            tmp = {};
+            Object.keys(msg).forEach(function (k) {
+              tmp[k] = msg[k];
+            });
+            tmp.put = ":])([:";
+            json(tmp, function (err, raw) {
+              if (err) {
+                return;
+              } // TODO: Handle!!
+              var S = +new Date();
+              tmp = raw.indexOf('"put":":])([:"');
+              res(u, (raw = raw.slice(0, tmp + 6) + put + raw.slice(tmp + 14)));
+              console.STAT && console.STAT(S, +new Date() - S, "say slice");
+            });
+            return;
+          }
+          json(msg, res);
+          function res(err, raw) {
+            if (err) {
+              return;
+            } // TODO: Handle!!
+            if (!raw || raw.length < (999 * 99)) { meta.raw = raw; } // HNPERF: Don't cache large raw strings — prevents OOM under high load with large messages.
+            if (hash && ack && !meta.via) { dup_track(ack + hash); } // track so memory+storage don't double-send
+            mesh.say(msg, peer);
+          }
+        };
+      }
+
+      function flush(peer) {
+        var tmp = peer.batch,
+          t = "string" == typeof tmp,
+          l;
+        if (t) {
+          tmp += "]";
+        } // TODO: Prevent double JSON!
+        peer.batch = peer.tail = null;
+        if (!tmp) {
+          return;
+        }
+        if (t ? 3 > tmp.length : !tmp.length) {
+          return;
+        } // TODO: ^
+        if (!t) {
+          try {
+            tmp = 1 === tmp.length ? tmp[0] : JSON.stringify(tmp);
+          } catch (e) {
+            return opt.log("DAM JSON stringify error", e);
+          }
+        }
+        if (!tmp) {
+          return;
+        }
+        send(tmp, peer);
+      }
+      // for now - find better place later.
+      function send(raw, peer) {
+        try {
+          var wire = peer.wire;
+          if (peer.say) {
+            peer.say(raw);
+          } else if (wire.send) {
+            wire.send(raw);
+          }
+          mesh.say.d += raw.length || 0;
+          ++mesh.say.c; // STATS!
+        } catch (e) {
+          var q = (peer.queue = peer.queue || []);
+          if (q.length >= 1000) { q.shift(); } // drop oldest to prevent unbounded memory growth
+          q.push(raw);
+        }
+      }
+
+      mesh.near = 0;
+      mesh.hi = function (peer) {
+        var wire = peer.wire,
+          tmp;
+        if (!wire) {
+          mesh.wire((peer.length && { url: peer, id: peer }) || peer);
+          return;
+        }
+        // For outbound connections, reject if the URL has been tombstoned by AXE.
+        if (peer._isOutbound) {
+          var peerUrl = peer.url || peer.id;
+          var storedPeer = peerUrl && opt.peers[peerUrl];
+          if ((storedPeer && storedPeer._noReconnect) ||
+              (opt.tomb && (opt.tomb.has(peer.url) || opt.tomb.has(peer.id)))) {
+            peer._noReconnect = true;
+            if (wire) { try { wire.close(); } catch (e) {} peer.wire = null; }
+            return;
+          }
+        }
+        if (peer.id) {
+          opt.peers[peer.url || peer.id] = peer;
+        } else {
+          tmp = peer.id = peer.id || peer.url || String.random(9);
+          var hiMsg = { dam: "?", pid: root.opt.pid, pub: opt.pub || "" };
+          if (opt.udpPort) { hiMsg.udp = opt.udpPort; } // advertise our UDP listening port
+          if (opt.udpToken) { hiMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
+          mesh.say(hiMsg, (opt.peers[tmp] = peer));
+          var _hiLast = peer.last; // capture before any async reconnect can overwrite peer.last
+          dup.s.delete(_hiLast); // IMPORTANT: see https://zen.eco/docs/DAM#self
+        }
+        if (!peer.met) {
+          mesh.near++;
+          peer.met = +new Date();
+          root.on("hi", peer);
+        }
+        // @rogowski I need this here by default for now to fix go1dfish's bug
+        tmp = peer.queue;
+        peer.queue = [];
+        setTimeout.each(
+          tmp || [],
+          function (msg) {
+            send(msg, peer);
+          },
+          0,
+          9,
+        );
+        //Type.obj.native && Type.obj.native(); // dirty place to check if other JS polluted.
+      };
+      mesh.bye = function (peer) {
+        var passedNoRec = peer._noReconnect;
+        peer = opt.peers[peer.id || peer] || peer;
+        var effectiveNoRec = passedNoRec || peer._noReconnect;
+        peer.met && --mesh.near;
+        delete peer.met;
+        // Save wire reference before nulling — root.on("bye") listener uses it to close the TCP connection.
+        // We null peer.wire first so mesh.route()/say() skip this peer while it's being torn down.
+        peer._preByeWire = peer.wire;
+        peer.wire = null;
+        peer.batch = peer.tail = peer.queue = null; // clear any in-flight message buffers to prevent leaking raw strings.
+        root.on("bye", peer);
+        var tmp = +new Date();
+        tmp = tmp - (peer.met || tmp);
+        mesh.bye.time = ((mesh.bye.time || tmp) + tmp) / 2;
+        if (effectiveNoRec) {
+          // Keep peer as tombstone so PEX cannot re-add it; also record URL.
+          peer._noReconnect = true;
+          if (peer.url) {
+            var tu = (opt.tomb = opt.tomb || new Set());
+            if (tu.size >= 500) { tu.delete(tu.values().next().value); } // cap: drop oldest
+            tu.add(peer.url);
+            tu.add(peer.url.replace(/^wss?:/, function(p){ return p[2]==='s'?'https:':'http:'; }));
+            tu.add(peer.url.replace(/^https?:/, function(p){ return p[4]==='s'?'wss:':'ws:'; }));
+          }
+        }
+      };
+      mesh.hear["!"] = function (msg, peer) {
+        opt.log("Error:", msg.err);
+      };
+      mesh.hear["?"] = function (msg, peer) {
+        if (msg.pid) {
+          if (!peer.pid) {
+            peer.pid = msg.pid;
+          }
+          if (msg.pub && !peer.pub) {
+            peer.pub = msg.pub;
+          }
+          if (msg.udp && !peer.udpPort) {
+            peer.udpPort = msg.udp; // store remote peer's announced UDP port
+          }
+          if (msg.udpToken && !peer.udpToken) {
+            peer.udpToken = msg.udpToken; // token we must send in UDP packets to this peer
+          }
+        }
+        // An "@"-bearing message is an ack to our own "?" — never answer it,
+        // even when the sender has no pid (e.g. axe:false realms), or two
+        // pid-less peers ping-pong handshake acks forever.
+        if (msg["@"]) {
+          return;
+        }
+        var replyMsg = { dam: "?", pid: opt.pid, pub: opt.pub || "", "@": msg["#"] };
+        if (opt.udpPort) { replyMsg.udp = opt.udpPort; } // advertise our UDP port in reply
+        if (opt.udpToken) { replyMsg.udpToken = opt.udpToken; } // token peers must include in UDP packets to us
+        mesh.say(replyMsg, peer);
+        var _replyLast = peer.last; // capture before any async reconnect can overwrite peer.last
+        dup.s.delete(_replyLast); // IMPORTANT: see https://zen.eco/docs/DAM#self
+      };
+      mesh.hear["ping"] = function (msg, peer) {
+        mesh.say({ dam: "pong", t: msg.t, "@": msg["#"] }, peer);
+      };
+      mesh.hear["pong"] = function (msg, peer) {
+        if (!msg.t) return;
+        var rtt = +new Date() - msg.t;
+        peer.rtt = peer.rtt !== undefined ? (peer.rtt + rtt) / 2 : rtt;
+      };
+      mesh.ping = function (peer) {
+        if (!peer || !peer.wire) return;
+        mesh.say({ dam: "ping", t: +new Date() }, peer);
+      };
+      mesh.xor = function (a, b) {
+        if (!a || !b) return null;
+        var na = b62bi(a), nb = b62bi(b);
+        if (na === null || nb === null) return null;
+        return na ^ nb;
+      };
+      mesh.closer = function (target, a, b) {
+        if (!target || !a || !b) return null;
+        var t = b62bi(target), na = b62bi(a), nb = b62bi(b);
+        if (t === null || na === null || nb === null) return null;
+        return (t ^ na) <= (t ^ nb) ? a : b;
+      };
+
+      // ── relay: multi-hop ephemeral message routing ───────────────────────────
+      // Subscribers receive { from, data } when a relay message is addressed to us.
+      mesh._relay_handlers = [];
+      mesh.on = function (fn) {
+        mesh._relay_handlers.push(fn);
+        return function off() {
+          var i = mesh._relay_handlers.indexOf(fn);
+          if (i >= 0) { mesh._relay_handlers.splice(i, 1); }
+        };
+      };
+
+      // Find the best next-hop peer toward targetPub by XOR distance.
+      // Optionally skip one peer (e.g. the message sender) to avoid loops.
+      // Returns a peer object { pub, wire, … } or null.
+      mesh.route = function (targetPub, skip) {
+        if (!targetPub) { return null; }
+        var best = null, bestDist = null;
+        var peers = opt.peers || {};
+        for (var k in peers) {
+          var p = peers[k];
+          if (!p || !p.pub || !p.wire || p === skip) { continue; }
+          var d = mesh.xor(targetPub, p.pub);
+          if (d === null) { continue; }
+          if (bestDist === null || d < bestDist) { bestDist = d; best = p; }
+        }
+        return best;
+      };
+
+      // Send an ephemeral multi-hop relay message to a target pub key.
+      // opt_: { ttl: <number> } — defaults to 5 hops.
+      mesh.relay = function (to, data, opt_) {
+        if (!to) { return; }
+        var msg = {
+          dam: "relay",
+          to: to,
+          from: opt.pub || "",
+          ttl: (opt_ && typeof opt_.ttl === "number") ? opt_.ttl : 5,
+          data: data,
+        };
+        // Direct delivery if target is already a connected peer.
+        var peers = opt.peers || {};
+        for (var k in peers) {
+          var p = peers[k];
+          if (p && p.pub === to && p.wire) { mesh.say(msg, p); return; }
+        }
+        // Fall back to XOR-closest peer with known pub key.
+        var next = mesh.route(to);
+        if (next) { mesh.say(msg, next); return; }
+        // No pub-key route found — flood all connected wired peers.
+        // This handles relay nodes that have no opt.pub (common for server hubs).
+        for (var fk in peers) {
+          var fp = peers[fk];
+          if (fp && fp.wire) { mesh.say(msg, fp); }
+        }
+      };
+
+      // Multi-hop relay message handler.
+      // Decrements TTL, drops at 0, delivers locally or forwards toward target.
+      mesh.hear["relay"] = function (msg, peer) {
+        if (!msg.to || !msg.from) { return; }
+        var ttl = typeof msg.ttl === "number" ? msg.ttl - 1 : -1;
+        if (ttl < 0) { return; } // TTL expired — drop silently.
+        // Deliver locally if we are the addressed target.
+        if (opt.pub && msg.to === opt.pub) {
+          var payload = { from: msg.from, data: msg.data };
+          for (var i = 0; i < mesh._relay_handlers.length; i++) {
+            mesh._relay_handlers[i](payload);
+          }
+          return;
+          return;
+        }
+        // Preserve original msg # so dedup prevents loops across the mesh.
+        var fwd = { dam: "relay", "#": msg["#"], to: msg.to, from: msg.from, ttl: ttl, data: msg.data };
+        // Direct forward if target is a connected peer.
+        var peers = opt.peers || {};
+        for (var k in peers) {
+          var p = peers[k];
+          if (p && p.pub === msg.to && p.wire) {
+            mesh.say(fwd, p); return;
+          }
+        }
+        // Flood to all connected peers except the sender.
+        // Single-hop XOR routing is unreliable when routing tables are incomplete
+        // (e.g. inbound-only peers absent from DHT k-buckets). Flooding with TTL
+        // guarantees delivery and dedup (#) prevents true loops.
+        // Do NOT require fpeer.pub — relay nodes may not advertise a pub key.
+        for (var fk in peers) {
+          var fpeer = peers[fk];
+          if (fpeer && fpeer.wire && fpeer !== peer) {
+            mesh.say(fwd, fpeer);
+          }
+        }
+      };
+
+      mesh.hear["mob"] = function (msg, peer) {
+        // NOTE: AXE will overload this with better logic.
+        if (!msg.peers) {
+          return;
+        }
+        var peers = Object.keys(msg.peers),
+          one = peers[(Math.random() * peers.length) >> 0];
+        if (!one) {
+          return;
+        }
+        mesh.bye(peer);
+        mesh.hi(one);
+      };
+
+      if (root.once) {
+        // Mesh was created after this instance's "create" phase already ran
+        // (e.g. zen.attach() adding a transport at runtime). The create hook
+        // below would never fire, leaving puts unwired to the mesh and pid
+        // unset — wire directly instead.
+        root.opt.pid = root.opt.pid || String.random(9);
+        root.on("out", mesh.say);
+      } else {
+        root.on("create", function (root) {
+          root.opt.pid = root.opt.pid || String.random(9);
+          this.to.next(root);
+          root.on("out", mesh.say);
+        });
+      }
+
+      root.on("bye", function (peer, tmp) {
+        peer = opt.peers[peer.id || peer] || peer;
+        this.to.next(peer);
+        // Use _preByeWire saved by mesh.bye (peer.wire is already null by the time this fires).
+        tmp = peer._preByeWire || peer.wire;
+        peer._preByeWire = null;
+        peer.bye ? peer.bye() : tmp && tmp.close && tmp.close(4001, 'bye');
+        delete opt.peers[peer.id];
+        peer.wire = null;
+      });
+
+      var gets = {};
+      root.on("bye", function (peer, tmp) {
+        this.to.next(peer);
+        if ((tmp = console.STAT)) {
+          tmp.peers = mesh.near;
+        }
+        if (!(tmp = peer.url)) {
+          return;
+        }
+        gets[tmp] = true;
+        setTimeout(function () {
+          delete gets[tmp];
+        }, opt.lack || 9000);
+      });
+      root.on("hi", function (peer, tmp) {
+        this.to.next(peer);
+        if ((tmp = console.STAT)) {
+          tmp.peers = mesh.near;
+        }
+        if (opt.super) {
+          return;
+        } // temporary (?) until we have better fix/solution?
+        var souls = Object.keys(root.next || ""); // TODO: .keys( is slow
+        if (souls.length > 9999 && !console.SUBS) {
+          console.log(
+            (console.SUBS =
+              "Warning: You have more than 10K live GETs, which might use more bandwidth than your screen can show - consider `.off()`."),
+          );
+        }
+        setTimeout.each(souls, function (soul) {
+          var node = root.next[soul];
+          if (opt.super || (node.ask || "")[""]) {
+            mesh.say({ get: { "#": soul } }, peer);
+            return;
+          }
+          setTimeout.each(Object.keys(node.ask || ""), function (key) {
+            if (!key) {
+              return;
+            }
+            // is the lack of ## a !onion hint?
+            mesh.say(
+              {
+                "##": String.hash((root.graph[soul] || "")[key]),
+                get: { "#": soul, ".": key },
+              },
+              peer,
+            );
+            // TODO: Switch this so Book could route?
+          });
+        });
+      });
+
+      return mesh;
+    }
+    var empty = {},
+      ok = true,
+      u;
+
+    exp.default = Mesh;
+  });
+
+  defmod('./src/websocket.js', function(module, exp){
+    var __root = reqmod('./src/root.js').default;
+    var __mesh = reqmod('./src/mesh.js').default;
+    var Zen = __root;
+    Zen.Mesh = __mesh;
+
+    // Cap tombUrls at 500 entries (≈167 dead peers × 3 URL variants each).
+    // Set is insertion-ordered so oldest entries are dropped first.
+    function tombAdd(opt, url) {
+      var t = (opt.tomb = opt.tomb || new Set());
+      if (t.size >= 500) { t.delete(t.values().next().value); }
+      t.add(url);
+      t.add(url.replace(/^wss?:/, function(p){ return p[2]==='s'?'https:':'http:'; }));
+      t.add(url.replace(/^https?:/, function(p){ return p[4]==='s'?'wss:':'ws:'; }));
+    }
+
+    // TODO: resync upon reconnect online/offline
+    //window.ononline = window.onoffline = function(){ console.log('online?', navigator.onLine) }
+
+    Zen.on("opt", function (root) {
+      this.to.next(root);
+      if (root.once) {
+        return;
+      }
+      var opt = root.opt;
+      if (false === opt.WebSocket) {
+        return;
+      }
+
+      var mesh = (opt.mesh = opt.mesh || Zen.Mesh(root));
+
+      var websocket =
+        opt.WebSocket || globalThis.WebSocket;
+      if (!websocket) {
+        return;
+      }
+      opt.WebSocket = websocket;
+
+      var wired = mesh.wire || opt.wire;
+      mesh.wire = opt.wire = open;
+      function open(peer) {
+        try {
+          if (!peer || !peer.url) {
+            return wired && wired(peer);
+          }
+          // Do not open connections to tombstoned peers.
+          // Normalise to https:// for lookup since tombstones are stored under https/http keys.
+          if (peer._noReconnect) { return; }
+          if (opt.tomb) {
+            var _tu = peer.url;
+            var _tn = _tu.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+            if (opt.tomb.has(_tu) || opt.tomb.has(_tn) ||
+                opt.tomb.has(_tu.replace(/^https?/, 'ws'))) { return; }
+          }
+          var url = peer.url.replace(/^http/, "ws");
+          peer._isOutbound = true;
+          var wire = (peer.wire = new opt.WebSocket(url));
+          wire.onclose = function () {
+            // Stop keepalive ping for this wire.
+            clearInterval(peer._keepalive);
+            peer._keepalive = null;
+            // Exponential backoff for AXE-dropped outbound peers (closed before HI).
+            // Skip for BOOT peers (_isBoot) — watchdog handles reconnect without tombstoning.
+            if (!peer._isBoot && peer._isOutbound && !peer.met) {
+              peer._axeGuess = (peer._axeGuess || 0) + 1;
+              if (peer._axeGuess >= 5) {
+                peer._noReconnect = true;
+                if (peer.url) { tombAdd(opt, peer.url); }
+              }
+            }
+            // Backoff for peers that accept then quickly close (AXE PID-sort drop).
+            // Skip for BOOT peers — they must always be reconnectable.
+            if (!peer._isBoot && peer._isOutbound && peer.met && peer._openAt &&
+                (+new Date() - peer._openAt) < 8000) {
+              peer._hiGuess = (peer._hiGuess || 0) + 1;
+              if (peer._hiGuess >= 3) {
+                peer._noReconnect = true;
+                if (peer.url) { tombAdd(opt, peer.url); }
+              }
+            }
+            reconnect(peer);
+            opt.mesh.bye(peer);
+          };
+          wire.onerror = function (err) {
+            reconnect(peer);
+          };
+          wire.onopen = function () {
+            clearTimeout(peer.defer);
+            peer.defer = null;
+            peer._openAt = +new Date();
+            peer._axeGuess = 0; // reset on successful open — prevent spurious tombstoning
+            peer._hiGuess = 0;
+            // Keepalive: ping every 30s so idle relay connections don't time out at
+            // network/proxy boundaries (typical idle timeout is ~60s).
+            peer._keepalive = setInterval(function () {
+              if (peer.wire === wire && wire.readyState === 1) {
+                opt.mesh.ping(peer);
+              } else {
+                clearInterval(peer._keepalive);
+                peer._keepalive = null;
+              }
+            }, 30 * 1000);
+            opt.mesh.hi(peer);
+          };
+          wire.onmessage = function (msg) {
+            if (!msg) {
+              return;
+            }
+            opt.mesh.hear(msg.data || msg, peer);
+          };
+          return wire;
+        } catch (e) {
+          opt.mesh.bye(peer);
+        }
+      }
+
+      setTimeout(function () {
+        !opt.super && root.on("out", { dam: "hi" });
+      }, 1); // it can take a while to open a socket, so maybe no longer lazy load for perf reasons?
+
+      var wait = 2 * 999;
+      function canReconnect(peer) {
+        if (!peer || !peer.url || !opt.peers[peer.url] || peer._noReconnect) {
+          return false;
+        }
+        if (opt.tomb) {
+          var _ru = peer.url || "";
+          var _rn = _ru.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+          if (opt.tomb.has(_ru) || opt.tomb.has(_rn) ||
+              opt.tomb.has(_ru.replace(/^https?/, "ws"))) {
+            return false;
+          }
+        }
+        if (doc && peer.retry <= 0) {
+          return false;
+        }
+        return true;
+      }
+      function reconnect(peer) {
+        clearTimeout(peer.defer);
+        peer.defer = null;
+        if (!canReconnect(peer)) {
+          return;
+        }
+        peer.retry =
+          (peer.retry || opt.retry + 1 || 60) -
+          (-peer.tried + (peer.tried = +new Date()) < wait * 4 ? 1 : 0);
+        peer.defer = setTimeout(function to() {
+          if (!canReconnect(peer)) {
+            peer.defer = null;
+            return;
+          }
+          if (doc && doc.hidden) {
+            peer.defer = setTimeout(to, wait);
+            return;
+          }
+          peer.defer = null;
+          open(peer);
+        }, wait);
+      }
+      var doc = "" + u !== typeof document && document;
+    });
+    var noop = function () {},
+      u;
+  });
+
+  defmod('./src/port.js', function(module, exp){
+    var ZEN = reqmod('./src/root.js').default;
+    var __mesh = reqmod('./src/mesh.js').default;
+    var Zen = ZEN;
+    Zen.Mesh = Zen.Mesh || __mesh;
+
+    // zen.attach(port, opts) — wire this graph to another ZEN realm over a
+    // MessagePort-like channel: browser MessagePort, Worker, or Node
+    // worker_threads MessagePort/Worker. Both realms call attach() on their
+    // own end of the channel; the DAM "?" handshake then runs in both
+    // directions exactly as it does for an accepted socket (lib/wire.js).
+    //
+    // Isomorphic contract (the only capabilities used):
+    //   port.postMessage(raw)                      — outbound
+    //   port.on("message", fn)                     — inbound, Node EventEmitter style
+    //   port.addEventListener("message", fn)       — inbound, browser style
+    //   port.start()                               — browser MessagePort only
+    //
+    // Payloads are the mesh's own JSON strings — structured-clone safe.
+    //
+    // opts: { id } — optional stable peer id; omit to let the handshake assign one.
+    // Returns a detach() function that unhooks the listener and says bye,
+    // or null when the chain has no root or the port is unusable.
+    function attach(root, port, opts) {
+      opts = opts || {};
+      if (!root || !port || typeof port.postMessage !== "function") {
+        return null;
+      }
+      var opt = root.opt;
+      var mesh = (opt.mesh = opt.mesh || Zen.Mesh(root));
+
+      var peer = {
+        id: opts.id,
+        wire: port,
+        say: function (raw) {
+          try {
+            port.postMessage(raw);
+          } catch (e) {
+            (peer.queue = peer.queue || []).push(raw);
+          }
+        },
+      };
+
+      function hear(msg) {
+        var raw = msg && msg.data !== undefined ? msg.data : msg;
+        mesh.hear(raw, peer);
+      }
+
+      function bye() {
+        mesh.bye(peer);
+      }
+
+      var node = typeof port.on === "function";
+      if (node) {
+        port.on("message", hear);
+        port.on("close", bye);
+      } else {
+        port.addEventListener("message", hear);
+        if (typeof port.start === "function") {
+          port.start();
+        }
+      }
+
+      mesh.hi(peer);
+
+      return function detach() {
+        if (node) {
+          if (typeof port.off === "function") {
+            port.off("message", hear);
+            port.off("close", bye);
+          }
+        } else {
+          port.removeEventListener("message", hear);
+        }
+        bye();
+      };
+    }
+
+    if (!ZEN.chain.attach) {
+      ZEN.chain.attach = function (port, opts) {
+        var at = this._;
+        var root = at && at.root;
+        return attach(root, port, opts);
+      };
+    }
+
+    exp.default = attach;
+  });
+
+  defmod('./src/locstore.js', function(module, exp){
+    var Zen = reqmod('./src/root.js').default;
+    var jsonAsync = reqmod('./src/json.js').default;
+    var env = (typeof process !== "undefined" && process.env) || {};
+
+    var noop = function () {},
+      store,
+      u;
+    try {
+      store = (Zen.window || noop).localStorage;
+    } catch (e) {}
+    if (!store) {
+      var isTTY = typeof process !== "undefined" && process.stdout && process.stdout.isTTY;
+      if (!env.ZEN_SILENCE_TEST_WARNINGS && (typeof process === "undefined" || isTTY)) {
+        Zen.log("Warning: No localStorage exists to persist data to!");
+      }
+      store = {
+        setItem: function (k, v) {
+          this[k] = v;
+        },
+        removeItem: function (k) {
+          delete this[k];
+        },
+        getItem: function (k) {
+          return this[k];
+        },
+      };
+    }
+
+    var pair = jsonAsync.createJsonPair();
+    var parse = pair.parse;
+    var json = pair.json;
+
+    Zen.on("create", function lg(root) {
+      this.to.next(root);
+      var opt = root.opt,
+        graph = root.graph,
+        acks = [],
+        disk,
+        to,
+        size,
+        stop;
+      if (false === opt.localStorage) {
+        // Memory-only mode: no disk writes but still ack puts so callbacks fire.
+        root.on("put", function (msg) {
+          this.to.next(msg);
+          if (!msg["@"]) {
+            root.on("in", { "@": msg["#"], ok: 1 });
+          }
+        });
+        return;
+      }
+      opt.prefix = opt.file || "zen/";
+      try {
+        disk = lg[opt.prefix] =
+          lg[opt.prefix] || JSON.parse((size = store.getItem(opt.prefix))) || {}; // TODO: Perf! This will block, should we care, since limited to 5MB anyways?
+      } catch (e) {
+        disk = lg[opt.prefix] = {};
+      }
+      size = (size || "").length;
+
+      root.on("get", function (msg) {
+        this.to.next(msg);
+        var lex = msg.get,
+          soul,
+          data,
+          tmp,
+          u;
+        if (!lex || !(soul = lex["#"])) {
+          return;
+        }
+        data = disk[soul] || u;
+        if (data && (tmp = lex["."]) && !Object.plain(tmp)) {
+          // pluck!
+          data = Zen.state.ify({}, tmp, Zen.state.is(data, tmp), data[tmp], soul);
+        }
+        //if(data){ (tmp = {})[soul] = data } // back into a graph.
+        //setTimeout(function(){
+        Zen.on.get.ack(msg, data); //root.on('in', {'@': msg['#'], put: tmp, lS:1});// || root.$});
+        //}, Math.random() * 10); // FOR TESTING PURPOSES!
+      });
+
+      root.on("put", function (msg) {
+        this.to.next(msg); // remember to call next middleware adapter
+        var put = msg.put,
+          soul = put["#"],
+          key = put["."],
+          id = msg["#"],
+          ok = msg.ok || "",
+          tmp; // pull data off wire envelope
+        disk[soul] = Zen.state.ify(disk[soul], key, put[">"], put[":"], soul); // merge into disk object
+        if (stop && size > 4999880) {
+          root.on("in", { "@": id, err: "localStorage max!" });
+          return;
+        }
+        //if(!msg['@']){ acks.push(id) } // then ack any non-ack write. // TODO: use batch id.
+        if (!msg["@"] && (!msg._.via || Math.random() < ok["@"] / ok["/"])) {
+          acks.push(id);
+        } // then ack any non-ack write. // TODO: use batch id.
+        if (to) {
+          return;
+        }
+        to = setTimeout(flush, 9 + size / 333); // 0.1MB = 0.3s, 5MB = 15s
+      });
+      function flush() {
+        if (!acks.length && ((setTimeout.turn || "").s || "").length) {
+          setTimeout(flush, 99);
+          return;
+        } // defer if "busy" && no saves.
+        var err,
+          ack = acks;
+        clearTimeout(to);
+        to = false;
+        acks = [];
+        json(disk, function (err, tmp) {
+          try {
+            !err && store.setItem(opt.prefix, tmp);
+          } catch (e) {
+            err = stop = e || "localStorage failure";
+          }
+          if (err) {
+            Zen.log(
+              err +
+                " Consider using ZEN's IndexedDB plugin for RAD for more storage space, https://zen.eco/docs/RAD#install",
+            );
+            root.on("localStorage:error", { err: err, get: opt.prefix, put: disk });
+          }
+          size = (tmp || "").length;
+
+          //if(!err && !Object.empty(opt.peers)){ return } // only ack if there are no peers. // Switch this to probabilistic mode
+          setTimeout.each(
+            ack,
+            function (id) {
+              root.on("in", { "@": id, err: err, ok: 0 }); // localStorage isn't reliable, so make its `ok` code be a low number.
+            },
+            0,
+            99,
+          );
+        });
+      }
+    });
+  });
+
+  defmod('./src/graph.js', function(module, exp){
+    reqmod('./src/book.js');
+    reqmod('./src/chain.js');
+    reqmod('./src/back.js');
+    reqmod('./src/put.js');
+    reqmod('./src/get.js');
+    reqmod('./src/on.js');
+    reqmod('./src/map.js');
+    reqmod('./src/set.js');
+    reqmod('./src/meta.js');
+    reqmod('./src/mesh.js');
+    reqmod('./src/websocket.js');
+    reqmod('./src/port.js');
+    reqmod('./src/locstore.js');
+    var ZEN = reqmod('./src/root.js').default;
+    function consumeAsyncResult(zen) {
+      var at = zen && zen._,
+        async = at && at.asyncResult,
+        p = async && async.promise;
+      if (!p) {
+        return;
+      }
+      delete at.asyncResult;
+      return p;
+    }
+
+    if (!ZEN.chain.then) {
+      ZEN.chain.then = function (cb, opt) {
+        var zen = this,
+          p = consumeAsyncResult(zen);
+        if (p) {
+          return cb ? p.then(cb) : p;
+        }
+        p = new Promise(function (res) {
+          zen.once(res, opt);
+        });
+        return cb ? p.then(cb) : p;
+      };
+    }
+
+    // zen.push(targetPub, data, opt) — ephemeral targeted relay message.
+    // Routes via DAM multi-hop XOR relay to the peer with matching pub key.
+    // Not persisted, not replicated, no CRDT. Target must be online within TTL hops.
+    // opt: { ttl: number } — max hops (default 5)
+    if (!ZEN.chain.push) {
+      ZEN.chain.push = function (to, data, opt) {
+        var at = this._;
+        var mesh = at && at.root && at.root.opt && at.root.opt.mesh;
+        if (mesh && mesh.relay) {
+          mesh.relay(to, data, opt);
+        }
+        return this;
+      };
+    }
+
+    // zen.mesh — public facade for the mesh subsystem.
+    // Exposes safe, stable APIs only. Internal transport/state is intentionally hidden.
+    //   zen.mesh.on(fn)          subscribe to incoming push messages; fn({from,data}); returns off()
+    //   zen.mesh.near            number of currently connected peers
+    //   zen.mesh.peers           snapshot array of connected peers { pub, url, id }
+    //   zen.mesh.route(pub)      next-hop peer toward pub by XOR distance { pub, url, id } or null
+    //   zen.mesh.xor(a, b)       XOR distance between two pub keys (BigInt), or null
+    //   zen.mesh.closer(t, a, b) return whichever of pub a or b is XOR-closer to target t
+    //   zen.mesh.ping(pub)       send a ping to the peer with matching pub key
+    //   zen.mesh.stats           { msgs, bytes } counters for received messages
+    if (!Object.getOwnPropertyDescriptor(ZEN.chain, 'mesh')) {
+      Object.defineProperty(ZEN.chain, 'mesh', {
+        get: function () {
+          var root = this._ && this._.root;
+          var m = root && root.opt && root.opt.mesh;
+          if (!m) { return null; }
+          var opt = root.opt;
+          return {
+            on: function (fn) { return m.on(fn); },
+            get near() { return m.near || 0; },
+            get peers() {
+              var ps = opt.peers || {}, out = [];
+              for (var k in ps) {
+                var p = ps[k];
+                if (p && p.wire) { out.push({ pub: p.pub || null, url: p.url || null, id: p.id || k }); }
+              }
+              return out;
+            },
+            route: function (pub) {
+              var p = m.route(pub);
+              if (!p) { return null; }
+              return { pub: p.pub || null, url: p.url || null, id: p.id || null };
+            },
+            xor: function (a, b) { return m.xor(a, b); },
+            closer: function (target, a, b) { return m.closer(target, a, b); },
+            ping: function (pub) {
+              var ps = opt.peers || {};
+              for (var k in ps) {
+                var p = ps[k];
+                if (p && p.pub === pub && p.wire) { m.ping(p); return; }
+              }
+            },
+            get stats() {
+              var h = m.hear;
+              return { msgs: (h && h.c) || 0, bytes: (h && h.d) || 0 };
+            },
+          };
+        },
+      });
+    }
+
+    const graph = {
+      core: ZEN,
+      chain: ZEN.chain,
+      create(opt = {}) {
+        return ZEN(opt);
+      },
+      is(value) {
+        return ZEN.is(value);
+      },
+    };
+
+
+    exp.default = graph;
+
+    exp.graph = graph;
+  });
+
+  defmod('./src/bootstrap.js', function(module, exp){
+    // Bootstrap peers are intentionally empty — each relay/client declares its own
+    // peers via PEERS env var or opts.peers. No hardcoded defaults.
+    const BOOT = [];
+
+    // ── Peer URL normalisation ────────────────────────────────────────────────────
+    // Accepts bare hostname, host:port, or any wss?://…/zen URL.
+    // Returns a canonical wss:// (or ws:// for localhost) URL.
+    function normalizePeerUrl(raw) {
+      if (typeof raw !== "string") return null;
+      raw = raw.trim();
+      if (!raw) return null;
+      if (/^wss?:\/\/|^https?:\/\//.test(raw)) return raw; // already has scheme
+      const colonIdx = raw.lastIndexOf(":");
+      let host, port;
+      if (colonIdx > 0) {
+        host = raw.slice(0, colonIdx);
+        port = raw.slice(colonIdx + 1);
+      } else {
+        host = raw;
+        port = "8420";
+      }
+      if (!host) return null;
+      const isLocal = /^(localhost|127\.|::1)/.test(host);
+      return (isLocal ? "ws" : "wss") + "://" + host + ":" + port + "/zen";
+    }
+
+    // ── Well-known peer list fetch ────────────────────────────────────────────────
+    // Fetches /.well-known/peers.json from a relay URL.
+    // Works in both browser and Node.js 18+ (global fetch).
+    // Returns normalised wss:// URL array, or [] on any error.
+    async function wellKnownBootstrap(relayUrl) {
+      if (typeof fetch === "undefined") return [];
+      try {
+        const base = relayUrl
+          .replace(/^wss:\/\//, "https://")
+          .replace(/^ws:\/\//, "http://")
+          .replace(/\/zen\/?$/, "");
+        const url = base + "/.well-known/peers.json";
+        const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
+        const res = await fetch(url, ctrl ? { signal: ctrl.signal } : {});
+        if (timer) clearTimeout(timer);
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data.peers)) return [];
+        return data.peers.map(normalizePeerUrl).filter(Boolean);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function parseFlag(value) {
+      if (typeof value !== "string") return null;
+      const normalized = value.trim().toLowerCase();
+      if (["1", "true", "yes", "on"].includes(normalized)) return true;
+      if (["", "0", "false", "no", "off"].includes(normalized)) return false;
+      return null;
+    }
+
+    function bootstrapDisabled(env = {}) {
+      const noBootstrap = parseFlag(env.NO_BOOTSTRAP);
+      if (noBootstrap !== null) return noBootstrap;
+      const bootstrap = parseFlag(env.BOOTSTRAP);
+      if (bootstrap !== null) return !bootstrap;
+      return false;
+    }
+
+    function mergePeers(...lists) {
+      const merged = [];
+      const seen = new Set();
+      lists.flat().forEach((peer) => {
+        if (typeof peer !== "string") return;
+        const normalized = peer.trim();
+        if (!normalized || seen.has(normalized)) return;
+        seen.add(normalized);
+        merged.push(normalized);
+      });
+      return merged;
+    }
+
+    function resolveBootstrapPeers(configuredPeers = [], opt = {}) {
+      return mergePeers(opt.includeBootstrap === false ? [] : BOOT, configuredPeers);
+    }
+
+    function parsePeerEnv(value) {
+      if (typeof value !== "string") return [];
+      return value
+        .split(",")
+        .map((peer) => peer.trim())
+        .filter(Boolean);
+    }
+
+    function resolveEnvPeers(env = {}) {
+      const configuredPeers = parsePeerEnv(env.PEERS);
+      if (bootstrapDisabled(env)) return configuredPeers;
+      if (configuredPeers.length) return resolveBootstrapPeers(configuredPeers);
+      return undefined;
+    }
+
+
+
+    exp.default = {
+      BOOT,
+      bootstrapDisabled,
+      mergePeers,
+      normalizePeerUrl,
+      parsePeerEnv,
+      resolveBootstrapPeers,
+      resolveEnvPeers,
+      wellKnownBootstrap,
+    };
+
+    exp.BOOT = BOOT;
+    exp.bootstrapDisabled = bootstrapDisabled;
+    exp.mergePeers = mergePeers;
+    exp.normalizePeerUrl = normalizePeerUrl;
+    exp.parsePeerEnv = parsePeerEnv;
+    exp.resolveBootstrapPeers = resolveBootstrapPeers;
+    exp.resolveEnvPeers = resolveEnvPeers;
+    exp.wellKnownBootstrap = wellKnownBootstrap;
+  });
+
+  defmod('./src/axe.js', function(module, exp){
+    var _axeInit = false; // guard against double-registration
+
+    function initAXE(ZEN) {
+      if (_axeInit) return;
+      _axeInit = true;
+    var Zen = ZEN;
+    var u;
+    var __servicePromise;
+
+    function loadService(root) {
+      if (Zen.window || typeof process === "undefined") {
+        return;
+      }
+      __servicePromise = __servicePromise || import("./lib/service.js");
+      __servicePromise.then(
+        function (mod) {
+          var service = mod && (mod.default || mod);
+          if (typeof service === "function") {
+            service(root);
+          }
+        },
+        function () {},
+      );
+    }
+
+    Zen.on("opt", function (at) {
+      start(at);
+      this.to.next(at);
+    }); // make sure to call the "next" middleware adapter.
+    // TODO: BUG: panic test/panic/1 & test/panic/3 fail when AXE is on.
+    function start(root) {
+      if (root.axe) {
+        return;
+      }
+      var opt = root.opt,
+        peers = opt.peers;
+      if (false === opt.axe) {
+        return;
+      }
+      if (false === opt.WebSocket) {
+        return; // in-process / test mode — no real network, skip AXE entirely
+      }
+      var axe = (root.axe = {}),
+        tmp,
+        id;
+      var mesh = (opt.mesh = opt.mesh || Zen.Mesh(root)); // DAM!
+
+      if (Zen.window) {
+        // BROWSER peer discovery — localStorage · WebSocket scan · PEX · BroadcastChannel
+        var w   = Zen.window,
+            lS  = w.localStorage || opt.localStorage || {},
+            loc = w.location || opt.location || {},
+            nav = w.navigator || opt.navigator || {};
+
+        // ── localStorage JSON peer list ───────────────────────────────────────
+        function lsld() {
+          try { return JSON.parse(lS.zenPeers || "[]"); } catch { return []; }
+        }
+        function lssv(urls) {
+          var set = {}, all = lsld();
+          all.concat(urls).forEach(function(u) { if (u && /^wss?:\/\//.test(u)) set[u] = 1; });
+          try { lS.zenPeers = JSON.stringify(Object.keys(set).slice(0, 50)); } catch {}
+        }
+
+        // ── BroadcastChannel — share peers across tabs on same origin ─────────
+        var bc = null;
+        try { bc = new (w.BroadcastChannel || BroadcastChannel)("zen-peers"); } catch {}
+        function bcast(d) { try { if (bc) bc.postMessage(d); } catch {} }
+
+        // ── add peer: connect + save + broadcast + expand scan ────────────────
+        axe.fall = {};
+        function adopt(url) {
+          if (!url || !/^wss?:\/\//.test(url)) return;
+          if (axe.fall[url]) return;
+          axe.fall[url] = { url: url, id: url, retry: 0 };
+          mesh.hi({ id: url, url: url, retry: 9 });
+          lssv([url]);
+          bcast({ type: "peer", url: url });
+        }
+
+        // ── PEX handler: receive peer list from relay ─────────────────────────
+        mesh.hear["pex"] = function(msg) {
+          if (!Array.isArray(msg.peers)) return;
+          msg.peers.forEach(adopt);
+        };
+
+        // ── on connect: fetch /status signed string from relay ─────────────────
+        root.on("hi", function(peer) {
+          this.to.next(peer);
+          if (!peer.url) return;
+          try {
+            var base = peer.url
+              .replace(/^wss:\/\//, "https://")
+              .replace(/^ws:\/\//, "http://")
+              .replace(/\/zen$/, "");
+            var ac = w.AbortController ? new w.AbortController() : null;
+            var tofetch = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
+            fetch(base + "/status", ac ? { signal: ac.signal } : {})
+              .then(function(r) { clearTimeout(tofetch); return r.ok ? r.text() : null; })
+              .then(function(str) {
+                if (!str) return;
+                return Zen.recover(str).then(function(pub) {
+                  return Zen.verify(str, pub);
+                }).then(function(data) {
+                  if (!data) return;
+                  // ZEN.verify auto-parses JSON — data may already be an object
+                  var status = (typeof data === "string") ? JSON.parse(data) : data;
+                  if (status && Array.isArray(status.peers)) status.peers.forEach(adopt);
+                });
+              })
+              .catch(function() { clearTimeout(tofetch); });
+          } catch {}
+        });
+
+        // ── BroadcastChannel inbound: peers from other tabs ───────────────────
+        if (bc) bc.onmessage = function(e) {
+          if (e && e.data && e.data.type === "peer") adopt(e.data.url);
+        };
+
+        // ── on disconnect: fall back to next known peer ───────────────────────
+        root.on("bye", function(peer) {
+          this.to.next(peer);
+          if (!peer.url) return;
+          if (!nav.onLine) { peer.retry = 1; return; }
+          if (peer.retry) return;
+          delete axe.fall[peer.url || peer.id];
+          var fall = Object.keys(axe.fall);
+          if (!fall.length) return;
+          var one = fall[(Math.random() * fall.length) >> 0];
+          if (!peers[one]) mesh.hi(one);
+        });
+
+        // ── stable browser pid — persisted in localStorage, generated once ────
+        if (!opt.pid) {
+          opt.pid = lS.zenPid || String.random(9);
+          try { lS.zenPid = opt.pid; } catch {}
+        }
+
+        // ── bootstrap ─────────────────────────────────────────────────────────
+
+        // helper: convert http(s) origin to ws(s) URL
+        function toWS(origin) {
+          return (origin || "").replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+        }
+
+        // helper: probe /status, verify ZEN signature, then run cb(statusObj)
+        function probeStatus(httpBase, cb) {
+          try {
+            var ac = w.AbortController ? new w.AbortController() : null;
+            var to = ac ? setTimeout(function() { ac.abort(); }, 3000) : null;
+            fetch(httpBase + "/status", ac ? { signal: ac.signal } : {})
+              .then(function(r) { if (to) clearTimeout(to); return r.ok ? r.text() : null; })
+              .then(function(str) {
+                if (!str) return;
+                return Zen.recover(str).then(function(pub) {
+                  return Zen.verify(str, pub);
+                }).then(function(data) {
+                  if (!data) return;
+                  var st = typeof data === "string" ? JSON.parse(data) : data;
+                  cb(st);
+                });
+              })
+              .catch(function() { if (to) clearTimeout(to); });
+          } catch {}
+        }
+
+        // 1. saved peers from previous sessions
+        lsld().forEach(adopt);
+
+        // 2. ?peers= URL param
+        var parg = ((loc.search || "").split("peers=")[1] || "").split("&")[0];
+        if (parg) parg.split(",").forEach(function(u) { u = u.trim(); if (u) adopt(u); });
+
+        // 3. same-origin relay — probe /status first; only connect WS if it speaks ZEN
+        var _o = loc.origin || (loc.protocol + "//" + loc.host);
+        probeStatus(_o, function(st) {
+          adopt(toWS(_o) + "/zen");
+          if (st && Array.isArray(st.peers)) st.peers.forEach(adopt);
+        });
+
+        // 6. volunteer DHT — last resort, only if still not connected after 5s
+        setTimeout(function() {
+          if (Object.keys(axe.up || {}).length) return;
+          var axeUrl = ((loc.search || "").split("axe=")[1] || "").split("&")[0]
+                       || (loc.axe || "");
+          if (!axeUrl) return;
+          try {
+            fetch(axeUrl)
+              .then(function(r) { return r.text(); })
+              .then(function(t) { (t.match(/wss?:\/\/[^\s"'<>]+/g) || []).forEach(adopt); })
+              .catch(function() {});
+          } catch {}
+        }, 5000);
+
+        return;
+      }
+
+      // NODE.JS: relay
+      if (false === opt.WebSocket) {
+        return;
+      }
+      if (
+        typeof process !== "undefined" &&
+        "false" === "" + (opt.env = process.env || "").AXE
+      ) {
+        return;
+      }
+      Zen.log.once("AXE", "AXE relay enabled!");
+      var dup = root.dup;
+
+      mesh.way = function (msg) {
+        if (!msg) { return; }
+        if (msg.get) { return GET(msg); }
+        if (msg.put) { return fall(msg); }
+        if (msg.dam === "rtc") { return rtcway(msg); }
+        fall(msg);
+      };
+
+      // Route dam:"rtc" to the target pid directly; broadcast only if not found locally
+      function rtcway(msg) {
+        var toPid = msg.ok && msg.ok.rtc && msg.ok.rtc.to;
+        if (!toPid) { fall(msg); return; }
+        var peers = opt.peers, p, id;
+        for (id in peers) {
+          p = peers[id];
+          if (p && p.pid === toPid && p.wire) { mesh.say(msg, p); return; }
+        }
+        fall(msg); // target not on this relay — broadcast to relay peers
+      }
+      // mesh.hear dispatches dam messages directly; mesh.way is only called when dam is absent.
+      // Register rtcway so relay properly routes WebRTC signaling (offer/answer/candidate).
+      mesh.hear["rtc"] = rtcway;
+
+      function GET(msg) {
+        if (!msg) {
+          return;
+        }
+        var via = (msg._ || "").via,
+          soul,
+          has,
+          tmp,
+          ref;
+        if (!via || !via.id) {
+          return fall(msg);
+        }
+        // SUBSCRIPTION LOGIC MOVED TO GET'S ACK REPLY.
+        if (!(ref = REF(msg)._)) {
+          return fall(msg);
+        }
+        ref.asked = +new Date();
+        GET.turn(msg, ref.route, 0);
+      }
+      GET.turn = function (msg, route, turn) {
+        var tmp = msg["#"],
+          tag = dup.s[tmp],
+          next;
+        if (!tmp || !tag) {
+          return;
+        } // message timed out
+        clearTimeout(tag.lack);
+        if (tag.ack && (tmp = tag["##"]) && msg["##"] === tmp) {
+          return;
+        } // hashes match, stop asking other peers!
+        // Sort peers by RTT (ascending) so the lowest-latency peer is queried first.
+        // Peers with no RTT data (rtt == 0 or undefined) sort to the end.
+        var keys = Object.maps(route || opt.peers).slice((turn = turn || 0));
+        keys.sort(function(a, b) {
+          var pa = route ? (route.get ? route.get(a) : route[a]) : opt.peers[a];
+          var pb = route ? (route.get ? route.get(b) : route[b]) : opt.peers[b];
+          var ra = (pa && pa.rtt > 0) ? pa.rtt : Infinity;
+          var rb = (pb && pb.rtt > 0) ? pb.rtt : Infinity;
+          if (ra !== rb) return ra - rb;
+          // When broadcasting to all peers, relay peers (in axe.up) go first.
+          if (!route) {
+            var ua = (pa && pa.url) ? 0 : 1;
+            var ub = (pb && pb.url) ? 0 : 1;
+            return ua - ub;
+          }
+          return 0;
+        });
+        next = keys;
+        if (!next.length) {
+          if (!route) {
+            return;
+          } // asked all peers, stop asking!
+          GET.turn(msg, u, 0); // asked all subs, now now ask any peers. (not always the best idea, but stays )
+          return;
+        }
+        setTimeout.each(
+          next,
+          function (id) {
+            var peer = opt.peers[id];
+            turn++;
+            if (!peer || !peer.wire) {
+              route && route.delete(id);
+              return;
+            } // bye! // TODO: CHECK IF 0 OTHER PEERS & UNSUBSCRIBE
+            if (mesh.say(msg, peer) === false) {
+              return;
+            } // was self
+            if (0 == turn % 3) {
+              return 1;
+            }
+          },
+          function () {
+            tag["##"] = msg["##"]; // should probably set this in a more clever manner, do live `in` checks ++ --, etc. but being lazy for now. // TODO: Yes, see `in` TODO, currently this might match against only in-mem cause no other peers reply, which is "fine", but could cause a false positive.
+            tag.lack = setTimeout(function () {
+              GET.turn(msg, route, turn);
+            }, 25);
+          },
+          3,
+        );
+      };
+      function fall(msg) {
+        mesh.say(msg, opt.peers);
+      }
+      function REF(msg) {
+        var ref = "",
+          soul,
+          has,
+          tmp;
+        if (!msg || !msg.get) {
+          return ref;
+        }
+        if ("string" == typeof (soul = msg.get["#"])) {
+          ref = root.$.get(soul);
+        }
+        if ("string" == typeof (tmp = msg.get["."])) {
+          has = tmp;
+        } else {
+          has = "";
+        }
+
+        var via = (msg._ || "").via,
+          sub = via.sub || (via.sub = new Object.Map());
+        (sub.get(soul) || (sub.set(soul, (tmp = new Object.Map())) && tmp)).set(
+          has,
+          1,
+        ); // {soul: {'':1, has: 1}} // TEMPORARILY REVERT AXE TOWER TYING TO SUBSCRIBING TO EVERYTHING. UNDO THIS!
+        via.id &&
+          ref._ &&
+          (ref._.route || (ref._.route = new Object.Map())).set(via.id, via); // SAME AS ^
+
+        return ref;
+      }
+      function LEX(lex) {
+        return (lex = lex || "")["="] || lex["*"] || lex[">"] || lex;
+      }
+
+      root.on("in", function (msg) {
+        var to = this.to,
+          tmp;
+        if ((tmp = msg["@"]) && (tmp = dup.s[tmp])) {
+          tmp.ack = (tmp.ack || 0) + 1; // count remote ACKs to GET. // TODO: If mismatch, should trigger next asks.
+          if (tmp.it && tmp.it.get && msg.put) {
+            // WHEN SEEING A PUT REPLY TO A GET...
+            var get = tmp.it.get || "",
+              ref = REF(tmp.it)._,
+              via = (tmp.it._ || "").via || "",
+              sub;
+            if (via && ref) {
+              // SUBSCRIBE THE PEER WHO ASKED VIA FOR IT:
+              //console.log("SUBSCRIBING", Object.maps(ref.route||''), "to", LEX(get['#']));
+              via.id &&
+                (ref.route || (ref.route = new Object.Map())).set(via.id, via);
+              sub = via.sub || (via.sub = new Object.Map());
+              ref &&
+                (
+                  sub.get(LEX(get["#"])) ||
+                  (sub.set(LEX(get["#"]), (sub = new Object.Map())) && sub)
+                ).set(LEX(get["."]), 1); // {soul: {'':1, has: 1}}
+
+              via = (msg._ || "").via || "";
+              if (via) {
+                // BIDIRECTIONAL SUBSCRIBE: REPLIER IS NOW SUBSCRIBED. DO WE WANT THIS?
+                via.id &&
+                  (ref.route || (ref.route = new Object.Map())).set(via.id, via);
+                sub = via.sub || (via.sub = new Object.Map());
+                if (ref) {
+                  var soul = LEX(get["#"]),
+                    sift = sub.get(soul),
+                    has = LEX(get["."]);
+                  if (has) {
+                    (
+                      sift ||
+                      (sub.set(soul, (sift = new Object.Map())) && sift)
+                    ).set(has, 1);
+                  } else if (!sift) {
+                    sub.set(soul, (sift = new Object.Map()));
+                    sift.set("", 1);
+                  }
+                }
+              }
+            }
+          }
+          if ((tmp = tmp.back)) {
+            // backtrack OKs since AXE splits PUTs up.
+            setTimeout.each(Object.keys(tmp), function (id) {
+              to.next({ "#": msg["#"], "@": id, ok: msg.ok });
+            });
+            return;
+          }
+        }
+        to.next(msg);
+      });
+
+      root.on("create", function (root) {
+        this.to.next(root);
+        var Q = {};
+        root.on("put", function (msg) {
+          var eve = this,
+            at = eve.as,
+            put = msg.put,
+            soul = put["#"],
+            has = put["."],
+            val = put[":"],
+            state = put[">"],
+            q,
+            tmp;
+          eve.to.next(msg);
+          if (msg["@"]) {
+            return;
+          } // acks send existing data, not updates, so no need to resend to others.
+          if (!soul || !has) {
+            return;
+          }
+          var ref = root.$.get(soul)._,
+            route = (ref || "").route;
+          if (!route) {
+            return;
+          }
+          if (ref.skip && ref.skip.has == has) {
+            ref.skip.now = msg["#"];
+            return;
+          }
+          clearTimeout(ref.skip && ref.skip.to); // clear stale timeout before overwriting
+          (ref.skip = { now: msg["#"], has: has }).to = setTimeout(function () {
+            setTimeout.each(Object.maps(route), function (pid) {
+              var peer, tmp;
+              var skip = ref.skip || "";
+              ref.skip = null;
+              if (!(peer = route.get(pid))) {
+                return;
+              }
+              if (!peer.wire) {
+                route.delete(pid);
+                return;
+              } // bye!
+              var sub = (peer.sub || (peer.sub = new Object.Map())).get(soul);
+              if (!sub) {
+                return;
+              }
+              if (!sub.get(has) && !sub.get("")) {
+                return;
+              }
+              var put = peer.put || (peer.put = {});
+              var node = root.graph[soul],
+                tmp;
+              if (node && u !== (tmp = node[has])) {
+                state = state_is(node, has);
+                val = tmp;
+              }
+              put[soul] = state_ify(put[soul], has, state, val, soul);
+              tmp = dup.track((peer.next = peer.next || String.random(9)));
+              (tmp.back || (tmp.back = {}))["" + (skip.now || msg["#"])] = 1;
+              if (peer.to) {
+                return;
+              }
+              peer.to = setTimeout(function () {
+                flush(peer);
+              }, opt.gap);
+            });
+          }, 9);
+        });
+      });
+
+      function flush(peer) {
+        var msg = { "#": peer.next, put: peer.put, ok: { "@": 3, "/": mesh.near } }; // BUG: TODO: sub count!
+        // TODO: what about DAM's >< dedup? Current thinking is, don't use it, however, you could store first msg# & latest msg#, and if here... latest === first then likely it is the same >< thing, so if(firstMsg['><'][peer.id]){ return } don't send.
+        peer.next = peer.put = peer.to = null;
+        mesh.say(msg, peer);
+      }
+      var state_ify = Zen.state.ify,
+        state_is = Zen.state.is;
+
+      {
+        // THIS IS THE UP MODULE;
+        axe.up = {};
+        var hi = mesh.hear["?"]; // lower-level integration with DAM! This is abnormal but helps performance.
+        mesh.hear["?"] = function (msg, peer) {
+          var p; // deduplicate unnecessary connections:
+          hi(msg, peer);
+          if (!peer.pid) {
+            return;
+          }
+          if (peer.pid === opt.pid) {
+            peer._noReconnect = true; // don't retry self-connection
+            mesh.bye(peer);
+            return;
+          } // if I connected to myself, drop.
+          if ((p = axe.up[peer.pid])) {
+            // if we both connected to each other...
+            if (p === peer) {
+              return;
+            } // do nothing if no conflict,
+            var drop, keep;
+            if (!p.url && !peer.url) {
+              // Both inbounds: keep the live entry, do NOT close either wire.
+              if (!p.wire) { axe.up[peer.pid] = peer; }
+              return;
+            }
+            // Use PID sort for ALL directional cases (outbound+inbound or both outbound).
+            // CRITICAL: both relay sides must reach the SAME decision about which physical
+            // connection to close — otherwise each side closes its own outbound and ALL
+            // connections drop. PID sort guarantees cross-relay consistency:
+            //   higher opt.pid side → drops its outbound (keeps inbound from remote)
+            //   lower  opt.pid side → drops its inbound  (keeps outbound to remote)
+            if (opt.pid > peer.pid) {
+              // This relay has the higher PID: drop whichever peer has url (outbound).
+              if (p.url) { drop = p; keep = peer; } else { drop = peer; keep = p; }
+            } else {
+              // This relay has the lower PID: keep whichever peer has url (outbound).
+              if (p.url) { keep = p; drop = peer; } else { keep = peer; drop = p; }
+            }
+            // NOTE: do NOT copy drop.url to keep — inbounds must stay url-less.
+            // Copying url caused axe.stay to save inbound URLs (incl. self-URL),
+            // which then created outbound self-connections on next startup.
+            drop._noReconnect = true; // prevent reconnect cycle on dropped peer's wire.onclose
+            mesh.bye(drop);
+            axe.up[keep.pid] = keep;
+            // If the kept peer is an outbound and has no ping interval yet
+            // (happens when the inbound arrives before the outbound's "?" completes),
+            // start one now to prevent the TCP from going idle and timing out.
+            if (keep.url && mesh.ping && !keep._pingIv) {
+              mesh.ping(keep);
+              var keepIv = setInterval(function () {
+                if (!keep.wire) { clearInterval(keepIv); return; }
+                mesh.ping(keep);
+              }, 30000);
+              keep._pingIv = keepIv;
+            }
+            return;
+          }
+          axe.up[peer.pid] = peer;
+          if (!peer.url) {
+            // Inbound client (browser or inbound relay) — skip axe.stay and ping.
+            // Send PEX so the new client discovers relay URLs and existing browser pids for WebRTC.
+            if (peer.wire) {
+              var pexPeers = [], pexBpids = [];
+              Object.maps(axe.up).forEach(function (pid) {
+                var p = axe.up[pid];
+                if (!p || p === peer || !p.wire) return;
+                if (p.url) pexPeers.push(p.url);
+                else if (p.pid) pexBpids.push(p.pid);
+              });
+              if (pexPeers.length || pexBpids.length) {
+                var pexMsg = { dam: "pex" };
+                if (pexPeers.length) pexMsg.peers = pexPeers;
+                if (pexBpids.length) pexMsg.bpids = pexBpids;
+                mesh.say(pexMsg, peer);
+              }
+              // Notify existing inbound clients about the new peer's pid so they can initiate WebRTC.
+              if (peer.pid) {
+                Object.maps(axe.up).forEach(function (pid) {
+                  var p = axe.up[pid];
+                  if (!p || p === peer || !p.wire || p.url) return;
+                  mesh.say({ dam: "pex", bpids: [peer.pid] }, p);
+                });
+              }
+            }
+            return;
+          }
+          if (axe.stay) {
+            axe.stay();
+          }
+          // Auto-ping on connect so RTT is populated immediately.
+          // Repeat every 30s to keep the rolling average fresh.
+          if (mesh.ping) {
+            mesh.ping(peer);
+            var pinger = setInterval(function () {
+              if (!peer.wire) { clearInterval(pinger); return; }
+              mesh.ping(peer);
+            }, 30000);
+            peer._pingIv = pinger;
+          }
+        };
+
+        // URL normalisation helper: wss→https, ws→http (relay section)
+        var normUrl = function(u) {
+          return u.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+        };
+
+        mesh.hear["opt"] = function (msg, peer) {
+          if (msg.ok) {
+            return;
+          }
+          var tmp = msg.opt;
+          if (!tmp) {
+            return;
+          }
+          tmp = tmp.peers;
+          if (!tmp || "string" != typeof tmp) {
+            return;
+          }
+          if (99 <= Object.keys(axe.up).length) {
+            return;
+          } // 99 TEMPORARILY UNTIL BENCHMARKED!
+          // Normalize protocol: wss→https, ws→http — avoids dual outbound from axe.stay.
+          var normTmp = normUrl(tmp);
+          // Skip self-URL to prevent self-connection loop.
+          if (opt.domain) {
+            try {
+              var urlHost = new (typeof URL !== 'undefined' ? URL : require('url').URL)(normTmp).hostname;
+              if (urlHost === opt.domain) { return; }
+            } catch(e) {}
+          }
+          // Skip if already configured as an outbound peer — prevents duplicate connections
+          // when a remote peer suggests a URL we already have open (e.g. PEX forwarding boot peers).
+          if (opt.peers && opt.peers[normTmp]) { return; }
+          mesh.hi({ id: normTmp, url: normTmp, retry: 9 });
+          if (peer) {
+            mesh.say({ dam: "opt", ok: 1, "@": msg["#"] }, peer);
+          }
+        };
+
+        axe.stay = function () {
+          clearTimeout(axe.stay.to);
+          axe.stay.to = setTimeout(function (tmp, urls) {
+            if (!(tmp = root.stats && root.stats.stay)) {
+              return;
+            }
+            urls = {};
+            Object.keys(axe.up || "").forEach(function (p) {
+              p = (axe.up || "")[p];
+              if (p.url) {
+                // Normalize protocol: wss→https, ws→http — prevents dual outbound on restore.
+                var normP = normUrl(p.url);
+                urls[normP] = {};
+              }
+            });
+            (tmp.axe = tmp.axe || {}).up = urls;
+          }, 1000 * 9); //1000 * 60);
+        };
+        setTimeout(function (tmp) {
+          // In relay mode (opt.super=true), BOOT handles all reconnects — skip axe.stay restore
+          // to prevent redundant connection cycles.
+          if (opt.super) { return; }
+          if (!(tmp = root.stats && root.stats.stay && root.stats.stay.axe)) {
+            return;
+          }
+          if (!(tmp = tmp.up)) {
+            return;
+          }
+          if (!(tmp instanceof Array)) {
+            tmp = Object.keys(tmp);
+          }
+          setTimeout.each(tmp || [], function (url) {
+            mesh.hear.opt({ opt: { peers: url } });
+          });
+        }, 1000);
+      }
+
+      setTimeout(function () {
+        loadService(root);
+      }, 9);
+
+      {
+        // THIS IS THE MOB MODULE;
+        //return; // WORK IN PROGRESS, TEST FINALIZED, NEED TO MAKE STABLE.
+        /*
+    			AXE should have a couple of threshold items...
+    			let's pretend there is a variable max peers connected
+    			mob = 10000
+    			if we get more peers than that...
+    			we should start sending those peers a remote command
+    			that they should connect to this or that other peer
+    			and then once they (or before they do?) drop them from us.
+    			sake of the test... gonna set that peer number to 1.
+    			The mob threshold might be determined by other factors,
+    			like how much RAM or CPU stress we have.
+    		*/
+        opt.mob = opt.mob || parseFloat((opt.env || "").MOB) || 999999; // should be based on ulimit, some clouds as low as 10K.
+
+        // handle rebalancing a mob of peers:
+        root.on("hi", function (peer) {
+          this.to.next(peer);
+          if (peer.url) {
+            return;
+          } // I am assuming that if we are wanting to make an outbound connection to them, that we don't ever want to drop them unless our actual config settings change.
+          var count = /*Object.keys(opt.peers).length ||*/ mesh.near; // TODO: BUG! This is slow, use .near, but near is buggy right now, fix in DAM.
+          //console.log("are we mobbed?", opt.mob, Object.keys(opt.peers).length, mesh.near);
+          if (opt.mob >= count) {
+            return;
+          } // TODO: Make dynamic based on RAM/CPU also. Or possibly even weird stuff like opt.mob / axe.up length?
+          var peers = {};
+          // Prefer dropping peers with the highest RTT first (worst latency).
+          // Collect inbound peers (no url) that could be redirected, sorted worst-first.
+          var candidates = Object.keys(axe.up).map(function (p) { return axe.up[p]; })
+            .filter(function (p) { return !p.url; })
+            .sort(function (a, b) {
+              var ra = (a.rtt !== undefined && a.rtt > 0) ? a.rtt : Infinity;
+              var rb = (b.rtt !== undefined && b.rtt > 0) ? b.rtt : Infinity;
+              return rb - ra; // highest RTT first
+            });
+          Object.keys(axe.up).forEach(function (p) {
+            p = axe.up[p];
+            p.url && (peers[p.url] = {});
+          });
+          // TODO: BUG!!! Infinite reconnection loop happens if not enough relays, or if some are missing. For instance, :8766 says to connect to :8767 which then says to connect to :8766. To not DDoS when system overload, figure clever way to tell peers to retry later, that network does not have enough capacity?
+          var toDrop = candidates[0] || peer; // drop highest-RTT inbound or the new peer
+          mesh.say({ dam: "mob", mob: count, peers: peers }, toDrop);
+          setTimeout(function () {
+            mesh.bye(toDrop);
+          }, 9); // something with better perf?
+        });
+        root.on("bye", function (peer) {
+          this.to.next(peer);
+          // Clear timers/batches retained by this peer after disconnect.
+          if (peer._pingIv) { clearInterval(peer._pingIv); delete peer._pingIv; }
+          if (peer.to) { clearTimeout(peer.to); peer.to = null; }
+          if (peer.defer) { clearTimeout(peer.defer); peer.defer = null; }
+          peer.next = peer.put = null;
+          // Prune dead peer references from per-soul routing tables.
+          if (peer.sub) {
+            Object.maps(peer.sub).forEach(function (soul) {
+              var node = (root.next || "")[soul];
+              var ref = (node && ((node.$ || "")._ || node._)) || "";
+              var route = ref && ref.route;
+              route && route.delete && route.delete(peer.id);
+              peer.sub.delete && peer.sub.delete(soul);
+            });
+            peer.sub = null;
+          }
+          // Clean up axe.up so the next reconnect from this peer is treated fresh.
+          if (peer.pid && axe.up[peer.pid] === peer) { delete axe.up[peer.pid]; }
+        });
+      }
+
+      {
+        var from = Array.from;
+        Object.maps = function (o) {
+          if (from && o instanceof Map) {
+            return from(o.keys());
+          }
+          if (o instanceof Object.Map) {
+            o = o.s;
+          }
+          return Object.keys(o);
+        };
+        if (from) {
+          return (Object.Map = Map);
+        }
+        (Object.Map = function () {
+          this.s = {};
+        }).prototype = {
+          set: function (k, v) {
+            this.s[k] = v;
+            return this;
+          },
+          get: function (k) {
+            return this.s[k];
+          },
+          delete: function (k) {
+            delete this.s[k];
+          },
+        };
+      }
+    }
+    }
+
+    exp.default = initAXE;
+  });
+
+  defmod('./src/index.js', function(module, exp){
+    var PEN = reqmod('./src/pen.js').default;
+    var settings = reqmod('./src/settings.js').default;
+    var pair = reqmod('./src/pair.js').default;
+    var sign = reqmod('./src/sign.js').default;
+    var verify = reqmod('./src/verify.js').default;
+    var encrypt = reqmod('./src/encrypt.js').default;
+    var decrypt = reqmod('./src/decrypt.js').default;
+    var secret = reqmod('./src/secret.js').default;
+    var shim = reqmod('./src/shim.js').default;
+    var hash = reqmod('./src/hash.js').default;
+    var certify = reqmod('./src/certify.js').default;
+    var keyid = reqmod('./src/keyid.js').default;
+    var recover = reqmod('./src/recover.js').default;
+    var security = reqmod('./src/security.js').default;
+    var graph = reqmod('./src/graph.js').default;
+    var { BOOT } = reqmod('./src/bootstrap.js');
+    var hasOwn = Object.prototype.hasOwnProperty;
+    var STATIC_SKIP = { length: 1, name: 1, prototype: 1 };
+    var CHAIN_SKIP = { constructor: 1 };
+    async function finalizeSigned(result, opt, cb) {
+      try {
+        if (!(opt || {}).raw) {
+          result = await shim.stringify(result);
+        }
+        if (cb) {
+          try {
+            cb(result);
+          } catch (e) {
+            console.log(e);
+          }
+        }
+        return result;
+      } catch (e) {
+        return result;
+      }
+    }
+    function mirrorStatics(target, source) {
+      Object.getOwnPropertyNames(source).forEach(function (name) {
+        if (STATIC_SKIP[name] || hasOwn.call(target, name)) {
+          return;
+        }
+        var desc = Object.getOwnPropertyDescriptor(source, name);
+        if (!desc) {
+          return;
+        }
+        Object.defineProperty(target, name, desc);
+      });
+    }
+
+    function mirrorMethods(target, source, pick) {
+      Object.getOwnPropertyNames(source).forEach(function (name) {
+        if ((pick && !pick(name)) || hasOwn.call(target, name)) {
+          return;
+        }
+        var desc = Object.getOwnPropertyDescriptor(source, name);
+        if (!desc || "function" !== typeof desc.value) {
+          return;
+        }
+        Object.defineProperty(target, name, {
+          configurable: true,
+          writable: true,
+          value: function (...args) {
+            return this.constructor[name](...args);
+          },
+        });
+      });
+    }
+
+    function mirrorChain(target, source) {
+      Object.getOwnPropertyNames(source).forEach(function (name) {
+        if (CHAIN_SKIP[name] || hasOwn.call(target, name)) {
+          return;
+        }
+        var desc = Object.getOwnPropertyDescriptor(source, name);
+        if (!desc || "function" !== typeof desc.value) {
+          return;
+        }
+        Object.defineProperty(target, name, {
+          configurable: true,
+          writable: true,
+          value: function (...args) {
+            return this._graph[name](...args);
+          },
+        });
+      });
+    }
+
+    class ZEN {
+      constructor(opt = {}) {
+        this._opt = opt;
+        // Auto-connect to bootstrap peers unless caller explicitly provides peers
+        if (opt.peers === undefined) {
+          opt.peers = BOOT.slice();
+        }
+        this._graphInstance = opt.graph || graph.create(opt);
+      }
+
+      static pen(spec = {}) {
+        return PEN.pen(spec);
+      }
+      static candle(opts = {}) {
+        return PEN.candle(opts);
+      }
+      static pair(...args) {
+        return pair(...args);
+      }
+      static async sign(data, pairLike, cb, opt) {
+        opt = opt || {};
+        if (data === undefined) {
+          throw new Error("`undefined` not allowed.");
+        }
+        var parsed = await settings.parse(data);
+        var check = (opt.check = opt.check || parsed);
+        if (
+          typeof pairLike !== "function" &&
+          (settings.check(check) || (check && check.s && check.m))
+        ) {
+          try {
+            if (undefined !== (await verify(check, pairLike))) {
+              return finalizeSigned(data, { raw: true }, cb);
+            }
+          } catch (e) {}
+        }
+        if (typeof pairLike === "function") {
+          var signed = await pairLike(data);
+          if (signed && signed.authenticatorData) {
+            return finalizeSigned(
+              {
+                m: parsed,
+                s: signed.signature
+                  ? shim.Buffer.from(signed.signature, "binary").toString(
+                      opt.encode || "base64",
+                    )
+                  : undefined,
+                a: shim.Buffer.from(signed.authenticatorData, "binary").toString(
+                  "base64",
+                ),
+                c: shim.Buffer.from(signed.clientDataJSON, "binary").toString(
+                  "base64",
+                ),
+              },
+              opt,
+              cb,
+            );
+          }
+          return finalizeSigned(
+            {
+              m: parsed,
+              s:
+                typeof signed === "string"
+                  ? signed
+                  : signed && signed.signature
+                    ? shim.Buffer.from(signed.signature, "binary").toString(
+                        opt.encode || "base64",
+                      )
+                    : undefined,
+            },
+            opt,
+            cb,
+          );
+        }
+        return sign(data, pairLike, cb, opt);
+      }
+      static verify(...args) {
+        return verify(...args);
+      }
+      static encrypt(...args) {
+        return encrypt(...args);
+      }
+      static decrypt(...args) {
+        return decrypt(...args);
+      }
+      static secret(...args) {
+        return secret(...args);
+      }
+      static hash(...args) {
+        return hash(...args);
+      }
+      static certify(...args) {
+        return certify(...args);
+      }
+      static recover(...args) {
+        return recover(...args);
+      }
+
+      get _graph() {
+        return this._graphInstance;
+      }
+
+      get ready() {
+        return PEN.ready;
+      }
+
+      use(runtime) {
+        this._graphInstance = runtime;
+        return this;
+      }
+
+      chain() {
+        return this._graph;
+      }
+      pen(spec = {}) {
+        return this.constructor.pen(spec);
+      }
+      candle(opts = {}) {
+        return this.constructor.candle(opts);
+      }
+      pair(...args) {
+        return this.constructor.pair(...args);
+      }
+      sign(...args) {
+        return this.constructor.sign(...args);
+      }
+      verify(...args) {
+        return this.constructor.verify(...args);
+      }
+      encrypt(...args) {
+        return this.constructor.encrypt(...args);
+      }
+      decrypt(...args) {
+        return this.constructor.decrypt(...args);
+      }
+      secret(...args) {
+        return this.constructor.secret(...args);
+      }
+      hash(...args) {
+        return this.constructor.hash(...args);
+      }
+      certify(...args) {
+        return this.constructor.certify(...args);
+      }
+      recover(...args) {
+        return this.constructor.recover(...args);
+      }
+
+      get(...args) {
+        return this._graph.get(...args);
+      }
+      put(...args) {
+        return this._graph.put(...args);
+      }
+      on(...args) {
+        return this._graph.on(...args);
+      }
+      once(...args) {
+        return this._graph.once(...args);
+      }
+      map(...args) {
+        return this._graph.map(...args);
+      }
+      set(...args) {
+        return this._graph.set(...args);
+      }
+      back(...args) {
+        return this._graph.back(...args);
+      }
+      get mesh() {
+        return this._graph.mesh;
+      }
+    }
+
+    mirrorStatics(ZEN, graph.core);
+    mirrorStatics(ZEN, PEN);
+    mirrorMethods(ZEN.prototype, PEN, function (name) {
+      return !CHAIN_SKIP[name];
+    });
+    mirrorChain(ZEN.prototype, graph.chain);
+
+    ZEN.Buffer = shim.Buffer;
+    ZEN.random = shim.random;
+    ZEN.TextEncoder = shim.TextEncoder;
+    ZEN.TextDecoder = shim.TextDecoder;
+    ZEN.keyid = keyid;
+    ZEN.graph = graph;
+    ZEN.security = security;
+    ZEN.check = security.check;
+    ZEN.opt = security.opt;
+    var initAXE = reqmod('./src/axe.js').default;
+    initAXE(ZEN);
+
+
+    exp.default = ZEN;
+
+    exp.ZEN = ZEN;
+  });
+
+  const zenmod = reqmod('./src/index.js');
+  const ZEN = zenmod.default;
+
+  exp.default = ZEN;
+  exp.ZEN = ZEN;
+});
+
 defmod('./lib/chains/evm.js', function(module, exp){
   /**
    * lib/chains/evm.js — EVM chain adapter for ZEN
@@ -13,16 +10120,19 @@ defmod('./lib/chains/evm.js', function(module, exp){
    * Drop-in replacement for ethers.js connector in akao.
    * Reuses ZEN's secp256k1 + keccak256 WASM primitives. Zero external deps.
    *
+   * Byte utilities (hexToBytes, bytesToHex, bigIntToBytes, bytesToBigInt, concatBytes)
+   * are re-implemented locally — identical to src/curves/utils.js internals — because
+   * lib/ modules do not import from src/ (only from zen.js public API). This is the
+   * accepted tradeoff for a fully standalone module. If ZEN ever exposes these as
+   * public API, they should be removed here in favour of ZEN.hexToBytes etc.
+   *
    * Migration note from ethers:
    *   - contract.interface.encodeFunctionData() now returns a Promise (keccak is async).
    *     Callers must `await` it.
    *   - new Wallet(priv) sets .address asynchronously; await wallet._ready before
    *     accessing .address, or use await Wallet.create(priv).
    */
-
-  import keccak256 from "../../src/keccak256.js"
-  import secp256k1 from "../../src/curves/secp256k1.js"
-
+  var ZEN = reqmod('./zen.js').default;
   // ─── Byte utilities ───────────────────────────────────────────────────────────
 
   function hexToBytes(hex) {
@@ -63,15 +10173,14 @@ defmod('./lib/chains/evm.js', function(module, exp){
   }
 
   function strToBytes(str) {
-      return new TextEncoder().encode(str)
+      return new ZEN.TextEncoder().encode(str)
   }
 
   // ─── Address utilities ────────────────────────────────────────────────────────
 
   async function checksumAddress(addr) {
       const hex = (addr.startsWith("0x") ? addr.slice(2) : addr).toLowerCase().padStart(40, "0")
-      const hash = await keccak256(strToBytes(hex))
-      const hashHex = bytesToHex(hash, false)
+      const hashHex = await ZEN.hash(strToBytes(hex), null, null, {name: "keccak256", encode: "hex", input: "raw"})
       let out = "0x"
       for (let i = 0; i < 40; i++) out += parseInt(hashHex[i], 16) >= 8 ? hex[i].toUpperCase() : hex[i]
       return out
@@ -83,17 +10192,228 @@ defmod('./lib/chains/evm.js', function(module, exp){
   }
 
   async function privateToAddress(privHex) {
-      const priv = secp256k1.parseScalar(privHex)
-      const pub = secp256k1.pointMultiplyG(priv)
-      const raw = new Uint8Array(64)
-      raw.set(secp256k1.bigIntToBytes(pub.x, 32), 0)
-      raw.set(secp256k1.bigIntToBytes(pub.y, 32), 32)
-      const hash = await keccak256(raw)
-      return checksumAddress(bytesToHex(hash.slice(-20)))
+      const pair = await ZEN.pair(null, {priv: privHex, format: "evm"})
+      return pair.address
   }
 
   function isAddress(str) {
       return typeof str === "string" && /^0x[0-9a-fA-F]{40}$/.test(str)
+  }
+
+  // ─── Tier 1 utilities ─────────────────────────────────────────────────────────
+
+  async function _keccak256(data) {
+      const bytes = typeof data === "string" ? hexToBytes(data) : data
+      return "0x" + await ZEN.hash(bytes, null, null, {name: "keccak256", encode: "hex", input: "raw"})
+  }
+
+  function _parseWordBits(type, kind) {
+      if (type === kind) return 256
+      const m = new RegExp("^" + kind + "(\\d+)$").exec(type)
+      if (!m) return null
+      const bits = Number(m[1])
+      if (bits < 8 || bits > 256 || bits % 8 !== 0) throw new Error("Invalid Solidity type: " + type)
+      return bits
+  }
+
+  function _twosComplementBytes(value, bits) {
+      let n = typeof value === "bigint" ? value : BigInt(value)
+      const max = 1n << BigInt(bits)
+      if (n < 0n) n = max + n
+      return bigIntToBytes(n & (max - 1n), bits / 8)
+  }
+
+  function solidityPacked(types, values) {
+      if (!Array.isArray(types) || !Array.isArray(values) || types.length !== values.length)
+          throw new Error("solidityPacked: types and values length mismatch")
+      const parts = types.map((type, i) => {
+          const value = values[i]
+          if (type === "address") {
+              const bytes = hexToBytes(String(value).toLowerCase())
+              if (bytes.length !== 20) throw new Error("solidityPacked: address must be 20 bytes")
+              return bytes
+          }
+          if (type === "bool") return new Uint8Array([value ? 1 : 0])
+          if (type === "string") return strToBytes(String(value))
+          if (type === "bytes") return typeof value === "string" ? hexToBytes(value) : value
+          const bytesN = /^bytes(\d+)$/.exec(type)
+          if (bytesN) {
+              const size = Number(bytesN[1])
+              if (size < 1 || size > 32) throw new Error("solidityPacked: invalid bytesN type " + type)
+              const bytes = typeof value === "string" ? hexToBytes(value) : value
+              if (bytes.length > size) throw new Error("solidityPacked: value too large for " + type)
+              const out = new Uint8Array(size)
+              out.set(bytes.slice(0, size), 0)
+              return out
+          }
+          const uintBits = _parseWordBits(type, "uint")
+          if (uintBits != null) return bigIntToBytes(BigInt(value), uintBits / 8)
+          const intBits = _parseWordBits(type, "int")
+          if (intBits != null) return _twosComplementBytes(value, intBits)
+          throw new Error("solidityPacked: unsupported type " + type)
+      })
+      return bytesToHex(concatBytes(...parts))
+  }
+
+  async function solidityPackedKeccak256(types, values) {
+      return _keccak256(solidityPacked(types, values))
+  }
+
+  async function getCreate2Address(factory, salt, initCodeHash) {
+      const factoryBytes = hexToBytes(factory)
+      const saltBytes = typeof salt === "bigint" ? bigIntToBytes(salt, 32) : hexToBytes(salt)
+      const initCodeHashBytes = hexToBytes(initCodeHash)
+      if (factoryBytes.length !== 20) throw new Error("getCreate2Address: factory must be 20 bytes")
+      if (saltBytes.length !== 32) throw new Error("getCreate2Address: salt must be 32 bytes")
+      if (initCodeHashBytes.length !== 32) throw new Error("getCreate2Address: initCodeHash must be 32 bytes")
+      const hash = await _keccak256(concatBytes(new Uint8Array([0xff]), factoryBytes, saltBytes, initCodeHashBytes))
+      return checksumAddress("0x" + hash.slice(-40))
+  }
+
+  function _enrichBlock(block) {
+      if (!block || block.timestamp == null) return block
+      const ts = typeof block.timestamp === "string" ? parseInt(block.timestamp, 16) : Number(block.timestamp)
+      block.date = new Date(ts * 1000)
+      return block
+  }
+
+  // ─── Human-readable ABI parser ─────────────────────────────────────────────
+
+  function _extractParenContent(str) {
+      const start = str.indexOf("(")
+      if (start === -1) throw new Error("Expected '('")
+      let depth = 0
+      for (let i = start; i < str.length; i++) {
+          const ch = str[i]
+          if (ch === "(") depth++
+          else if (ch === ")") {
+              depth--
+              if (depth === 0) return [str.slice(start + 1, i), str.slice(i + 1)]
+          }
+      }
+      throw new Error("Unbalanced parentheses: " + str)
+  }
+
+  function _splitTopLevel(str) {
+      const out = []
+      let cur = ""
+      let paren = 0
+      let bracket = 0
+      for (const ch of str) {
+          if (ch === "," && paren === 0 && bracket === 0) {
+              if (cur.trim()) out.push(cur.trim())
+              cur = ""
+              continue
+          }
+          if (ch === "(") paren++
+          else if (ch === ")") paren--
+          else if (ch === "[") bracket++
+          else if (ch === "]") bracket--
+          cur += ch
+      }
+      if (cur.trim()) out.push(cur.trim())
+      return out
+  }
+
+  function _parseType(typeStr) {
+      const src = String(typeStr || "").trim()
+      if (!src) return { type: "" }
+      if (src.startsWith("(")) {
+          const [inner, rest] = _extractParenContent(src)
+          const components = _splitTopLevel(inner).map(_parseParam)
+          return { type: "tuple" + rest.trim(), components }
+      }
+      return { type: src }
+  }
+
+  function _parseParam(str) {
+      const src = String(str || "").trim()
+      if (!src) return { name: "", type: "" }
+      if (src.startsWith("(")) {
+          const [inner, rest0] = _extractParenContent(src)
+          let rest = rest0.trim()
+          let suffix = ""
+          while (rest.startsWith("[")) {
+              const end = rest.indexOf("]")
+              if (end === -1) throw new Error("Unbalanced brackets: " + src)
+              suffix += rest.slice(0, end + 1)
+              rest = rest.slice(end + 1).trim()
+          }
+          const tokens = rest ? rest.split(/\s+/).filter(Boolean) : []
+          const indexed = tokens[0] === "indexed"
+          const name = indexed ? (tokens[1] || "") : (tokens[0] || "")
+          const typeInfo = _parseType("(" + inner + ")" + suffix)
+          const out = { name, type: typeInfo.type }
+          if (typeInfo.components) out.components = typeInfo.components
+          if (indexed) out.indexed = true
+          return out
+      }
+      const tokens = src.split(/\s+/).filter(Boolean)
+      const typeInfo = _parseType(tokens.shift() || "")
+      const indexed = tokens[0] === "indexed"
+      if (indexed) tokens.shift()
+      const name = tokens.join(" ")
+      const out = { name, type: typeInfo.type }
+      if (typeInfo.components) out.components = typeInfo.components
+      if (indexed) out.indexed = true
+      return out
+  }
+
+  function parseAbiItem(sig) {
+      const src = String(sig || "").trim().replace(/;$/, "")
+      if (!src) throw new Error("parseAbiItem: empty signature")
+      if (!/^(function|event|error|constructor|receive|fallback)\b/.test(src)) {
+          return parseAbiItem("function " + src)
+      }
+      if (src.startsWith("function ")) {
+          const rest = src.slice(9).trim()
+          const name = rest.slice(0, rest.indexOf("(")).trim()
+          const [inputsRaw, afterInputs0] = _extractParenContent(rest.slice(name.length))
+          const inputs = inputsRaw.trim() ? _splitTopLevel(inputsRaw).map(_parseParam) : []
+          const afterInputs = afterInputs0.trim()
+          let outputs = []
+          const returnsIdx = afterInputs.indexOf("returns")
+          if (returnsIdx !== -1) {
+              const afterReturns = afterInputs.slice(returnsIdx + 7).trim()
+              const [outputsRaw] = _extractParenContent(afterReturns)
+              outputs = outputsRaw.trim() ? _splitTopLevel(outputsRaw).map(_parseParam) : []
+          }
+          let stateMutability = "nonpayable"
+          if (/\bview\b/.test(afterInputs)) stateMutability = "view"
+          else if (/\bpure\b/.test(afterInputs)) stateMutability = "pure"
+          else if (/\bpayable\b/.test(afterInputs)) stateMutability = "payable"
+          return { type: "function", name, inputs, outputs, stateMutability }
+      }
+      if (src.startsWith("event ")) {
+          const rest = src.slice(6).trim()
+          const name = rest.slice(0, rest.indexOf("(")).trim()
+          const [inputsRaw, afterInputs] = _extractParenContent(rest.slice(name.length))
+          const inputs = inputsRaw.trim() ? _splitTopLevel(inputsRaw).map(_parseParam) : []
+          const out = { type: "event", name, inputs }
+          if (/\banonymous\b/.test(afterInputs)) out.anonymous = true
+          return out
+      }
+      if (src.startsWith("error ")) {
+          const rest = src.slice(6).trim()
+          const name = rest.slice(0, rest.indexOf("(")).trim()
+          const [inputsRaw] = _extractParenContent(rest.slice(name.length))
+          const inputs = inputsRaw.trim() ? _splitTopLevel(inputsRaw).map(_parseParam) : []
+          return { type: "error", name, inputs }
+      }
+      if (src.startsWith("constructor")) {
+          const [inputsRaw, afterInputs] = _extractParenContent(src.slice("constructor".length))
+          const inputs = inputsRaw.trim() ? _splitTopLevel(inputsRaw).map(_parseParam) : []
+          return { type: "constructor", inputs, stateMutability: /\bpayable\b/.test(afterInputs) ? "payable" : "nonpayable" }
+      }
+      if (src.startsWith("receive")) return { type: "receive", stateMutability: /\bpayable\b/.test(src) ? "payable" : "nonpayable" }
+      if (src.startsWith("fallback")) return { type: "fallback", stateMutability: /\bpayable\b/.test(src) ? "payable" : "nonpayable" }
+      throw new Error("parseAbiItem: unsupported signature " + sig)
+  }
+
+  function parseAbi(abi) {
+      if (typeof abi === "string") return [parseAbiItem(abi.trim())]
+      if (!Array.isArray(abi)) return abi
+      return abi.map(item => typeof item === "string" ? parseAbiItem(item.trim()) : item)
   }
 
   // ─── RLP encoder ─────────────────────────────────────────────────────────────
@@ -125,19 +10445,43 @@ defmod('./lib/chains/evm.js', function(module, exp){
 
   // ─── ABI encoder / decoder ────────────────────────────────────────────────────
 
-  // Whether a type requires a dynamic (offset+data) slot
-  function isDynamicType(type) {
+  function _parseArrayType(type) {
+      const m = /^(.*)\[(.*?)\]$/.exec(type || "")
+      if (!m) return null
+      return { baseType: m[1], length: m[2] === "" ? null : Number(m[2]) }
+  }
+
+  function _isTupleType(type) {
+      return /^tuple(\[[0-9]*\])*$/.test(type || "")
+  }
+
+  function _staticWords(type, components) {
+      if (!type) return 1
+      const arr = _parseArrayType(type)
+      if (arr) {
+          if (arr.length == null) return 1
+          if (isDynamicType(arr.baseType, components)) return 1
+          return arr.length * _staticWords(arr.baseType, components)
+      }
+      if (_isTupleType(type)) {
+          if (isDynamicType(type, components)) return 1
+          return (components || []).reduce((sum, c) => sum + _staticWords(c.type, c.components), 0)
+      }
+      return 1
+  }
+
+  function isDynamicType(type, components) {
       if (!type) return false
       if (type === "bytes" || type === "string") return true
-      if (type.endsWith("[]")) return true     // unbounded dynamic array
-      // fixed arrays, tuples: static
+      const arr = _parseArrayType(type)
+      if (arr) return arr.length === null || isDynamicType(arr.baseType, components)
+      if (_isTupleType(type)) return (components || []).some(c => isDynamicType(c.type, c.components))
       return false
   }
 
-  // Encode one static value → 32-byte slot
   function encodeStatic(type, value) {
       if (type === "address") {
-          const bytes = hexToBytes(value)        // accept "0x..." or raw hex
+          const bytes = hexToBytes(value)
           const slot = new Uint8Array(32)
           slot.set(bytes.slice(-20), 12)
           return slot
@@ -147,12 +10491,9 @@ defmod('./lib/chains/evm.js', function(module, exp){
           slot[31] = value ? 1 : 0
           return slot
       }
-      if (type.startsWith("uint") || type.startsWith("int")) {
+      if (type.startsWith("uint") || type === "uint" || type.startsWith("int") || type === "int") {
           let n = typeof value === "bigint" ? value : BigInt(value.toString())
-          if (n < 0n) {
-              // 2's complement — ABI sign-extends to 256 bits
-              n = (1n << 256n) + n
-          }
+          if (n < 0n) n = (1n << 256n) + n
           return bigIntToBytes(n & ((1n << 256n) - 1n), 32)
       }
       if (type === "bytes32" || /^bytes\d+$/.test(type)) {
@@ -164,8 +10505,13 @@ defmod('./lib/chains/evm.js', function(module, exp){
       throw new Error("ABI encode: unsupported static type: " + type)
   }
 
-  // Encode one dynamic value → byte blob (length prefix + padded data)
-  function encodeDynamic(type, value) {
+  function _normalizeArrayValue(value) {
+      if (Array.isArray(value)) return value
+      if (value == null) return []
+      return Array.from(value)
+  }
+
+  function encodeDynamic(type, value, components) {
       if (type === "bytes") {
           const bytes = typeof value === "string" ? hexToBytes(value) : value
           const lenSlot = bigIntToBytes(BigInt(bytes.length), 32)
@@ -180,37 +10526,54 @@ defmod('./lib/chains/evm.js', function(module, exp){
           padded.set(bytes)
           return concatBytes(lenSlot, padded)
       }
-      if (type.endsWith("[]")) {
-          const elemType = type.slice(0, -2)
-          const arr = Array.isArray(value) ? value : Array.from(value)
-          const lenSlot = bigIntToBytes(BigInt(arr.length), 32)
-          const elems = arr.map(v => encodeStatic(elemType, v))
-          return concatBytes(lenSlot, ...elems)
+      const arr = _parseArrayType(type)
+      if (arr) {
+          const values = _normalizeArrayValue(value)
+          if (arr.length != null && values.length !== arr.length)
+              throw new Error("ABI encode: array length mismatch for " + type)
+          const encoded = encodeParams(values.map(v => ({ type: arr.baseType, value: v, components })))
+          return arr.length == null
+              ? concatBytes(bigIntToBytes(BigInt(values.length), 32), encoded)
+              : encoded
       }
       throw new Error("ABI encode: unsupported dynamic type: " + type)
   }
 
-  // Encode an ordered list of (type, value, components?) params → bytes
-  // Handles: static types, dynamic types, inline tuples (all-static components)
   function encodeParams(params) {
-      const N = params.length
-      const headParts = new Array(N)
+      const headWords = params.reduce((sum, p) => sum + _staticWords(p.type, p.components), 0)
+      const headParts = new Array(params.length)
       const tailParts = []
-      let tailOffset = N * 32
+      let tailOffset = headWords * 32
 
-      for (let i = 0; i < N; i++) {
+      for (let i = 0; i < params.length; i++) {
           const { type, value, components } = params[i]
-          if (type === "tuple") {
-              // All-static tuple: encode components inline into the head
+          const arr = _parseArrayType(type)
+          if (_isTupleType(type) && !arr) {
               const comp = (components || []).map((c, j) => ({
                   type: c.type,
-                  value: Array.isArray(value) ? value[j] : value[c.name],
+                  value: Array.isArray(value) ? value[j] : value?.[c.name],
                   components: c.components
               }))
-              headParts[i] = encodeParams(comp)
-          } else if (isDynamicType(type)) {
+              const tupleData = encodeParams(comp)
+              if (isDynamicType(type, components)) {
+                  headParts[i] = bigIntToBytes(BigInt(tailOffset), 32)
+                  tailParts.push(tupleData)
+                  tailOffset += tupleData.length
+              } else {
+                  headParts[i] = tupleData
+              }
+          } else if (arr) {
+              const data = encodeDynamic(type, value, components)
+              if (isDynamicType(type, components)) {
+                  headParts[i] = bigIntToBytes(BigInt(tailOffset), 32)
+                  tailParts.push(data)
+                  tailOffset += data.length
+              } else {
+                  headParts[i] = data
+              }
+          } else if (isDynamicType(type, components)) {
               headParts[i] = bigIntToBytes(BigInt(tailOffset), 32)
-              const tail = encodeDynamic(type, value)
+              const tail = encodeDynamic(type, value, components)
               tailParts.push(tail)
               tailOffset += tail.length
           } else {
@@ -220,22 +10583,19 @@ defmod('./lib/chains/evm.js', function(module, exp){
       return concatBytes(...headParts, ...tailParts)
   }
 
-  // Build canonical function signature string from ABI entry
-  // e.g. { name: "transfer", inputs: [{ type: "address" }, { type: "uint256" }] }
-  //   → "transfer(address,uint256)"
+  function _canonicalType(inp) {
+      const m = /^tuple((\[[0-9]*\])*)$/.exec(inp.type)
+      if (!m) return inp.type
+      return "(" + (inp.components || []).map(_canonicalType).join(",") + ")" + (m[1] || "")
+  }
+
   function buildSig(abiFunc) {
-      const types = abiFunc.inputs.map(inp => {
-          if (inp.type === "tuple") {
-              return "(" + inp.components.map(c => c.type).join(",") + ")"
-          }
-          return inp.type
-      })
+      const types = abiFunc.inputs.map(_canonicalType)
       return abiFunc.name + "(" + types.join(",") + ")"
   }
 
-  // Build calldata: 4-byte selector + encoded params
   async function buildCalldata(sig, inputs, values) {
-      const sel = (await keccak256(strToBytes(sig))).slice(0, 4)
+      const sel = hexToBytes(await _keccak256(strToBytes(sig))).slice(0, 4)
       if (!inputs || !inputs.length) return bytesToHex(sel)
       const params = inputs.map((inp, i) => ({
           type: inp.type,
@@ -245,80 +10605,90 @@ defmod('./lib/chains/evm.js', function(module, exp){
       return bytesToHex(concatBytes(sel, encodeParams(params)))
   }
 
-  // Decode a single ABI value from data at offset
   function decodeSingle(type, bytes, offset) {
-      // Check array types first — before uint/int prefix checks
-      if (type.endsWith("[]")) {
-          const elemType = type.slice(0, -2)
-          const ptr = Number(bytesToBigInt(bytes.slice(offset, offset + 32)))
-          const len = Number(bytesToBigInt(bytes.slice(ptr, ptr + 32)))
-          const arr = []
-          for (let i = 0; i < len; i++) {
-              arr.push(decodeSingle(elemType, bytes, ptr + 32 + i * 32))
-          }
-          return arr
-      }
-      if (type === "address") {
-          const slot = bytes.slice(offset, offset + 32)
-          return addressFromSlot(slot)
-      }
-      if (type === "bool") {
-          return bytes[offset + 31] !== 0
-      }
-      if (type.startsWith("uint")) {
-          return bytesToBigInt(bytes.slice(offset, offset + 32))
-      }
-      if (type.startsWith("int")) {
-          // ABI sign-extends all intN to 256 bits
+      if (type === "address") return addressFromSlot(bytes.slice(offset, offset + 32))
+      if (type === "bool") return bytes[offset + 31] !== 0
+      if (type.startsWith("uint") || type === "uint") return bytesToBigInt(bytes.slice(offset, offset + 32))
+      if (type.startsWith("int") || type === "int") {
           const n = bytesToBigInt(bytes.slice(offset, offset + 32))
           return n >= (1n << 255n) ? n - (1n << 256n) : n
       }
-      if (type === "bytes32" || /^bytes\d+$/.test(type)) {
-          return bytesToHex(bytes.slice(offset, offset + 32))
-      }
+      if (type === "bytes32" || /^bytes\d+$/.test(type)) return bytesToHex(bytes.slice(offset, offset + 32))
       if (type === "bytes" || type === "string") {
           const ptr = Number(bytesToBigInt(bytes.slice(offset, offset + 32)))
           const len = Number(bytesToBigInt(bytes.slice(ptr, ptr + 32)))
           const raw = bytes.slice(ptr + 32, ptr + 32 + len)
-          return type === "string" ? new TextDecoder().decode(raw) : bytesToHex(raw)
+          return type === "string" ? new ZEN.TextDecoder().decode(raw) : bytesToHex(raw)
       }
       throw new Error("ABI decode: unsupported type: " + type)
   }
 
-  // Decode a tuple with named components from a byte slice at startOffset
-  function decodeTuple(components, bytes, startOffset) {
-      const result = {}
-      let offset = startOffset
-      for (const c of components) {
-          result[c.name] = decodeSingle(c.type, bytes, offset)
-          offset += 32
+  function _decodeArray(param, bytes, start, length, baseOffset) {
+      const out = []
+      const step = _staticWords(param.type, param.components) * 32
+      let cursor = start
+      for (let i = 0; i < length; i++) {
+          out.push(_decodeAbi(param, bytes, cursor, baseOffset))
+          cursor += step
       }
-      return result
+      return out
   }
 
-  // Decode raw return hex into JS value(s) based on output ABI spec
+  function _decodeAbi(param, bytes, offset, baseOffset = 0) {
+      const { type, components } = param
+      const arr = _parseArrayType(type)
+      if (arr) {
+          const elem = { type: arr.baseType, components }
+          if (arr.length == null) {
+              const ptr = Number(bytesToBigInt(bytes.slice(offset, offset + 32)))
+              const arrStart = baseOffset + ptr
+              const len = Number(bytesToBigInt(bytes.slice(arrStart, arrStart + 32)))
+              const headStart = arrStart + 32
+              return _decodeArray(elem, bytes, headStart, len, headStart)
+          }
+          const start = isDynamicType(type, components)
+              ? baseOffset + Number(bytesToBigInt(bytes.slice(offset, offset + 32)))
+              : offset
+          return _decodeArray(elem, bytes, start, arr.length, start)
+      }
+      if (_isTupleType(type)) {
+          const tupleStart = isDynamicType(type, components)
+              ? baseOffset + Number(bytesToBigInt(bytes.slice(offset, offset + 32)))
+              : offset
+          const result = {}
+          let cursor = tupleStart
+          for (const c of (components || [])) {
+              const val = _decodeAbi(c, bytes, cursor, tupleStart)
+              result[c.name] = val
+              cursor += _staticWords(c.type, c.components) * 32
+          }
+          return result
+      }
+      if (type === "bytes" || type === "string") {
+          const ptr = Number(bytesToBigInt(bytes.slice(offset, offset + 32)))
+          const start = baseOffset + ptr
+          const len = Number(bytesToBigInt(bytes.slice(start, start + 32)))
+          const raw = bytes.slice(start + 32, start + 32 + len)
+          return type === "string" ? new ZEN.TextDecoder().decode(raw) : bytesToHex(raw)
+      }
+      return decodeSingle(type, bytes, offset)
+  }
+
+  function decodeTuple(components, bytes, startOffset) {
+      return _decodeAbi({ type: "tuple", components }, bytes, startOffset, startOffset)
+  }
+
   function decodeReturnData(outputs, raw) {
       if (!raw || raw === "0x" || !outputs || !outputs.length) return null
       const bytes = hexToBytes(raw)
-      if (outputs.length === 1) {
-          const out = outputs[0]
-          if (out.type === "tuple" && out.components) return decodeTuple(out.components, bytes, 0)
-          return decodeSingle(out.type, bytes, 0)
-      }
-      // Multi-return: array with named properties (ethers-compatible)
+      if (outputs.length === 1) return _decodeAbi(outputs[0], bytes, 0, 0)
       const result = []
       let offset = 0
       for (const out of outputs) {
-          let val
-          if (out.type === "tuple" && out.components) {
-              val = decodeTuple(out.components, bytes, offset)
-              offset += out.components.length * 32
-          } else {
-              val = decodeSingle(out.type, bytes, offset)
-              offset += 32
-          }
+          const val = _decodeAbi(out, bytes, offset, 0)
           result.push(val)
           if (out.name) result[out.name] = val
+          offset += _staticWords(out.type, out.components) * 32
       }
       return result
   }
@@ -326,6 +10696,34 @@ defmod('./lib/chains/evm.js', function(module, exp){
   // ─── JSON-RPC HTTP Provider ───────────────────────────────────────────────────
 
   let _globalReqId = 1
+
+  /**
+   * EIP-1559 fee data for any provider with .send and .getGasPrice.
+   *
+   * On a chain whose latest block carries baseFeePerGas, maxFeePerGas is
+   * 2 * baseFee + priority — the base fee can at most double per block, so
+   * the cap survives a full block of congestion (the same headroom ethers
+   * picks). The priority fee comes from eth_maxPriorityFeePerGas, falling
+   * back to 1 gwei on nodes that never implemented it. Pre-1559 chains keep
+   * the nulls, which is the signal to send a legacy transaction.
+   */
+  async function feeData(provider) {
+      const gasPrice = await provider.getGasPrice()
+      try {
+          const block = await provider.send("eth_getBlockByNumber", ["latest", false])
+          if (block?.baseFeePerGas != null) {
+              const baseFee = BigInt(block.baseFeePerGas)
+              let priority
+              try {
+                  priority = BigInt(await provider.send("eth_maxPriorityFeePerGas", []))
+              } catch {
+                  priority = 1000000000n
+              }
+              return { gasPrice, maxFeePerGas: baseFee * 2n + priority, maxPriorityFeePerGas: priority }
+          }
+      } catch {}
+      return { gasPrice, maxFeePerGas: null, maxPriorityFeePerGas: null }
+  }
 
   class Provider {
       constructor(url, network) {
@@ -355,7 +10753,7 @@ defmod('./lib/chains/evm.js', function(module, exp){
 
       async getBlock(tag) {
           const t = typeof tag === "number" ? "0x" + tag.toString(16) : tag
-          return this.send("eth_getBlockByNumber", [t, false])
+          return _enrichBlock(await this.send("eth_getBlockByNumber", [t, false]))
       }
 
       async getBalance(address) {
@@ -367,12 +10765,19 @@ defmod('./lib/chains/evm.js', function(module, exp){
       }
 
       async getGasPrice() {
-          return BigInt(await this.send("eth_gasPrice", []))
+          const suggested = BigInt(await this.send("eth_gasPrice", []))
+          try {
+              const block = await this.send("eth_getBlockByNumber", ["latest", false])
+              if (block?.baseFeePerGas) {
+                  const baseFee = BigInt(block.baseFeePerGas)
+                  if (suggested < baseFee) return baseFee * 12n / 10n
+              }
+          } catch {}
+          return suggested
       }
 
       async getFeeData() {
-          const gasPrice = await this.getGasPrice()
-          return { gasPrice, maxFeePerGas: null, maxPriorityFeePerGas: null }
+          return feeData(this)
       }
 
       async estimateGas(tx) {
@@ -394,6 +10799,40 @@ defmod('./lib/chains/evm.js', function(module, exp){
           return this.send("eth_call", [obj, tag])
       }
 
+      async getLogs(filter) {
+          const f = {}
+          if (filter.address) f.address = filter.address
+          if (filter.topics) f.topics = filter.topics
+          if (filter.fromBlock !== undefined) f.fromBlock = typeof filter.fromBlock === "number" ? "0x" + filter.fromBlock.toString(16) : filter.fromBlock
+          if (filter.toBlock !== undefined) f.toBlock = typeof filter.toBlock === "number" ? "0x" + filter.toBlock.toString(16) : filter.toBlock
+          return this.send("eth_getLogs", [f])
+      }
+
+      async multicall(calls) {
+          const callItems = []
+          for (const call of calls) {
+              const parsedAbi = parseAbi(call.abi)
+              const abi = Array.isArray(parsedAbi) ? parsedAbi : [parsedAbi]
+              const item = abi.find(entry => entry.type === "function" && (entry.name === call.method || buildSig(entry) === call.method))
+              if (!item) throw new Error("multicall: unknown method " + call.method)
+              const callData = await buildCalldata(buildSig(item), item.inputs || [], call.args || [])
+              callItems.push({ ...call, abi, item, callData })
+          }
+          const aggregate = MULTICALL3_ABI[0]
+          const data = await buildCalldata(buildSig(aggregate), aggregate.inputs, [callItems.map(call => ({
+              target: call.address,
+              allowFailure: !!call.allowFailure,
+              callData: call.callData,
+          }))])
+          const raw = await this.call({ to: MULTICALL3_ADDRESS, data })
+          const decoded = decodeReturnData(aggregate.outputs, raw) || []
+          return decoded.map((result, i) => {
+              if (!result?.success) return null
+              const outputs = callItems[i].item.outputs || []
+              return decodeReturnData(outputs, result.returnData)
+          })
+      }
+
       async sendRawTransaction(rawHex) {
           return this.send("eth_sendRawTransaction", [rawHex])
       }
@@ -406,7 +10845,11 @@ defmod('./lib/chains/evm.js', function(module, exp){
           const start = Date.now()
           while (Date.now() - start < timeout) {
               const receipt = await this.getTransactionReceipt(hash)
-              if (receipt) return receipt
+              if (receipt) {
+                  if (parseInt(receipt.status, 16) === 0)
+                      throw Object.assign(new Error("Transaction reverted: " + hash), { receipt })
+                  return receipt
+              }
               await new Promise(r => setTimeout(r, 2000))
           }
           throw new Error("Transaction timeout: " + hash)
@@ -424,8 +10867,15 @@ defmod('./lib/chains/evm.js', function(module, exp){
           this._ws = null
           this._pending = new Map()
           this._subs = new Map()
+          this._subTopics = new Map()
+          this._subHandlers = new Map()
           this._reqId = 1
           this._ready = null
+          this._reconnectDelay = 1000
+          this._maxReconnectDelay = 30000
+          this._reconnecting = false
+          this._destroyed = false
+          this._errorHandler = null
       }
 
       _connect() {
@@ -433,8 +10883,25 @@ defmod('./lib/chains/evm.js', function(module, exp){
           this._ready = new Promise((resolve, reject) => {
               const ws = new WebSocket(this.url)
               this._ws = ws
-              ws.onopen  = () => resolve()
-              ws.onerror = () => reject(new Error("WS connect failed: " + this.url))
+              let settled = false
+              let opened = false
+              ws.onopen = () => {
+                  opened = true
+                  this._reconnecting = false
+                  this._reconnectDelay = 1000
+                  if (!settled) {
+                      settled = true
+                      resolve()
+                  }
+              }
+              ws.onerror = (ev) => {
+                  if (this._errorHandler) this._errorHandler(ev)
+                  if (!opened && !settled) {
+                      settled = true
+                      this._ready = null
+                      reject(new Error("WS connect failed: " + this.url))
+                  }
+              }
               ws.onmessage = (ev) => {
                   try {
                       const msg = JSON.parse(ev.data)
@@ -451,11 +10918,51 @@ defmod('./lib/chains/evm.js', function(module, exp){
               }
               ws.onclose = () => {
                   this._ready = null
+                  if (!settled) {
+                      settled = true
+                      reject(new Error("WS closed: " + this.url))
+                  }
                   for (const { reject: rej } of this._pending.values()) rej(new Error("WS closed"))
                   this._pending.clear()
+                  this._subs.clear()
+                  this._subTopics.clear()
+                  if (!this._destroyed) this._scheduleReconnect()
               }
           })
           return this._ready
+      }
+
+      _scheduleReconnect() {
+          if (this._reconnecting || this._destroyed) return
+          this._reconnecting = true
+          const delay = this._reconnectDelay
+          this._reconnectDelay = Math.min(this._reconnectDelay * 2, this._maxReconnectDelay)
+          setTimeout(async () => {
+              try {
+                  await this._connect()
+                  await this._resubscribeAll()
+                  this._reconnecting = false
+              } catch {
+                  this._ready = null
+                  this._reconnecting = false
+                  if (!this._destroyed) this._scheduleReconnect()
+              }
+          }, delay)
+      }
+
+      async _subscribeTopic(topic, handler) {
+          const subId = await this.send("eth_subscribe", [topic])
+          this._subs.set(subId, handler)
+          this._subTopics.set(subId, topic)
+          return subId
+      }
+
+      async _resubscribeAll() {
+          this._subs.clear()
+          this._subTopics.clear()
+          for (const [topic, handler] of this._subHandlers.entries()) {
+              await this._subscribeTopic(topic, handler)
+          }
       }
 
       async send(method, params = []) {
@@ -467,44 +10974,66 @@ defmod('./lib/chains/evm.js', function(module, exp){
           })
       }
 
-      // Subscribe to named events: "block" | "error"
       async on(event, handler) {
           await this._connect()
           if (event === "block") {
-              const subId = await this.send("eth_subscribe", ["newHeads"])
-              this._subs.set(subId, result => handler(result?.number != null ? parseInt(result.number, 16) : result))
-              return subId
+              const wrapped = result => handler(result?.number != null ? parseInt(result.number, 16) : result)
+              this._subHandlers.set("newHeads", wrapped)
+              return this._subscribeTopic("newHeads", wrapped)
           }
           if (event === "error") {
-              if (this._ws) this._ws.onerror = e => handler(e)
+              this._errorHandler = handler
               return null
           }
       }
 
       async off(subIdOrEvent) {
+          if (subIdOrEvent === "block") {
+              this._subHandlers.delete("newHeads")
+              for (const [subId, topic] of this._subTopics.entries()) {
+                  if (topic === "newHeads") {
+                      try { await this.send("eth_unsubscribe", [subId]) } catch {}
+                      this._subs.delete(subId)
+                      this._subTopics.delete(subId)
+                  }
+              }
+              return
+          }
           if (subIdOrEvent && typeof subIdOrEvent === "string" && subIdOrEvent.startsWith("0x")) {
-              await this.send("eth_unsubscribe", [subIdOrEvent])
+              const topic = this._subTopics.get(subIdOrEvent)
+              try { await this.send("eth_unsubscribe", [subIdOrEvent]) } catch {}
               this._subs.delete(subIdOrEvent)
+              this._subTopics.delete(subIdOrEvent)
+              if (topic) this._subHandlers.delete(topic)
           }
       }
 
-      // Standard provider methods delegated over WS
       async getChainId() { return BigInt(await this.send("eth_chainId", [])) }
       async getBlock(tag) {
           const t = typeof tag === "number" ? "0x" + tag.toString(16) : tag
-          return this.send("eth_getBlockByNumber", [t, false])
+          return _enrichBlock(await this.send("eth_getBlockByNumber", [t, false]))
       }
       async getBalance(addr) { return BigInt(await this.send("eth_getBalance", [addr, "latest"])) }
       async getGasPrice() { return BigInt(await this.send("eth_gasPrice", [])) }
-      async getFeeData() { return { gasPrice: await this.getGasPrice(), maxFeePerGas: null, maxPriorityFeePerGas: null } }
+      async getFeeData() { return feeData(this) }
       async getTransactionCount(addr, tag = "latest") {
           return BigInt(await this.send("eth_getTransactionCount", [addr, tag]))
       }
       async call(tx, blockTag = "latest") {
           const obj = { to: tx.to, data: tx.data }
+          if (tx.from) obj.from = tx.from
+          if (tx.value !== undefined) obj.value = "0x" + BigInt(tx.value).toString(16)
           const tag = typeof blockTag === "bigint" || typeof blockTag === "number"
               ? "0x" + BigInt(blockTag).toString(16) : blockTag
           return this.send("eth_call", [obj, tag])
+      }
+      async getLogs(filter) {
+          const f = {}
+          if (filter.address) f.address = filter.address
+          if (filter.topics) f.topics = filter.topics
+          if (filter.fromBlock !== undefined) f.fromBlock = typeof filter.fromBlock === "number" ? "0x" + filter.fromBlock.toString(16) : filter.fromBlock
+          if (filter.toBlock !== undefined) f.toBlock = typeof filter.toBlock === "number" ? "0x" + filter.toBlock.toString(16) : filter.toBlock
+          return this.send("eth_getLogs", [f])
       }
       async estimateGas(tx) {
           const obj = {}
@@ -514,14 +11043,17 @@ defmod('./lib/chains/evm.js', function(module, exp){
           if (tx.value !== undefined) obj.value = "0x" + BigInt(tx.value).toString(16)
           return BigInt(await this.send("eth_estimateGas", [obj]))
       }
-      async destroy() { if (this._ws) this._ws.close() }
+      async destroy() {
+          this._destroyed = true
+          if (this._ws) this._ws.close()
+      }
   }
 
   function wsRpc(url, network) { return new WsProvider(url, network) }
 
   // ─── EIP-155 transaction signing ─────────────────────────────────────────────
 
-  async function signTransaction(tx, privHex, chainId) {
+  async function signTransaction(tx, privOrPair, chainId) {
       const cid      = typeof chainId === "bigint" ? chainId : BigInt(chainId)
       const nonce    = typeof tx.nonce    === "bigint" ? tx.nonce    : BigInt(tx.nonce    ?? 0)
       const gasPrice = typeof tx.gasPrice === "bigint" ? tx.gasPrice : BigInt(tx.gasPrice ?? 0)
@@ -531,30 +11063,17 @@ defmod('./lib/chains/evm.js', function(module, exp){
       const data     = tx.data ? hexToBytes(tx.data) : new Uint8Array(0)
 
       // EIP-155: pre-signing RLP includes chainId, 0, 0
-      const unsigned  = rlpEncode([nonce, gasPrice, gasLimit, to20, value, data, cid, 0n, 0n])
-      const hashBytes = await keccak256(unsigned)
+      const unsigned = rlpEncode([nonce, gasPrice, gasLimit, to20, value, data, cid, 0n, 0n])
+      const hashHex  = await ZEN.hash(unsigned, null, null, {name: "keccak256", encode: "hex", input: "raw"})
+      // Accept a pre-computed ZEN pair (from Wallet._pair) or a raw privHex string.
+      // Using a cached pair avoids a redundant secp256k1 scalar multiply per transaction.
+      const pair     = (privOrPair && typeof privOrPair === "object" && privOrPair.pub)
+          ? privOrPair
+          : await ZEN.pair(null, {priv: privOrPair, format: "evm"})
+      const sig      = await ZEN.sign("0x" + hashHex, pair, null, {prehash: true, encode: "raw"})
 
-      const priv = secp256k1.parseScalar(privHex)
-      let v, r, s
-      for (let attempt = 0; attempt < 16; attempt++) {
-          const k  = await secp256k1.deterministicK(priv, hashBytes, attempt)
-          const pt = secp256k1.pointMultiplyG(k)
-          if (!pt) continue
-          r = secp256k1.mod(pt.x, secp256k1.N)
-          if (!r) continue
-          s = secp256k1.mod(
-              secp256k1.modInv(k, secp256k1.N) *
-              (secp256k1.mod(secp256k1.bytesToBigInt(hashBytes), secp256k1.N) + r * priv),
-              secp256k1.N
-          )
-          if (!s) continue
-          v = Number(pt.y & 1n)
-          if (s > secp256k1.HALF_N) { s = secp256k1.N - s; v ^= 1 }
-          break
-      }
-
-      const vBig   = cid * 2n + 35n + BigInt(v)   // EIP-155 replay protection
-      const signed = rlpEncode([nonce, gasPrice, gasLimit, to20, value, data, vBig, r, s])
+      const vBig   = cid * 2n + 35n + BigInt(sig.v)   // EIP-155 replay protection
+      const signed = rlpEncode([nonce, gasPrice, gasLimit, to20, value, data, vBig, BigInt(sig.r), BigInt(sig.s)])
       return bytesToHex(signed)
   }
 
@@ -566,19 +11085,22 @@ defmod('./lib/chains/evm.js', function(module, exp){
           const h = String(privHex || "")
           this._priv    = /^0x/i.test(h) ? h : "0x" + h
           this._provider = provider || null
+          this._pair     = null   // cached ZEN pair — avoids redundant scalar multiply per tx
           this.address   = null
           this._ready    = this._init()
       }
 
       async _init() {
-          this.address = await privateToAddress(this._priv)
+          this._pair   = await ZEN.pair(null, {priv: this._priv, format: "evm"})
+          this.address = this._pair.address
           return this
       }
 
       connect(provider) {
           const w = new Wallet(this._priv, provider)
-          // If address already computed, carry it over to skip async work
-          if (this.address) {
+          // If pair already computed, carry it over to skip async work
+          if (this._pair) {
+              w._pair   = this._pair
               w.address = this.address
               w._ready  = Promise.resolve(w)
           }
@@ -604,7 +11126,7 @@ defmod('./lib/chains/evm.js', function(module, exp){
               }
           }
 
-          const raw  = await signTransaction({ ...tx, nonce, gasPrice, gasLimit }, this._priv, chainId)
+          const raw  = await signTransaction({ ...tx, nonce, gasPrice, gasLimit }, this._pair, chainId)
           const hash = await provider.sendRawTransaction(raw)
 
           const wait = async () => {
@@ -629,8 +11151,7 @@ defmod('./lib/chains/evm.js', function(module, exp){
       const map = new Map()
       for (const item of abi) {
           if (item.type !== "event") continue
-          const sig     = item.name + "(" + item.inputs.map(i => i.type).join(",") + ")"
-          const topic0  = bytesToHex(await keccak256(strToBytes(sig)))
+          const topic0 = await _keccak256(strToBytes(buildSig(item)))
           map.set(topic0.toLowerCase(), item)
       }
       return map
@@ -674,13 +11195,13 @@ defmod('./lib/chains/evm.js', function(module, exp){
   class Contract {
       constructor(address, abi, providerOrWallet) {
           this.address  = address
-          this.abi      = abi
+          const parsedAbi = parseAbi(abi)
+          this.abi      = Array.isArray(parsedAbi) ? parsedAbi : [parsedAbi]
           this._signer  = providerOrWallet instanceof Wallet ? providerOrWallet : null
           this._provider = providerOrWallet instanceof Wallet
               ? providerOrWallet._provider
               : providerOrWallet
 
-          // ethers-compatible .interface property
           this.interface = {
               encodeFunctionData: (name, args) => {
                   const item = this.abi.find(i => i.type === "function" && i.name === name)
@@ -704,28 +11225,55 @@ defmod('./lib/chains/evm.js', function(module, exp){
                   const calldata = await buildCalldata(sig, item.inputs, args)
 
                   if (isReadOnly) {
-                      // Extract optional overrides from last arg if it's a plain object (ethers compat)
                       const hasOverrides = args.length > item.inputs.length && args[args.length - 1] !== null
                           && typeof args[args.length - 1] === "object" && !Array.isArray(args[args.length - 1])
                       const overrides  = hasOverrides ? args[args.length - 1] : {}
                       const blockTag   = overrides.blockTag ?? "latest"
                       const raw = await this._provider.call({ to: this.address, data: calldata }, blockTag)
                       return decodeReturnData(item.outputs, raw)
-                  } else {
-                      if (!this._signer) throw new Error("Contract: no signer for write method '" + name + "'")
-                      await this._signer._ready
-                      const txResp    = await this._signer.sendTransaction({ to: this.address, data: calldata, value: 0n })
-                      const receipt   = await txResp.wait()
-                      receipt.events  = await decodeReceiptEvents(this.abi, receipt)
-                      return receipt
                   }
+                  if (!this._signer) throw new Error("Contract: no signer for write method '" + name + "'")
+                  await this._signer._ready
+                  const hasWriteOverrides = args.length > item.inputs.length
+                      && args[args.length - 1] !== null
+                      && typeof args[args.length - 1] === "object"
+                      && !Array.isArray(args[args.length - 1])
+                  const ov = hasWriteOverrides ? args[args.length - 1] : {}
+                  const txResp = await this._signer.sendTransaction({
+                      to:       this.address,
+                      data:     calldata,
+                      value:    ov.value    != null ? BigInt(ov.value)    : 0n,
+                      gasLimit: ov.gasLimit != null ? BigInt(ov.gasLimit) : undefined,
+                      gasPrice: ov.gasPrice != null ? BigInt(ov.gasPrice) : undefined,
+                  })
+                  const receipt = await txResp.wait()
+                  receipt.events = await decodeReceiptEvents(this.abi, receipt)
+                  return receipt
               }
               method._abiGenerated = true
               this[name] = method
           }
       }
 
-      // Returns a new Contract bound to a different signer or provider
+      async queryFilter(eventAbi, fromBlock = 0, toBlock = "latest") {
+          const abiEvent = typeof eventAbi === "string"
+              ? this.abi.find(item => item.type === "event" && item.name === eventAbi)
+              : eventAbi
+          if (!abiEvent) throw new Error("Contract.queryFilter: unknown event " + eventAbi)
+          const topic0 = abiEvent.anonymous ? null : await _keccak256(strToBytes(buildSig(abiEvent)))
+          const logs = await this._provider.getLogs({
+              address: this.address,
+              topics: topic0 ? [topic0] : undefined,
+              fromBlock,
+              toBlock,
+          })
+          return logs.map(log => Object.assign({}, decodeEventLog(abiEvent, log), {
+              _log: log,
+              blockNumber: log.blockNumber,
+              transactionHash: log.transactionHash,
+          }))
+      }
+
       connect(signerOrProvider) {
           return new Contract(this.address, this.abi, signerOrProvider)
       }
@@ -736,6 +11284,22 @@ defmod('./lib/chains/evm.js', function(module, exp){
   // Usage: replace `import { ethers } from "../Ethers.js"` and
   //        change `connector: ethers` to `connector: evmConnector`.
 
+  const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11"
+  const MULTICALL3_ABI = [
+      {
+          type: "function", name: "aggregate3", stateMutability: "view",
+          inputs: [{ name: "calls", type: "tuple[]", components: [
+              { name: "target",       type: "address" },
+              { name: "allowFailure", type: "bool"    },
+              { name: "callData",     type: "bytes"   },
+          ]}],
+          outputs: [{ name: "returnData", type: "tuple[]", components: [
+              { name: "success",    type: "bool"  },
+              { name: "returnData", type: "bytes" },
+          ]}],
+      }
+  ]
+
   const connector = {
       JsonRpcProvider:   Provider,
       WebSocketProvider: WsProvider,
@@ -744,12 +11308,162 @@ defmod('./lib/chains/evm.js', function(module, exp){
       isAddress,
   }
 
+  // ─── Unit conversion (ethers-compatible) ─────────────────────────────────────
+
+  const _UNIT_DECIMALS = { wei: 0, kwei: 3, mwei: 6, gwei: 9, szabo: 12, finney: 15, ether: 18 }
+
+  // formatUnits(1500000n, 6) → "1.5"   formatUnits(10n**18n, "ether") → "1.0"
+  function formatUnits(value, decimals = 18) {
+      const d = typeof decimals === "string" ? _UNIT_DECIMALS[decimals] : Number(decimals)
+      const n = typeof value === "bigint" ? value : BigInt(value)
+      if (d === 0) return n.toString()
+      const factor = 10n ** BigInt(d)
+      const abs    = n < 0n ? -n : n
+      const whole  = abs / factor
+      const frac   = (abs % factor).toString().padStart(d, "0").replace(/0+$/, "") || "0"
+      return (n < 0n ? "-" : "") + whole.toString() + "." + frac
+  }
+
+  // parseUnits("1.5", 6) → 1500000n    parseUnits("1.5", "ether") → 1500000000000000000n
+  function parseUnits(value, decimals = 18) {
+      const d   = typeof decimals === "string" ? _UNIT_DECIMALS[decimals] : Number(decimals)
+      const str = String(value).trim()
+      const neg = str.startsWith("-")
+      const abs = neg ? str.slice(1) : str
+      const dot = abs.indexOf(".")
+      if (dot === -1) {
+          const result = BigInt(abs) * 10n ** BigInt(d)
+          return neg ? -result : result
+      }
+      const whole = abs.slice(0, dot)
+      const frac  = abs.slice(dot + 1).slice(0, d).padEnd(d, "0")
+      const result = BigInt(whole) * 10n ** BigInt(d) + BigInt(frac)
+      return neg ? -result : result
+  }
+
+  const formatEther = v => formatUnits(v, 18)
+  const parseEther  = v => parseUnits(v, 18)
+
+  // ─── V3 path encoding ─────────────────────────────────────────────────────────
+
+  // Encodes a V3 multi-hop path for exactInput / exactOutput:
+  //   tokens: [tokenA, tokenB, tokenC, ...]  (n addresses)
+  //   fees:   [feeAB, feeBC, ...]            (n-1 uint24 fee tiers)
+  // Returns 0x-prefixed hex: tokenA ++ feeAB ++ tokenB ++ feeBC ++ tokenC ...
+  function encodePath(tokens, fees) {
+      if (tokens.length !== fees.length + 1)
+          throw new Error("encodePath: tokens.length must be fees.length + 1")
+      let hex = ""
+      for (let i = 0; i < tokens.length; i++) {
+          hex += tokens[i].replace("0x", "").toLowerCase().padStart(40, "0")
+          if (i < fees.length)
+              hex += Number(fees[i]).toString(16).padStart(6, "0")
+      }
+      return "0x" + hex
+  }
+
+  // ─── EIP-712 TypedDataEncoder ─────────────────────────────────────────────
+
+  function _stripArraySuffix(type) {
+      return String(type || "").replace(/\[[^\]]*\]/g, "")
+  }
+
+  function _encodeType(primaryType, types) {
+      const seen = new Set()
+      const visit = (typeName) => {
+          if (seen.has(typeName) || !types[typeName]) return
+          seen.add(typeName)
+          for (const field of types[typeName]) {
+              const base = _stripArraySuffix(field.type)
+              if (base !== typeName && types[base]) visit(base)
+          }
+      }
+      visit(primaryType)
+      const ordered = [primaryType, ...Array.from(seen).filter(t => t !== primaryType).sort()]
+      return ordered.map(typeName => (
+          typeName + "(" + (types[typeName] || []).map(field => field.type + " " + field.name).join(",") + ")"
+      )).join("")
+  }
+
+  async function _typeHash(primaryType, types) {
+      return _keccak256(strToBytes(_encodeType(primaryType, types)))
+  }
+
+  async function _encodeTypedValue(type, types, value) {
+      const arr = _parseArrayType(type)
+      if (arr) {
+          const parts = []
+          for (const item of _normalizeArrayValue(value)) {
+              const encoded = await _encodeTypedValue(arr.baseType, types, item)
+              parts.push(encoded.type === "bytes32" ? hexToBytes(encoded.value) : encodeStatic(encoded.type, encoded.value))
+          }
+          return { type: "bytes32", value: await _keccak256(concatBytes(...parts)) }
+      }
+      const base = _stripArraySuffix(type)
+      if (types[base]) return { type: "bytes32", value: await hashStruct(base, types, value) }
+      if (type === "string") return { type: "bytes32", value: await _keccak256(strToBytes(String(value ?? ""))) }
+      if (type === "bytes") return { type: "bytes32", value: await _keccak256(typeof value === "string" ? hexToBytes(value) : value) }
+      return { type, value }
+  }
+
+  async function _encodeData(primaryType, types, value) {
+      const fields = types[primaryType] || []
+      const params = []
+      for (const field of fields) {
+          const encoded = await _encodeTypedValue(field.type, types, value?.[field.name])
+          params.push(encoded)
+      }
+      return encodeParams(params)
+  }
+
+  async function hashStruct(primaryType, types, value) {
+      return _keccak256(concatBytes(hexToBytes(await _typeHash(primaryType, types)), await _encodeData(primaryType, types, value)))
+  }
+
+  async function hashDomain(domain) {
+      const domainFields = []
+      if (domain.name !== undefined) domainFields.push({ name: "name", type: "string" })
+      if (domain.version !== undefined) domainFields.push({ name: "version", type: "string" })
+      if (domain.chainId !== undefined) domainFields.push({ name: "chainId", type: "uint256" })
+      if (domain.verifyingContract !== undefined) domainFields.push({ name: "verifyingContract", type: "address" })
+      if (domain.salt !== undefined) domainFields.push({ name: "salt", type: "bytes32" })
+      return hashStruct("EIP712Domain", { EIP712Domain: domainFields }, domain)
+  }
+
+  function _detectPrimaryType(types) {
+      const candidates = Object.keys(types || {}).filter(t => t !== "EIP712Domain")
+      const refs = new Set()
+      for (const typeName of candidates) {
+          for (const field of (types[typeName] || [])) {
+              const base = _stripArraySuffix(field.type)
+              if (types[base] && base !== "EIP712Domain") refs.add(base)
+          }
+      }
+      return candidates.find(typeName => !refs.has(typeName)) || candidates[0]
+  }
+
+  async function encodeTypedData(domain, types, value, primaryType) {
+      const root = primaryType || _detectPrimaryType(types)
+      const domainHash = await hashDomain(domain || {})
+      const valueHash = await hashStruct(root, types, value)
+      return bytesToHex(concatBytes(new Uint8Array([0x19, 0x01]), hexToBytes(domainHash), hexToBytes(valueHash)))
+  }
+
+  async function hashTypedData(domain, types, value, primaryType) {
+      return _keccak256(await encodeTypedData(domain, types, value, primaryType))
+  }
+
+  async function recoverTypedDataAddress(domain, types, value, sig, primaryType) {
+      const digest = await hashTypedData(domain, types, value, primaryType)
+      // Delegate to ZEN.recover with prehash:true — uses WASM-accelerated Jacobian secp256k1
+      return ZEN.recover(sig, null, { prehash: true, hash: digest, format: "evm" })
+  }
+
   // ─── Exports ──────────────────────────────────────────────────────────────────
 
 
 
-  export default { rpc, wsRpc, Wallet, Contract, isAddress, connector }
-
+  exp.default = { rpc, wsRpc, Wallet, Contract, isAddress, connector };
   exp.rpc = rpc;
   exp.wsRpc = wsRpc;
   exp.Wallet = Wallet;
@@ -771,6 +11485,22 @@ defmod('./lib/chains/evm.js', function(module, exp){
   exp.decodeEventLog = decodeEventLog;
   exp.buildEventTopicMap = buildEventTopicMap;
   exp.decodeReceiptEvents = decodeReceiptEvents;
+  exp.encodePath = encodePath;
+  exp.formatUnits = formatUnits;
+  exp.parseUnits = parseUnits;
+  exp.formatEther = formatEther;
+  exp.parseEther = parseEther;
+  exp.solidityPacked = solidityPacked;
+  exp.solidityPackedKeccak256 = solidityPackedKeccak256;
+  exp.getCreate2Address = getCreate2Address;
+  exp.parseAbi = parseAbi;
+  exp.parseAbiItem = parseAbiItem;
+  exp._encodeType = _encodeType;
+  exp.hashStruct = hashStruct;
+  exp.hashDomain = hashDomain;
+  exp.encodeTypedData = encodeTypedData;
+  exp.hashTypedData = hashTypedData;
+  exp.recoverTypedDataAddress = recoverTypedDataAddress;
 });
 
 const _entry = reqmod('./lib/chains/evm.js');

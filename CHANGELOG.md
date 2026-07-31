@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 1.0.37 — 2026-07-31
+
+### EVM chains
+
+- **`getFeeData` speaks EIP-1559** (`lib/chains/evm.js`): both `Provider` and `WsProvider` now return real `maxFeePerGas` and `maxPriorityFeePerGas` on chains whose latest block carries `baseFeePerGas` — priority from `eth_maxPriorityFeePerGas` (1 gwei fallback for nodes without it), max fee at `2 * baseFee + priority`, the same headroom ethers picks. Pre-1559 chains keep the nulls, the signal to send a legacy transaction. Verified equal to ethers' own numbers on the same node in `test/chains/evm.js`.
+- **`build:chains` produced a broken bundle and a silent terser failure** (`lib/builder/chains.js`): the import-rewrite regexes required trailing semicolons, but the chains sources are written without them — the real `import ZEN from "../../zen.js"` line passed through untouched into the module wrapper, a syntax error the published bundle only avoided by predating the semicolon style. `export default { … }` (object literal, no semicolon) was likewise never rewritten. Semicolons are optional in every pattern now; `chains.min.js` builds again.
+
 ## 1.0.25 — 2026-05-15
 
 ### CLI & Browser Bootstrap
