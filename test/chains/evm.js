@@ -737,6 +737,26 @@ describe("parseAbi", function () {
         assert.strictEqual(typeof contract.balanceOf, "function")
         assert.strictEqual(await contract.balanceOf(TEST_ADDR), 123n)
     })
+
+
+    it("staticCall simulates a write through eth_call and decodes the returns", async function () {
+        const seen = {}
+        const provider = {
+            async call(tx) {
+                Object.assign(seen, tx)
+                return ethers.AbiCoder.defaultAbiCoder().encode(["bool"], [true])
+            }
+        }
+        const contract = new Contract(TEST_ADDR, ["function approve(address spender, uint256 value) returns (bool)"], provider)
+        // single output decodes bare, zen's convention for view calls too
+        const approved = await contract.approve.staticCall(TEST_ADDR, 1n)
+        assert.strictEqual(approved, true)
+        assert.strictEqual(seen.to, TEST_ADDR)
+        // approve's selector — proof the calldata went through the ABI encoder
+        assert.ok(seen.data.toLowerCase().startsWith("0x095ea7b3"), "calldata selector")
+        // provider-connected contract has no signer, so no from is attached
+        assert.strictEqual(seen.from, undefined)
+    })
 })
 
 describe("queryFilter", function () {

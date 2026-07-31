@@ -11268,6 +11268,24 @@ defmod('./lib/chains/evm.js', function(module, exp){
                   return receipt
               }
               method._abiGenerated = true
+
+              // ethers-parity: simulate a write without sending it. Runs the
+              // same calldata through eth_call as the signer — the sender
+              // matters, because contracts authorize msg.sender and a
+              // simulation from nobody reverts before returning anything —
+              // and hands back the decoded return values the transaction
+              // itself only reports through events.
+              method.staticCall = async (...args) => {
+                  const sig      = buildSig(item)
+                  const calldata = await buildCalldata(sig, item.inputs, args)
+                  const call     = { to: this.address, data: calldata }
+                  if (this._signer) {
+                      await this._signer._ready
+                      call.from = this._signer.address
+                  }
+                  const raw = await this._provider.call(call)
+                  return decodeReturnData(item.outputs, raw)
+              }
               this[name] = method
           }
       }
