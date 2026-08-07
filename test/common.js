@@ -4085,7 +4085,30 @@ describe("ZEN", function () {
 
       var check = {},
         c = 0,
-        end;
+        end,
+        queued = false,
+        sub;
+      // `check` is transiently empty between writes — a key is only added just
+      // before each set() — so "empty" alone does not mean the run finished.
+      // Wait for every write to be issued too, and let done() fire only once:
+      // a late emission after an early finish used to call it a second time.
+      var settle = function () {
+        clearTimeout(end);
+        end = setTimeout(function () {
+          //console.log("?", c, check, Object.keys(check), zen._.graph);
+          if (!queued || !Object.empty(check)) {
+            return;
+          } //if(Zen.obj.map(check, function(v){ if(v){ return v } })){ return }
+          if (done.c) {
+            return;
+          }
+          done.c = 1;
+          if (sub && sub.off) {
+            sub.off();
+          }
+          nopasstun(done, zen);
+        }, 9);
+      };
       //console.log(check, zen._.graph);
       zen
         .get("users/mm")
@@ -4099,22 +4122,10 @@ describe("ZEN", function () {
           if (check[msg.num]) {
             //console.log("!!!!", msg.num, "!!!!");
           }
+          sub = this;
           delete check[msg.num];
           c++;
-          clearTimeout(end);
-          end = setTimeout(
-            function () {
-              //console.log("?", c, check, Object.keys(check), zen._.graph);
-              if (!Object.empty(check)) {
-                return;
-              } //if(Zen.obj.map(check, function(v){ if(v){ return v } })){ return }
-              if (this && this.off) {
-                this.off();
-              }
-              nopasstun(done, zen);
-            }.bind(this),
-            9,
-          );
+          settle();
         });
 
       var said = zen.get("pub/asdf").get("who").get("said");
@@ -4136,7 +4147,9 @@ describe("ZEN", function () {
         m = 9,
         to = setTimeout(function frame() {
           if (m <= i) {
+            queued = true;
             clearTimeout(to);
+            settle(); // in case every emission already landed before this point
             return;
           }
           i++;
