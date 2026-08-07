@@ -1158,12 +1158,15 @@ defmod('./src/root.js', function(module, exp){
       //if(!node && !at){ return root.on('get', msg) }
       //if(has && node){ // replace 2 below lines to continue dev?
       if (!node) {
-        return root.on("get", msg);
+        root.on("get", msg);
+        unanswerable(root) && root.on("in", { "@": msg["#"] });
+        return;
       }
       if (has) {
         if ("string" != typeof has || u === node[has]) {
           if (!((at || "").next || "")[has]) {
             root.on("get", msg);
+            unanswerable(root) && root.on("in", { "@": msg["#"] });
             return;
           }
         }
@@ -1176,6 +1179,22 @@ defmod('./src/root.js', function(module, exp){
       node && ack(msg, node);
       root.on("get", msg); // send GET to storage adapters.
     };
+    // A GET is answered by a storage adapter (they subscribe to the "get" event)
+    // or by a peer. With neither, the GET would never get any reply at all --
+    // stranding once() and, worse, silently stalling any put() that needs a GET
+    // to resolve a child node's soul. Reply "not found" ourselves instead.
+    function unanswerable(root) {
+      if ((root.tag || "")["get"]) {
+        return false;
+      }
+      var peers = (root.opt || "").peers;
+      for (var url in peers) {
+        if (Object.prototype.hasOwnProperty.call(peers, url)) {
+          return false;
+        }
+      }
+      return true;
+    }
     function ack(msg, node) {
       var S = +new Date(),
         ctx = msg._ || {},
