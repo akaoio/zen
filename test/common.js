@@ -1142,6 +1142,25 @@ describe("ZEN", function () {
           function () {
             var check = {},
               count = {};
+            // This only ever fails on Windows CI, as a bare 9s timeout that
+            // says nothing about which of the four expected emissions never
+            // arrived. Report the collected state just before mocha gives up.
+            var diag = setTimeout(function () {
+              console.log(
+                "DIAG uncached synchronous map on mutate node: counts=" +
+                  JSON.stringify(count) +
+                  " missing=" +
+                  JSON.stringify(
+                    ["Alice", "Bob", "undefined", "Alice Zzxyz"].filter(
+                      function (k) {
+                        return !check[k];
+                      },
+                    ),
+                  ) +
+                  " done.last=" +
+                  !!done.last,
+              );
+            }, 8000);
             zen
               .get("u/m/mutate/n")
               .map()
@@ -1158,6 +1177,7 @@ describe("ZEN", function () {
                 ) {
                   clearTimeout(done.to);
                   done.to = setTimeout(function () {
+                    clearTimeout(diag);
                     expect(done.last).to.be.ok();
                     expect(check["Alice Aabca"]).to.not.be.ok();
                     expect(count.Alice).to.be(1);
@@ -1207,6 +1227,22 @@ describe("ZEN", function () {
           function () {
             var check = {},
               count = {};
+            // Same story as the sibling test above: Windows-only, and the bare
+            // timeout hides which emission went missing. Say so.
+            var diag = setTimeout(function () {
+              console.log(
+                "DIAG uncached synchronous map on mutate node uncached: counts=" +
+                  JSON.stringify(count) +
+                  " missing=" +
+                  JSON.stringify(
+                    ["Alice", "Bob", "Alice Zzxyz"].filter(function (k) {
+                      return !check[k];
+                    }),
+                  ) +
+                  " done.last=" +
+                  !!done.last,
+              );
+            }, 8000);
             zen
               .get("u/m/mutate/n/u")
               .map()
@@ -1217,6 +1253,7 @@ describe("ZEN", function () {
                   clearTimeout(done.to);
                   //console.log("****", f, v)
                   done.to = setTimeout(function () {
+                    clearTimeout(diag);
                     expect(done.last).to.be.ok();
                     //expect(check['Alice Aabca']).to.not.be.ok();
                     //expect(count['Alice']).to.be(1);
