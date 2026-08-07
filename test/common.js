@@ -1166,7 +1166,18 @@ describe("ZEN", function () {
                   " done.last=" +
                   !!done.last +
                   " timeline=" +
-                  JSON.stringify(seen),
+                  JSON.stringify(seen) +
+                  // Separates "the node never loaded" from "it loaded and the
+                  // per-child name reads never delivered" -- the timeline alone
+                  // cannot tell those apart.
+                  " node=" +
+                  JSON.stringify(
+                    Object.keys((zen.get("u/m/mutate/n")._ || {}).put || {}),
+                  ) +
+                  " children=" +
+                  JSON.stringify(
+                    Object.keys((zen.get("u/m/mutate/n")._ || {}).next || {}),
+                  ),
               );
             }, 8000);
             zen
@@ -1254,7 +1265,15 @@ describe("ZEN", function () {
                   " done.last=" +
                   !!done.last +
                   " timeline=" +
-                  JSON.stringify(seen),
+                  JSON.stringify(seen) +
+                  " node=" +
+                  JSON.stringify(
+                    Object.keys((zen.get("u/m/mutate/n/u")._ || {}).put || {}),
+                  ) +
+                  " children=" +
+                  JSON.stringify(
+                    Object.keys((zen.get("u/m/mutate/n/u")._ || {}).next || {}),
+                  ),
               );
             }, 8000);
             zen
