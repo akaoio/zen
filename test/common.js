@@ -1141,10 +1141,16 @@ describe("ZEN", function () {
           "u/m/mutate/n",
           function () {
             var check = {},
-              count = {};
+              count = {},
+              t0 = +new Date(),
+              seen = []; // every emission, with when it landed
             // This only ever fails on Windows CI, as a bare 9s timeout that
             // says nothing about which of the four expected emissions never
             // arrived. Report the collected state just before mocha gives up.
+            // The first round of this told us the missing ones are the
+            // *initial* values, not the late one, so also record the order and
+            // timing -- that says whether the initial load never delivered or
+            // was delivered and dropped.
             var diag = setTimeout(function () {
               console.log(
                 "DIAG uncached synchronous map on mutate node: counts=" +
@@ -1158,7 +1164,9 @@ describe("ZEN", function () {
                     ),
                   ) +
                   " done.last=" +
-                  !!done.last,
+                  !!done.last +
+                  " timeline=" +
+                  JSON.stringify(seen),
               );
             }, 8000);
             zen
@@ -1166,6 +1174,7 @@ describe("ZEN", function () {
               .map()
               .get("name")
               .get(function (v, f) {
+                seen.push(String(v) + "@" + (+new Date() - t0) + "ms");
                 check[v] = f;
                 count[v] = (count[v] || 0) + 1;
                 //console.log("************", f,v);
@@ -1226,9 +1235,12 @@ describe("ZEN", function () {
           "u/m/mutate/n/u",
           function () {
             var check = {},
-              count = {};
+              count = {},
+              t0 = +new Date(),
+              seen = [];
             // Same story as the sibling test above: Windows-only, and the bare
-            // timeout hides which emission went missing. Say so.
+            // timeout hides which emission went missing. Say so, with the order
+            // and timing of what did arrive.
             var diag = setTimeout(function () {
               console.log(
                 "DIAG uncached synchronous map on mutate node uncached: counts=" +
@@ -1240,13 +1252,16 @@ describe("ZEN", function () {
                     }),
                   ) +
                   " done.last=" +
-                  !!done.last,
+                  !!done.last +
+                  " timeline=" +
+                  JSON.stringify(seen),
               );
             }, 8000);
             zen
               .get("u/m/mutate/n/u")
               .map()
               .on(function (v, f) {
+                seen.push(String(v && v.name) + "@" + (+new Date() - t0) + "ms");
                 check[v.name] = f;
                 count[v.name] = (count[v.name] || 0) + 1;
                 if (check.Alice && check.Bob && check["Alice Zzxyz"]) {
