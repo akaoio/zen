@@ -1201,10 +1201,39 @@ describe("ZEN", function () {
                     Object.keys((zen.get("u/m/mutate/n")._ || {}).next || {}),
                   ) +
                   " store=" +
-                  JSON.stringify(storeLog.slice(-10)),
+                  JSON.stringify(storeLog.slice(-10)) +
+                  " gets=" +
+                  JSON.stringify(gets) +
+                  " gate=" +
+                  gate,
               );
               unwrap();
             }, 8000);
+            // The store log alone cannot say whether the read ever happened: a
+            // node still held in radisk's memory is served with no store call
+            // at all, and locally that is the *healthy* path. So watch the GET
+            // itself. Alongside it, record the gate in chain.js that can
+            // suppress the GET -- an earlier ask for the full node plus data
+            // already on it makes chain.js send the cache down and return
+            // without asking storage again.
+            var gets = [];
+            zen._.on("get", function (msg) {
+              this.to.next(msg);
+              if ("u/m/mutate/n" === (((msg || "").get || "")["#"] || "")) {
+                gets.push(
+                  (msg.get["."] || "*") + "@" + (+new Date() - t0) + "ms",
+                );
+              }
+            });
+            var _b = zen.get("u/m/mutate/n")._ || {},
+              _ctl = zen.get("diag/never/asked")._ || {}, // never touched
+              gate =
+                "askTruoc=" +
+                !!(_b.ask && _b.ask[""]) +
+                " coPut=" +
+                (undefined !== _b.put) +
+                " doiChung=" +
+                !!(_ctl.ask && _ctl.ask[""]);
             zen
               .get("u/m/mutate/n")
               .map()
