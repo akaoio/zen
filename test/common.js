@@ -1151,6 +1151,7 @@ describe("ZEN", function () {
               _store = _opt.store,
               _get = _store && _store.get,
               radLog = [],
+              dir0 = null,
               radPush = function (s) {
                 // the per-child reads repeat the same line; keep the walk legible
                 if (radLog[radLog.length - 1] !== s) {
@@ -1163,7 +1164,29 @@ describe("ZEN", function () {
               _R = (__radisk.has || {})[_opt.file],
               _Rn = Object.keys(__radisk.has || {}).length,
               _read = _R && _R.read,
-              _find = _R && _R.find;
+              _find = _R && _R.find,
+              // The directory keys around this soul. The red walk went to a
+              // file far to the left of the node and then jumped clean over
+              // `u/m/bob<esc>pet`, the file that actually holds it -- so the
+              // question is whether the directory was missing that entry at
+              // the moment of the read and gained it later.
+              dirNear = function () {
+                var out = [];
+                _R &&
+                  _R.list &&
+                  __radisk.Radix.map(
+                    _R.list,
+                    function (v, k) {
+                      v && out.push(String(k).slice(0, 22));
+                    },
+                    { start: "u/m", end: "u/n" },
+                  );
+                return out;
+              },
+              // Writer and reader must be the same Radisk to share a directory.
+              // Two instances over one folder would each hold their own, and
+              // the reader's would never learn of files the writer just made.
+              sameR = _R === (__radisk.has || {})[(goff._.opt || {}).file];
             // The store log records which files were touched. It does not say
             // whether the node was found in them -- radisk walks a range of
             // files and reports nothing if the key is in none of them, which
@@ -1187,6 +1210,9 @@ describe("ZEN", function () {
                 }
                 return _find.call(_R, key, function (file) {
                   radPush("file=" + String(file).slice(-18));
+                  // r.list is bound by now, so this is the directory as the
+                  // very first read of this soul saw it.
+                  dir0 || (dir0 = dirNear());
                   return cb.apply(this, arguments);
                 });
               };
@@ -1271,7 +1297,13 @@ describe("ZEN", function () {
                   " radN=" +
                   _Rn +
                   "/" +
-                  !!_read,
+                  !!_read +
+                  " chungRad=" +
+                  sameR +
+                  " dir0=" +
+                  JSON.stringify(dir0) +
+                  " dir8=" +
+                  JSON.stringify(dirNear()),
               );
               // Is the node actually in the file the directory points at? This
               // separates "written somewhere the directory does not know about"
