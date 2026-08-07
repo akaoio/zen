@@ -1126,6 +1126,121 @@ describe("ZEN", function () {
       });
 
       it("uncached synchronous map on mutate node", function (done) {
+        // Installed *before* statedisk writes, so the write's own directory
+        // lookup is captured too. Last round could only see the read's, and the
+        // pair is what matters: the read went to `sabnb<esc>profile` while the
+        // directory held a single entry in the whole u/m..u/n range. Where the
+        // write put the node is the other half of that.
+        var check = {},
+          count = {},
+          t0 = 0,
+          t00 = +new Date(),
+          seen = [], // every emission, with when it landed
+          storeLog = [],
+          radLog = [],
+          dir0 = null,
+          radPush = function (s) {
+            // the per-child reads repeat one line; keep the walk legible
+            if (radLog.last === s) {
+              return;
+            }
+            radLog.last = s;
+            radLog.push(s + "@" + (+new Date() - t00) + "ms");
+          },
+          _esc = String.fromCharCode(27),
+          _opt = zen._.opt || {},
+          _store = _opt.store,
+          _get = _store && _store.get,
+          // Radisk keys its instances by the *resolved* opt.file, and it
+          // resolves opt.file in place, so this is the same string.
+          _R = (__radisk.has || {})[_opt.file],
+          _Rn = Object.keys(__radisk.has || {}).length,
+          _read = _R && _R.read,
+          _find = _R && _R.find,
+          _save = _R && _R.save,
+          // The directory keys around this soul.
+          dirNear = function () {
+            var out = [];
+            _R &&
+              _R.list &&
+              __radisk.Radix.map(
+                _R.list,
+                function (v, k) {
+                  v && out.push(String(k).slice(0, 22));
+                },
+                { start: "u/m", end: "u/n" },
+              );
+            return out;
+          },
+          // Writer and reader must be the same Radisk to share a directory.
+          sameR = _R === (__radisk.has || {})[(goff._.opt || {}).file];
+        if (_get) {
+          _store.get = function (file, cb) {
+            return _get.call(_store, file, function (e, d) {
+              storeLog.push(
+                String(file).slice(-20) + (d ? ":" + d.length + "b" : ":EMPTY"),
+              );
+              cb(e, d);
+            });
+          };
+        }
+        // Follow every directory lookup, write and range walk for this soul.
+        if (_read) {
+          var _wfind = function (key, cb) {
+            if (0 !== String(key).indexOf("u/m/mutate/n")) {
+              return _find.apply(_R, arguments);
+            }
+            return _find.call(_R, key, function (file) {
+              radPush("file=" + String(file).slice(-18));
+              // r.list is bound by now, so this is the directory as the very
+              // first lookup for this soul saw it.
+              dir0 || (dir0 = dirNear());
+              return cb.apply(this, arguments);
+            });
+          };
+          // r.find carries .add and .bad; radisk calls them by name.
+          Object.keys(_find).forEach(function (k) {
+            _wfind[k] = _find[k];
+          });
+          _R.find = _wfind;
+          _R.save = function (key) {
+            if (0 === String(key).indexOf("u/m/mutate/n")) {
+              radPush("ghi " + String(key).slice(12, 22));
+            }
+            return _save.apply(_R, arguments);
+          };
+          _R.read = function (key, cb, o, DBG) {
+            if (0 !== String(key).indexOf("u/m/mutate/n")) {
+              return _read.apply(_R, arguments);
+            }
+            return _read.call(
+              _R,
+              key,
+              function (err, data, oo) {
+                radPush(
+                  "chunk" +
+                    ((oo || {}).chunks || 0) +
+                    (data ? "=co" : "=rong") +
+                    " tiep=" +
+                    String((oo || {}).next || "het").slice(-14),
+                );
+                return cb.apply(this, arguments);
+              },
+              o,
+              DBG,
+            );
+          };
+        }
+        var unwrap = function () {
+          if (_read) {
+            _R.read = _read;
+            _R.find = _find;
+            _R.save = _save;
+          }
+          if (_get) {
+            _store.get = _get;
+          }
+        };
         Zen.statedisk(
           {
             alice: {
@@ -1142,116 +1257,7 @@ describe("ZEN", function () {
           },
           "u/m/mutate/n",
           function () {
-            var check = {},
-              count = {},
-              t0 = +new Date(),
-              seen = [], // every emission, with when it landed
-              storeLog = [],
-              _opt = zen._.opt || {},
-              _store = _opt.store,
-              _get = _store && _store.get,
-              radLog = [],
-              dir0 = null,
-              radPush = function (s) {
-                // the per-child reads repeat the same line; keep the walk legible
-                if (radLog[radLog.length - 1] !== s) {
-                  radLog.push(s);
-                }
-              },
-              _esc = String.fromCharCode(27),
-              // Radisk keys its instances by the *resolved* opt.file, and it
-              // resolves opt.file in place, so this is the same string.
-              _R = (__radisk.has || {})[_opt.file],
-              _Rn = Object.keys(__radisk.has || {}).length,
-              _read = _R && _R.read,
-              _find = _R && _R.find,
-              // The directory keys around this soul. The red walk went to a
-              // file far to the left of the node and then jumped clean over
-              // `u/m/bob<esc>pet`, the file that actually holds it -- so the
-              // question is whether the directory was missing that entry at
-              // the moment of the read and gained it later.
-              dirNear = function () {
-                var out = [];
-                _R &&
-                  _R.list &&
-                  __radisk.Radix.map(
-                    _R.list,
-                    function (v, k) {
-                      v && out.push(String(k).slice(0, 22));
-                    },
-                    { start: "u/m", end: "u/n" },
-                  );
-                return out;
-              },
-              // Writer and reader must be the same Radisk to share a directory.
-              // Two instances over one folder would each hold their own, and
-              // the reader's would never learn of files the writer just made.
-              sameR = _R === (__radisk.has || {})[(goff._.opt || {}).file];
-            // The store log records which files were touched. It does not say
-            // whether the node was found in them -- radisk walks a range of
-            // files and reports nothing if the key is in none of them, which
-            // looks identical from outside to never having read at all.
-            if (_get) {
-              _store.get = function (file, cb) {
-                return _get.call(_store, file, function (e, d) {
-                  storeLog.push(
-                    String(file).slice(-20) + (d ? ":" + d.length + "b" : ":EMPTY"),
-                  );
-                  cb(e, d);
-                });
-              };
-            }
-            // Follow the range walk for this soul: which file the directory
-            // sends us to, and whether each chunk of the walk yields data.
-            if (_read) {
-              var _wfind = function (key, cb) {
-                if (0 !== String(key).indexOf("u/m/mutate/n")) {
-                  return _find.apply(_R, arguments);
-                }
-                return _find.call(_R, key, function (file) {
-                  radPush("file=" + String(file).slice(-18));
-                  // r.list is bound by now, so this is the directory as the
-                  // very first read of this soul saw it.
-                  dir0 || (dir0 = dirNear());
-                  return cb.apply(this, arguments);
-                });
-              };
-              // r.find carries .add and .bad; radisk calls them by name.
-              Object.keys(_find).forEach(function (k) {
-                _wfind[k] = _find[k];
-              });
-              _R.find = _wfind;
-              _R.read = function (key, cb, o, DBG) {
-                if (0 !== String(key).indexOf("u/m/mutate/n")) {
-                  return _read.apply(_R, arguments);
-                }
-                return _read.call(
-                  _R,
-                  key,
-                  function (err, data, oo) {
-                    radPush(
-                      "chunk" +
-                        ((oo || {}).chunks || 0) +
-                        (data ? "=co" : "=rong") +
-                        " tiep=" +
-                        String((oo || {}).next || "het").slice(-14),
-                    );
-                    return cb.apply(this, arguments);
-                  },
-                  o,
-                  DBG,
-                );
-              };
-            }
-            var unwrap = function () {
-              if (_read) {
-                _R.read = _read;
-                _R.find = _find;
-              }
-              if (_get) {
-                _store.get = _get;
-              }
-            };
+            t0 = +new Date();
             // This only ever fails on Windows CI, as a bare 9s timeout that
             // says nothing about which of the four expected emissions never
             // arrived. Report the collected state just before mocha gives up.
