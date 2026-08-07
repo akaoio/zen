@@ -108,6 +108,11 @@ Zen.chain.put = function (data, cb, opt, as) {
         : cat.ref.get(resolve, {
             run: as.run,
             /*hatch: 0,*/ v2020: 1,
+            // stun:0 — this GET only resolves the child's soul, so it must not
+            // queue behind in-flight writes. Without it, concurrent puts that
+            // each create a new node under one parent can park on each other's
+            // stun lists and never resume: no ack, no error, write lost.
+            stun: 0,
             out: { get: { ".": " " } },
           }); // TODO: BUG! This should be resolve ONLY soul to prevent full data from being loaded. // Fixed now?
       //setTimeout(function(){ if(F){ return } console.log("I HAVE NOT BEEN CALLED!", path, id, cat.ref._.id, k) }, 9000); var F; // MAKE SURE TO ADD F = 1 below!
