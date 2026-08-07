@@ -193,4 +193,57 @@ describe("RAD invariants", function () {
         JSON.stringify(misses.slice(0, 10)),
     );
   });
+
+  // A file the directory never hears about.
+  //
+  // Splitting names the new file after the first key moving into it, and that
+  // name can be a strict prefix of names the directory already holds --
+  // `names<esc>a120` alongside `names<esc>a120a0`. `r.find.add` asked the
+  // directory `dir(file)` and treated any truthy answer as "already listed",
+  // but a radix answers a prefix lookup with the *subtree* under it, which is
+  // truthy whether or not that exact name has an entry. So the entry was never
+  // written: the file existed, held the only copy of its keys, and every read
+  // routed straight past it.
+  //
+  // This is the shape behind years of "Windows-only" flakiness -- file names
+  // like `names<esc>n7` and `names<esc>n73` are one write apart from it.
+  it("lists a file whose name is a prefix of names already listed", function () {
+    var res = withRadisk({ chunk: 300, until: 100 }, function (r, ctx) {
+      var pad = new Array(120).join("p");
+      // Long names under a common prefix, each big enough to split between, so
+      // the directory ends up holding names<esc>a120a0, names<esc>a120b1, ...
+      for (var j = 0; j < 16; j++) {
+        r("names" + esc + "a120" + String.fromCharCode(97 + j) + j, {
+          ":": pad,
+          ">": 1,
+        });
+      }
+      ctx.settle();
+
+      // Then enough keys sorting *before* that prefix, plus the short name
+      // itself, so the next split puts its boundary exactly on
+      // `names<esc>a120`.
+      for (var m = 0; m < 16; m++) {
+        r("names" + esc + "a11" + m, { ":": pad, ">": 2 });
+      }
+      r("names" + esc + "a120", { ":": "SHORT", ">": 2 });
+      ctx.settle();
+
+      var got = readNow(r, "names" + esc + "a120");
+      ctx.settle();
+      return {
+        found: !!(got.data && "SHORT" === got.data[":"]),
+        files: Object.keys(ctx.store.files).length,
+      };
+    });
+    assert.ok(
+      res.files > 4,
+      "no splitting happened, so nothing was tested: " + res.files + " files",
+    );
+    assert.ok(
+      res.found,
+      "a file whose name is a prefix of listed names never reached the " +
+        "directory, so its keys are unreachable",
+    );
+  });
 });
