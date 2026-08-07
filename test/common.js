@@ -1299,13 +1299,20 @@ describe("ZEN", function () {
                   " gate=" +
                   gate +
                   " rad=" +
-                  JSON.stringify(radLog.slice(0, 8)) +
+                  JSON.stringify(radLog.slice(0, 14)) +
                   " radN=" +
                   _Rn +
                   "/" +
                   !!_read +
                   " chungRad=" +
                   sameR +
+                  // When statedisk's put said "done", against when radisk
+                  // actually saved. The red walk puts the read at 1ms and the
+                  // first save of this soul at 2ms, which would mean the ack
+                  // outran the write it was acking.
+                  " ackO=" +
+                  (t0 - t00) +
+                  "ms" +
                   " dir0=" +
                   JSON.stringify(dir0) +
                   " dir8=" +
