@@ -1143,7 +1143,29 @@ describe("ZEN", function () {
             var check = {},
               count = {},
               t0 = +new Date(),
-              seen = []; // every emission, with when it landed
+              seen = [], // every emission, with when it landed
+              storeLog = [],
+              _opt = zen._.opt || {},
+              _store = _opt.store,
+              _get = _store && _store.get;
+            // The premise still to test: does the storage layer answer this
+            // read empty on the runs that fail? Everything downstream of an
+            // empty answer is understood; whether it happens is not.
+            if (_get) {
+              _store.get = function (file, cb) {
+                return _get.call(_store, file, function (e, d) {
+                  storeLog.push(
+                    String(file).slice(-20) + (d ? ":" + d.length + "b" : ":EMPTY"),
+                  );
+                  cb(e, d);
+                });
+              };
+            }
+            var unwrap = function () {
+              if (_get) {
+                _store.get = _get;
+              }
+            };
             // This only ever fails on Windows CI, as a bare 9s timeout that
             // says nothing about which of the four expected emissions never
             // arrived. Report the collected state just before mocha gives up.
@@ -1177,8 +1199,11 @@ describe("ZEN", function () {
                   " children=" +
                   JSON.stringify(
                     Object.keys((zen.get("u/m/mutate/n")._ || {}).next || {}),
-                  ),
+                  ) +
+                  " store=" +
+                  JSON.stringify(storeLog.slice(-10)),
               );
+              unwrap();
             }, 8000);
             zen
               .get("u/m/mutate/n")
@@ -1198,6 +1223,7 @@ describe("ZEN", function () {
                   clearTimeout(done.to);
                   done.to = setTimeout(function () {
                     clearTimeout(diag);
+                    unwrap();
                     expect(done.last).to.be.ok();
                     expect(check["Alice Aabca"]).to.not.be.ok();
                     expect(count.Alice).to.be(1);
