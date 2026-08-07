@@ -6275,7 +6275,8 @@ defmod('./src/chain.js', function(module, exp){
     }
     if (
       (tat.echo || (tat.echo = {}))[cat.id] && // we've already linked ourselves so we do not need to do it again. Except... (annoying implementation details)
-      !(root.pass || "")[cat.id]
+      !(root.pass || "")[cat.id] &&
+      !cat.repass
     ) {
       return;
     } // if a new event listener was added, we need to make a pass through for it. The pass will be on the chain, not always the chain passed down.
@@ -6286,6 +6287,7 @@ defmod('./src/chain.js', function(module, exp){
       tmp[link + cat.id] = 1;
     } // But the above edge case may "pass through" on a circular graph causing infinite passes, so we hackily add a temporary check for that.
 
+    delete cat.repass; // the new listener has had its pass through
     (tat.echo || (tat.echo = {}))[cat.id] = cat; // set ourself up for the echo! // TODO: BUG? Echo to self no longer causes problems? Confirm.
 
     if (cat.has) {
@@ -7007,6 +7009,10 @@ defmod('./src/get.js', function(module, exp){
       any.id = opt.run || ++root.once; // used in callback to check if we are earlier than a write. // will this ever cause an integer overflow?
       tmp = root.pass;
       (root.pass = {})[id] = 1; // Explanation: test trade-offs want to prevent recursion so we add/remove pass flag as it gets fulfilled to not repeat, however map map needs many pass flags - how do we reconcile?
+      cat.repass = 1; // A new listener needs link() to re-link this chain to what
+      // it points at. root.pass only says so for as long as the out below stays
+      // synchronous, and it does not always, so say it on the chain instead --
+      // otherwise the re-link is skipped and no second delivery ever arrives.
       opt.out = opt.out || { get: {} };
       cat.on("out", opt.out);
       root.pass = tmp;

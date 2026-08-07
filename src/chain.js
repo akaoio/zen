@@ -297,7 +297,8 @@ function link(msg, cat) {
   }
   if (
     (tat.echo || (tat.echo = {}))[cat.id] && // we've already linked ourselves so we do not need to do it again. Except... (annoying implementation details)
-    !(root.pass || "")[cat.id]
+    !(root.pass || "")[cat.id] &&
+    !cat.repass
   ) {
     return;
   } // if a new event listener was added, we need to make a pass through for it. The pass will be on the chain, not always the chain passed down.
@@ -308,6 +309,7 @@ function link(msg, cat) {
     tmp[link + cat.id] = 1;
   } // But the above edge case may "pass through" on a circular graph causing infinite passes, so we hackily add a temporary check for that.
 
+  delete cat.repass; // the new listener has had its pass through
   (tat.echo || (tat.echo = {}))[cat.id] = cat; // set ourself up for the echo! // TODO: BUG? Echo to self no longer causes problems? Confirm.
 
   if (cat.has) {
