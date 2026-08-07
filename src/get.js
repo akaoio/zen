@@ -160,6 +160,10 @@ Zen.chain.get = function (key, cb, as) {
     any.id = opt.run || ++root.once; // used in callback to check if we are earlier than a write. // will this ever cause an integer overflow?
     tmp = root.pass;
     (root.pass = {})[id] = 1; // Explanation: test trade-offs want to prevent recursion so we add/remove pass flag as it gets fulfilled to not repeat, however map map needs many pass flags - how do we reconcile?
+    cat.repass = 1; // A new listener needs link() to re-link this chain to what
+    // it points at. root.pass only says so for as long as the out below stays
+    // synchronous, and it does not always, so say it on the chain instead --
+    // otherwise the re-link is skipped and no second delivery ever arrives.
     opt.out = opt.out || { get: {} };
     cat.on("out", opt.out);
     root.pass = tmp;
