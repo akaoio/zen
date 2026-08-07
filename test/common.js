@@ -2,6 +2,8 @@
 import zenbase from "../zen.js";
 import "../lib/store.js";
 import "../lib/rfs.js";
+import __radisk from "../lib/radisk.js"; // same module lib/store.js builds on,
+// so __radisk.has holds the very instance serving these tests.
 import "./rad/rad.js";
 import fs from "fs";
 import fsrm from "../lib/fsrm.js";
@@ -1147,10 +1149,25 @@ describe("ZEN", function () {
               storeLog = [],
               _opt = zen._.opt || {},
               _store = _opt.store,
-              _get = _store && _store.get;
-            // The premise still to test: does the storage layer answer this
-            // read empty on the runs that fail? Everything downstream of an
-            // empty answer is understood; whether it happens is not.
+              _get = _store && _store.get,
+              radLog = [],
+              radPush = function (s) {
+                // the per-child reads repeat the same line; keep the walk legible
+                if (radLog[radLog.length - 1] !== s) {
+                  radLog.push(s);
+                }
+              },
+              _esc = String.fromCharCode(27),
+              // Radisk keys its instances by the *resolved* opt.file, and it
+              // resolves opt.file in place, so this is the same string.
+              _R = (__radisk.has || {})[_opt.file],
+              _Rn = Object.keys(__radisk.has || {}).length,
+              _read = _R && _R.read,
+              _find = _R && _R.find;
+            // The store log records which files were touched. It does not say
+            // whether the node was found in them -- radisk walks a range of
+            // files and reports nothing if the key is in none of them, which
+            // looks identical from outside to never having read at all.
             if (_get) {
               _store.get = function (file, cb) {
                 return _get.call(_store, file, function (e, d) {
@@ -1161,7 +1178,50 @@ describe("ZEN", function () {
                 });
               };
             }
+            // Follow the range walk for this soul: which file the directory
+            // sends us to, and whether each chunk of the walk yields data.
+            if (_read) {
+              var _wfind = function (key, cb) {
+                if (0 !== String(key).indexOf("u/m/mutate/n")) {
+                  return _find.apply(_R, arguments);
+                }
+                return _find.call(_R, key, function (file) {
+                  radPush("file=" + String(file).slice(-18));
+                  return cb.apply(this, arguments);
+                });
+              };
+              // r.find carries .add and .bad; radisk calls them by name.
+              Object.keys(_find).forEach(function (k) {
+                _wfind[k] = _find[k];
+              });
+              _R.find = _wfind;
+              _R.read = function (key, cb, o, DBG) {
+                if (0 !== String(key).indexOf("u/m/mutate/n")) {
+                  return _read.apply(_R, arguments);
+                }
+                return _read.call(
+                  _R,
+                  key,
+                  function (err, data, oo) {
+                    radPush(
+                      "chunk" +
+                        ((oo || {}).chunks || 0) +
+                        (data ? "=co" : "=rong") +
+                        " tiep=" +
+                        String((oo || {}).next || "het").slice(-14),
+                    );
+                    return cb.apply(this, arguments);
+                  },
+                  o,
+                  DBG,
+                );
+              };
+            }
             var unwrap = function () {
+              if (_read) {
+                _R.read = _read;
+                _R.find = _find;
+              }
               if (_get) {
                 _store.get = _get;
               }
@@ -1205,8 +1265,36 @@ describe("ZEN", function () {
                   " gets=" +
                   JSON.stringify(gets) +
                   " gate=" +
-                  gate,
+                  gate +
+                  " rad=" +
+                  JSON.stringify(radLog.slice(0, 8)) +
+                  " radN=" +
+                  _Rn +
+                  "/" +
+                  !!_read,
               );
+              // Is the node actually in the file the directory points at? This
+              // separates "written somewhere the directory does not know about"
+              // from "in the right file, and radisk still did not return it".
+              // Async, so it lands as its own line a moment later.
+              if (_find && _get) {
+                _find.call(_R, "u/m/mutate/n" + _esc, function (file) {
+                  _get.call(_store, file, function (e, d) {
+                    console.log(
+                      "DIAG uncached synchronous map on mutate node do file: file=" +
+                        String(file).slice(-18) +
+                        " co_soul=" +
+                        (String(d || "").indexOf("u/m/mutate/n") >= 0) +
+                        " co_bob=" +
+                        (String(d || "").indexOf("Bob") >= 0) +
+                        " bytes=" +
+                        String(d || "").length,
+                    );
+                    unwrap();
+                  });
+                });
+                return;
+              }
               unwrap();
             }, 8000);
             // The store log alone cannot say whether the read ever happened: a
