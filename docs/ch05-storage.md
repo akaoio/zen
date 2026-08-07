@@ -361,3 +361,67 @@ GUN_TEST_TMP=1 npm run test:core
 
 # Or use npm run clean + npm test (does both automatically)
 ```
+
+---
+
+## 5.14 Shaping data for storage cost
+
+**The unit of cost is the node, not the byte.** Every node is a separate unit of signing, syncing and storage, so it carries a fixed overhead that does not shrink with the amount of data in it. If you arrive from a relational background, "one record, one node" is the natural first instinct — and it is the slowest possible layout.
+
+### 5.14.1 Batch small records
+
+Same data, two shapes — 200 candles, signed writes to `~<pub>` with `radisk: true`:
+
+| Layout | Write | Read |
+|--------|-------|------|
+| One node per record (`~pub/c/<ts>`) | 200 in 8628 ms = **23/s** | 200 in 23181 ms = **9/s** |
+| One node holding 1440 records (110.5 KB JSON) | 325 ms = **4431/s** | 157 ms = **9172/s** |
+
+The per-node cost is **flat**, not degrading — writing the 150th child of a node costs the same as the first (measured 47 / 41 / 42 ms for children 1-10, 71-80, 141-150; reads 109 / 113 / 113 ms). There is no fan-out penalty to design around; there is simply a floor per node that you pay once per node.
+
+So when you have many small records that are always read together, pack them:
+
+```js
+// Slow: one node per candle
+for (const c of candles) {
+  zen.get("~" + pub).get("c").get(String(c.ts)).put(c, null, { authenticator: me });
+}
+
+// Fast: one node per day
+zen.get("~" + pub).get("day").get("2026-01-01").put(
+  { count: candles.length, data: JSON.stringify(candles) },
+  null,
+  { authenticator: me },
+);
+```
+
+Batch when records are written and read as a group and you do not need per-record subscriptions. Keep one node per record when subscribers need to react to individual records, or when writers of different records are different identities.
+
+### 5.14.2 When you do read many nodes, read them in parallel
+
+Most of the per-read cost is **latency, not CPU**. `once()` debounces before it delivers, `opt.wait || 99` ms (`src/on.js`), and that wait is paid even for a node already in memory. Awaiting reads one at a time serialises that wait; issuing them together does not:
+
+| Reading 60 nodes | Throughput |
+|------------------|-----------|
+| Sequential `await`, default | 9 nodes/s |
+| Sequential `await`, `{ wait: 0 }` | 10 nodes/s |
+| Parallel | **176 nodes/s** |
+
+Note that `{ wait: 0 }` does not remove the floor — parallelism does.
+
+```js
+const read = (chain) => new Promise((done) => chain.once(done));
+
+// Slow: each await pays the full latency
+const slow = [];
+for (const ts of timestamps) {
+  slow.push(await read(zen.get("~" + pub).get("c").get(ts)));
+}
+
+// ~19x faster: one round of latency for all of them
+const fast = await Promise.all(
+  timestamps.map((ts) => read(zen.get("~" + pub).get("c").get(ts))),
+);
+```
+
+Absolute numbers above are from one machine (Node 24, ext4, `radisk` + `rfs`, signed writes) and will differ on yours — the ratios are the part worth remembering.
