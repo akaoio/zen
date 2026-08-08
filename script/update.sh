@@ -71,6 +71,18 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Under `sudo` every path this script works from points at the wrong place:
+# INSTALL_DIR is "$HOME/zen", nvm lives in "$HOME/.nvm", the state stamp is
+# under "$HOME/.local/state" -- and $HOME is /root. It would look for a checkout
+# that is not there and install a launcher nobody runs. Root is only ever needed
+# for the one `systemctl restart`, which this script asks for itself.
+if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
+    log_error "Run 'zen update' as ${SUDO_USER}, not with sudo."
+    log_error "It updates the checkout in that user's home; root only enters for"
+    log_error "the service restart, which this script requests on its own."
+    exit 1
+fi
+
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
 else

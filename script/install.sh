@@ -342,7 +342,13 @@ configure_sudoers() {
     if [ "$SKIP_SERVICE" = "true" ]; then
         return
     fi
-    if [ "$(id -u)" -eq 0 ]; then
+    # Skip only when the *service user* is root -- then nothing it does needs a
+    # password. Running the installer under sudo is a different thing entirely:
+    # the service still runs as $REAL_USER, and that user is exactly who has to
+    # restart it afterwards. Returning early here left every sudo-installed host
+    # without the rule, so its hourly auto-update pulled new code and then died
+    # on "sudo: a password is required" at the restart, silently, forever.
+    if [ "$REAL_USER" = "root" ]; then
         return
     fi
 
