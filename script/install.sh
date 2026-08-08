@@ -390,13 +390,38 @@ ${user} ALL=(root) NOPASSWD: ${chmod_bin} +x /usr/local/bin/zen"
 
     tmpf="$(mktemp)"
     printf '%s\n' "$content" > "$tmpf"
-    if visudo -c -f "$tmpf" >/dev/null 2>&1; then
+
+    # visudo lives in /usr/sbin, which is not on an ordinary user's PATH. A bare
+    # `visudo` therefore failed with "command not found" on every non-root
+    # install, took the else branch below, and the rule was never written --
+    # leaving exactly the state fixed in #59: the hourly auto-update pulls new
+    # code and then dies on "sudo: a password is required" at the restart.
+    # It validates fine unprivileged; it is only the install that needs root.
+    visudo_bin="$(command -v visudo 2>/dev/null)" || true
+    if [ -z "$visudo_bin" ]; then
+        for cand in /usr/sbin/visudo /sbin/visudo; do
+            if [ -x "$cand" ]; then
+                visudo_bin="$cand"
+                break
+            fi
+        done
+    fi
+
+    if [ -n "$visudo_bin" ] && "$visudo_bin" -c -f "$tmpf" >/dev/null 2>&1; then
         $SUDO install -m 0440 -o root -g root "$tmpf" "$sudoers_file"
         # Remove any old sudoers file from previous naming (zen-<service>)
         $SUDO rm -f "/etc/sudoers.d/zen-${SERVICE_NAME}" 2>/dev/null || true
         log_info "Sudoers rule installed: $sudoers_file"
     else
-        log_warn "visudo validation failed — skipping (auto-update will need manual sudo)"
+        if [ -z "$visudo_bin" ]; then
+            log_warn "visudo not found — cannot validate the sudoers rule, skipping."
+        else
+            log_warn "visudo rejected the generated sudoers rule — skipping."
+        fi
+        log_warn "Auto-update will pull new code but fail to restart $SERVICE_NAME."
+        log_warn "To fix, install this rule by hand:"
+        printf '%s\n' "$content" | sed 's/^/    /'
+        log_warn "  sudo install -m 0440 -o root -g root <file> $sudoers_file"
     fi
     rm -f "$tmpf"
 }
