@@ -1163,12 +1163,15 @@ defmod('./zen.js', function(module, exp){
         //if(!node && !at){ return root.on('get', msg) }
         //if(has && node){ // replace 2 below lines to continue dev?
         if (!node) {
-          return root.on("get", msg);
+          root.on("get", msg);
+          unanswerable(root) && root.on("in", { "@": msg["#"] });
+          return;
         }
         if (has) {
           if ("string" != typeof has || u === node[has]) {
             if (!((at || "").next || "")[has]) {
               root.on("get", msg);
+              unanswerable(root) && root.on("in", { "@": msg["#"] });
               return;
             }
           }
@@ -1181,6 +1184,22 @@ defmod('./zen.js', function(module, exp){
         node && ack(msg, node);
         root.on("get", msg); // send GET to storage adapters.
       };
+      // A GET is answered by a storage adapter (they subscribe to the "get" event)
+      // or by a peer. With neither, the GET would never get any reply at all --
+      // stranding once() and, worse, silently stalling any put() that needs a GET
+      // to resolve a child node's soul. Reply "not found" ourselves instead.
+      function unanswerable(root) {
+        if ((root.tag || "")["get"]) {
+          return false;
+        }
+        var peers = (root.opt || "").peers;
+        for (var url in peers) {
+          if (Object.prototype.hasOwnProperty.call(peers, url)) {
+            return false;
+          }
+        }
+        return true;
+      }
       function ack(msg, node) {
         var S = +new Date(),
           ctx = msg._ || {},
@@ -6261,7 +6280,8 @@ defmod('./zen.js', function(module, exp){
       }
       if (
         (tat.echo || (tat.echo = {}))[cat.id] && // we've already linked ourselves so we do not need to do it again. Except... (annoying implementation details)
-        !(root.pass || "")[cat.id]
+        !(root.pass || "")[cat.id] &&
+        !cat.repass
       ) {
         return;
       } // if a new event listener was added, we need to make a pass through for it. The pass will be on the chain, not always the chain passed down.
@@ -6272,6 +6292,7 @@ defmod('./zen.js', function(module, exp){
         tmp[link + cat.id] = 1;
       } // But the above edge case may "pass through" on a circular graph causing infinite passes, so we hackily add a temporary check for that.
 
+      delete cat.repass; // the new listener has had its pass through
       (tat.echo || (tat.echo = {}))[cat.id] = cat; // set ourself up for the echo! // TODO: BUG? Echo to self no longer causes problems? Confirm.
 
       if (cat.has) {
@@ -6579,6 +6600,11 @@ defmod('./zen.js', function(module, exp){
             : cat.ref.get(resolve, {
                 run: as.run,
                 /*hatch: 0,*/ v2020: 1,
+                // stun:0 — this GET only resolves the child's soul, so it must not
+                // queue behind in-flight writes. Without it, concurrent puts that
+                // each create a new node under one parent can park on each other's
+                // stun lists and never resume: no ack, no error, write lost.
+                stun: 0,
                 out: { get: { ".": " " } },
               }); // TODO: BUG! This should be resolve ONLY soul to prevent full data from being loaded. // Fixed now?
           //setTimeout(function(){ if(F){ return } console.log("I HAVE NOT BEEN CALLED!", path, id, cat.ref._.id, k) }, 9000); var F; // MAKE SURE TO ADD F = 1 below!
@@ -6988,6 +7014,10 @@ defmod('./zen.js', function(module, exp){
         any.id = opt.run || ++root.once; // used in callback to check if we are earlier than a write. // will this ever cause an integer overflow?
         tmp = root.pass;
         (root.pass = {})[id] = 1; // Explanation: test trade-offs want to prevent recursion so we add/remove pass flag as it gets fulfilled to not repeat, however map map needs many pass flags - how do we reconcile?
+        cat.repass = 1; // A new listener needs link() to re-link this chain to what
+        // it points at. root.pass only says so for as long as the out below stays
+        // synchronous, and it does not always, so say it on the chain instead --
+        // otherwise the re-link is skipped and no second delivery ever arrives.
         opt.out = opt.out || { get: {} };
         cat.on("out", opt.out);
         root.pass = tmp;
