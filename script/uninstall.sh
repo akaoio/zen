@@ -321,6 +321,12 @@ remove_zen() {
 
         execute rm -rf "$INSTALL_DIR"
         log_info "ZEN installation removed"
+        # The shell that ran this is very often standing in the directory we
+        # just deleted, and a child cannot fix its parent's cwd. Say so, because
+        # the symptom looks nothing like the cause: git and node both refuse to
+        # work from a deleted directory, so the next thing the user tries --
+        # usually reinstalling -- fails with errors about the wrong thing.
+        log_warn "If your shell is still inside $INSTALL_DIR, run 'cd ~' now."
     else
         log_info "Keeping ZEN installation directory"
     fi
@@ -473,7 +479,12 @@ remove_cli() {
     # Remove XDG config metadata written by install_cli
     XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
     for f in "$XDG_CONFIG_HOME/zen/install_dir" "$XDG_CONFIG_HOME/zen/service_name"; do
-        [ -f "$f" ] && execute rm -f "$f" && log_info "Removed: $f"
+        # execute() is a no-op under --dry-run, so announcing "Removed" here
+        # claimed something that had not happened.
+        if [ -f "$f" ]; then
+            execute rm -f "$f"
+            [ "$DRY_RUN" = "true" ] || log_info "Removed: $f"
+        fi
     done
 }
 

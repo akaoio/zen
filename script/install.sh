@@ -6,6 +6,20 @@
 
 set -eu
 
+# Stand somewhere that exists before doing anything.
+#
+# This script is normally piped into sh, so it inherits whatever directory the
+# user's shell happens to be in -- and that directory may be gone. `zen
+# uninstall` removes $HOME/zen, which is exactly where the shell that ran it is
+# usually standing; the obvious next move is to reinstall from that same shell.
+# A deleted cwd is not a mild condition: git refuses to clone at all ("Unable to
+# read current working directory") even with an absolute destination, and node
+# will not so much as report its version. The install dies before it starts,
+# with errors that point nowhere near the cause.
+#
+# Nothing below is relative to the invocation directory, so moving is free.
+cd "${HOME:-/}" 2>/dev/null || cd /
+
 # Default values
 VERSION="main"
 PORT="8420"
@@ -409,12 +423,19 @@ start_service() {
 install_cli() {
     # Record install location in XDG config so the `zen` CLI can find it
     cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
-    mkdir -p "$cfg_dir"
-    echo "$INSTALL_DIR"  > "$cfg_dir/install_dir"
-    echo "$SERVICE_NAME" > "$cfg_dir/service_name"
-    echo "$PORT"         > "$cfg_dir/port"
-    if [ -n "$DOMAIN" ]; then
-        echo "$DOMAIN" > "$cfg_dir/domain"
+    # These writes sat above the dry-run check further down, so --dry-run
+    # rewrote the live config of whatever installation was already on the
+    # machine -- pointing the `zen` CLI at a directory the run never created.
+    if [ "$DRY_RUN" = "true" ]; then
+        log_info "[DRY RUN] Would record install_dir/service_name/port in $cfg_dir"
+    else
+        mkdir -p "$cfg_dir"
+        echo "$INSTALL_DIR"  > "$cfg_dir/install_dir"
+        echo "$SERVICE_NAME" > "$cfg_dir/service_name"
+        echo "$PORT"         > "$cfg_dir/port"
+        if [ -n "$DOMAIN" ]; then
+            echo "$DOMAIN" > "$cfg_dir/domain"
+        fi
     fi
 
     # Determine where to place the `zen` binary
@@ -424,7 +445,7 @@ install_cli() {
         bin_dir="/usr/local/bin"
     else
         bin_dir="$HOME/.local/bin"
-        mkdir -p "$bin_dir"
+        [ "$DRY_RUN" = "true" ] || mkdir -p "$bin_dir"
     fi
 
     target="$bin_dir/zen"
