@@ -763,11 +763,8 @@ describe("ZEN", function () {
         expect("string" == typeof Zen.valid({ a: 1 })).to.be(false);
         expect("string" == typeof Zen.valid(function () {})).to.be(false);
       });
-
     });
   });
-
-
 
   describe("API", function () {
     var gopt = {
@@ -1142,6 +1139,7 @@ describe("ZEN", function () {
           function () {
             var check = {},
               count = {},
+              mutate,
               t0 = +new Date(),
               seen = [], // every emission, with when it landed
               storeLog = [],
@@ -1155,7 +1153,8 @@ describe("ZEN", function () {
               _store.get = function (file, cb) {
                 return _get.call(_store, file, function (e, d) {
                   storeLog.push(
-                    String(file).slice(-20) + (d ? ":" + d.length + "b" : ":EMPTY"),
+                    String(file).slice(-20) +
+                      (d ? ":" + d.length + "b" : ":EMPTY"),
                   );
                   cb(e, d);
                 });
@@ -1213,6 +1212,9 @@ describe("ZEN", function () {
                 seen.push(String(v) + "@" + (+new Date() - t0) + "ms");
                 check[v] = f;
                 count[v] = (count[v] || 0) + 1;
+                if (check.Alice && check.Bob && mutate) {
+                  mutate();
+                }
                 //console.log("************", f,v);
                 if (
                   check.Alice &&
@@ -1234,7 +1236,22 @@ describe("ZEN", function () {
                   }, 200);
                 }
               });
-            setTimeout(function () {
+            // Mutate once the initial load has actually landed, not after a
+            // fixed sleep. The sleep was a race inside the test: it assumed
+            // storage answers within 300ms, and on a loaded Windows runner the
+            // first read of this node can take twice that. Overwriting `alice`
+            // before its original value arrives makes that value unobservable
+            // for good -- the later state wins -- so the test failed for a
+            // reason that had nothing to do with what it is checking.
+            //
+            // Waiting on the condition keeps the check intact: if the initial
+            // load never arrives nothing mutates, and the test still fails on
+            // its own timeout, saying exactly that.
+            mutate = function () {
+              if (mutate.done) {
+                return;
+              }
+              mutate.done = 1;
               zen
                 .get("u/m/mutate/n")
                 .get("alice")
@@ -1248,7 +1265,10 @@ describe("ZEN", function () {
                 });
                 done.last = true;
               }, 10);
-            }, 300);
+            };
+            if (check.Alice && check.Bob) {
+              mutate();
+            }
           },
           1000,
         );
@@ -1306,7 +1326,9 @@ describe("ZEN", function () {
               .get("u/m/mutate/n/u")
               .map()
               .on(function (v, f) {
-                seen.push(String(v && v.name) + "@" + (+new Date() - t0) + "ms");
+                seen.push(
+                  String(v && v.name) + "@" + (+new Date() - t0) + "ms",
+                );
                 check[v.name] = f;
                 count[v.name] = (count[v.name] || 0) + 1;
                 if (check.Alice && check.Bob && check["Alice Zzxyz"]) {
@@ -4607,16 +4629,38 @@ describe("ZEN", function () {
     });
 
     it("ack aggregation bypass", function (done) {
-      var alice = new ZEN({ localStorage: false, file: false, rad: false, radisk: false });
-      var carl  = new ZEN({ localStorage: false, file: false, rad: false, radisk: false });
+      var alice = new ZEN({
+        localStorage: false,
+        file: false,
+        rad: false,
+        radisk: false,
+      });
+      var carl = new ZEN({
+        localStorage: false,
+        file: false,
+        rad: false,
+        radisk: false,
+      });
 
       var amesh = alice._.opt.mesh;
       var cmesh = carl._.opt.mesh;
       var croot = carl._;
 
       // Wire alice <-> carl with proper peer objects so ack routing works
-      var c2a = { wire: { send: function (raw) { amesh.hear(raw, a2c); } } };
-      var a2c = { wire: { send: function (raw) { cmesh.hear(raw, c2a); } } };
+      var c2a = {
+        wire: {
+          send: function (raw) {
+            amesh.hear(raw, a2c);
+          },
+        },
+      };
+      var a2c = {
+        wire: {
+          send: function (raw) {
+            cmesh.hear(raw, c2a);
+          },
+        },
+      };
       amesh.hi(a2c);
       cmesh.hi(c2a);
 
@@ -4631,9 +4675,14 @@ describe("ZEN", function () {
               croot.on("out", { "@": String(askId), ok: { BANANA: 9 } });
             }, 10);
           }
-          if (this.to) { this.to.next(msg); }
+          if (this.to) {
+            this.to.next(msg);
+          }
         },
-        to: inTag.to, back: inTag, the: inTag, on: croot,
+        to: inTag.to,
+        back: inTag,
+        the: inTag,
+        on: croot,
       };
       inTag.to = interceptor;
 
@@ -4748,7 +4797,6 @@ describe("ZEN", function () {
           nopasstun(done, zen);
         });
     });
-
   });
 
   describe("localStorage", function () {
@@ -4792,7 +4840,6 @@ describe("ZEN", function () {
       });
     });
   });
-
 
   describe("Node Links", function () {
     it("put node link then read through link resolves in plain scope", function (done) {
