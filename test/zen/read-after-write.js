@@ -79,12 +79,23 @@ describe("read after write", function () {
       setTimeout(r, 3000);
     });
 
+    // Batched. once() waits out its own 99ms debounce before firing, so two
+    // hundred reads one after another cost twenty seconds of nothing but that
+    // wait. Reading them together is also closer to the shape that broke:
+    // reads landing while writes are still draining.
     var miss = [];
-    for (var j = 0; j < N; j++) {
-      var v = await read(zen.get(root).get("c").get("k" + j));
-      if (!v || v.o !== j) {
-        miss.push(j);
-      }
+    for (var b = 0; b < N; b += 25) {
+      var got = await Promise.all(
+        Array.from({ length: Math.min(25, N - b) }, function (_, k) {
+          return read(zen.get(root).get("c").get("k" + (b + k)));
+        }),
+      );
+      got.forEach(function (v, k) {
+        var j = b + k;
+        if (!v || v.o !== j) {
+          miss.push(j);
+        }
+      });
     }
     assert.strictEqual(
       miss.length,
