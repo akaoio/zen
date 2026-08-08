@@ -1201,7 +1201,9 @@ describe("ZEN", function () {
                     Object.keys((zen.get("u/m/mutate/n")._ || {}).next || {}),
                   ) +
                   " store=" +
-                  JSON.stringify(storeLog.slice(-10)),
+                  JSON.stringify(storeLog.slice(-10)) +
+                  " thang=" +
+                  JSON.stringify(globalThis.__LADDER || null),
               );
               unwrap();
             }, 8000);
