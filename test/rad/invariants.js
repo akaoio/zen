@@ -246,4 +246,72 @@ describe("RAD invariants", function () {
         "directory, so its keys are unreachable",
     );
   });
+
+  // A write that has to wait must still be readable.
+  //
+  // When a write lands during a flush it is parked on that flush and replayed
+  // when it lands. Everything about it -- key and value -- used to live only in
+  // the closure that parked it: not in `r.disk`, not in the snapshot being
+  // written, not on disk. So for that whole stretch a read for the key found
+  // nothing anywhere and said so, and nothing in the stack asks twice.
+  //
+  // That is the state the long-running Windows flake kept landing in:
+  // acknowledged, and simultaneously nowhere.
+  it("answers for a write that is parked on a flush", function () {
+    var res = withRadisk({ chunk: 300, until: 100 }, function (r, ctx) {
+      var pad = new Array(120).join("p");
+      for (var i = 0; i < 30; i++) {
+        r("names" + esc + "a" + (100 + i), { ":": pad, ">": 1 });
+      }
+      ctx.settle();
+
+      // Start a flush and stop while it is still in the store's hands.
+      for (var j = 0; j < 30; j++) {
+        r("names" + esc + "b" + (100 + j), { ":": pad, ">": 2 });
+      }
+      var guard = 0;
+      while (guard++ < 100000) {
+        var busy = false;
+        for (var w in r.writing) {
+          if (Object.prototype.hasOwnProperty.call(r.writing, w)) {
+            busy = true;
+            break;
+          }
+        }
+        if (busy) {
+          break;
+        }
+        if (!ctx.step()) {
+          break;
+        }
+      }
+
+      // This write has to wait for that flush. Parking is detected by the
+      // queue growing, not by anything the fix introduces -- otherwise the
+      // guard would only ever pass on fixed code and this test could never go
+      // red for the right reason.
+      var late = "names" + esc + "b120";
+      var route = null;
+      r.find(late, function (f) {
+        route = f;
+      });
+      var before = ((r.writing || {})[route] || []).length;
+      r(late, { ":": "PARKED", ">": 3 });
+      var parked = ((r.writing || {})[route] || []).length > before;
+
+      // Read it while it is still waiting -- served from memory, so it needs no
+      // disk work and cannot accidentally let the flush finish first.
+      var got = readNow(r, late);
+      return { parked: parked, data: got.data, done: got.done };
+    });
+    assert.ok(
+      res.parked,
+      "no write ended up parked, so this invariant was never exercised",
+    );
+    assert.ok(
+      res.data && "PARKED" === res.data[":"],
+      "a write parked on a flush is unreadable while it waits: " +
+        JSON.stringify(res.data),
+    );
+  });
 });
