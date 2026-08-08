@@ -48,8 +48,16 @@ function makeClient(relayUrl, pair) {
   });
 }
 
-/** Poll until zen.mesh.near ≥ 1 (WebSocket handshake complete). */
-async function waitConnected(zen, timeout = 5000) {
+/**
+ * Poll until zen.mesh.near ≥ 1 (WebSocket handshake complete).
+ *
+ * The window has to outlast one retry. mesh gives up on a stalled dial and
+ * tries again after `opt.lack`, 9s by default, so waiting only 5s means a
+ * first attempt that misses can never be recovered from -- the helper gives up
+ * four seconds before the retry it is waiting for. That is what took the suite
+ * down once in thirty Windows runs.
+ */
+async function waitConnected(zen, timeout = 12000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     const m = zen.mesh;
@@ -116,7 +124,7 @@ describe("zen.push() — basic contract", function () {
 // ── zen.mesh facade — real ZEN class instances ─────────────────────────────
 
 describe("zen.mesh — facade on ZEN class instance", function () {
-  this.timeout(10000);
+  this.timeout(30000); // room for one mesh retry (opt.lack, 9s) in the hook
   let relay, clientA, clientB, pairA, pairB;
 
   before(async function () {
@@ -174,7 +182,7 @@ describe("zen.mesh — facade on ZEN class instance", function () {
 // ── zen.push() → zen.mesh.on() — real WebSocket relay ─────────────────────
 
 describe("zen.push() → zen.mesh.on() — real WebSocket relay", function () {
-  this.timeout(10000);
+  this.timeout(30000); // room for one mesh retry (opt.lack, 9s) in the hook
   let relay, clientA, clientB, pairA, pairB;
 
   before(async function () {
