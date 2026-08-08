@@ -1202,7 +1202,7 @@ describe("ZEN", function () {
                   " store=" +
                   JSON.stringify(storeLog.slice(-10)) +
                   " renameBusy=" +
-                  (globalThis.__RENAMEBUSY || 0),
+                  JSON.stringify((globalThis.__RENAMEBUSY || []).slice(0, 8)),
               );
               unwrap();
             }, 8000);
