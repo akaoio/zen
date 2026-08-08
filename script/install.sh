@@ -166,6 +166,12 @@ esac
 
 # Auto-detect HTTPS certs from XDG config (set by ssl.sh) if not provided explicitly
 _zen_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
+# A previous install already recorded the domain. Reading it back means a plain
+# re-run keeps serving the same name -- and, more to the point, knows which
+# certificate to look for below.
+if [ -z "$DOMAIN" ] && [ -f "$_zen_cfg/domain" ]; then
+    DOMAIN="$(cat "$_zen_cfg/domain" 2>/dev/null || true)"
+fi
 if [ -z "$HTTPS_KEY" ] && [ -f "$_zen_cfg/key.pem" ]; then
     HTTPS_KEY="$_zen_cfg/key.pem"
 fi
@@ -445,6 +451,62 @@ start_service() {
     fi
 }
 
+# Serve HTTPS without being asked twice.
+#
+# The intended pipeline is ssl.sh -> acme.sh --install-cert, which copies the
+# pair into ~/.config/zen/{key,cert}.pem; the block near the top of this script
+# then picks them up. But those are only copies. Lose the config directory --
+# uninstall, a wiped home, a new user -- and the next install quietly drops to
+# plain HTTP even though acme.sh is still holding a perfectly valid certificate
+# for the same domain. Nothing says so; the relay just stops answering on 443.
+#
+# So: if there is no key yet and acme.sh has one for this domain, put the copies
+# back, and register the renewal hook while we are here.
+configure_https() {
+    if [ -n "$HTTPS_KEY" ] || [ -z "$DOMAIN" ] || [ "$SKIP_SERVICE" = "true" ]; then
+        return
+    fi
+
+    acme_home="${ACME_HOME:-$HOME/.acme.sh}"
+    if [ ! -x "$acme_home/acme.sh" ]; then
+        return
+    fi
+
+    # acme.sh keeps ECC certificates in <domain>_ecc and RSA ones in <domain>,
+    # and needs --ecc to be told which it is.
+    ecc_flag=""
+    if [ -d "$acme_home/${DOMAIN}_ecc" ]; then
+        ecc_flag="--ecc"
+    elif [ ! -d "$acme_home/$DOMAIN" ]; then
+        return
+    fi
+
+    log_info "acme.sh already holds a certificate for $DOMAIN — enabling HTTPS"
+    if [ "$DRY_RUN" = "true" ]; then
+        log_info "[DRY RUN] Would run acme.sh --install-cert -d $DOMAIN into $_zen_cfg"
+        return
+    fi
+
+    mkdir -p "$_zen_cfg"
+    # --reloadcmd both registers the hook for future renewals and fires once
+    # now. That one firing can fail -- on a first install the service does not
+    # exist yet -- and acme.sh reports the whole call as failed when it does.
+    # So judge by whether the files actually landed, not by the exit status.
+    "$acme_home/acme.sh" --home "$acme_home" --install-cert -d "$DOMAIN" $ecc_flag \
+        --key-file "$_zen_cfg/key.pem" \
+        --fullchain-file "$_zen_cfg/cert.pem" \
+        --reloadcmd "sudo -n systemctl restart $SERVICE_NAME" >/dev/null 2>&1 || true
+
+    if [ -s "$_zen_cfg/key.pem" ] && [ -s "$_zen_cfg/cert.pem" ]; then
+        HTTPS_KEY="$_zen_cfg/key.pem"
+        HTTPS_CERT="$_zen_cfg/cert.pem"
+        log_info "HTTPS enabled; renewals will restart $SERVICE_NAME"
+    else
+        log_warn "acme.sh could not install the certificate — continuing on plain HTTP."
+        log_warn "To issue or repair one: $INSTALL_DIR/script/ssl.sh --domain $DOMAIN"
+    fi
+}
+
 install_cli() {
     # Record install location in XDG config so the `zen` CLI can find it
     cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
@@ -620,6 +682,8 @@ main() {
 
     install_dependencies
     install_zen
+    # Before create_service: the unit's HTTPS_KEY/HTTPS_CERT are baked in there.
+    configure_https
     create_service
     configure_limits
     configure_sudoers
