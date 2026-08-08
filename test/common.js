@@ -1139,77 +1139,12 @@ describe("ZEN", function () {
           function () {
             var check = {},
               count = {},
-              mutate,
-              t0 = +new Date(),
-              seen = [], // every emission, with when it landed
-              storeLog = [],
-              _opt = zen._.opt || {},
-              _store = _opt.store,
-              _get = _store && _store.get;
-            // The premise still to test: does the storage layer answer this
-            // read empty on the runs that fail? Everything downstream of an
-            // empty answer is understood; whether it happens is not.
-            if (_get) {
-              _store.get = function (file, cb) {
-                return _get.call(_store, file, function (e, d) {
-                  storeLog.push(
-                    String(file).slice(-20) +
-                      (d ? ":" + d.length + "b" : ":EMPTY"),
-                  );
-                  cb(e, d);
-                });
-              };
-            }
-            var unwrap = function () {
-              if (_get) {
-                _store.get = _get;
-              }
-            };
-            // This only ever fails on Windows CI, as a bare 9s timeout that
-            // says nothing about which of the four expected emissions never
-            // arrived. Report the collected state just before mocha gives up.
-            // The first round of this told us the missing ones are the
-            // *initial* values, not the late one, so also record the order and
-            // timing -- that says whether the initial load never delivered or
-            // was delivered and dropped.
-            var diag = setTimeout(function () {
-              console.log(
-                "DIAG uncached synchronous map on mutate node: counts=" +
-                  JSON.stringify(count) +
-                  " missing=" +
-                  JSON.stringify(
-                    ["Alice", "Bob", "undefined", "Alice Zzxyz"].filter(
-                      function (k) {
-                        return !check[k];
-                      },
-                    ),
-                  ) +
-                  " done.last=" +
-                  !!done.last +
-                  " timeline=" +
-                  JSON.stringify(seen) +
-                  // Separates "the node never loaded" from "it loaded and the
-                  // per-child name reads never delivered" -- the timeline alone
-                  // cannot tell those apart.
-                  " node=" +
-                  JSON.stringify(
-                    Object.keys((zen.get("u/m/mutate/n")._ || {}).put || {}),
-                  ) +
-                  " children=" +
-                  JSON.stringify(
-                    Object.keys((zen.get("u/m/mutate/n")._ || {}).next || {}),
-                  ) +
-                  " store=" +
-                  JSON.stringify(storeLog.slice(-10)),
-              );
-              unwrap();
-            }, 8000);
+              mutate;
             zen
               .get("u/m/mutate/n")
               .map()
               .get("name")
               .get(function (v, f) {
-                seen.push(String(v) + "@" + (+new Date() - t0) + "ms");
                 check[v] = f;
                 count[v] = (count[v] || 0) + 1;
                 if (check.Alice && check.Bob && mutate) {
@@ -1224,8 +1159,6 @@ describe("ZEN", function () {
                 ) {
                   clearTimeout(done.to);
                   done.to = setTimeout(function () {
-                    clearTimeout(diag);
-                    unwrap();
                     expect(done.last).to.be.ok();
                     expect(check["Alice Aabca"]).to.not.be.ok();
                     expect(count.Alice).to.be(1);
@@ -1292,50 +1225,17 @@ describe("ZEN", function () {
           "u/m/mutate/n/u",
           function () {
             var check = {},
-              count = {},
-              t0 = +new Date(),
-              seen = [];
-            // Same story as the sibling test above: Windows-only, and the bare
-            // timeout hides which emission went missing. Say so, with the order
-            // and timing of what did arrive.
-            var diag = setTimeout(function () {
-              console.log(
-                "DIAG uncached synchronous map on mutate node uncached: counts=" +
-                  JSON.stringify(count) +
-                  " missing=" +
-                  JSON.stringify(
-                    ["Alice", "Bob", "Alice Zzxyz"].filter(function (k) {
-                      return !check[k];
-                    }),
-                  ) +
-                  " done.last=" +
-                  !!done.last +
-                  " timeline=" +
-                  JSON.stringify(seen) +
-                  " node=" +
-                  JSON.stringify(
-                    Object.keys((zen.get("u/m/mutate/n/u")._ || {}).put || {}),
-                  ) +
-                  " children=" +
-                  JSON.stringify(
-                    Object.keys((zen.get("u/m/mutate/n/u")._ || {}).next || {}),
-                  ),
-              );
-            }, 8000);
+              count = {};
             zen
               .get("u/m/mutate/n/u")
               .map()
               .on(function (v, f) {
-                seen.push(
-                  String(v && v.name) + "@" + (+new Date() - t0) + "ms",
-                );
                 check[v.name] = f;
                 count[v.name] = (count[v.name] || 0) + 1;
                 if (check.Alice && check.Bob && check["Alice Zzxyz"]) {
                   clearTimeout(done.to);
                   //console.log("****", f, v)
                   done.to = setTimeout(function () {
-                    clearTimeout(diag);
                     expect(done.last).to.be.ok();
                     //expect(check['Alice Aabca']).to.not.be.ok();
                     //expect(count['Alice']).to.be(1);
