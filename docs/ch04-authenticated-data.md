@@ -291,7 +291,9 @@ console.log(bad);   // undefined
 
 ## 4.13 Security pipeline summary
 
-When any write arrives, the security middleware routes it through one of these handlers:
+Before any routing happens, **`check.pipe.forget` runs first for every soul without exception**: a write on an ephemeral `<?N` soul or key whose HAM state is already older than N seconds is dropped right there, ahead of ownership, policy and hash rules alike (§5.15).
+
+What survives that gate is then routed through one of these handlers:
 
 | Soul | Handler | What it checks |
 |------|---------|----------------|

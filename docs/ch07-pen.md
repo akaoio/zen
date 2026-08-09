@@ -79,12 +79,14 @@ When PEN is called from the ZEN bridge, registers are populated as follows:
 | `R[2]` | `soul` | The soul of the node |
 | `R[3]` | `state` | The HAM state timestamp |
 | `R[4]` | `now` | `Date.now()` — injected by the ZEN bridge |
-| `R[5]` | `pub` | The writer's public key (recovered from signature when `sign:true`) |
+| `R[5]` | `pub` | The writer's public key — recovered from the signature when `sign:true`, on the originating write **and** on re-propagation from a remote peer |
 | `R[6]` | `path` | Path after `pencode/` in soul (e.g. soul `!abc/foo/bar` → path `foo/bar`) |
 | `R[7]` | `nonce` | PoW nonce from `msg.put["^"]` — always reserved, never set by user |
 | `R[128–255]` | `local[n]` | Local slots, set by `LET` opcode |
 
 Host registers (`R[0..127]`) are provided by the ZEN bridge. Local registers (`R[128..255]`) are scratch space inside the policy.
+
+`R[5]` deserves a note, because writer-pinning policies live or die on it. A signed write reaches other peers as re-propagation, and until 1.0.44 the register was only truthful on the node that originated the write — remote peers verified the signature but left `R[5]` blank, so any policy comparing against it failed there. The symptom was silent and total: pen-soul data acked at the relay and was dropped at every subscriber. Both re-propagation paths now recover the signer before the predicate runs, and a write whose signer cannot be recovered is rejected with `PEN: cannot recover signer pub`. Remote peers are exactly where writer pinning matters most.
 
 ---
 
@@ -375,7 +377,40 @@ LET(0, DIVU(R[4], window),            ← current candle (R[128])
 
 ---
 
-## 7.13 Building PEN from source
+## 7.13 The mailbox pattern — policy-fenced ephemeral slots
+
+A `~pub` namespace admits exactly one writer, so it cannot host an inbox that other identities write into — not without issuing certificates, which ordinary participants cannot mint for themselves. The mailbox pattern solves the same problem with policy instead: **one public PEN soul where every writer is fenced into a slot named after their own recovered key.**
+
+```js
+const soul = await ZEN.pen({
+  sign: true,
+  key: {
+    and: [
+      { suf: "<?60" },                                  // every slot is ephemeral, by LAW
+      { let: { bind: 0,
+               def:  { seg: { of: { reg: 0 }, sep: "<", idx: 0 } },
+               body: { eq: [{ reg: 128 }, { reg: 5 }] } } },   // prefix === recovered writer
+    ],
+  },
+});
+
+// each participant writes only their own slot
+zen.get(soul).get(pair.pub + "<?60").put(payload, cb, { authenticator: pair });
+```
+
+Three separate guarantees, each from a different mechanism, and none of them trusting a claim in the message:
+
+- **Identity** comes from the signature. `R[5]` is the pub *recovered* from it (§7.4), never a field the writer filled in. A writer cannot address someone else's slot: `eq [reg 128, reg 5]` compares the key's prefix against the recovered signer.
+- **Fencing** comes from the policy, which travels inside the soul itself — the bytecode IS the address, so no configuration can drift away from it.
+- **Forgetting** comes from the `<?60` suffix, enforced by `suf` so a durable slot cannot be smuggled in. Ephemerality is a property of the mailbox, not a courtesy of its writers (§5.15).
+
+A one-slot-per-writer mailbox is last-write-wins by construction: the newest message is the one a returning reader catches up on, and past the window the mesh has forgotten it entirely. For a directed inbox — engine to user rather than any-to-any — pin the writer to a constant instead and let the soul path separate recipients: `key: { and: [enginePub + "<?300", { eq: [{ reg: 5 }, enginePub] }] }`, then write `soul + "/" + userPub`.
+
+One practical wrinkle for readers: a slot value arrives in one of **three shapes** depending on the path it took — unpacked plaintext (locally, where `penStage` already unwrapped it), a signed envelope object `{ ":": value, "~": signature }`, or that envelope serialized to a JSON string by the wire. Consumers should normalize all three; `unwrap()` in `test/zen/mailbox.js` is the reference implementation.
+
+---
+
+## 7.14 Building PEN from source
 
 PEN Core is written in Zig. The source lives at `src/pen.zig` and `src/wasm.zig`.
 
@@ -391,13 +426,15 @@ Zig must be on your `PATH`. See [ziglang.org](https://ziglang.org/download/) to 
 
 ---
 
-## 7.14 Testing PEN
+## 7.15 Testing PEN
 
 ```bash
 npm run test:pen:unit
 ```
 
-This runs `test/pen.js` with a 10-second timeout. Tests cover:
+This runs `test/pen.js` with a 10-second timeout. The mailbox pattern of §7.13 has its own suite — `test/zen/mailbox.js`, part of `npm run test:zen:unit` — covering both the offline fencing rules and the over-the-wire propagation that `R[5]` recovery makes possible.
+
+`test/pen.js` tests cover:
 - `pen.pack` / `pen.unpack` round-trips
 - `pen.bc.*` bytecode builder
 - `pen.run(bytecode, regs)` evaluation

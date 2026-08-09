@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## 1.0.44 — 2026-08-09
+
+### PEN
+
+- **`R[5]` is now recovered on re-propagation, so pen souls actually propagate** (`src/pen.js`, akao#189): `penStage` verified the signature on a relayed write but left the writer register blank — `R[5]` was only truthful on the node that originated the write. Every writer-pinning policy (`eq [reg 5, pub]`) therefore failed on every *remote* peer, and the failure was silent and total: pen-soul data was acked at the relay and dropped at each subscriber, with no error anywhere. Both re-propagation paths (structured envelope and raw signed string) now recover the signer before the predicate runs; an unrecoverable signature is rejected with `PEN: cannot recover signer pub`. Remote peers are exactly where writer pinning matters most. Isolated with a repro matrix — plain soul ✓, marker key ✓, *any* pen soul ✗ — before the fix.
+
+### Storage
+
+- **Ephemeral `<?N` data is held in a real RAM store, not merely skipped** (`lib/store.js`): 1.0.41 skipped the disk but kept nothing, and a long-lived relay collects its chain cache — so ephemeral data became unservable, acked into the void and invisible to any cold reader. Ephemeral writes now live in a per-instance map with a genuine per-key expiry parsed from the marker, swept lazily on read and by an `unref()`'d 60-second timer, and **reads are served from it**. True wall-clock TTL included.
+- `test/zen/mailbox.js` gains a wire block: a remote subscriber receiving the engine's per-user slot write (blank `R[5]` used to drop it) and a cold reader catching up from the relay's RAM store. Suite: 812 passing, 39 pending, 0 failing.
+
+## 1.0.43 — 2026-08-09
+
+### Storage
+
+- **`<?N` works on KEYS, not just souls** (`lib/store.js`, `src/locstore.js`, `src/security.js`): the marker now makes a single slot of an otherwise durable node ephemeral. All three doors read it — the `forget` sync gate and both storage paths.
+- **The PEN mailbox pattern** (akao#189, documented in ch07 §7.13): one public policy soul where every participant is fenced into `key = <their recovered pub><?N` — identity from the signature, fencing from the policy, forgetting from the marker. It solves inboxes into a namespace nobody else can write to, without issuing certificates. The PEN grammar needed nothing new: `suf` pins the marker, `let`+`seg` binds the key prefix, `eq [reg 128, reg 5]` matches it against the recovered writer. New suite `test/zen/mailbox.js`.
+
+## 1.0.42 — 2026-08-09
+
+### Storage
+
+- **The ephemeral guard must not call into an undefined soul** (`lib/store.js`, `src/locstore.js`): 1.0.41 ran `soul.indexOf` on every put frame, but not every frame carries `put['#']` — and the original code only ever *concatenated* `soul`, which `undefined` survives. A method call does not: the throw inside the put handler swallowed that frame's event. akao's DB suite caught it as a branch subscriber going deaf to child writes (green on 1.0.40, red on 1.0.41, three runs each way, then bisected by pinning versions). Both doors are `typeof`-guarded now — the house truthiness lesson, one layer up.
+
+## 1.0.41 — 2026-08-09
+
+### Storage
+
+- **The lost half of `<?N` ephemeral souls is restored** (`lib/store.js`, `src/locstore.js`): the marker always had two halves. The sync gate survived the rewrite — `src/security.js`'s `forget` stage drops stale copies at ingest — but the storage half did not, so ephemeral writes went to radisk and localStorage like any other and "ephemeral" data outlived its window on every relay's disk. Ephemeral writes skip persistence entirely now, acking like memory-only mode, with the ack **deferred a tick**: an `in` fired synchronously inside the `put` event races the chain still registering its pending ack and gets swallowed. New suite `test/zen/ephemeral.js` greps the store's own bytes to prove it.
+
+## 1.0.40 — 2026-08-08
+
+### EVM chains
+
+- **`WsProvider.on(filter)` — logs subscriptions** (`lib/chains/evm.js`): an object argument is an `eth_subscribe ["logs", filter]`, ethers-parity. Filters survive reconnects *intact*: `_subHandlers` now stores `{ handler, params }` so `_resubscribeAll` replays the exact subscription rather than just its topic name.
+- **`WsProvider.on("head")` — the full enriched header**: `on("block")` keeps ethers parity and delivers a bare block number, but a consumer that stamps data with the block's real timestamp had to pay a `getBlock` round trip per block to recover what the header already carried. Both channels coexist and both re-subscribe.
+- **`WsProvider.on("reconnect")`**: fired only *after* `_resubscribeAll` completes, so a gap-healing consumer never sees fresh events land on an unhealed gap. `reconnect` and `error` registrations no longer force a connection.
+- **`destroy()` actually destroys**: the old body only closed the socket — pending calls hung to their timeout, every subscription table survived, and a dropped provider kept reconnecting as a zombie. It now rejects every pending call with `WS destroyed` and clears all state. (Found the hard way: the first draft added a *second* `destroy()` above the old one, and the later definition silently won.)
+- Driven by akao's DEX candle miner, which needed pushed swap logs, real block timestamps and a heal signal — and had been keeping a raw WebSocket alive because this surface did not exist.
+
+## 1.0.39 — 2026-08-08
+
+### Install
+
+- **The sudoers rule is written even when the installer runs as root** (#59), **`visudo` is found even though it is not on a normal user's PATH**, **the installer survives being run from a directory that no longer exists**, and **HTTPS turns itself on when `acme.sh` already holds the certificate**.
+
+### Core & storage (the read-after-write hunt, #36–#58)
+
+- **A write parked on an in-flight flush is visible while it waits** (#55, `lib/radisk.js`): a write arriving during a flush existed only in the closure that parked it — not in `r.disk`, not in the snapshot being written, not on disk. A read for that key found nothing anywhere and nothing asked again; worse, it could answer *stale* from the pre-flush snapshot. This removed the retry ladders of #52/#53 on purpose: with the cause gone they carried nothing.
+- **A blocked rename is retried instead of deleting the file it targets** (#51), **a parked write is replayed against the file it belongs to now** (#47), **a file whose name is a prefix of already-listed names is listed** (#49), and **the read/write hole during a batch flush is closed** (#40).
+- **Concurrent child-node writes no longer deadlock** (#38, `src/put.js`): `put()` resolved a child's soul with an internal GET that parked on other writes' stun lists, so N concurrent puts under one parent could all wait on each other forever. The GET only needs the soul, never the data.
+- **GETs nobody can answer are answered instead of hanging** (#36), and **`link()` learns about a new listener on the chain rather than on a clock** (#42).
+- **A single-steppable radisk** (#48): replacing its three sources of asynchrony at construction turns a flush into a list of steps, so "read after exactly k steps of the flush" becomes assertable — 44 interleavings in 0.5s, byte-identical across runs, where the equivalent statistical check was 24 pinned runs at 25 seconds each and still could not tell 30% from 42%.
+
 ## 1.0.38 — 2026-08-01
 
 ### EVM chains

@@ -428,18 +428,25 @@ Absolute numbers above are from one machine (Node 24, ext4, `radisk` + `rfs`, si
 
 ## 5.15 Ephemeral souls — `<?N`
 
-A soul containing `<?N` (N in seconds) is **ephemeral**. Two independent mechanisms enforce it, and both are needed:
+A soul **or key** containing `<?N` (N in seconds) is **ephemeral**. Two independent mechanisms enforce it, and both are needed:
 
-1. **The sync gate** (`src/security.js`, `forget` pipe stage): any incoming copy whose HAM state is older than N seconds is dropped at ingest — stale data stops replicating, and a peer that arrives late never receives it.
-2. **The storage bypass** (`lib/store.js` for radisk and every RAD backend, `src/locstore.js` for browser localStorage): writes on ephemeral souls are ACKed like memory-only mode but never persisted. RAM is their only home — a restart forgets them.
+1. **The sync gate** (`src/security.js`, `forget` pipe stage — the FIRST stage of the pipeline, ahead of every ownership and policy rule): any incoming copy whose HAM state is older than N seconds is dropped at ingest. Stale data stops replicating, and a peer that arrives late never receives it.
+2. **The RAM store** (`lib/store.js`, covering radisk and every RAD backend): ephemeral writes never touch the disk. They are held in a per-instance map with a real per-key expiry parsed from the marker, and **reads are served from it** — swept lazily on every read and by an `unref()`'d 60-second timer.
 
 ```js
 zen.get("inbox<?300").get("latest").put(payload)   // whole node ephemeral
 zen.get(soul).get(pub + "<?300").put(payload)      // ONE slot of a durable node ephemeral
 ```
 
-The marker works at BOTH granularities: on the **soul** (every key of the node is ephemeral) and on a **key** (that slot alone). The key form is what a PEN mailbox uses — one public policy soul, each participant fenced into `key = <their recovered pub><?N`, every slot RAM-only (see `test/zen/mailbox.js` for the full pattern: `sign:true` + a `suf`/`let`/`seg` key rule).
+The marker works at BOTH granularities: on the **soul** (every key of the node is ephemeral) and on a **key** (that slot alone, inside an otherwise durable node). The key form is what a PEN mailbox uses — one public policy soul, each participant fenced into `key = <their recovered pub><?N`, every slot RAM-only. See §7.13 for the pattern and `test/zen/mailbox.js` for the worked example; `test/zen/ephemeral.js` pins the storage properties on their own.
 
-Half of this existed from the start (the sync gate); the storage bypass was restored in 1.0.41 after the rewrite had lost it — without it, "ephemeral" data outlived its window on every relay's disk, which is not ephemeral at all.
+### 5.15.1 What the two halves cost, and what they do not
 
-Composition notes: the marker is part of the soul STRING, so it composes with user-space (`~pub…<?N`) signature checks and with PEN policy souls — the `forget` stage runs before both (verified live: a signed put on `~pub/inbox<?60` acks, serves from RAM, and leaves no payload on disk). One honest nuance: the DURABLE parent node's link to an ephemeral child is part of the parent and does persist — the child's NAME is visible on disk, its data never is. Choose N by intent: it bounds how stale a copy may be and still spread, not an exact wall-clock deletion.
+- **Wall-clock expiry is real**, not merely a staleness bound: each key carries `now + N seconds`, and the sweep deletes it. A marker with no parseable N never expires until the process does.
+- **Only RAM, only this process.** There is no persistence, so a restart forgets everything ephemeral. That is the guarantee, not a limitation to work around.
+- **The browser half is put-only.** `src/locstore.js` skips persisting ephemeral writes but has no RAM store of its own — in a browser the in-memory chain cache is what serves. Nothing is written to `localStorage`, which is the property that matters there.
+- **One honest nuance:** a DURABLE parent's link to an ephemeral child belongs to the parent and does persist. The child's NAME can be read off disk; its data never can.
+
+### 5.15.2 History
+
+The sync gate existed from the start. The storage half was lost in the rewrite and restored in **1.0.41** — without it, "ephemeral" data outlived its window on every relay's disk, which is not ephemeral at all. 1.0.42 fixed the guard calling into an undefined soul (not every put frame carries one). **1.0.43** extended the marker to keys, which is what makes the mailbox pattern possible. **1.0.44** replaced the bypass with the RAM store above: skipping the disk was not enough, because a long-lived relay collects its chain cache and the data became unservable — acked into the void, invisible to any cold reader.

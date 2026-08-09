@@ -156,12 +156,23 @@ Xem thêm tại [Lớp 6 — PoW](06_pow.md).
 ### ④ Xác định Writer
 
 ```javascript
+// Ghi mới (chính node này khởi phát)
 var writer = sec.upub                  // User đang đăng nhập
            || authenticator && authenticator.pub  // Hoặc auth service
            || null
+
+// Re-propagation (bản ghi ĐÃ KÝ tới từ peer khác) — phải RECOVER
+runtime.recover(packed).then(function (signerPub) {
+  runtime.verify(packed, signerPub, function (data) {
+    writer = signerPub          // ← R[5] cho nhánh này
+    ...
+  })
+})
 ```
 
 Writer's public key → nạp vào `R[5]` trước khi gọi VM.
+
+**Vì sao nhánh re-propagation phải recover** (sửa 1.0.44): trước đó nó verify chữ ký nhưng để `writer` rỗng, nên mọi policy so với `R[5]` **fail trên mọi peer từ xa**. Triệu chứng im lặng và toàn phần: dữ liệu pen-soul được ack ở relay rồi bị drop ở từng subscriber — không lỗi, không log, chỉ là không bao giờ tới. Mà peer từ xa mới chính là chỗ việc ghim-người-ghi có ý nghĩa nhất. Không recover được thì write bị từ chối bằng `PEN: cannot recover signer pub`.
 
 ---
 
