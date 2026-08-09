@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.0.45 — 2026-08-09
+
+### Storage
+
+- **The stats writer never writes into the package directory again** (`lib/stats.js`): under `GUN_TEST_TMP` it resolved its state *next to this module*, which for any consumer means writing inside `node_modules`. akao vendors zen by symlinking `src/core/ZEN` at the package, so those writes surfaced inside its **source tree** — and its dev server, watching `src/`, rebuilt in a loop over them: a page opened during that loop fetched a half-written module graph and never mounted its route. Test-mode state now goes to `<cwd>/tmp`, the convention `lib/tpath.js` already uses for every other data path. A library has no business writing into its own package directory, test mode or not.
+- `clean.js` sweeps `stats.*` and `.gitignore` covers them — this repo had ~140 of them accumulated in its own root, which is how visible the bug had been all along without being seen.
+- New suite `test/zen/stats-path.js` pins the invariant: a running instance must leave the package directory untouched and put its state under `tmp/`. Verified red on the old path, green on the new. Full suite 813 passing, 39 pending, 0 failing.
+
 ## 1.0.44 — 2026-08-09
 
 ### PEN
