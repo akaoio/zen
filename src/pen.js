@@ -730,13 +730,28 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
         });
         return;
       }
-      // Peer re-propagation: verify existing signature then unpack.
-      // If check.auth already ran (new-write path), msg.put[":"] is an object
-      // with a "~" signature field — use it directly without recovery.
+      // Peer re-propagation: verify the signature AND RECOVER THE WRITER.
+      // R5 is documented as "the pub recovered from the signature" — leaving
+      // it blank here made every writer-pinning policy fail on every remote
+      // peer, so pen-soul data silently never propagated. Remote peers are
+      // exactly where writer pinning matters most.
       var putVal = ctx.put[":"];
       if (putVal && typeof putVal === "object" && putVal["~"]) {
-        ctx.val = putVal[":"];
-        mineIfNeeded(runPredicate);
+        runtime.opt.pack(ctx.put, function (packed) {
+          runtime
+            .recover(packed)
+            .then(function (signerPub) {
+              runtime.verify(packed, signerPub || null, function (data) {
+                if (data === void 0) return reject("PEN: valid signature required");
+                writer = signerPub || "";
+                ctx.val = putVal[":"];
+                mineIfNeeded(runPredicate);
+              });
+            })
+            .catch(function () {
+              reject("PEN: cannot recover signer pub");
+            });
+        });
         return;
       }
       runtime.opt.pack(ctx.put, function (packed) {
@@ -745,6 +760,7 @@ const __penWasmURL = new URL("./pen.wasm", import.meta.url);
           runtime.verify(packed, signerPub || sec.upub || null, function (data) {
             data = runtime.opt.unpack(data);
             if (data === void 0) return reject("PEN: valid signature required");
+            writer = signerPub || sec.upub || "";
             var sig = (packed && packed.s) || "";
             ctx.put[":"] = { ":": data, "~": sig, v: packed && packed.v, c: packed && packed.c };
             ctx.put["="] = data;
