@@ -939,6 +939,121 @@ describe("WsProvider auto-reconnect", function () {
     })
 })
 
+describe("WsProvider subscription surface — logs, head, reconnect", function () {
+    // The consumer that forced this surface is akao's dex candle miner: it
+    // needs pushed swap logs (not polled), the header's real timestamp (not
+    // a getBlock round trip per block), and a signal that a reconnect
+    // happened so it can heal the gap. Everything below runs on a mock —
+    // deterministic, no sockets.
+    const mockProvider = () => {
+        const provider = new WsProvider("ws://example")
+        provider._connect = async () => {}
+        provider.sent = []
+        provider.send = async (method, params) => {
+            provider.sent.push({ method, params })
+            return method === "eth_subscribe" ? `0xsub${provider.sent.filter((s) => s.method === "eth_subscribe").length}` : true
+        }
+        return provider
+    }
+
+    it("a filter object subscribes to logs with the filter as the second param", async function () {
+        const provider = mockProvider()
+        const seen = []
+        const filter = { address: ["0x1111111111111111111111111111111111111111"], topics: ["0xaaaa"] }
+        const subId = await provider.on(filter, (log) => seen.push(log))
+        assert.deepStrictEqual(provider.sent[0], { method: "eth_subscribe", params: ["logs", filter] })
+        provider._subs.get(subId)({ address: filter.address[0], data: "0x01", removed: false })
+        assert.strictEqual(seen.length, 1)
+        assert.strictEqual(seen[0].data, "0x01")
+    })
+
+    it("a logs subscription survives _resubscribeAll with its filter intact", async function () {
+        const provider = mockProvider()
+        const filter = { address: ["0x1111111111111111111111111111111111111111"], topics: ["0xaaaa"] }
+        await provider.on(filter, () => {})
+        provider._subs.clear()
+        provider._subTopics.clear()
+        await provider._resubscribeAll()
+        const subscribes = provider.sent.filter((s) => s.method === "eth_subscribe")
+        assert.strictEqual(subscribes.length, 2)
+        assert.deepStrictEqual(subscribes[1].params, ["logs", filter])
+        assert.strictEqual(provider._subs.size, 1)
+    })
+
+    it('on("head") delivers the FULL header, timestamp included, enriched like getBlock', async function () {
+        const provider = mockProvider()
+        const seen = []
+        const subId = await provider.on("head", (header) => seen.push(header))
+        assert.deepStrictEqual(provider.sent[0].params, ["newHeads"])
+        provider._subs.get(subId)({ number: "0x10", timestamp: "0x64" })
+        assert.strictEqual(seen[0].number, "0x10")
+        assert.strictEqual(seen[0].timestamp, "0x64")
+        assert.ok(seen[0].date instanceof Date)
+        assert.strictEqual(seen[0].date.getTime(), 0x64 * 1000)
+    })
+
+    it('on("block") keeps ethers parity — a bare number', async function () {
+        const provider = mockProvider()
+        const seen = []
+        const subId = await provider.on("block", (n) => seen.push(n))
+        provider._subs.get(subId)({ number: "0x10", timestamp: "0x64" })
+        assert.strictEqual(seen[0], 16)
+    })
+
+    it("head and block ride separate subscriptions and both resubscribe", async function () {
+        const provider = mockProvider()
+        await provider.on("block", () => {})
+        await provider.on("head", () => {})
+        provider._subs.clear()
+        provider._subTopics.clear()
+        await provider._resubscribeAll()
+        assert.strictEqual(provider._subs.size, 2)
+    })
+
+    it("off(filter) unwinds a logs subscription and it stays dead through resubscribe", async function () {
+        const provider = mockProvider()
+        const filter = { address: ["0x1111111111111111111111111111111111111111"] }
+        const subId = await provider.on(filter, () => {})
+        await provider.off(filter)
+        assert.ok(provider.sent.some((s) => s.method === "eth_unsubscribe" && s.params[0] === subId))
+        assert.strictEqual(provider._subs.size, 0)
+        await provider._resubscribeAll()
+        assert.strictEqual(provider._subs.size, 0, "an offed filter must not resurrect")
+    })
+
+    it("destroy() stops the provider for good — no zombie reconnect loop", async function () {
+        const provider = mockProvider()
+        await provider.on("head", () => {})
+        let reconnected = false
+        provider.on("reconnect", () => (reconnected = true))
+        provider.destroy()
+        assert.strictEqual(provider._destroyed, true)
+        assert.strictEqual(provider._subs.size, 0)
+        assert.strictEqual(provider._subHandlers.size, 0)
+        provider._reconnectDelay = 1
+        provider._scheduleReconnect() // must be a no-op after destroy
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        assert.strictEqual(reconnected, false)
+    })
+
+    it('on("reconnect") fires AFTER a reconnect has resubscribed', async function () {
+        const provider = mockProvider()
+        const order = []
+        await provider.on("head", () => {})
+        provider._connect = async () => order.push("connect")
+        const originalResubscribe = provider._resubscribeAll.bind(provider)
+        provider._resubscribeAll = async () => {
+            order.push("resubscribe")
+            await originalResubscribe()
+        }
+        await provider.on("reconnect", () => order.push("reconnect"))
+        provider._reconnectDelay = 1
+        provider._scheduleReconnect()
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        assert.deepStrictEqual(order, ["connect", "resubscribe", "reconnect"])
+    })
+})
+
 describe("EIP-712 TypedDataEncoder", function () {
     this.timeout(20000)
 
