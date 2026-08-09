@@ -8769,7 +8769,7 @@ defmod('./src/locstore.js', function(module, exp){
         tmp; // pull data off wire envelope
       // <?N souls are EPHEMERAL — never persisted, browser storage included.
       // Same ack discipline as the memory-only branch above.
-      if (0 <= soul.indexOf("<?")) {
+      if (typeof soul === "string" && 0 <= soul.indexOf("<?")) {
         if (!msg["@"]) {
           root.on("in", { "@": id, ok: 1 });
         }
