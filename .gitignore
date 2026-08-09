@@ -24,3 +24,5 @@ playwright-report/
 test-results/
 lib/reboot.cron
 stats.testzen-*
+# runtime stats writer droppings (pre-1.0.45 they landed in the package root)
+stats.*
