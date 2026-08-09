@@ -141,8 +141,9 @@ Có đầy đủ HTTP provider methods + subscriptions. Điểm nổi bật:
 Nếu WebSocket bị ngắt kết nối (server restart, network flicker), WsProvider tự động:
 1. Đợi `reconnectDelay` ms (mặc định 1000ms)
 2. Reconnect
-3. Re-subscribe tất cả subscriptions đã đăng ký
+3. Re-subscribe tất cả subscriptions đã đăng ký — **đúng nguyên tham số**, không chỉ tên topic: mỗi subscription lưu `{ handler, params }` nên một filter logs được đăng ký lại y hệt filter cũ
 4. Delay tăng theo exponential backoff (x2 mỗi lần), tối đa 30 giây
+5. Bắn `reconnect` (nếu có handler) — **sau** bước 3, để bên tiêu thụ vá khe trước khi event mới đổ vào
 
 ```js
 const ws = wsRpc("wss://...")
@@ -154,24 +155,64 @@ const subId = await ws.on("block", (blockNumber) => {
 
 // Hủy subscription
 await ws.off("block")
-
-// Dừng hoàn toàn (không reconnect nữa)
-await ws.destroy()
 ```
 
 ### Subscribe events
 
 ```js
-// Block mới
+// Block mới — parity với ethers: callback nhận SỐ block
 await ws.on("block", (blockNumber) => { ... })
 
-// Error handler
+// Error handler (không mở kết nối, chỉ ghi handler)
 await ws.on("error", (err) => { ... })
 
 // Hủy theo subscription ID
 const subId = await ws.on("block", handler)
 await ws.off(subId)
 ```
+
+### `on("head")` — nguyên header, khỏi tốn `getBlock`
+
+`on("block")` giữ parity với ethers nên nó rút header xuống còn mỗi số block. Bên nào cần **timestamp thật của block** — ví dụ đóng dấu thời gian cho nến — thì dùng `on("head")`: cùng kênh `newHeads`, nhưng callback nhận nguyên header đã enrich (có `block.date`), nên luồng sống không phải gọi `getBlock` một lần mỗi block.
+
+```js
+await ws.on("head", (header) => {
+    const ts = parseInt(header.timestamp, 16) * 1000   // mốc thật, không nội suy
+})
+await ws.off("head")
+```
+
+Hai kênh sống song song và cùng được đăng ký lại sau reconnect.
+
+### `on(filter)` — subscription logs
+
+Truyền một **object** thay vì tên sự kiện thì đó là subscription `logs` (parity ethers): provider gửi `eth_subscribe ["logs", filter]` và callback nhận từng log.
+
+```js
+const filter = { address: [poolA, poolB], topics: [SWAP_TOPIC] }
+await ws.on(filter, (log) => { ... })
+
+// Hủy bằng CHÍNH object filter đó (khoá nội bộ là JSON của nó)
+await ws.off(filter)
+```
+
+Filter sống sót qua reconnect nguyên vẹn. Đổi tập địa chỉ theo dõi thì `off(filterCũ)` rồi `on(filterMới)`.
+
+### `on("reconnect")` — tín hiệu vá khe
+
+```js
+await ws.on("reconnect", () => healFrom(lastProcessedBlock))
+```
+
+Chỉ bắn **sau khi** mọi subscription đã đăng ký lại, nên bên tiêu thụ không bao giờ thấy event mới rơi vào một khoảng chưa vá. `reconnect` và `error` là hai đăng ký **không mở kết nối** — gọi chúng trước khi dial cũng được.
+
+### `destroy()` — dừng thật sự
+
+```js
+await ws.destroy()
+```
+
+Đóng socket, chặn mọi reconnect, xoá sạch bảng subscription/handler, và **reject mọi lời gọi đang treo** bằng `WS destroyed`. Trước 1.0.44 nó chỉ đóng socket: các call đang chờ treo tới hết timeout, bảng subscription sống nguyên, và một provider đã bị bỏ rơi vẫn tự reconnect như một cái xác chạy rông. Bên tiêu thụ phải bắt được lỗi `WS destroyed` từ các call đang bay.
 
 ---
 
@@ -742,8 +783,8 @@ parseUnits("1.5", 6)               // → 1500000n
 
 | Suite | Số test | Chạy bằng |
 |---|---|---|
-| Unit (evm.js) | 76 | `npm run test:chains` |
-| Fork integration | 38 | `ETH_RPC=... npm run test:chains:fork` |
+| Unit (evm.js) | 90 | `npm run test:chains` |
+| Fork integration | 40 | `ETH_RPC=... npm run test:chains:fork` |
 
 Fork tests dùng ganache fork mainnet tại block 19,500,000 qua Infura, test đầy đủ:
 - Provider primitives (getBalance, getCode, getBlock, estimateGas)
@@ -795,7 +836,7 @@ const sig = await ZEN.sign("0x" + hashHex, pair, null, { prehash: true, encode: 
 ## See also
 
 - `lib/chains.js` — re-export entry point: `import chains from "@akaoio/zen/lib/chains.js"`
-- `test/chains/evm.js` — 76 unit tests
-- `test/chains/evm-fork.js` — 38 mainnet fork integration tests
+- `test/chains/evm.js` — 90 unit tests
+- `test/chains/evm-fork.js` — 40 mainnet fork integration tests
 - `docs/ch03-crypto.md` — ZEN crypto primitives (`pair`, `sign`, `hash`, v.v.)
 - GitHub Issue #27 — `ethers-replacement` branch tracking

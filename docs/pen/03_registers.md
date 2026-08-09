@@ -98,7 +98,7 @@ shortcut: 0xFB"]
 | R[2] | `0xF2` | Full soul string (`!...`) | Soul này có đúng như expected không? |
 | R[3] | `0xF3` | HAM state timestamp (float ms) | Write này có trong cửa sổ thời gian không? |
 | R[4] | `0xF4` | `Date.now()` tại thời điểm validate | Kiểm tra relative timing |
-| R[5] | `0xF5` | Public key của người đang ghi | Writer có phải Alice không? |
+| R[5] | `0xF5` | Public key của người đang ghi — **recover từ chữ ký**, cả khi ghi mới lẫn khi bản ghi tới từ peer khác (xem `04_write-pipeline.md` ④) | Writer có phải Alice không? |
 | R[6] | — | Path segment (phần sau `/` trong soul) | Path có đúng không? |
 | R[7] | — | PoW nonce (từ `ctx.put['^']`) | Nonce có hợp lệ không? (dùng trong PoW verify) |
 

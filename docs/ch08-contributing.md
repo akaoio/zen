@@ -62,7 +62,7 @@ npm run unbuildZEN
 
 ## 8.4 Test suite
 
-ZEN has three test suites, all run via Mocha.
+ZEN's tests are grouped into suites, all run via Mocha. `npm test` runs `build:zen` first, then `test/all.js`, which drives every group below.
 
 ### Run all tests
 
@@ -70,14 +70,17 @@ ZEN has three test suites, all run via Mocha.
 npm test
 ```
 
-This runs `build:zen` first, then all three suites.
+This runs `build:zen` first, then `test/all.js` — the whole set, including the chain, DHT and MCP groups that the individual commands below leave out.
 
 ### Individual suites
 
 ```bash
 npm run test:pen:unit    # PEN VM tests (test/pen.js)
-npm run test:zen:unit    # ZEN unit tests (test/zen/*.js)
-npm run test:core       # Core graph tests (test/zen.js, test/rad/*, etc.)
+npm run test:zen:unit    # ZEN unit tests (test/zen/*.js + test/mesh/dam.js)
+npm run test:core        # Core graph tests (test/zen.js, test/rad/*, etc.)
+npm run test:chains      # EVM adapter (test/chains/evm.js)
+npm run test:dht         # DHT k-buckets
+npm run test:mcp         # MCP stdio server
 ```
 
 ### Test file map
@@ -85,9 +88,10 @@ npm run test:core       # Core graph tests (test/zen.js, test/rad/*, etc.)
 | Suite | Files | What it tests |
 |-------|-------|---------------|
 | `test:pen:unit` | `test/pen.js` | PEN bytecode, pack/unpack, policy execution |
-| `test:zen:unit` | `test/zen/instance.js`, `secp256k1.js`, `crypto.js`, `multicurve.js`, `certify.js`, `recover.js`, `push.js`, `meta.js` | ZEN instance API, crypto primitives, chain methods |
-| `test:core` | `test/abc.js`, `test/rad/rad.js`, `test/radix.js`, `test/zen.js` | Graph operations, Radisk, core behavior |
-| `test:mesh` (standalone) | `test/mesh/dam.js` | DAM ping/pong RTT, XOR routing, relay multi-hop |
+| `test:zen:unit` | `test/zen/`: `instance`, `nostore`, `concurrent-writes`, `read-after-write`, `bootstrap`, `secp256k1`, `crypto`, `multicurve`, `certify`, `recover`, `push`, `port`, `status`, `ephemeral`, `mailbox` — plus `test/mesh/dam.js` | ZEN instance API, crypto primitives, read-after-write, ephemeral `<?N` souls and the PEN mailbox pattern, DAM relay |
+| `test:core` | `test/abc.js`, `test/rad/rad.js`, `test/rad/flush-read.js`, `test/rad/invariants.js`, `test/radix.js`, `test/zen.js` | Graph operations, Radisk (including the single-steppable flush invariants), core behavior |
+| `test:chains` | `test/chains/evm.js` | EVM adapter: ABI codec, providers, WsProvider subscriptions, EIP-712 |
+| `test:chains:fork` | `test/chains/evm-fork.js` | Mainnet fork integration (needs `ETH_RPC`) |
 
 ### Clean data before testing
 
@@ -287,7 +291,7 @@ npm test                  # run full test suite
 node test/panic/holy-grail.js  # run correctness tests
 ```
 
-Current baseline: `557 passing` via `npm test`. Keep that green before submitting a pull request.
+Current baseline: `812 passing, 39 pending, 0 failing` via `npm test` (1.0.44). Keep that green before submitting a pull request.
 
 ---
 
