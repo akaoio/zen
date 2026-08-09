@@ -88,6 +88,14 @@ Zen.on("create", function lg(root) {
       id = msg["#"],
       ok = msg.ok || "",
       tmp; // pull data off wire envelope
+    // <?N souls are EPHEMERAL — never persisted, browser storage included.
+    // Same ack discipline as the memory-only branch above.
+    if (0 <= soul.indexOf("<?")) {
+      if (!msg["@"]) {
+        root.on("in", { "@": id, ok: 1 });
+      }
+      return;
+    }
     disk[soul] = Zen.state.ify(disk[soul], key, put[">"], put[":"], soul); // merge into disk object
     if (stop && size > 4999880) {
       root.on("in", { "@": id, err: "localStorage max!" });

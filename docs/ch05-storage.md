@@ -425,3 +425,18 @@ const fast = await Promise.all(
 ```
 
 Absolute numbers above are from one machine (Node 24, ext4, `radisk` + `rfs`, signed writes) and will differ on yours — the ratios are the part worth remembering.
+
+## 5.15 Ephemeral souls — `<?N`
+
+A soul containing `<?N` (N in seconds) is **ephemeral**. Two independent mechanisms enforce it, and both are needed:
+
+1. **The sync gate** (`src/security.js`, `forget` pipe stage): any incoming copy whose HAM state is older than N seconds is dropped at ingest — stale data stops replicating, and a peer that arrives late never receives it.
+2. **The storage bypass** (`lib/store.js` for radisk and every RAD backend, `src/locstore.js` for browser localStorage): writes on ephemeral souls are ACKed like memory-only mode but never persisted. RAM is their only home — a restart forgets them.
+
+```js
+zen.get("inbox<?300").get("latest").put(payload)   // lives ≤ 5 minutes, never on disk
+```
+
+Half of this existed from the start (the sync gate); the storage bypass was restored in 1.0.41 after the rewrite had lost it — without it, "ephemeral" data outlived its window on every relay's disk, which is not ephemeral at all.
+
+Composition notes: the marker is part of the soul STRING, so it composes with user-space (`~pub…<?N`) signature checks and with PEN policy souls — the `forget` stage runs before both (verified live: a signed put on `~pub/inbox<?60` acks, serves from RAM, and leaves no payload on disk). One honest nuance: the DURABLE parent node's link to an ephemeral child is part of the parent and does persist — the child's NAME is visible on disk, its data never is. Choose N by intent: it bounds how stale a copy may be and still spread, not an exact wall-clock deletion.
