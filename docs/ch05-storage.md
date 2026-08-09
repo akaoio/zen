@@ -434,8 +434,11 @@ A soul containing `<?N` (N in seconds) is **ephemeral**. Two independent mechani
 2. **The storage bypass** (`lib/store.js` for radisk and every RAD backend, `src/locstore.js` for browser localStorage): writes on ephemeral souls are ACKed like memory-only mode but never persisted. RAM is their only home — a restart forgets them.
 
 ```js
-zen.get("inbox<?300").get("latest").put(payload)   // lives ≤ 5 minutes, never on disk
+zen.get("inbox<?300").get("latest").put(payload)   // whole node ephemeral
+zen.get(soul).get(pub + "<?300").put(payload)      // ONE slot of a durable node ephemeral
 ```
+
+The marker works at BOTH granularities: on the **soul** (every key of the node is ephemeral) and on a **key** (that slot alone). The key form is what a PEN mailbox uses — one public policy soul, each participant fenced into `key = <their recovered pub><?N`, every slot RAM-only (see `test/zen/mailbox.js` for the full pattern: `sign:true` + a `suf`/`let`/`seg` key rule).
 
 Half of this existed from the start (the sync gate); the storage bypass was restored in 1.0.41 after the rewrite had lost it — without it, "ephemeral" data outlived its window on every relay's disk, which is not ephemeral at all.
 

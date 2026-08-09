@@ -213,11 +213,22 @@ check.pipe = {
   },
   forget: function (ctx, next) {
     var soul = ctx.soul,
+      key = ctx.key,
       state = ctx.state,
       msg = ctx.msg,
+      mark,
       tmp2;
-    if (0 <= soul.indexOf("<?")) {
-      tmp2 = parseFloat(soul.split("<?")[1] || "");
+    // <?N marks EPHEMERAL data — on the soul (the whole node) or on the
+    // key (one slot of a durable node, e.g. a PEN mailbox slot). Either
+    // way: a copy staler than N seconds is dropped at ingest.
+    mark =
+      typeof soul === "string" && 0 <= soul.indexOf("<?")
+        ? soul
+        : typeof key === "string" && 0 <= key.indexOf("<?")
+          ? key
+          : null;
+    if (mark !== null) {
+      tmp2 = parseFloat(mark.split("<?")[1] || "");
       if (tmp2 && state < Zen.state() - tmp2 * 1000) {
         (tmp2 = msg._) && tmp2.stun && tmp2.stun--;
         return;
