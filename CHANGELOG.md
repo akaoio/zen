@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.0.46 — 2026-08-10
+
+### Mesh
+
+- **A peer added after boot is now actually dialled** (`src/websocket.js`): `opt(url)` on a running instance registered the peer in `opt.peers` and stopped there. The websocket layer wired its dialer on the *first* `opt` event and returned early on every later one, so no socket was ever opened — `opt()` looked like it worked (the peer was listed, no error was thrown) while the instance stayed alone. Late `opt` calls now open a socket for every registered peer that has no wire yet.
+- Why it mattered: this is the only way an app can add a peer once it knows which one to use. akao's zen hub boots inside a Web Worker before the site config exists, then calls `opt(url)` with the site's relay — so in a browser, **nothing ever left the tab**: user state never synced across devices, and alert documents never reached the engine, so alerts could never fire. The failure was silent on both sides.
+- New suite `test/zen/late-peer.js` pins it: an instance built with no peers, given one via `opt()`, must reach `mesh.near > 0`. Verified red on 1.0.45, green after the fix. Full suite 814 passing, 39 pending, 0 failing.
+
 ## 1.0.45 — 2026-08-09
 
 ### Storage
