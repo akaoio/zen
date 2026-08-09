@@ -34,6 +34,13 @@ zen.opt(["wss://relay1.example.com/zen", "wss://relay2.example.com/zen"]);
 zen.opt({ peers: { "https://relay.example.com/zen": { url: "..." } } });
 ```
 
+A runtime `opt()` both records the peer and dials it, so an app that only learns
+its relay after boot — a hub started inside a worker, a client that reads its
+config over the network — can construct with `peers: []` and connect later.
+Connecting is asynchronous: wait for `mesh.near > 0` if you need the socket, or
+just write and let the graph queue. Before 1.0.46 a late `opt()` recorded the
+peer and never dialled it, which left such an app silently alone.
+
 ---
 
 ## 6.3 WebSocket transport

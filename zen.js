@@ -8470,11 +8470,26 @@ defmod('./src/websocket.js', function(module, exp){
 
   Zen.on("opt", function (root) {
     this.to.next(root);
-    if (root.once) {
-      return;
-    }
     var opt = root.opt;
     if (false === opt.WebSocket) {
+      return;
+    }
+    if (root.once) {
+      // A peer added AFTER boot must be dialled, not merely recorded. opt(url)
+      // is the documented way to add one at runtime — akao's zen hub starts with
+      // no peers and dials the site's relay once the site config has loaded —
+      // and this handler used to return right here, so the peer landed in
+      // opt.peers and no socket was ever opened. The failure was silent and
+      // total: in a browser, user state and alert documents never left the tab.
+      if (opt.wire) {
+        var known = opt.peers || {};
+        Object.keys(known).forEach(function (url) {
+          var peer = known[url];
+          if (peer && peer.url && !peer.wire) {
+            opt.wire(peer);
+          }
+        });
+      }
       return;
     }
 
