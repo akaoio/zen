@@ -134,6 +134,36 @@ restart_service() {
     fi
 }
 
+# The systemd units live in the repo, but a host that installed months ago is
+# still running whatever it got then: fixing a unit here does not rewrite it
+# there. That is how this relay ended up with an auto-update timer whose next
+# firing was `infinity` -- active, enabled, and silently never running again.
+# Nothing errors when a deploy simply does not happen, so say it out loud.
+check_units() {
+    tmr="/etc/systemd/system/${SERVICE_NAME}-update.timer"
+    src="$INSTALL_DIR/script/zen-update.timer"
+    [ -f "$tmr" ] && [ -f "$src" ] || return 0
+    want=$(sed -e "s|__ZEN_SERVICE__|$SERVICE_NAME|g" "$src")
+    have=$(cat "$tmr")
+    if [ "$want" != "$have" ]; then
+        log_warn "The installed auto-update timer differs from the one in this checkout."
+        log_warn "Updates will keep working only if that timer still fires. To refresh it:"
+        log_warn "  sudo cp $src $tmr && sudo sed -i 's|__ZEN_SERVICE__|$SERVICE_NAME|g' $tmr"
+        log_warn "  sudo systemctl daemon-reload && sudo systemctl restart ${SERVICE_NAME}-update.timer"
+    fi
+    # systemd reports the next firing twice: on the wall clock and on the
+    # monotonic clock. A timer with neither is enabled, active, and dead.
+    # Empty, 0, n/a and infinity all mean "nothing scheduled" here.
+    rt=$(systemctl show "${SERVICE_NAME}-update.timer" -p NextElapseUSecRealtime --value 2>/dev/null)
+    mono=$(systemctl show "${SERVICE_NAME}-update.timer" -p NextElapseUSecMonotonic --value 2>/dev/null)
+    case "$rt" in "" | 0 | n/a | infinity) rt_dead=1 ;; *) rt_dead=0 ;; esac
+    case "$mono" in "" | 0 | n/a | infinity) mono_dead=1 ;; *) mono_dead=0 ;; esac
+    if [ "$rt_dead" = 1 ] && [ "$mono_dead" = 1 ]; then
+        log_warn "The auto-update timer has no next firing scheduled: it is enabled, active, and dead."
+        log_warn "Until it is refreshed, every deploy needs 'zen update' by hand."
+    fi
+}
+
 log_info "Updating ZEN at $INSTALL_DIR..."
 log_info "  Branch:  $VERSION"
 log_info "  Service: $SERVICE_NAME"
@@ -147,6 +177,11 @@ NEW_COMMIT=$(git -C "$INSTALL_DIR" rev-parse HEAD)
 
 # Restart when the running service is behind the working tree, regardless of
 # whether this run's pull changed anything.
+# Check the deploy machinery before the early exit below -- "already deployed"
+# is the common path, and a timer that stopped firing is exactly what makes
+# every run land there forever.
+check_units
+
 if [ "$DEPLOYED_COMMIT" = "$NEW_COMMIT" ] && systemctl is-active --quiet "$SERVICE_NAME"; then
     log_info "Already deployed ($(git -C "$INSTALL_DIR" log -1 --format='%h %s'))"
     log_info "  Service already running this commit; skipping restart."
@@ -192,6 +227,7 @@ if [ -f "$INSTALL_DIR/script/zen.sh" ]; then
         log_info "zen CLI updated (/usr/local/bin/zen)"
     fi
 fi
+
 
 # Restart service
 restart_service
