@@ -631,6 +631,48 @@ if (main && cluster.isPrimary) {
 
   const root = zen._graph._;
 
+  // ── Sweep for data that lookups cannot reach ──────────────────────────────
+  // Radisk already knows how to repair this: parsing a file, it checks every
+  // key in it against the directory and relocates whatever no longer belongs.
+  // But it only checks files it parses -- and a key stranded in an earlier
+  // file than the one that now covers it lives in a file no lookup will ever
+  // open. The repair never runs for precisely the keys that need it, so they
+  // sit there acknowledged and unreadable for as long as the store does. Four
+  // were doing that on this relay.
+  //
+  // Opening each file once is enough to arm it. Paced, so a large store does
+  // not stall the relay, and once at startup: anything misplaced later gets
+  // repaired the ordinary way, by being read.
+  const SWEEP_MS = parseInt(process.env.RAD_SWEEP_MS || '250');
+  if (SWEEP_MS > 0) {
+    setTimeout(async function () {
+      const Radisk = (await import('../lib/radisk.js')).default;
+      const rad = Radisk(root.opt); // memoised per store: the very one in use
+      const store = root.opt.store;
+      if (!rad || !store || !store.list) { return; }
+      const files = [];
+      try {
+        store.list(function (f) { f && files.push(f); });
+      } catch (e) { return; }
+      if (!files.length) { return; }
+      let i = 0;
+      const step = function () {
+        const f = files[i++];
+        if (undefined === f) {
+          console.log('[sweep] opened ' + files.length + ' file(s); anything found in the wrong place was moved to it');
+          return;
+        }
+        let key = f;
+        try { key = decodeURIComponent(f); } catch (e) {}
+        // A file is named after the first key it holds, so reading that key
+        // parses the file -- which is what arms radisk's check-and-relocate
+        // pass over everything inside it.
+        rad(key, function () { setTimeout(step, SWEEP_MS); });
+      };
+      step();
+    }, 30 * 1000);
+  }
+
   // ── In-memory graph GC ────────────────────────────────────────────────────
   // root.graph is an unbounded in-memory cache of all graph nodes ever seen.
   // All data is persisted to disk (RAD), so evicting a soul just causes a
