@@ -706,7 +706,27 @@ if (main && cluster.isPrimary) {
       evicted++;
     }
     const after = process.memoryUsage().heapUsed / 1048576;
-    if (evicted) console.log(`[GC] Evicted ${evicted} souls (heap ${heapMB.toFixed(0)}→${after.toFixed(0)} MB)`);
+    // Say where the memory is, not just that we tried. The previous version
+    // logged `Evicted 1 souls (heap 1033→1033 MB)` once a minute for weeks:
+    // the eviction ran, freed nothing, and reported success, while the heap
+    // sat at a gigabyte for a 2.4 MB graph. One soul evictable out of a
+    // thousand is the tell that the memory is not in root.graph at all -- and
+    // nothing in that line said so, so nobody could aim a fix.
+    const held = Object.keys(graph).length;
+    const listening = Object.keys(next).length;
+    const seen = root.dup && root.dup.s;
+    const tracking = !seen ? -1 : undefined !== seen.size ? seen.size : Object.keys(seen).length;
+    const freed = Math.round((heapMB - after) * 10) / 10 || 0; // -0 reads as a typo
+    if (evicted || freed < 1) {
+      console.log(
+        `[GC] evicted ${evicted}/${held + evicted} souls,  freed ${freed} MB ` +
+        `(heap ${heapMB.toFixed(0)}→${after.toFixed(0)} MB) — ` +
+        `${listening} souls have listeners, dup tracker holds ${tracking}` +
+        (freed < 1 && heapMB > GRAPH_GC_HEAP_MB * 1.5
+          ? ` — freeing nothing at this size means the heap is somewhere else; look there, not here`
+          : ``),
+      );
+    }
   }, GRAPH_GC_INTERVAL).unref();
 
   // ── UDP unicast socket for inter-relay relay message fast path ────────────
