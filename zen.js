@@ -7014,7 +7014,16 @@ defmod('./src/get.js', function(module, exp){
           if (root.pass[id + at.id]) {
             return;
           }
-          root.pass[id + at.id] = 1;
+          // A read through a link delivers twice in the same pass: the pointer
+          // first, then the node it points at once that has loaded. Claiming the
+          // pass slot for the pointer makes the second delivery look like a
+          // repeat of the first, and it is dropped -- so the listener is left
+          // holding `{"#": soul}` and the node it asked for never arrives at
+          // all. Handing over a pointer is not an answer; do not spend the slot
+          // on it.
+          if ("string" != typeof Zen.valid(data)) {
+            root.pass[id + at.id] = 1;
+          }
         }
         if (opt.v2020) {
           opt.ok(msg, eve || any);
