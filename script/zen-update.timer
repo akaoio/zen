@@ -3,10 +3,21 @@ Description=ZEN auto-update timer — check for updates every hour
 Documentation=https://github.com/akaoio/zen
 
 [Timer]
+# Hourly on the wall clock, not on a monotonic offset. The previous version had
+# only OnBootSec= and OnUnitActiveSec=, and both are monotonic: once the boot
+# window has passed and the service has run, neither schedules another firing.
+# On this relay that left `NextElapse: infinity` -- the timer sat active and
+# never fired again, and nobody noticed because nothing errors when a deploy
+# simply does not happen. Persistent= had no effect either; it only applies to
+# calendar timers.
+OnCalendar=hourly
+# Still check shortly after boot, so a machine that was off does not wait.
 OnBootSec=5min
-OnUnitActiveSec=1h
-Unit=__ZEN_SERVICE__-update.service
+# Catch up after downtime instead of skipping the missed hour.
 Persistent=true
+# Spread load if several relays share an upstream.
+RandomizedDelaySec=90
+Unit=__ZEN_SERVICE__-update.service
 
 [Install]
 WantedBy=timers.target
