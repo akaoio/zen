@@ -6932,7 +6932,9 @@ defmod('./src/get.js', function(module, exp){
         id;
       opt.at = cat;
       opt.ok = key;
-      var wait = {}; // can we assign this to the at instead, like in once?
+      var wait = {}, // what each node has folded into the open batch
+        told = {}; // and which of those values it has already been handed
+      // can we assign this to the at instead, like in once?
       //var path = []; cat.$.back(at => { at.get && path.push(at.get.slice(0,9))}); path = path.reverse().join('.');
       function any(msg, eve, f) {
         if (any.stun) {
@@ -6997,12 +6999,65 @@ defmod('./src/get.js', function(module, exp){
   					return;
   				}*/
           if ((tmp = root.hatch) && !tmp.end && u === opt.hatch && !f) {
-            // quick hack! // What's going on here? Because data is streamed, we get things one by one, but a lot of developers would rather get a callback after each batch instead, so this does that by creating a wait list per chain id that is then called at the end of the batch by the hatch code in the root put listener.
-            if (wait[at.$._.id]) {
+            // quick hack! // Because data is streamed we get things one by one, but callers would rather be called once per batch than once per piece, so the first delivery for a node parks on the batch and later ones fold into it, to be handed out together when the batch ends.
+            var node = at.$._.id,
+              held = wait[node];
+            if (held) {
+              // Folding is right while these say the same thing, and they usually
+              // do: one put is carried out in several passes and stamps every
+              // field it writes with a single state. A different state is a
+              // different write, though, and the delivery already queued cannot
+              // speak for the older one -- it carries no value of its own, it
+              // reads the node when the batch ends, and by then this newer write
+              // has replaced what it would have said. That is how a node written
+              // twice inside one batch used to lose its first value with nobody
+              // noticing: every message carrying it was folded away as a repeat.
+              // So hand the older value over now, from the copy taken when it was
+              // queued, which is the only one left of it.
+              if ((tmp = stamp(data) || stamp(msg.put))) {
+                if (tmp !== held.when) {
+                  // The copy on its own is not enough to hand over: a node
+                  // arrives a field at a time, so it can be half-built, and a
+                  // caller that keeps the first thing it is given would take the
+                  // half for the whole. It does not have to be, though -- every
+                  // field this write did not touch is still standing in the node.
+                  // So put the older value back together: the node as it is now,
+                  // with the fields this write replaced taken from the copy.
+                  if (!opt.v2020 && told[node] !== held.when) {
+                    // A field's value is a value, not a node: there is nothing to
+                    // put back together, the copy is simply what it said before.
+                    var back =
+                      data && "object" == typeof data
+                        ? asof(data, held.snap, held.when)
+                        : held.snap;
+                    if (u !== back && back !== data) {
+                      told[node] = held.when;
+                      opt.ok.call(at.$, back, at.get, msg, eve || any);
+                    }
+                  }
+                  held.when = tmp;
+                }
+                // Keep the copy current within this write. A node arrives a field
+                // at a time and every piece carries the same state, so the first
+                // message for it is usually a half-built one -- holding on to that
+                // would mean handing over a value with the interesting part still
+                // missing.
+                held.snap = snapshot(data);
+              }
               return;
             }
-            wait[at.$._.id] = 1;
+            wait[node] = held = {
+              when: stamp(data) || stamp(msg.put),
+              snap: snapshot(data),
+            };
             tmp.push(function () {
+              // What this was queued to say may have been said already, if the
+              // node moved on while the batch was still going.
+              var now = (msg.$$ || msg.$ || "")._;
+              now = stamp(now && now.put);
+              if (now && told[node] === now) {
+                return;
+              }
               any(msg, eve, 1);
             });
             return;
@@ -7162,6 +7217,93 @@ defmod('./src/get.js', function(module, exp){
     //tmp.echo[cat.id] = {}; // TODO: Warning: This unsubscribes ALL of this chain's listeners from this link, not just the one callback event.
     //obj.del(map, at); // TODO: Warning: This unsubscribes ALL of this chain's listeners from this link, not just the one callback event.
     return;
+  }
+  // The node as it stood before this write, or nothing if that cannot be told.
+  //
+  // Fields this write did not touch are still in the node itself, so they are
+  // taken from there and are whole. Fields it replaced are gone, and the only
+  // record left of them is the copy kept while they were being folded away -- if
+  // the copy does not have one either, then nothing was lost that can be given
+  // back, and there is nothing to hand over.
+  function asof(now, was, when) {
+    var ns = ((now || "")._ || "")[">"],
+      ws = ((was || "")._ || "")[">"] || "",
+      out = {},
+      at = {},
+      lost = 0,
+      k;
+    if (!ns) {
+      return;
+    }
+    for (k in ns) {
+      if (!(ns[k] > when)) {
+        out[k] = now[k];
+        at[k] = ns[k];
+        continue;
+      } // untouched: still standing
+      if (u === ws[k]) {
+        continue;
+      } // this write added it; it was not there before
+      out[k] = was[k]; // replaced: give back what the copy kept
+      at[k] = ws[k];
+      lost = 1;
+    }
+    if (!lost) {
+      return;
+    } // nothing was taken away, so nothing to hand back
+    out._ = { "#": ((now || "")._ || "")["#"], ">": at };
+    return out;
+  }
+  // A copy of a value as it stands now. Cached nodes are mutated in place by
+  // later writes, so holding one by reference holds nothing -- by the time it is
+  // read it says whatever the newest write left behind.
+  function snapshot(d) {
+    if (!d || "object" != typeof d) {
+      return d;
+    }
+    var o = {},
+      k,
+      s = d._,
+      g,
+      gs;
+    for (k in d) {
+      if ("_" !== k) {
+        o[k] = d[k];
+      }
+    }
+    if (s) {
+      g = {};
+      gs = s[">"] || "";
+      for (k in gs) {
+        g[k] = gs[k];
+      }
+      o._ = { "#": s["#"], ">": g };
+    }
+    return o;
+  }
+  // The state a write stamped on a value. One put stamps every field it writes
+  // with the same state, so this stays put while a single write is still being
+  // assembled, and moves as soon as a later write touches the node.
+  function stamp(d) {
+    if (!d || "object" != typeof d) {
+      return 0;
+    }
+    var s = d[">"],
+      m = 0,
+      k;
+    if ("number" == typeof s) {
+      return s;
+    }
+    s = (d._ || "")[">"];
+    if (!s) {
+      return 0;
+    }
+    for (k in s) {
+      if (s[k] > m) {
+        m = s[k];
+      }
+    }
+    return m;
   }
   var empty = {},
     valid = Zen.valid,
