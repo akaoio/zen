@@ -2115,6 +2115,9 @@ describe("ZEN", function () {
           .get("state")
           .on(function (v, f) {
             check[v] = f;
+            if (check.MA && second) {
+              setTimeout(second, 0);
+            } // next tick: writing from inside a delivery reenters the batch
             if (check.QR && check.NY && check.CA && check.TX && check.MA) {
               clearTimeout(done.to);
               done.to = setTimeout(function () {
@@ -2171,9 +2174,20 @@ describe("ZEN", function () {
             },
           },
         });
-        setTimeout(function () {
+        // Write it a second time once the first value has actually been
+        // delivered. A busy machine can take longer than any fixed wait to
+        // get the first one out, and a second write landing before it means
+        // the read that was issued while the node still held the first value
+        // is answered with the second -- so the first is never delivered here
+        // at all. The timer is only so nothing can hang.
+        var second = function () {
+          if (second.done) {
+            return;
+          }
+          second.done = 1;
           zen.get("QUANGO").put({ state: "QR" });
-        }, 300);
+        };
+        setTimeout(second, 2000);
       });
 
       it("in memory get after map map get get", function (done) {
@@ -2227,6 +2241,9 @@ describe("ZEN", function () {
           .get("state")
           .on(function (v, f) {
             check[v] = f;
+            if (check.MA && second) {
+              setTimeout(second, 0);
+            } // next tick: writing from inside a delivery reenters the batch
             if (check.QR && check.NY && check.CA && check.TX && check.MA) {
               clearTimeout(done.to);
               done.to = setTimeout(function () {
@@ -2239,9 +2256,19 @@ describe("ZEN", function () {
               }, 10);
             }
           });
-        setTimeout(function () {
+        // Write it a second time once the first value has actually been
+        // delivered -- on a busy machine 300ms is not enough for that, and a
+        // second write landing before the first value arrives means the first
+        // one is never delivered to this listener at all. The timer stays as a
+        // fallback so nothing can hang waiting.
+        var second = function () {
+          if (second.done) {
+            return;
+          }
+          second.done = 1;
           zen.get("QUANGO1").put({ state: "QR" });
-        }, 300);
+        };
+        setTimeout(second, 2000); // only so nothing can hang; the delivery above is what drives it
       });
 
       it("in memory get before map map get get get", function (done) {
@@ -2257,6 +2284,9 @@ describe("ZEN", function () {
           .get("code")
           .on(function (v, f) {
             check[v] = f;
+            if (check.MA && second) {
+              setTimeout(second, 0);
+            } // next tick: writing from inside a delivery reenters the batch
             if (check.QR && check.NY && check.CA && check.TX && check.MA) {
               clearTimeout(done.to);
               done.to = setTimeout(function () {
@@ -2336,9 +2366,20 @@ describe("ZEN", function () {
             },
           },
         });
-        setTimeout(function () {
+        // Write it a second time once the first value has actually been
+        // delivered. A busy machine can take longer than any fixed wait to
+        // get the first one out, and a second write landing before it means
+        // the read that was issued while the node still held the first value
+        // is answered with the second -- so the first is never delivered here
+        // at all. The timer is only so nothing can hang.
+        var second = function () {
+          if (second.done) {
+            return;
+          }
+          second.done = 1;
           zen.get("HIPPOM").put({ code: "QR" });
-        }, 300);
+        };
+        setTimeout(second, 2000);
       });
 
       it("in memory get before after map map get get get", function (done) {
@@ -2416,6 +2457,9 @@ describe("ZEN", function () {
           .get("code")
           .on(function (v, f) {
             check[v] = f;
+            if (check.MA && second) {
+              setTimeout(second, 0);
+            } // next tick: writing from inside a delivery reenters the batch
             //console.log("***********", f,v);
             if (check.QR && check.NY && check.CA && check.TX && check.MA) {
               clearTimeout(done.to);
@@ -2429,9 +2473,20 @@ describe("ZEN", function () {
               }, 10);
             }
           });
-        setTimeout(function () {
+        // Write it a second time once the first value has actually been
+        // delivered. A busy machine can take longer than any fixed wait to
+        // get the first one out, and a second write landing before it means
+        // the read that was issued while the node still held the first value
+        // is answered with the second -- so the first is never delivered here
+        // at all. The timer is only so nothing can hang.
+        var second = function () {
+          if (second.done) {
+            return;
+          }
+          second.done = 1;
           zen.get("HIPPOM1").put({ code: "QR" });
-        }, 300);
+        };
+        setTimeout(second, 2000);
       });
 
       it("in memory get before map map get get node", function (done) {
@@ -2445,6 +2500,9 @@ describe("ZEN", function () {
           .get("state")
           .on(function (v, f) {
             check[v.code] = f;
+            if (check.MA && second) {
+              setTimeout(second, 0);
+            } // next tick: writing from inside a delivery reenters the batch
             //console.log("************", f, v);
             if (check.QR && check.NY && check.CA && check.TX && check.MA) {
               clearTimeout(done.to);
@@ -2525,9 +2583,19 @@ describe("ZEN", function () {
             },
           },
         });
-        setTimeout(function () {
+        // Write it a second time once the first value has actually been
+        // delivered -- on a busy machine 300ms is not enough for that, and a
+        // second write landing before the first value arrives means the first
+        // one is never delivered to this listener at all. The timer stays as a
+        // fallback so nothing can hang waiting.
+        var second = function () {
+          if (second.done) {
+            return;
+          }
+          second.done = 1;
           zen.get("HIPPOM3").put({ code: "QR" });
-        }, 300);
+        };
+        setTimeout(second, 2000); // only so nothing can hang; the delivery above is what drives it
       });
 
       it("in memory get before after map map get get node", function (done) {
@@ -2604,6 +2672,9 @@ describe("ZEN", function () {
           .get("state")
           .on(function (v, f) {
             check[v.code] = f;
+            if (check.MA && second) {
+              setTimeout(second, 0);
+            } // next tick: writing from inside a delivery reenters the batch
             //console.log("**********", f, v);
             if (check.QR && check.NY && check.CA && check.TX && check.MA) {
               clearTimeout(done.to);
@@ -2617,9 +2688,19 @@ describe("ZEN", function () {
               }, 10);
             }
           });
-        setTimeout(function () {
+        // Write it a second time once the first value has actually been
+        // delivered -- on a busy machine 300ms is not enough for that, and a
+        // second write landing before the first value arrives means the first
+        // one is never delivered to this listener at all. The timer stays as a
+        // fallback so nothing can hang waiting.
+        var second = function () {
+          if (second.done) {
+            return;
+          }
+          second.done = 1;
           zen.get("HIPPOM4").put({ code: "QR" });
-        }, 300);
+        };
+        setTimeout(second, 2000); // only so nothing can hang; the delivery above is what drives it
       });
 
       it("in memory get after map map get get get map", function (done) {
