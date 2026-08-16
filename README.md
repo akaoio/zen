@@ -74,6 +74,7 @@ zen stop        # stop the relay service
 zen restart     # restart the relay service
 zen logs        # follow journalctl live logs
 zen update      # pull latest & restart
+zen doctor      # check the install still matches the checkout (--fix, --deep)
 zen uninstall   # remove everything
 ```
 
