@@ -313,24 +313,21 @@ create_service() {
 "
     fi
 
-    service_content="$(cat << EOF2
-[Unit]
-Description=ZEN Graph Database Relay Peer
-After=network.target
-StartLimitIntervalSec=0
-
-[Service]
-Type=simple
-Restart=always
-RestartSec=1
-User=$REAL_USER
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$node_bin $INSTALL_DIR/script/server.js
-LimitNOFILE=65536
-${env_lines}[Install]
-WantedBy=multi-user.target
-EOF2
-)"
+    # The unit lives in script/zen.service, not here. Keeping a second copy in
+    # this heredoc meant the file in the repo looked like the source of the
+    # installed unit while nothing read it -- it drifted, and reading it sent
+    # people looking for problems that were not there.
+    tmpl="$INSTALL_DIR/script/zen.service"
+    if [ ! -f "$tmpl" ]; then
+        log_error "Missing service template: $tmpl"
+        exit 1
+    fi
+    service_content="$(awk -v env_lines="$env_lines" \
+        '{ if ($0 == "__ZEN_ENV__") { printf "%s", env_lines } else { print } }' "$tmpl" \
+        | sed \
+            -e "s|__ZEN_USER__|$REAL_USER|g" \
+            -e "s|__ZEN_DIR__|$INSTALL_DIR|g" \
+            -e "s|__ZEN_NODE__|$node_bin|g")"
 
     if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would write $service_file:"

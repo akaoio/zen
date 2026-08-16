@@ -12,21 +12,33 @@ User=__ZEN_USER__
 WorkingDirectory=__ZEN_DIR__
 ExecStart=__ZEN_NODE__ __ZEN_DIR__/script/server.js
 LimitNOFILE=65536
-Environment=PORT=8420
-# SSL certs are auto-detected from $XDG_CONFIG_HOME/zen/ (default: ~/.config/zen/)
-# To enable HTTPS, run: bash script/ssl.sh --domain yourdomain.com --email you@example.com
-
-# ── Storage resilience (optional — defaults shown) ───────────────────────────
+# Everything install.sh was told at install time lands here, one Environment=
+# line each: PORT, DOMAIN, PEERS, HTTPS_KEY, HTTPS_CERT, FMB, FRAT, EVICT,
+# GRAPH_GC_MB, GRAPH_GC_SEC, GRAPH_GC_KEEP, UDP_PORT. Only the ones actually
+# given are written, so an install with no options gets none of them.
+#
+# Anything added here by hand survives an update: nothing rewrites this file
+# after it has been installed -- `zen update` does not, and `zen doctor --fix`
+# deliberately leaves it alone, because ssl.sh adds HTTPS lines to it. Reinstall
+# is the only thing that regenerates it.
+__ZEN_ENV__
+# What can go above, for reference. All optional; defaults shown.
+#
+# ── SSL ──────────────────────────────────────────────────────────────────────
+# Certs are auto-detected from $XDG_CONFIG_HOME/zen/ (default: ~/.config/zen/).
+# To enable HTTPS: bash script/ssl.sh --domain yourdomain.com --email you@here
+#
+# ── Storage resilience ───────────────────────────────────────────────────────
 # Environment=FMB=200        # warn + evict when disk free < N MB
 # Environment=FRAT=0.10      # evict in-memory graph when free/total RAM < ratio
 # Environment=EVICT=1        # set to 0 to disable all eviction
-
-# ── Graph GC tuning (optional — defaults shown) ──────────────────────────────
+#
+# ── Graph GC tuning ──────────────────────────────────────────────────────────
 # Environment=GRAPH_GC_MB=400    # heap MB above which in-memory GC runs
 # Environment=GRAPH_GC_SEC=60    # graph GC interval in seconds
 # Environment=GRAPH_GC_KEEP=120  # seconds to keep recently-written souls
-
-# ── Network (optional — defaults shown) ──────────────────────────────────────
+#
+# ── Network ──────────────────────────────────────────────────────────────────
 # Environment=UDP_PORT=8421  # UDP multicast port for LAN peer discovery
 
 [Install]
