@@ -172,6 +172,226 @@ cmd_update() {
     exec "$install_dir/script/update.sh" "$@"
 }
 
+# ── zen doctor ────────────────────────────────────────────────────────────────
+# Everything here answers one question: is what is installed still what this
+# checkout says it should be? Nothing on this machine errors when the answer is
+# no. The auto-update timer sat enabled, active and dead for eight days without
+# a single log line, and every deploy in that window quietly needed a human.
+DOCTOR_BAD=0
+DOCTOR_DEEP=0
+DOCTOR_FIX=0
+
+doc_ok()   { printf '  %s✓%s %-20s %s\n' "$GREEN" "$NC" "$1" "$2"; }
+doc_warn() { printf '  %s!%s %-20s %s\n' "$YELLOW" "$NC" "$1" "$2"; DOCTOR_BAD=1; }
+doc_bad()  { printf '  %s✗%s %-20s %s\n' "$RED" "$NC" "$1" "$2"; DOCTOR_BAD=1; }
+doc_fix()  { printf '      %s%s%s\n' "$CYAN" "$1" "$NC"; }
+
+# systemd reports the next firing twice: on the wall clock and on the monotonic
+# clock. A timer with neither is enabled, active, and dead.
+doctor_timer_dead() {
+    local rt mono
+    rt=$(systemctl show "$1" -p NextElapseUSecRealtime --value 2>/dev/null || echo "")
+    mono=$(systemctl show "$1" -p NextElapseUSecMonotonic --value 2>/dev/null || echo "")
+    case "$rt" in "" | 0 | n/a | infinity) ;; *) return 1 ;; esac
+    case "$mono" in "" | 0 | n/a | infinity) ;; *) return 1 ;; esac
+    return 0
+}
+
+cmd_doctor() {
+    local install_dir svc ver node_bin exec_start head stamp behind sep
+    local unit tmpl want have free data_dir
+
+    for a in "$@"; do
+        case "$a" in
+            --deep) DOCTOR_DEEP=1 ;;
+            --fix)  DOCTOR_FIX=1 ;;
+            *) err "Unknown option: $a"; exit 1 ;;
+        esac
+    done
+
+    install_dir=$(find_install_dir || true)
+    svc=$(get_service_name)
+    sep="────────────────────────────────"
+    printf '%sZEN doctor%s\n%s\n' "$BOLD" "$NC" "$sep"
+
+    # ── install ───────────────────────────────────────────────────────────────
+    if [ -z "$install_dir" ]; then
+        doc_bad "install" "not found"
+        doc_fix "curl -fsSL https://raw.githubusercontent.com/akaoio/zen/main/script/install.sh | bash"
+        exit 1
+    fi
+    ver=$(node -e "process.stdout.write(require('$install_dir/package.json').version)" 2>/dev/null || echo "?")
+    doc_ok "install" "$install_dir (v$ver)"
+
+    node_bin=$(command -v node 2>/dev/null || true)
+    if [ -z "$node_bin" ]; then
+        doc_bad "node" "not on PATH"
+    else
+        doc_ok "node" "$($node_bin --version) at $node_bin"
+    fi
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        doc_warn "systemd" "not available — service checks skipped"
+        doctor_summary "$sep"
+        return $?
+    fi
+
+    # ── the relay ─────────────────────────────────────────────────────────────
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        doc_ok "service" "$svc active"
+    else
+        doc_bad "service" "$svc $(systemctl is-active "$svc" 2>/dev/null || echo 'not installed')"
+        doc_fix "zen start"
+    fi
+
+    # A unit left behind by an older install can still be running happily from a
+    # directory this checkout knows nothing about.
+    exec_start=$(systemctl show "$svc" -p ExecStart --value 2>/dev/null | sed -n 's/.*path=\([^ ;]*\).*/\1/p' || true)
+    case "$(systemctl show "$svc" -p ExecStart --value 2>/dev/null)" in
+        *"$install_dir"*) doc_ok "service points at" "$install_dir" ;;
+        "") doc_warn "service points at" "unknown" ;;
+        *) doc_bad "service points at" "somewhere else, not $install_dir"
+           doc_fix "re-run install.sh, or check ExecStart in /etc/systemd/system/$svc.service" ;;
+    esac
+    if [ -n "$exec_start" ] && [ ! -x "$exec_start" ]; then
+        doc_bad "service node" "$exec_start is gone"
+        doc_fix "re-run install.sh to point the unit at the node you have now"
+    fi
+
+    # ── is the relay running this checkout? ───────────────────────────────────
+    head=$(git -C "$install_dir" rev-parse HEAD 2>/dev/null || echo "")
+    stamp=$(cat "$ZEN_STATE_DIR/deployed-commit-${svc}" 2>/dev/null || echo "")
+    if [ -z "$head" ]; then
+        doc_warn "checkout" "not a git checkout"
+    elif [ -z "$stamp" ]; then
+        doc_warn "deployed" "no record of what was deployed"
+        doc_fix "zen update"
+    elif [ "$head" = "$stamp" ]; then
+        doc_ok "deployed" "$(printf '%.7s' "$head") — the running service is this commit"
+    else
+        doc_bad "deployed" "service is on $(printf '%.7s' "$stamp"), checkout is $(printf '%.7s' "$head")"
+        doc_fix "zen update"
+    fi
+
+    # ── is this checkout behind its upstream? ─────────────────────────────────
+    if [ -n "$head" ]; then
+        if timeout 20 git -C "$install_dir" fetch --quiet origin 2>/dev/null; then
+            behind=$(git -C "$install_dir" rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "?")
+            if [ "$behind" = "0" ]; then
+                doc_ok "upstream" "up to date"
+            elif [ "$behind" = "?" ]; then
+                doc_warn "upstream" "no upstream branch set"
+            else
+                doc_bad "upstream" "$behind commit(s) behind"
+                doc_fix "zen update"
+            fi
+        else
+            doc_warn "upstream" "could not reach origin (offline?)"
+        fi
+    fi
+
+    # ── the machinery that is supposed to do all this without me ─────────────
+    if systemctl list-unit-files --type=timer 2>/dev/null | grep -q "${svc}-update.timer"; then
+        if doctor_timer_dead "${svc}-update.timer"; then
+            doc_bad "auto-update" "timer has no next firing: enabled, active, and dead"
+            doc_fix "zen doctor --fix   (or re-run install.sh)"
+        else
+            doc_ok "auto-update" "next $(systemctl show "${svc}-update.timer" -p NextElapseUSecRealtime --value 2>/dev/null)"
+        fi
+    else
+        doc_bad "auto-update" "timer not installed"
+        doc_fix "re-run install.sh"
+    fi
+
+    # The units this checkout owns as templates. zen.service is not among them:
+    # install.sh builds that one inline, from options this command cannot know.
+    for unit in "${svc}-update.service" "${svc}-update.timer"; do
+        tmpl="$install_dir/script/$(printf '%s' "$unit" | sed "s|^${svc}|zen|")"
+        [ -f "$tmpl" ] && [ -f "/etc/systemd/system/$unit" ] || continue
+        want=$(sed -e "s|__ZEN_USER__|$(id -un)|g" -e "s|__ZEN_DIR__|$install_dir|g" -e "s|__ZEN_SERVICE__|$svc|g" "$tmpl")
+        have=$(cat "/etc/systemd/system/$unit")
+        if [ "$want" = "$have" ]; then
+            doc_ok "unit $unit" "matches this checkout"
+        else
+            doc_bad "unit $unit" "differs from this checkout"
+            doc_fix "zen doctor --fix"
+        fi
+    done
+
+    # ── where the data lives ─────────────────────────────────────────────────
+    data_dir="$ZEN_DATA_DIR/radata"
+    if [ -d "$data_dir" ]; then
+        if [ -w "$data_dir" ]; then
+            free=$(df -Pm "$data_dir" 2>/dev/null | awk 'NR==2 {print $4}')
+            if [ -n "$free" ] && [ "$free" -lt 200 ]; then
+                doc_bad "disk" "${free}MB free where the graph is written"
+            else
+                doc_ok "disk" "${free}MB free at $data_dir"
+            fi
+        else
+            doc_bad "data" "$data_dir is not writable"
+        fi
+    else
+        doc_warn "data" "$data_dir does not exist yet"
+    fi
+
+    # ── the store itself, only when asked: this reads every key back ─────────
+    if [ "$DOCTOR_DEEP" = 1 ]; then
+        printf '  %s…%s %-20s %s\n' "$CYAN" "$NC" "store" "reading every key back, this takes a while"
+        if node "$install_dir/script/radcheck.js" >/dev/null 2>&1; then
+            doc_ok "store" "every key on disk reads back"
+        else
+            doc_bad "store" "some keys do not read back"
+            doc_fix "node $install_dir/script/radcheck.js --all"
+        fi
+    fi
+
+    if [ "$DOCTOR_FIX" = 1 ]; then
+        doctor_apply "$install_dir" "$svc"
+        return $?
+    fi
+
+    doctor_summary "$sep"
+    return $?
+}
+
+doctor_summary() {
+    printf '%s\n' "$1"
+    if [ "$DOCTOR_BAD" = 0 ]; then
+        info "Nothing to fix."
+        return 0
+    fi
+    printf '%sSomething above needs attention. `zen doctor --fix` handles the unit files;%s\n' "$YELLOW" "$NC"
+    printf '%sthe rest are one-liners printed next to each finding.%s\n' "$YELLOW" "$NC"
+    return 1
+}
+
+# Only the units this checkout owns, rewritten from its own templates. Anything
+# a human put in them by hand -- the HTTPS lines ssl.sh adds, for one -- lives in
+# zen.service, which this does not touch.
+doctor_apply() {
+    local install_dir svc SUDO unit tmpl
+    install_dir="$1"
+    svc="$2"
+    SUDO=$(get_sudo)
+    printf '%s\n' "────────────────────────────────"
+    for unit in "${svc}-update.service" "${svc}-update.timer"; do
+        tmpl="$install_dir/script/$(printf '%s' "$unit" | sed "s|^${svc}|zen|")"
+        [ -f "$tmpl" ] || continue
+        info "Writing /etc/systemd/system/$unit from $tmpl"
+        sed -e "s|__ZEN_USER__|$(id -un)|g" -e "s|__ZEN_DIR__|$install_dir|g" -e "s|__ZEN_SERVICE__|$svc|g" \
+            "$tmpl" | $SUDO tee "/etc/systemd/system/$unit" > /dev/null
+    done
+    $SUDO systemctl daemon-reload
+    $SUDO systemctl restart "${svc}-update.timer"
+    if doctor_timer_dead "${svc}-update.timer"; then
+        err "The timer still has no next firing. Look at: systemctl status ${svc}-update.timer"
+        return 1
+    fi
+    info "Auto-update timer fires next at $(systemctl show "${svc}-update.timer" -p NextElapseUSecRealtime --value 2>/dev/null)"
+    return 0
+}
+
 # ── service helpers ───────────────────────────────────────────────────────────
 get_service_name() {
     local svc
@@ -285,6 +505,9 @@ ${BOLD}USAGE${NC}
 
 ${BOLD}COMMANDS${NC}
     status      Show relay status, service state, and XDG paths
+    doctor      Check that what is installed still matches this checkout
+                  --fix    rewrite the auto-update units from this checkout
+                  --deep   also read every key in the store back
     start       Start the relay service
     stop        Stop the relay service
     restart     Restart the relay service
@@ -308,6 +531,7 @@ cmd="${1:-help}"
 if [ "$#" -ge 1 ]; then shift; fi
 case "$cmd" in
     status)              cmd_status "$@" ;;
+    doctor)              cmd_doctor "$@" ;;
     start)               cmd_start "$@" ;;
     stop)                cmd_stop "$@" ;;
     restart)             cmd_restart "$@" ;;
