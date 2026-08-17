@@ -43,6 +43,13 @@ function sandbox(name) {
 }
 
 describe("zen doctor", function () {
+  // `zen doctor` reads systemd units and runs the POSIX shell CLI -- neither exists on macOS or Windows, where these assert
+  // things about a deployment that cannot happen. Linux is where they mean
+  // something; elsewhere they only made CI red.
+  if ("linux" !== process.platform) {
+    it.skip("only meaningful on linux", function () {});
+    return;
+  }
   this.timeout(60 * 1000);
 
   it("reports the installation it found", function () {
