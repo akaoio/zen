@@ -364,10 +364,17 @@ function asof(now, was, when) {
       out[k] = now[k];
       at[k] = ns[k];
       continue;
-    } // untouched: still standing
+    } // this write left it alone, so the node still has it
     if (u === ws[k]) {
-      continue;
-    } // this write added it; it was not there before
+      // This write touched a field the copy knows nothing about. Either it
+      // added one that did not exist, or it replaced one whose value had not
+      // reached this listener yet -- a node arrives a field at a time, so the
+      // copy runs behind. From here those look the same, and guessing wrong
+      // means handing over a node with a field missing, which a caller that
+      // keeps the first thing it is given takes for the whole truth. Say
+      // nothing rather than say half.
+      return;
+    }
     out[k] = was[k]; // replaced: give back what the copy kept
     at[k] = ws[k];
     lost = 1;
