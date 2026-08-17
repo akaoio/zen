@@ -7082,6 +7082,12 @@ defmod('./src/get.js', function(module, exp){
           }
           wait = {}; // end quick hack.
         }
+        // A piece of a multi-file read merges into the graph but must not be
+        // announced: the node is still being assembled, and a caller that keeps
+        // the first value it is handed would take a piece for the whole record.
+        if (u === opt.stun && (msg._ || "").quiet) {
+          return;
+        }
         // call:
         if (root.pass) {
           if (root.pass[id + at.id]) {
