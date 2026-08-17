@@ -6875,9 +6875,6 @@ defmod('./src/put.js', function(module, exp){
 });
 
 defmod('./src/get.js', function(module, exp){
-  var __root = reqmod('./src/root.js').default;
-  var Zen = __root;
-
   Zen.chain.get = function (key, cb, as) {
     var zen, tmp;
     if (typeof key === "string") {
@@ -7015,6 +7012,26 @@ defmod('./src/get.js', function(module, exp){
               // So hand the older value over now, from the copy taken when it was
               // queued, which is the only one left of it.
               if ((tmp = stamp(data) || stamp(msg.put))) {
+                // Pieces of one node read back from different files carry the
+                // state of the write that made them, so state alone cannot tell
+                // "the same thing again" from "the rest of it", and folding by
+                // state discards the piece that completes the node. The store
+                // says which is which: a node still being read is marked, and the
+                // mark is gone on the piece that finishes it. Fold the incomplete
+                // ones; let the one that completes the node through.
+                if (tmp === held.when) {
+                  var part = !!(sat || at || "").part;
+                  if (held.part && !part) {
+                    held.part = 0;
+                    held.snap = snapshot(data);
+                    if (!opt.v2020 && told[node] !== tmp) {
+                      told[node] = tmp;
+                      opt.ok.call(at.$, data, at.get, msg, eve || any);
+                    }
+                    return;
+                  }
+                  held.part = part;
+                }
                 if (tmp !== held.when) {
                   // The copy on its own is not enough to hand over: a node
                   // arrives a field at a time, so it can be half-built, and a
@@ -7049,6 +7066,7 @@ defmod('./src/get.js', function(module, exp){
             wait[node] = held = {
               when: stamp(data) || stamp(msg.put),
               snap: snapshot(data),
+              part: !!(sat || at || "").part,
             };
             tmp.push(function () {
               // What this was queued to say may have been said already, if the
