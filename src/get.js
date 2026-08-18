@@ -118,6 +118,21 @@ Zen.chain.get = function (key, cb, as) {
 					cat.on('out', opt.out);
 					return;
 				}*/
+        // A piece of a multi-file read merges into the graph but must not be
+        // announced: the node is still being assembled, and a caller that keeps
+        // the first value it is handed would take a piece for the whole record.
+        //
+        // This has to be decided before the batch is joined, not after. The
+        // first message for a node parks on the open batch and every later one
+        // folds into it, so whichever message parks speaks for all of them when
+        // the batch ends. Let a piece park and the batch's whole delivery --
+        // including the message that completed the node -- is dropped on its
+        // behalf, and nothing is left to hand the node over. Under load that is
+        // what a read spanning several files does: the pieces land inside one
+        // batch instead of after it.
+        if ((msg._ || "").quiet) {
+          return;
+        }
         if ((tmp = root.hatch) && !tmp.end && u === opt.hatch && !f) {
           // quick hack! // Because data is streamed we get things one by one, but callers would rather be called once per batch than once per piece, so the first delivery for a node parks on the batch and later ones fold into it, to be handed out together when the batch ends.
           var node = at.$._.id,
