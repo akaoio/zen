@@ -79,4 +79,46 @@ describe("a write parked on a flush stays visible", function () {
       "a parked write went invisible",
     );
   });
+
+  // The exact-key read above is not the one a graph does. A soul is read by
+  // prefix -- every field under it at once -- and that goes down a different
+  // branch of the not-found handling, with its own fallback. `test/rad/flush-
+  // read.js` reads exactly this way, so sweep it the same way.
+  it("nor is a node read by prefix, at any point of the flush", function () {
+    var esc = String.fromCharCode(27);
+    var lost = [];
+    var busySeen = 0;
+    for (var k = 0; k <= STEPS; k++) {
+      for (var j = 0; j <= 20; j++) {
+        var out = withRadisk({ until: 250, chunk: 120 }, function (r, ctx) {
+          for (var i = 0; i < KEYS; i++) {
+            r(key(i) + esc + "age", { ":": i, ">": 1 }, noop);
+            r(key(i) + esc + "name", { ":": "N" + i, ">": 1 }, noop);
+          }
+          for (var s = 0; s < k && ctx.step(); s++) {}
+          var busy = r.busy();
+          var soul = "names/n09x";
+          r(soul + esc + "age", { ":": 77, ">": 2 }, noop);
+          r(soul + esc + "name", { ":": "PROBE", ">": 2 }, noop);
+          for (var m = 0; m < j && ctx.step(); m++) {}
+          var got = readNow(r, soul + esc);
+          ctx.settle();
+          return { k: k, j: j, busy: busy, called: got.called, data: got.data };
+        });
+        if (out.busy) busySeen++;
+        if (!out.called || undefined === out.data) lost.push(out);
+      }
+    }
+    assert.ok(
+      busySeen > 0,
+      "no case in this sweep wrote while a flush was in flight; it tests nothing",
+    );
+    assert.deepStrictEqual(
+      lost.map(function (o) {
+        return "park@" + o.k + " read@+" + o.j + (o.called ? " answered missing" : " never answered");
+      }),
+      [],
+      "a node parked on a flush went invisible",
+    );
+  });
 });
