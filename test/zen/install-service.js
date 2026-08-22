@@ -54,6 +54,61 @@ function render(opts) {
   return execFileSync("sh", ["-c", script], { encoding: "utf8" });
 }
 
+// Runs one function out of install.sh with no controlling terminal -- which is
+// how cron, systemd, and a good many `curl | bash` invocations reach it. CI and
+// the harness are already in that state, so there is nothing to simulate.
+function callWithNoTty(snippet) {
+  const script = `
+    exec 2>&1
+    set -eu
+    TMP=$(mktemp)
+    sed '/^main "$@"$/d' '${installer}' > "$TMP"
+    set --
+    . "$TMP"
+    rm -f "$TMP"
+    ${snippet}
+  `;
+  try {
+    return execFileSync("sh", ["-c", script], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  } catch (err) {
+    return (err.stdout || "") + (err.stderr || "");
+  }
+}
+
+describe("install.sh with nobody to ask", function () {
+  if ("linux" !== process.platform) {
+    it.skip("only meaningful on linux", function () {});
+    return;
+  }
+  this.timeout(30 * 1000);
+
+  it("gets through the questions instead of dying on them", function () {
+    // /dev/tty is a device node that exists even where opening it cannot
+    // succeed. install.sh tested for the node and then wrote to it, which
+    // under `set -e` ends the install part-way through with a message about a
+    // device rather than anything an operator can act on.
+    const out = callWithNoTty('SKIP_SERVICE=false\nYES=false\nDOMAIN=""\nPORT=8420\nprompt_missing_options\necho "STILL-ALIVE domain=[$DOMAIN] port=[$PORT]"');
+    assert.ok(/STILL-ALIVE/.test(out), "install.sh died on a question it could not ask:\n" + out);
+    assert.ok(/domain=\[\] port=\[8420\]/.test(out), "unanswered questions did not keep their defaults:\n" + out);
+  });
+
+  it("leaves an answer it was given alone", function () {
+    const out = callWithNoTty('SKIP_SERVICE=false\nYES=false\nDOMAIN="given.test"\nPORT=9999\nprompt_missing_options\necho "domain=[$DOMAIN] port=[$PORT]"');
+    assert.ok(/domain=\[given\.test\] port=\[9999\]/.test(out), "overwrote what it was told:\n" + out);
+  });
+
+  it("declines a confirmation it has no way to ask", function () {
+    const out = callWithNoTty('YES=false\nif confirm "proceed?"; then echo ANSWERED-yes; else echo ANSWERED-no; fi');
+    assert.ok(/ANSWERED-no/.test(out), "an unanswerable question was not declined:\n" + out);
+    assert.ok(!/dev\/tty/.test(out), "leaked a device error at the operator:\n" + out);
+  });
+
+  it("still takes yes for an answer without asking anything", function () {
+    const out = callWithNoTty('YES=true\nif confirm "proceed?"; then echo ANSWERED-yes; else echo ANSWERED-no; fi');
+    assert.ok(/ANSWERED-yes/.test(out), "--yes stopped working:\n" + out);
+  });
+});
+
 describe("the systemd unit install.sh writes", function () {
   // install.sh builds a systemd unit with a POSIX shell -- neither exists on macOS or Windows, where these assert
   // things about a deployment that cannot happen. Linux is where they mean
