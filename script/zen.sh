@@ -200,6 +200,7 @@ doctor_timer_dead() {
 cmd_doctor() {
     local install_dir svc ver node_bin exec_start head stamp behind sep
     local unit tmpl want have free data_dir
+    local tls_domain tls_cert tls_out tab level label detail
 
     for a in "$@"; do
         case "$a" in
@@ -333,6 +334,41 @@ cmd_doctor() {
         fi
     else
         doc_warn "data" "$data_dir does not exist yet"
+    fi
+
+    # ── TLS ───────────────────────────────────────────────────────────────────
+    # An expired certificate, and a renewal that quietly stopped happening, are
+    # both invisible everywhere else on this box: the service stays active, the
+    # unit stays correct, and every handshake is refused. A relay ran that way
+    # for five days (#88). The judging is in lib/tlsdoctor.js; this only turns
+    # its answers into the same ok/warn/bad the rest of doctor speaks.
+    tls_domain=$(cat "$ZEN_CONFIG_DIR/domain" 2>/dev/null || true)
+    if [ -z "$tls_domain" ]; then
+        tls_domain=$(systemctl show "$svc" -p Environment --value 2>/dev/null | tr ' ' '\n' | sed -n 's/^DOMAIN=//p' | head -1)
+    fi
+    if [ -n "$tls_domain" ]; then
+        tls_cert=$(systemctl show "$svc" -p Environment --value 2>/dev/null | tr ' ' '\n' | sed -n 's/^HTTPS_CERT=//p' | head -1)
+        # Deliberately not a pipeline: `while read` on the far side of one runs
+        # in a subshell, and DOCTOR_BAD set in there would never reach the
+        # summary -- the check would report and still exit 0.
+        tls_out=$(mktemp)
+        if HTTPS_CERT="$tls_cert" node "$install_dir/script/tlscheck.js" "$tls_domain" >"$tls_out" 2>/dev/null; then
+            tab=$(printf '\t')
+            while IFS="$tab" read -r level label detail; do
+                case "$level" in
+                    ok)   doc_ok   "$label" "$detail" ;;
+                    warn) doc_warn "$label" "$detail" ;;
+                    bad)  doc_bad  "$label" "$detail" ;;
+                    fix)  doc_fix  "$label" ;;
+                esac
+            done < "$tls_out"
+        else
+            # Saying nothing here would reproduce the exact failure this whole
+            # section exists to end: a check that is not running looks the same
+            # as a check that found nothing wrong.
+            doc_warn "tls" "could not be checked — $install_dir/script/tlscheck.js did not run"
+        fi
+        rm -f "$tls_out"
     fi
 
     # ── the store itself, only when asked: this reads every key back ─────────
