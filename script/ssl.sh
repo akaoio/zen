@@ -29,6 +29,36 @@ DNS_PROVIDER=""
 DNS_API_KEY=""
 DNS_API_SECRET=""
 DNS_EMAIL=""
+DNS_API_TOKEN=""
+DNS_ZONE_ID=""
+YES=false
+
+# The DNS providers this script knows, and the acme.sh hook each maps to. One
+# list, read by validation, by the interactive menu and by --help, so adding a
+# provider is a single edit -- and a name that is not on it can no longer be
+# mistaken for manual mode, which acme.sh cannot renew automatically.
+DNS_PROVIDERS="cloudflare route53 digitalocean godaddy manual"
+
+# Which Let's Encrypt CA to issue against. Named explicitly rather than left to
+# acme.sh's --staging flag, which it ignores whenever a --server is given.
+acme_ca() {
+    if [ "$STAGING" = "true" ]; then
+        echo "letsencrypt_test"
+    else
+        echo "letsencrypt"
+    fi
+}
+
+dns_provider_hook() {
+    case "$1" in
+        cloudflare)   echo "dns_cf" ;;
+        route53)      echo "dns_aws" ;;
+        digitalocean) echo "dns_dgon" ;;
+        godaddy)      echo "dns_gd" ;;
+        manual)       echo "manual" ;;
+        *)            return 1 ;;
+    esac
+}
 
 # Colors for output
 RED='\033[0;31m'
@@ -57,9 +87,13 @@ OPTIONAL:
     --reload-cmd COMMAND       Command to run after certificate installation
     --standalone               Use standalone mode (temporary web server on port 80)
     --dns [PROVIDER]          Use DNS validation. Options: manual, cloudflare, route53, digitalocean, godaddy
+                               Omit PROVIDER to be asked; with no terminal it means manual
+    --dns-api-token TOKEN     DNS provider API token (Cloudflare; preferred over --dns-api-key)
+    --dns-zone-id ID          DNS zone id (Cloudflare; needed only if the token cannot list zones)
     --dns-api-key KEY         DNS provider API key (required for automatic DNS)
     --dns-api-secret SECRET   DNS provider API secret (for some providers)
-    --dns-email EMAIL         DNS provider email (for Cloudflare)
+    --dns-email EMAIL         DNS provider account email (Cloudflare global key only)
+    -y, --yes                 Never prompt; fail instead of asking
     --force                    Force reinstallation of acme.sh
     --staging                  Use Let's Encrypt staging environment (for testing)
     --no-auto-upgrade          Disable automatic acme.sh upgrades
@@ -77,7 +111,10 @@ EXAMPLES:
     # Standalone mode (no web server needed)
     $0 --domain example.com --email admin@example.com --standalone
 
-    # DNS validation with Cloudflare (automatic)
+    # DNS validation with Cloudflare (automatic, API token)
+    $0 --domain example.com --dns cloudflare --dns-api-token YOUR_CF_API_TOKEN
+
+    # DNS validation with Cloudflare using the older global API key
     $0 --domain example.com --email admin@example.com --dns cloudflare --dns-api-key YOUR_CF_API_KEY --dns-email admin@example.com
 
     # DNS validation with Route53 (automatic)
@@ -158,8 +195,10 @@ while [ $# -gt 0 ]; do
             ;;
         --dns)
             DNS_MODE=true
+            # A bare --dns leaves the provider undecided: with a terminal we ask,
+            # without one it falls back to manual, which is what it always meant.
             case "${2:-}" in
-                ''|--*) DNS_PROVIDER="manual"; shift ;;
+                ''|--*) shift ;;
                 *)      DNS_PROVIDER="$2"; shift 2 ;;
             esac
             ;;
@@ -174,6 +213,18 @@ while [ $# -gt 0 ]; do
         --dns-email)
             DNS_EMAIL="$2"
             shift 2
+            ;;
+        --dns-api-token)
+            DNS_API_TOKEN="$2"
+            shift 2
+            ;;
+        --dns-zone-id)
+            DNS_ZONE_ID="$2"
+            shift 2
+            ;;
+        -y|--yes)
+            YES=true
+            shift
             ;;
         --force)
             FORCE_INSTALL=true
@@ -321,6 +372,127 @@ get_acme_domain_dir() {
     return 1
 }
 
+# ── Asking, when there is somebody to ask ────────────────────────────────────
+# Prompts read from /dev/tty rather than stdin so they survive `curl ... | sh`,
+# the way install.sh does it. With no terminal, or with --yes, nothing is asked
+# and the errors below are what a script or a cron job sees -- unchanged.
+can_ask() {
+    [ "$YES" = "true" ] && return 1
+    # /dev/tty exists as a device node even with no controlling terminal, where
+    # opening it fails outright -- which is how cron and systemd run this. Test
+    # that it opens, not that it is there. The subshell matters: a redirection
+    # that fails on a special built-in exits the shell rather than returning
+    # nonzero, so the attempt has to be contained.
+    ( true >/dev/tty ) 2>/dev/null
+}
+
+ask() {
+    if [ -n "$2" ]; then
+        printf '%b[ZEN]%b %s [%s]: ' "$BLUE" "$NC" "$1" "$2" >/dev/tty
+    else
+        printf '%b[ZEN]%b %s: ' "$BLUE" "$NC" "$1" >/dev/tty
+    fi
+    read -r _ask_reply </dev/tty || _ask_reply=""
+    [ -n "$_ask_reply" ] || _ask_reply="$2"
+    printf '%s' "$_ask_reply"
+}
+
+# API tokens must not be left behind in the terminal scrollback, which is the
+# other half of keeping them out of shell history.
+ask_secret() {
+    printf '%b[ZEN]%b %s: ' "$BLUE" "$NC" "$1" >/dev/tty
+    stty -echo </dev/tty 2>/dev/null || true
+    read -r _secret_reply </dev/tty || _secret_reply=""
+    stty echo </dev/tty 2>/dev/null || true
+    printf '\n' >/dev/tty
+    printf '%s' "$_secret_reply"
+}
+
+ask_dns_provider() {
+    printf '%b[ZEN]%b Select DNS provider:\n' "$BLUE" "$NC" >/dev/tty
+    _n=0
+    for _p in $DNS_PROVIDERS; do
+        _n=$((_n + 1))
+        if [ "$_p" = "manual" ]; then
+            printf '        %d) manual — you create the TXT record yourself (cannot auto-renew)\n' "$_n" >/dev/tty
+        else
+            printf '        %d) %s\n' "$_n" "$_p" >/dev/tty
+        fi
+    done
+    printf '%b[ZEN]%b Choice [1]: ' "$BLUE" "$NC" >/dev/tty
+    read -r _choice </dev/tty || _choice=""
+    [ -n "$_choice" ] || _choice=1
+    _n=0
+    for _p in $DNS_PROVIDERS; do
+        _n=$((_n + 1))
+        if [ "$_n" = "$_choice" ]; then
+            printf '%s' "$_p"
+            return 0
+        fi
+    done
+    # Not a number on the list: hand it back and let validation say so.
+    printf '%s' "$_choice"
+}
+
+# Ask only for what the chosen provider needs and does not already have.
+prompt_dns_credentials() {
+    can_ask || return 0
+    case "$DNS_PROVIDER" in
+        cloudflare)
+            if [ -z "$DNS_API_TOKEN" ] && [ -z "$DNS_API_KEY" ]; then
+                DNS_API_TOKEN="$(ask_secret "Cloudflare API token")"
+            fi
+            if [ -z "$DNS_API_TOKEN" ] && [ -z "$DNS_EMAIL" ]; then
+                DNS_EMAIL="$(ask "Cloudflare account email" "")"
+            fi
+            ;;
+        route53)
+            if [ -z "$DNS_API_KEY" ]; then DNS_API_KEY="$(ask "AWS access key id" "")"; fi
+            if [ -z "$DNS_API_SECRET" ]; then DNS_API_SECRET="$(ask_secret "AWS secret access key")"; fi
+            ;;
+        digitalocean)
+            if [ -z "$DNS_API_KEY" ]; then DNS_API_KEY="$(ask_secret "DigitalOcean API key")"; fi
+            ;;
+        godaddy)
+            if [ -z "$DNS_API_KEY" ]; then DNS_API_KEY="$(ask "GoDaddy API key" "")"; fi
+            if [ -z "$DNS_API_SECRET" ]; then DNS_API_SECRET="$(ask_secret "GoDaddy API secret")"; fi
+            ;;
+    esac
+}
+
+validate_dns_credentials() {
+    case "$DNS_PROVIDER" in
+        cloudflare)
+            # dns_cf takes either an API token, or the older global key together
+            # with its account email. The token path never reads the email, so
+            # requiring one made the credential most deployments now have
+            # impossible to pass in.
+            if [ -z "$DNS_API_TOKEN" ] && { [ -z "$DNS_API_KEY" ] || [ -z "$DNS_EMAIL" ]; }; then
+                log_error "Cloudflare requires --dns-api-token, or --dns-api-key with --dns-email"
+                exit 1
+            fi
+            ;;
+        route53)
+            if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_API_SECRET" ]; then
+                log_error "Route53 requires --dns-api-key and --dns-api-secret"
+                exit 1
+            fi
+            ;;
+        digitalocean)
+            if [ -z "$DNS_API_KEY" ]; then
+                log_error "DigitalOcean requires --dns-api-key"
+                exit 1
+            fi
+            ;;
+        godaddy)
+            if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_API_SECRET" ]; then
+                log_error "GoDaddy requires --dns-api-key and --dns-api-secret"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
 # Use environment variables if not set by flags (with defaults)
 DOMAIN="${DOMAIN:-}"
 EMAIL="${EMAIL:-}"
@@ -330,16 +502,50 @@ CERT_FILE="${CERT_FILE:-$ZEN_CONFIG_DIR/cert.pem}"
 RELOAD_CMD="${RELOAD_CMD:-}"
 
 # Validate required parameters
+if [ -z "$DOMAIN" ] && [ -f "$ZEN_CONFIG_DIR/domain" ]; then
+    DOMAIN="$(cat "$ZEN_CONFIG_DIR/domain" 2>/dev/null || true)"
+fi
+if [ -z "$DOMAIN" ] && can_ask; then
+    DOMAIN="$(ask "Domain to certify" "")"
+fi
 if [ -z "$DOMAIN" ]; then
     log_error "Domain is required. Use --domain or set DOMAIN environment variable."
     show_help
     exit 1
 fi
 
+# acme.sh only takes an account email while it is being installed -- no --issue
+# command carries one. Once an account exists the address is already registered,
+# so ask acme.sh for it rather than demanding it again.
+if [ -z "$EMAIL" ] && [ -f "$ACME_DIR/account.conf" ]; then
+    EMAIL="$(sed -n "s/^ACCOUNT_EMAIL='\\(.*\\)'\$/\\1/p" "$ACME_DIR/account.conf" 2>/dev/null | head -1)"
+fi
+if [ -z "$EMAIL" ] && can_ask; then
+    EMAIL="$(ask "Contact email for Let's Encrypt" "")"
+fi
 if [ -z "$EMAIL" ]; then
     log_error "Email is required. Use --email or set EMAIL environment variable."
     show_help
     exit 1
+fi
+
+# Resolve the DNS provider before anything is installed or issued, so a name
+# that is wrong costs a second rather than a certificate that never renews.
+if [ "$DNS_MODE" = "true" ]; then
+    if [ -z "$DNS_PROVIDER" ]; then
+        if can_ask; then
+            DNS_PROVIDER="$(ask_dns_provider)"
+        else
+            DNS_PROVIDER="manual"
+        fi
+    fi
+    if ! dns_provider_hook "$DNS_PROVIDER" >/dev/null 2>&1; then
+        log_error "Unknown DNS provider: $DNS_PROVIDER"
+        log_error "Valid providers: $DNS_PROVIDERS"
+        exit 1
+    fi
+    prompt_dns_credentials
+    validate_dns_credentials
 fi
 
 # Auto-detect raw IPv6 address — force standalone + listen-v6 mode
@@ -430,53 +636,79 @@ install_acme() {
     log_info "acme.sh installed successfully"
 }
 
+# Hand the chosen provider's credentials to acme.sh through the environment
+# variables its dns hook reads.
+export_dns_credentials() {
+    case "$DNS_PROVIDER" in
+        cloudflare)
+            # A token and a global key are alternatives, not a pair: dns_cf takes
+            # the token branch whenever CF_Token is set and never looks at the
+            # key, so exporting both would silently ignore one of them.
+            if [ -n "$DNS_API_TOKEN" ]; then
+                export CF_Token="$DNS_API_TOKEN"
+                [ -n "$DNS_ZONE_ID" ] && export CF_Zone_ID="$DNS_ZONE_ID"
+            else
+                [ -n "$DNS_API_KEY" ] && export CF_Key="$DNS_API_KEY"
+                [ -n "$DNS_EMAIL" ] && export CF_Email="$DNS_EMAIL"
+            fi
+            ;;
+        route53)
+            [ -n "$DNS_API_KEY" ] && export AWS_ACCESS_KEY_ID="$DNS_API_KEY"
+            [ -n "$DNS_API_SECRET" ] && export AWS_SECRET_ACCESS_KEY="$DNS_API_SECRET"
+            ;;
+        digitalocean)
+            [ -n "$DNS_API_KEY" ] && export DO_API_KEY="$DNS_API_KEY"
+            ;;
+        godaddy)
+            [ -n "$DNS_API_KEY" ] && export GD_Key="$DNS_API_KEY"
+            [ -n "$DNS_API_SECRET" ] && export GD_Secret="$DNS_API_SECRET"
+            ;;
+    esac
+    # A branch ending on a false test would otherwise return nonzero under set -e.
+    return 0
+}
+
 # Issue certificate
 issue_certificate() {
     log_info "Issuing certificate for domain: $DOMAIN"
 
-    # Build acme.sh command
+    # Staging has to be chosen by naming the CA, not by adding --staging:
+    # acme.sh consults --staging only when no server was named, so passing both
+    # sends the run to production and spends a real certificate.
+    if [ "$STAGING" = "true" ]; then
+        log_warn "Using Let's Encrypt staging environment (test certificates)"
+    fi
+
+    # Every issuance shares this much; only the challenge method differs.
+    ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server $(acme_ca) --issue -d \"$DOMAIN\" --keylength ec-256"
+
     if [ "$STANDALONE" = "true" ]; then
         if [ "$IS_IPV6" = "true" ]; then
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone --listen-v6 --cert-profile \"$IP_CERT_PROFILE\""
+            ACME_CMD="$ACME_CMD --standalone --listen-v6 --cert-profile \"$IP_CERT_PROFILE\""
             log_info "Using standalone IPv6 mode (temporary web server on port 80, IPv6, short-lived IP cert)"
         else
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --standalone"
+            ACME_CMD="$ACME_CMD --standalone"
             log_info "Using standalone mode (temporary web server on port 80)"
         fi
     elif [ "$DNS_MODE" = "true" ]; then
-        # Setup DNS provider environment variables
-        if [ "$DNS_PROVIDER" = "cloudflare" ]; then
-            [ -n "$DNS_API_KEY" ] && export CF_Key="$DNS_API_KEY"
-            [ -n "$DNS_EMAIL" ] && export CF_Email="$DNS_EMAIL"
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_cf"
-            log_info "Using Cloudflare automatic DNS validation"
-        elif [ "$DNS_PROVIDER" = "route53" ]; then
-            [ -n "$DNS_API_KEY" ] && export AWS_ACCESS_KEY_ID="$DNS_API_KEY"
-            [ -n "$DNS_API_SECRET" ] && export AWS_SECRET_ACCESS_KEY="$DNS_API_SECRET"
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_aws"
-            log_info "Using Route53 automatic DNS validation"
-        elif [ "$DNS_PROVIDER" = "digitalocean" ]; then
-            [ -n "$DNS_API_KEY" ] && export DO_API_KEY="$DNS_API_KEY"
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_dgon"
-            log_info "Using DigitalOcean automatic DNS validation"
-        elif [ "$DNS_PROVIDER" = "godaddy" ]; then
-            [ -n "$DNS_API_KEY" ] && export GD_Key="$DNS_API_KEY"
-            [ -n "$DNS_API_SECRET" ] && export GD_Secret="$DNS_API_SECRET"
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns dns_gd"
-            log_info "Using GoDaddy automatic DNS validation"
-        else
-            ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please"
+        export_dns_credentials
+        if [ "$DNS_PROVIDER" = "manual" ]; then
+            ACME_CMD="$ACME_CMD --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please"
             log_info "Using DNS validation mode (manual TXT record)"
+            log_warn "Manual DNS mode cannot renew automatically — you must issue again by hand"
+        else
+            ACME_CMD="$ACME_CMD --dns $(dns_provider_hook "$DNS_PROVIDER")"
+            log_info "Using $DNS_PROVIDER automatic DNS validation"
         fi
     else
-        ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt --issue -d \"$DOMAIN\" --keylength ec-256 -w \"$WEBROOT\""
+        ACME_CMD="$ACME_CMD -w \"$WEBROOT\""
         log_info "Using webroot mode with path: $WEBROOT"
     fi
 
-    if [ "$STAGING" = "true" ]; then
-        ACME_CMD="$ACME_CMD --staging"
-        log_warn "Using Let's Encrypt staging environment (test certificates)"
-    fi
+    # acme.sh writes no log unless asked, and the cron it installs sends both
+    # stdout and stderr to /dev/null. Without this a renewal can fail every day
+    # for a month with nothing anywhere to show for it.
+    ACME_CMD="$ACME_CMD --log"
 
     if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would issue certificate with: $ACME_CMD"
@@ -590,12 +822,8 @@ issue_ip6_cert() {
     fi
 
     local ip6_acme_cmd
-    ip6_acme_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server letsencrypt \
---issue -d \"$ip6\" --keylength ec-256 --standalone --listen-v6 --cert-profile \"$IP_CERT_PROFILE\""
-
-    if [ "$STAGING" = "true" ]; then
-        ip6_acme_cmd="$ip6_acme_cmd --staging"
-    fi
+    ip6_acme_cmd="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server $(acme_ca) \
+--issue -d \"$ip6\" --keylength ec-256 --standalone --listen-v6 --cert-profile \"$IP_CERT_PROFILE\" --log"
 
     if [ "$DRY_RUN" = "true" ]; then
         log_info "[DRY RUN] Would issue IPv6 cert: $ip6_acme_cmd"
@@ -699,35 +927,9 @@ main() {
         fi
     fi
 
-    if [ "$DNS_MODE" = "true" ] && [ "$DNS_PROVIDER" != "manual" ]; then
-        # Validate DNS API credentials are provided
-        case "$DNS_PROVIDER" in
-            cloudflare)
-                if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_EMAIL" ]; then
-                    log_error "Cloudflare requires --dns-api-key and --dns-email"
-                    exit 1
-                fi
-                ;;
-            route53)
-                if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_API_SECRET" ]; then
-                    log_error "Route53 requires --dns-api-key and --dns-api-secret"
-                    exit 1
-                fi
-                ;;
-            digitalocean)
-                if [ -z "$DNS_API_KEY" ]; then
-                    log_error "DigitalOcean requires --dns-api-key"
-                    exit 1
-                fi
-                ;;
-            godaddy)
-                if [ -z "$DNS_API_KEY" ] || [ -z "$DNS_API_SECRET" ]; then
-                    log_error "GoDaddy requires --dns-api-key and --dns-api-secret"
-                    exit 1
-                fi
-                ;;
-        esac
-    fi
+    # The DNS provider and its credentials were resolved and validated right
+    # after parsing, before anything gets installed -- a name that is wrong now
+    # costs a second instead of a certificate that never renews.
 
     install_acme
     issue_certificate
