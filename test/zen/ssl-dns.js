@@ -89,6 +89,79 @@ function env(res, name) {
   return line ? line.slice(name.length + 1) : "";
 }
 
+// Sources ssl.sh with the given arguments and reports back on the shell state
+// it left behind, without issuing anything.
+function probe(args, snippet) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "zen-ip6-"));
+  const quote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+  const argv = [...SAFE, "--acme-dir", path.join(tmp, "acme"), "--dry-run", ...args].map(quote).join(" ");
+  const script = `
+    exec 2>&1
+    TMP=$(mktemp)
+    sed '/^main "$@"$/d' ${quote(ssl)} > "$TMP"
+    set -- ${argv}
+    . "$TMP"
+    trap - 0
+    rm -f "$TMP"
+    ACME_DIR=${quote(path.join(tmp, "acme"))}
+    ${snippet}
+  `;
+  try {
+    return { tmp, out: execFileSync("sh", ["-c", script], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }) };
+  } catch (err) {
+    return { tmp, out: (err.stdout || "") + (err.stderr || "") };
+  }
+}
+
+describe("certificates for a raw IPv6 address", function () {
+  if ("linux" !== process.platform) {
+    it.skip("only meaningful on linux", function () {});
+    return;
+  }
+  this.timeout(30 * 1000);
+
+  it("does not go asking for one unless asked", function () {
+    // Let's Encrypt only issues shortlived certificates for a bare IP, and a
+    // residential prefix rotates out from under one. On the box this was found
+    // on it had produced nothing but a failed attempt's leftovers.
+    assert.ok(/AUTO_IP6=false/.test(probe([], 'echo "AUTO_IP6=$AUTO_IP6"').out));
+  });
+
+  it("still does when it is", function () {
+    assert.ok(/AUTO_IP6=true/.test(probe(["--auto-ip6"], 'echo "AUTO_IP6=$AUTO_IP6"').out));
+  });
+
+  it("keeps taking --no-auto-ip6 from scripts that already pass it", function () {
+    assert.ok(/AUTO_IP6=false/.test(probe(["--no-auto-ip6"], 'echo "AUTO_IP6=$AUTO_IP6"').out));
+  });
+
+  it("clears away an attempt that produced no certificate", function () {
+    // acme.sh leaves a key, a csr and a conf behind when issuance fails. Left
+    // there they look like a certificate that expired rather than one that was
+    // never obtained -- which is how #88 came to describe a certificate that
+    // does not exist.
+    const r = probe([], `
+      mkdir -p "$ACME_DIR/dead_ecc"
+      : > "$ACME_DIR/dead_ecc/dead.key"
+      : > "$ACME_DIR/dead_ecc/dead.csr"
+      cleanup_ip6_attempt dead
+      [ -d "$ACME_DIR/dead_ecc" ] && echo LEFTOVERS-KEPT || echo LEFTOVERS-GONE
+    `);
+    assert.ok(/LEFTOVERS-GONE/.test(r.out), "left a failed attempt on disk:\n" + r.out);
+  });
+
+  it("leaves an attempt that did produce one alone", function () {
+    const r = probe([], `
+      mkdir -p "$ACME_DIR/live_ecc"
+      : > "$ACME_DIR/live_ecc/live.key"
+      : > "$ACME_DIR/live_ecc/fullchain.cer"
+      cleanup_ip6_attempt live
+      [ -d "$ACME_DIR/live_ecc" ] && echo KEPT || echo DELETED
+    `);
+    assert.ok(/KEPT/.test(r.out), "deleted a certificate it should have kept:\n" + r.out);
+  });
+});
+
 describe("the DNS provider ssl.sh hands to acme.sh", function () {
   // ssl.sh is a POSIX shell script driving a Linux deployment; on macOS and
   // Windows these would only make CI red.
