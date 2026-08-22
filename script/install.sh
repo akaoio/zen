@@ -57,17 +57,53 @@ log_info()  { printf '%b[INFO]%b %s\n' "${GREEN}" "${NC}" "$1"; }
 log_warn()  { printf '%b[WARN]%b %s\n' "${YELLOW}" "${NC}" "$1"; }
 log_error() { printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$1"; }
 
+# /dev/tty exists as a device node even with no controlling terminal, where
+# opening it fails outright -- which is how cron, systemd and a fair few
+# `curl | bash` invocations reach this script. Test that it opens, not that it
+# is there. The subshell matters: a redirection that fails on a special
+# built-in exits the shell rather than returning nonzero.
+have_tty() {
+    ( true >/dev/tty ) 2>/dev/null
+}
+
+# Asked through /dev/tty so this still works under `curl | bash`, and skipped
+# entirely when there is no terminal -- every value keeps the default it already
+# has. Lifted out of main() so it can be exercised on its own.
+prompt_missing_options() {
+    [ "$SKIP_SERVICE" != "true" ] || return 0
+    [ "$YES" != "true" ] || return 0
+    have_tty || return 0
+
+    if [ -z "$DOMAIN" ]; then
+        printf '%b Your public domain or IP (e.g. peer1.example.com) [leave blank to auto-detect]: ' '\033[1;34m[ZEN]\033[0m' >/dev/tty
+        read -r _dom </dev/tty || _dom=""
+        DOMAIN="${_dom:-}"
+    fi
+    if [ "$PORT" = "8420" ]; then
+        printf '%b Server port [8420]: ' '\033[1;34m[ZEN]\033[0m' >/dev/tty
+        read -r _port </dev/tty || _port=""
+        PORT="${_port:-8420}"
+        case "$PORT" in
+            ''|*[!0-9]*) log_error "Invalid port: $PORT"; exit 1 ;;
+        esac
+        if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+            log_error "Invalid port: $PORT"; exit 1
+        fi
+    fi
+}
+
 confirm() {
     if [ "$YES" = "true" ]; then
         return 0
     fi
     response=""
-    if [ -e /dev/tty ]; then
+    if have_tty; then
         printf '%s [y/N] ' "$1" >/dev/tty
-        read -r response </dev/tty
+        read -r response </dev/tty || response=""
     else
+        # Nothing to ask with and nothing to read: an unanswered question is a no.
         printf '%s [y/N] ' "$1"
-        read -r response
+        read -r response || response=""
     fi
     case "$response" in
         [Yy]) return 0 ;;
@@ -651,25 +687,7 @@ main() {
         confirm "Directory $INSTALL_DIR is not empty. Continue?" || { log_info "Cancelled"; exit 0; }
     fi
 
-    # Interactive prompts — use /dev/tty so this works with curl|bash too
-    if [ -e /dev/tty ] && [ "$SKIP_SERVICE" != "true" ] && [ "$YES" != "true" ]; then
-        if [ -z "$DOMAIN" ]; then
-            printf '%b Your public domain or IP (e.g. peer1.example.com) [leave blank to auto-detect]: ' '\033[1;34m[ZEN]\033[0m' >/dev/tty
-            read -r _dom </dev/tty
-            DOMAIN="${_dom:-}"
-        fi
-        if [ "$PORT" = "8420" ]; then
-            printf '%b Server port [8420]: ' '\033[1;34m[ZEN]\033[0m' >/dev/tty
-            read -r _port </dev/tty
-            PORT="${_port:-8420}"
-            case "$PORT" in
-                ''|*[!0-9]*) log_error "Invalid port: $PORT"; exit 1 ;;
-            esac
-            if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-                log_error "Invalid port: $PORT"; exit 1
-            fi
-        fi
-    fi
+    prompt_missing_options
 
     available_space=$(df "$(dirname "$INSTALL_DIR")" | awk 'NR==2 {print $4}')
     if [ "$available_space" -lt 512000 ]; then
