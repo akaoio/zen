@@ -19,6 +19,7 @@ import { discoverPeers } from "../lib/bootstrap.js";
 import * as xdg from "../lib/xdg.js";
 import { hwid, DOMF, PORTF } from "../lib/discover.js";
 import { scanbg, mkpat, scanip6, vprs } from "../lib/scan.js";
+import { check as checkCerts } from "../lib/certwatch.js";
 import { getOrCreateIdentity } from "../lib/identity.js";
 import { buildStatus, signStatus } from "../lib/status.js";
 import { attach as attachMcp } from "../lib/mcp/server.js";
@@ -453,6 +454,7 @@ if (main && cluster.isPrimary) {
 
     let kd;
     let cd;
+    let cd2;
     try {
       kd = fs.readFileSync(env.HTTPS_KEY, "utf8");
       cd = fs.readFileSync(env.HTTPS_CERT, "utf8");
@@ -484,7 +486,7 @@ if (main && cluster.isPrimary) {
       fs.existsSync(env.HTTPS_KEY2) &&
       fs.existsSync(env.HTTPS_CERT2)
     ) {
-      let kd2, cd2;
+      let kd2;
       try {
         kd2 = fs.readFileSync(env.HTTPS_KEY2, "utf8");
         cd2 = fs.readFileSync(env.HTTPS_CERT2, "utf8");
@@ -507,6 +509,23 @@ if (main && cluster.isPrimary) {
 
       console.log("SNI enabled: primary cert (domain) + secondary cert (IP/KEY2/CERT2)");
     }
+
+    // An expired certificate is not a syntax error, so none of the checks above
+    // would have caught it -- and a relay that starts on one looks healthy in
+    // its own logs while refusing every handshake. Say so at boot, and keep
+    // saying so: a relay that runs for months has to notice its certificate
+    // going stale underneath it. Warn only; being up with bad TLS beats being
+    // down.
+    const warnCerts = () => {
+      const certs = [
+        { label: "HTTPS_CERT " + env.HTTPS_CERT, pem: cd },
+        { label: "HTTPS_CERT2 " + env.HTTPS_CERT2, pem: cd2 },
+      ];
+      for (const line of checkCerts(certs)) console.error("TLS WARNING:", line);
+    };
+    warnCerts();
+    const cwtimer = setInterval(warnCerts, 6 * 60 * 60 * 1000);
+    cwtimer.unref();
 
     srv = ZEN.serve(__dirname);
     opt.server = https.createServer(opt, hndl);
