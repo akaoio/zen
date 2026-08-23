@@ -135,6 +135,19 @@ describe("certificates for a raw IPv6 address", function () {
     assert.ok(/AUTO_IP6=false/.test(probe(["--no-auto-ip6"], 'echo "AUTO_IP6=$AUTO_IP6"').out));
   });
 
+  it("clears away an attempt whose directory acme.sh spelled with underscores", function () {
+    // Some acme.sh versions encode the colons of an IPv6 address as
+    // underscores. get_acme_domain_dir already knew that; the ip6 cleanup did
+    // not, and would have walked past the very directory it exists to remove.
+    const r = probe([], `
+      mkdir -p "$ACME_DIR/2001_db8__1_ecc"
+      : > "$ACME_DIR/2001_db8__1_ecc/x.key"
+      cleanup_ip6_attempt "2001:db8::1"
+      [ -d "$ACME_DIR/2001_db8__1_ecc" ] && echo LEFTOVERS-KEPT || echo LEFTOVERS-GONE
+    `);
+    assert.ok(/LEFTOVERS-GONE/.test(r.out), "missed the escaped directory:\n" + r.out);
+  });
+
   it("clears away an attempt that produced no certificate", function () {
     // acme.sh leaves a key, a csr and a conf behind when issuance fails. Left
     // there they look like a certificate that expired rather than one that was
@@ -204,6 +217,15 @@ describe("the DNS provider ssl.sh hands to acme.sh", function () {
   // thing left to fail on is the provider name itself. Reaching for a flag that
   // does not exist yet would make them pass on "Unknown option" instead, which
   // proves nothing about providers.
+  // A guard, not a new behaviour: this passes today and has to keep passing
+  // through any rewrite of the provider lookup. Matching the requested name as
+  // a shell pattern rather than a string would quietly resolve "*" to whichever
+  // provider happens to be listed first.
+  it("does not treat a provider name as a glob", function () {
+    const res = run(["--dns", "*", "--dns-api-key", "k", "--dns-email", "a@b.test"]);
+    assert.notStrictEqual(res.status, 0, "a wildcard selected a provider:\n" + res.out);
+  });
+
   it("refuses a provider name it does not know", function () {
     const res = run(["--dns", "cloudlfare", "--dns-api-key", "k", "--dns-email", "a@b.test"]);
     assert.notStrictEqual(res.status, 0, "a misspelled provider was accepted:\n" + res.out);

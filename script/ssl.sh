@@ -33,11 +33,11 @@ DNS_API_TOKEN=""
 DNS_ZONE_ID=""
 YES=false
 
-# The DNS providers this script knows, and the acme.sh hook each maps to. One
-# list, read by validation, by the interactive menu and by --help, so adding a
-# provider is a single edit -- and a name that is not on it can no longer be
-# mistaken for manual mode, which acme.sh cannot renew automatically.
-DNS_PROVIDERS="cloudflare route53 digitalocean godaddy manual"
+# The DNS providers this script knows, as name:hook pairs. One source: the
+# menu, --help and validation all read this, so a provider can no longer be
+# offered by one and rejected by another -- and a name that is not here cannot
+# be mistaken for manual mode, which acme.sh will not renew automatically.
+DNS_PROVIDERS="cloudflare:dns_cf route53:dns_aws digitalocean:dns_dgon godaddy:dns_gd manual:manual"
 
 # Which Let's Encrypt CA to issue against. Named explicitly rather than left to
 # acme.sh's --staging flag, which it ignores whenever a --server is given.
@@ -49,15 +49,23 @@ acme_ca() {
     fi
 }
 
+# Compared as a string, never as a `case` pattern: the name arrives from the
+# command line, and as a pattern "*" would resolve to whichever provider
+# happens to be listed first.
 dns_provider_hook() {
-    case "$1" in
-        cloudflare)   echo "dns_cf" ;;
-        route53)      echo "dns_aws" ;;
-        digitalocean) echo "dns_dgon" ;;
-        godaddy)      echo "dns_gd" ;;
-        manual)       echo "manual" ;;
-        *)            return 1 ;;
-    esac
+    for _p in $DNS_PROVIDERS; do
+        if [ "${_p%%:*}" = "$1" ]; then
+            printf '%s\n' "${_p#*:}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+dns_provider_names() {
+    for _p in $DNS_PROVIDERS; do
+        printf '%s ' "${_p%%:*}"
+    done
 }
 
 # Colors for output
@@ -86,7 +94,7 @@ OPTIONAL:
     --acme-dir PATH            ACME installation directory (default: ~/.acme.sh)
     --reload-cmd COMMAND       Command to run after certificate installation
     --standalone               Use standalone mode (temporary web server on port 80)
-    --dns [PROVIDER]          Use DNS validation. Options: manual, cloudflare, route53, digitalocean, godaddy
+    --dns [PROVIDER]          Use DNS validation. Options: $(dns_provider_names)
                                Omit PROVIDER to be asked; with no terminal it means manual
     --dns-api-token TOKEN     DNS provider API token (Cloudflare; preferred over --dns-api-key)
     --dns-zone-id ID          DNS zone id (Cloudflare; needed only if the token cannot list zones)
@@ -354,45 +362,55 @@ sanitize_command() {
     printf '%s\n' "$cmd" | sed 's/[;&|`$(){}\[\]\\]//g'
 }
 
+# Every directory acme.sh might be keeping this name's certificate in, in the
+# order acme.sh itself would pick: ECC goes to <name>_ecc and RSA to <name>, and
+# some versions encode the colons of an IPv6 address as underscores. Defaults to
+# $DOMAIN so existing callers need no argument.
+#
+# One place that knows these four spellings. Anything else guessing at them will
+# eventually guess a different set -- which is how the IPv6 cleanup came to walk
+# straight past the underscored directory it existed to remove.
+acme_domain_dirs() {
+    local name escaped d
+    name="${1:-$DOMAIN}"
+    escaped=$(printf '%s' "$name" | sed 's/:/_/g')
+
+    for d in "$ACME_DIR/${name}_ecc" "$ACME_DIR/$name"; do
+        [ -d "$d" ] && printf '%s\n' "$d"
+    done
+    if [ "$escaped" != "$name" ]; then
+        for d in "$ACME_DIR/${escaped}_ecc" "$ACME_DIR/$escaped"; do
+            [ -d "$d" ] && printf '%s\n' "$d"
+        done
+    fi
+    return 0
+}
+
 get_acme_domain_dir() {
-    local escaped_domain
-
-    if [ -d "$ACME_DIR/${DOMAIN}_ecc" ]; then
-        echo "$ACME_DIR/${DOMAIN}_ecc"
-        return 0
-    fi
-
-    if [ -d "$ACME_DIR/$DOMAIN" ]; then
-        echo "$ACME_DIR/$DOMAIN"
-        return 0
-    fi
-
-    # acme.sh may encode colons in IPv6 dirs (some versions use underscores)
-    escaped_domain=$(printf '%s' "$DOMAIN" | sed 's/:/_/g')
-    if [ -d "$ACME_DIR/${escaped_domain}_ecc" ]; then
-        echo "$ACME_DIR/${escaped_domain}_ecc"
-        return 0
-    fi
-    if [ -d "$ACME_DIR/$escaped_domain" ]; then
-        echo "$ACME_DIR/$escaped_domain"
-        return 0
-    fi
-
-    return 1
+    local dir
+    dir=$(acme_domain_dirs "${1:-$DOMAIN}" | head -1)
+    [ -n "$dir" ] || return 1
+    printf '%s\n' "$dir"
 }
 
 # ── Asking, when there is somebody to ask ────────────────────────────────────
 # Prompts read from /dev/tty rather than stdin so they survive `curl ... | sh`,
 # the way install.sh does it. With no terminal, or with --yes, nothing is asked
 # and the errors below are what a script or a cron job sees -- unchanged.
+# /dev/tty exists as a device node even with no controlling terminal, where
+# opening it fails outright -- which is how cron and systemd run this. Test that
+# it opens, not that it is there. The subshell matters: a redirection that fails
+# on a special built-in exits the shell rather than returning nonzero, so the
+# attempt has to be contained. install.sh calls the same thing by the same name.
+have_tty() {
+    ( true >/dev/tty ) 2>/dev/null
+}
+
+# Whether there is anybody to ask -- a different question from whether a
+# terminal exists, and kept a different name for that reason.
 can_ask() {
     [ "$YES" = "true" ] && return 1
-    # /dev/tty exists as a device node even with no controlling terminal, where
-    # opening it fails outright -- which is how cron and systemd run this. Test
-    # that it opens, not that it is there. The subshell matters: a redirection
-    # that fails on a special built-in exits the shell rather than returning
-    # nonzero, so the attempt has to be contained.
-    ( true >/dev/tty ) 2>/dev/null
+    have_tty
 }
 
 ask() {
@@ -420,7 +438,7 @@ ask_secret() {
 ask_dns_provider() {
     printf '%b[ZEN]%b Select DNS provider:\n' "$BLUE" "$NC" >/dev/tty
     _n=0
-    for _p in $DNS_PROVIDERS; do
+    for _p in $(dns_provider_names); do
         _n=$((_n + 1))
         if [ "$_p" = "manual" ]; then
             printf '        %d) manual — you create the TXT record yourself (cannot auto-renew)\n' "$_n" >/dev/tty
@@ -432,7 +450,7 @@ ask_dns_provider() {
     read -r _choice </dev/tty || _choice=""
     [ -n "$_choice" ] || _choice=1
     _n=0
-    for _p in $DNS_PROVIDERS; do
+    for _p in $(dns_provider_names); do
         _n=$((_n + 1))
         if [ "$_n" = "$_choice" ]; then
             printf '%s' "$_p"
@@ -550,7 +568,7 @@ if [ "$DNS_MODE" = "true" ]; then
     fi
     if ! dns_provider_hook "$DNS_PROVIDER" >/dev/null 2>&1; then
         log_error "Unknown DNS provider: $DNS_PROVIDER"
-        log_error "Valid providers: $DNS_PROVIDERS"
+        log_error "Valid providers: $(dns_provider_names)"
         exit 1
     fi
     prompt_dns_credentials
@@ -684,10 +702,6 @@ issue_certificate() {
     # Staging has to be chosen by naming the CA, not by adding --staging:
     # acme.sh consults --staging only when no server was named, so passing both
     # sends the run to production and spends a real certificate.
-    if [ "$STAGING" = "true" ]; then
-        log_warn "Using Let's Encrypt staging environment (test certificates)"
-    fi
-
     # Every issuance shares this much; only the challenge method differs.
     ACME_CMD="\"$ACME_DIR/acme.sh\" --home \"$ACME_DIR\" --server $(acme_ca) --issue -d \"$DOMAIN\" --keylength ec-256"
 
@@ -874,9 +888,8 @@ issue_ip6_cert() {
 # report a dead certificate that had in fact never existed. Remove an attempt
 # that produced nothing; never touch one that produced something.
 cleanup_ip6_attempt() {
-    for _dir in "$ACME_DIR/$1" "$ACME_DIR/${1}_ecc"; do
-        [ -d "$_dir" ] || continue
-        if [ -f "$_dir/fullchain.cer" ] || [ -f "$_dir/$1.cer" ]; then
+    acme_domain_dirs "$1" | while IFS= read -r _dir; do
+        if [ -f "$_dir/fullchain.cer" ] || [ -n "$(find "$_dir" -maxdepth 1 -name '*.cer' -print -quit 2>/dev/null)" ]; then
             continue
         fi
         rm -rf "$_dir"
@@ -935,7 +948,7 @@ main() {
     log_info "Webroot: $WEBROOT"
     log_info "Key file: $KEY_FILE"
     log_info "Cert file: $CERT_FILE"
-    [ "$STAGING" = "true" ] && log_warn "Using staging environment"
+    [ "$STAGING" = "true" ] && log_warn "Using Let's Encrypt staging environment (test certificates)"
     [ "$DRY_RUN" = "true" ] && log_warn "DRY RUN MODE - No changes will be made"
 
     # Pre-flight checks
