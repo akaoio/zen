@@ -22,7 +22,7 @@ RELOAD_CMD=""
 AUTO_UPGRADE=true
 STANDALONE=false
 IS_IPV6=false
-AUTO_IP6=true
+AUTO_IP6=false
 IP_CERT_PROFILE="shortlived"
 DNS_MODE=false
 DNS_PROVIDER=""
@@ -97,7 +97,11 @@ OPTIONAL:
     --force                    Force reinstallation of acme.sh
     --staging                  Use Let's Encrypt staging environment (for testing)
     --no-auto-upgrade          Disable automatic acme.sh upgrades
-    --no-auto-ip6              Skip automatic IPv6 certificate (when --domain is a hostname)
+    --auto-ip6                 Also request a certificate for this machine's IPv6
+                               address. Off by default: Let's Encrypt only issues
+                               shortlived certificates for a bare IP, and a rotating
+                               prefix invalidates them anyway. Prefer a name.
+    --no-auto-ip6              Accepted and ignored; this is the default now
     --dry-run                  Show what would be done without executing
     -h, --help                 Show this help message
 
@@ -238,7 +242,12 @@ while [ $# -gt 0 ]; do
             AUTO_UPGRADE=false
             shift
             ;;
+        --auto-ip6)
+            AUTO_IP6=true
+            shift
+            ;;
         --no-auto-ip6)
+            # Now the default. Still accepted so existing scripts keep working.
             AUTO_IP6=false
             shift
             ;;
@@ -807,7 +816,7 @@ verify_certificate() {
 }
 
 # Issue and install a certificate for the local IPv6 address
-# Called automatically after the domain cert when AUTO_IP6=true
+# Called after the domain cert only when --auto-ip6 was asked for
 issue_ip6_cert() {
     local ip6="$1"
     log_info "Auto-issuing certificate for local IPv6: $ip6"
@@ -836,7 +845,8 @@ issue_ip6_cert() {
         log_info "IPv6 certificate issued"
     else
         log_warn "IPv6 cert issuance failed (non-fatal). You can retry manually:"
-        log_warn "  $0 --domain $ip6 --email $EMAIL --key-file $ip6_key --cert-file $ip6_cert"
+        log_warn "  $0 --domain $ip6 --email $EMAIL --key-file $ip6_key --cert-file $ip6_cert --auto-ip6"
+        cleanup_ip6_attempt "$ip6"
         return 0  # non-fatal — domain cert is already installed
     fi
 
@@ -856,6 +866,23 @@ issue_ip6_cert() {
     else
         log_warn "IPv6 cert install step failed. Retry: $ip6_install_cmd"
     fi
+}
+
+# A failed issuance leaves acme.sh's key, csr and conf behind with no
+# certificate next to them. Left there they read as a certificate that expired
+# rather than one that was never obtained -- which is exactly how #88 came to
+# report a dead certificate that had in fact never existed. Remove an attempt
+# that produced nothing; never touch one that produced something.
+cleanup_ip6_attempt() {
+    for _dir in "$ACME_DIR/$1" "$ACME_DIR/${1}_ecc"; do
+        [ -d "$_dir" ] || continue
+        if [ -f "$_dir/fullchain.cer" ] || [ -f "$_dir/$1.cer" ]; then
+            continue
+        fi
+        rm -rf "$_dir"
+        log_info "Removed a failed IPv6 certificate attempt: $_dir"
+    done
+    return 0
 }
 
 # Show renewal information
