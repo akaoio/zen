@@ -103,8 +103,14 @@ describe("finding the zone that actually holds the nameservers", function () {
 });
 
 describe("explaining a renewal that is not happening", function () {
+  it("names the zone it is talking about", function () {
+    // "Cloudflare holds the zone" leaves the reader to work out which zone.
+    const line = explain("dns_gd", ["aleena.ns.cloudflare.com"], "akao.io");
+    assert.ok(/akao\.io/.test(line), "does not say which zone:\n" + line);
+  });
+
   it("names the provider acme.sh uses and the one the zone is on", function () {
-    const line = explain("dns_gd", ["aleena.ns.cloudflare.com"]);
+    const line = explain("dns_gd", ["aleena.ns.cloudflare.com"], "akao.io");
     assert.ok(/GoDaddy/.test(line), "does not name the configured provider:\n" + line);
     assert.ok(/Cloudflare/.test(line), "does not name the zone's provider:\n" + line);
   });
