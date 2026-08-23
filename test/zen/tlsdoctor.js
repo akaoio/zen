@@ -148,16 +148,28 @@ describe("what zen doctor says about TLS", function () {
     assert.strictEqual(find(lines, "certificate").level, "bad");
   });
 
-  it("says so when acme.sh has never heard of this domain", async function () {
+  it("says so when acme.sh is installed but has never heard of this domain", async function () {
+    const dir = path.join(TMP, "real-acme");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "account.conf"), "ACCOUNT_EMAIL='nobody@example.test'\n");
+    const lines = await report({ domain: "relay.test", acmeDir: dir, certPath: PEM, now: Date.now(), resolveNs: CF });
+    assert.strictEqual(find(lines, "renewal").level, "warn", "silent about a certificate nothing will renew");
+  });
+
+  it("says nothing about renewal on a relay that does not use acme.sh", async function () {
+    // certbot, Caddy, a corporate CA, a certificate dropped in by config
+    // management -- all of them renew certificates some other way, or on
+    // purpose not at all. Warning here would put every such relay permanently
+    // in the red, and a doctor that is always red is one nobody runs.
     const lines = await report({
       domain: "relay.test",
-      acmeDir: path.join(TMP, "empty-acme"),
+      acmeDir: path.join(TMP, "no-acme-here"),
       certPath: PEM,
       now: Date.now(),
       resolveNs: CF,
     });
-    const r = find(lines, "renewal");
-    assert.strictEqual(r.level, "warn", "silent about a certificate nothing will renew");
+    assert.strictEqual(find(lines, "renewal"), undefined, "invented a renewal problem:\n" + JSON.stringify(lines, null, 1));
+    assert.strictEqual(find(lines, "certificate").level, "ok", "stopped checking the certificate too");
   });
 
   it("says nothing about TLS at all when no certificate is configured", async function () {
