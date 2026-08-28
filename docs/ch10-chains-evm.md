@@ -298,10 +298,39 @@ const receipt = await erc20.transfer("0xTo...", 1000000n, {
 
 ### contract.interface
 
+`interface` là shim của `ethers.Interface`, và nó cài đặt **ba** trong số 32 thành
+viên công khai của ethers v6 — chỉ những thành viên đã đo được là có người gọi:
+
 ```js
+// 1. encodeFunctionData — async, vì keccak là async
 const calldata = await erc20.interface.encodeFunctionData("transfer", [to, amount])
 // → "0xa9059cbb..."
+
+// 2. getFunction — sync, trả về fragment, hoặc null nếu không có
+erc20.interface.getFunction("transfer").outputs.length          // → 1
+erc20.interface.getFunction("transfer(address,uint256)").name   // → "transfer"
+erc20.interface.getFunction("khongCoHamNay")                  // → null
+// Chính là fragment mà method dùng để mã hoá — một ABI, một đường đọc:
+erc20.interface.getFunction("transfer") === erc20.transfer.fragment  // → true
+
+// 3. parseLog — async, trả về null cho log không khớp fragment nào
+const parsed = await erc20.interface.parseLog(receipt.logs[0])
 ```
+
+29 thành viên còn lại **không cài đặt, và nói ra điều đó**: đọc tới chúng ném một
+lời từ chối gọi tên, thay vì trả `undefined` để người gọi phát hiện ra bằng
+`undefined is not a function` giữa một chuỗi lời gọi.
+
+```js
+erc20.interface.getEvent("Transfer")
+// → Error: zen Contract.interface: no `getEvent`.
+//          Implemented: encodeFunctionData, getFunction, parseLog.
+```
+
+Khác biệt với ethers ở `getFunction`: ethers nhận cả selector 4 byte
+(`"0x70a08231"`); zen thì không, vì tra selector cần keccak và keccak ở đây là
+async — nên selector cũng bị từ chối **gọi tên**, không phải trả `null` như thể
+hàm ấy không có trong ABI.
 
 ### queryFilter — Event history
 
@@ -770,6 +799,8 @@ parseUnits("1.5", 6)               // → 1500000n
 | Thay đổi | ethers | zen |
 |---|---|---|
 | `contract.interface.encodeFunctionData` | sync | **async** (keccak là async) |
+| `contract.interface` | 32 thành viên | 3 thành viên (`encodeFunctionData`, `getFunction`, `parseLog`); 29 thành viên còn lại **ném lời từ chối gọi tên** |
+| `contract.interface.getFunction` | nhận tên, chữ ký, hoặc selector | nhận tên hoặc chữ ký; selector bị từ chối (cần keccak, mà keccak là async) |
 | `new Wallet(priv)` | `.address` available instantly | await `wallet._ready` hoặc dùng `Wallet.create` |
 | `provider.getBlock()` | block bình thường | block có thêm `.date` |
 | Revert detection | không throw | `wait()` **throw** nếu status=0x0 |
@@ -783,7 +814,7 @@ parseUnits("1.5", 6)               // → 1500000n
 
 | Suite | Số test | Chạy bằng |
 |---|---|---|
-| Unit (evm.js) | 90 | `npm run test:chains` |
+| Unit (evm.js) | 105 | `npm run test:chains` |
 | Fork integration | 40 | `ETH_RPC=... npm run test:chains:fork` |
 
 Fork tests dùng ganache fork mainnet tại block 19,500,000 qua Infura, test đầy đủ:
