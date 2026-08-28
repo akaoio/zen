@@ -9,6 +9,7 @@
  */
 
 import assert from "assert"
+import util from "util"
 import ganache from "ganache"
 import { ethers } from "ethers"
 
@@ -30,6 +31,7 @@ import evm, {
     buildSig,
     decodeEventLog,
     buildEventTopicMap,
+    INTERFACE_MEMBERS,
     formatUnits,
     parseUnits,
     formatEther,
@@ -1126,5 +1128,185 @@ describe("EIP-712 TypedDataEncoder", function () {
             (await recoverTypedDataAddress(domain, types, value, sig)).toLowerCase(),
             wallet.address.toLowerCase(),
         )
+    })
+})
+
+// ─── Contract.interface surface ───────────────────────────────────────────────
+
+// Uniswap's V4 PositionManager, the two getters akao's position reader calls,
+// transcribed from akao's src/statics/ABI/UniswapV4PositionManager.yaml. They
+// are the pair that made this whole surface a question: one returns two values
+// (a PoolKey tuple and a packed info word) and the other returns one, and the
+// caller tells them apart by reading `getFunction(method).outputs.length`.
+const V4_POSITION_MANAGER_ABI = [
+    {
+        type: "function",
+        name: "getPoolAndPositionInfo",
+        stateMutability: "view",
+        inputs: [{ name: "tokenId", type: "uint256" }],
+        outputs: [
+            {
+                name: "poolKey",
+                type: "tuple",
+                components: [
+                    { name: "currency0", type: "address" },
+                    { name: "currency1", type: "address" },
+                    { name: "fee", type: "uint24" },
+                    { name: "tickSpacing", type: "int24" },
+                    { name: "hooks", type: "address" },
+                ],
+            },
+            { name: "info", type: "uint256" },
+        ],
+    },
+    {
+        type: "function",
+        name: "getPositionLiquidity",
+        stateMutability: "view",
+        inputs: [{ name: "tokenId", type: "uint256" }],
+        outputs: [{ name: "liquidity", type: "uint128" }],
+    },
+    {
+        type: "function",
+        name: "modifyLiquidities",
+        stateMutability: "payable",
+        inputs: [
+            { name: "unlockData", type: "bytes" },
+            { name: "deadline", type: "uint256" },
+        ],
+        outputs: [],
+    },
+]
+
+describe("Contract.interface surface", function () {
+    const OVERLOADED_ABI = [
+        "function balanceOf(address) view returns (uint256)",
+        "function transfer(address,uint256) returns (bool)",
+        "function foo(uint256) view returns (uint256)",
+        "function foo(string) view returns (uint256)",
+    ]
+
+    it("implements exactly encodeFunctionData, getFunction and parseLog", function () {
+        const contract = new Contract(TEST_ADDR, ERC20_ABI, null)
+        assert.deepStrictEqual(Object.keys(contract.interface).sort(), ["encodeFunctionData", "getFunction", "parseLog"])
+    })
+
+    // The list zen refuses by name has to be ethers' list, not a list that was
+    // ethers' once. ethers is already a devDependency here, so ask it.
+    it("INTERFACE_MEMBERS is ethers v6 Interface's public surface, member for member", function () {
+        const instance = new ethers.Interface([])
+        const surface = new Set([
+            ...Object.getOwnPropertyNames(instance),
+            ...Object.getOwnPropertyNames(ethers.Interface.prototype)
+                .filter(name => name !== "constructor" && !name.startsWith("_")),
+        ])
+        assert.deepStrictEqual([...INTERFACE_MEMBERS].sort(), [...surface].sort())
+    })
+
+    it("every ethers Interface member is either implemented or refused by name", function () {
+        const contract = new Contract(TEST_ADDR, ERC20_ABI, null)
+        const implemented = Object.keys(contract.interface)
+        for (const member of INTERFACE_MEMBERS) {
+            if (implemented.includes(member)) {
+                assert.strictEqual(typeof contract.interface[member], "function", member + " should be callable")
+                continue
+            }
+            assert.throws(
+                () => contract.interface[member],
+                error => error.message === "zen Contract.interface: no `" + member + "`. Implemented: encodeFunctionData, getFunction, parseLog.",
+                member + " should refuse by name",
+            )
+        }
+    })
+
+    it("the refusal names the member and lists what exists", function () {
+        const contract = new Contract(TEST_ADDR, ERC20_ABI, null)
+        assert.throws(
+            () => contract.interface.getEvent("Transfer"),
+            /^Error: zen Contract\.interface: no `getEvent`\. Implemented: encodeFunctionData, getFunction, parseLog\.$/,
+        )
+    })
+
+    // A throwing getter that is enumerable takes console.log(contract) down
+    // with it, which would trade one silent failure for a louder one.
+    it("refusals do not break inspection or enumeration", function () {
+        const contract = new Contract(TEST_ADDR, ERC20_ABI, null)
+        assert.deepStrictEqual(Object.keys(contract.interface).sort(), ["encodeFunctionData", "getFunction", "parseLog"])
+        assert.doesNotThrow(() => util.inspect(contract))
+        assert.doesNotThrow(() => JSON.stringify({ iface: contract.interface }))
+    })
+
+    it("getFunction returns the very fragment _buildMethods encodes with", function () {
+        const contract = new Contract(TEST_ADDR, ERC20_ABI, null)
+        for (const item of contract.abi) {
+            if (item.type !== "function") continue
+            // identity, not equality: one parsed ABI, one read path
+            assert.strictEqual(contract.interface.getFunction(item.name), contract[item.name].fragment)
+            assert.strictEqual(contract.interface.getFunction(item.name), item)
+        }
+    })
+
+    it("getFunction resolves a full signature and matches ethers on name, outputs and null", function () {
+        const contract = new Contract(TEST_ADDR, OVERLOADED_ABI, null)
+        const iface = new ethers.Interface(OVERLOADED_ABI)
+
+        const zenFragment = contract.interface.getFunction("balanceOf(address)")
+        const ethersFragment = iface.getFunction("balanceOf(address)")
+        assert.strictEqual(zenFragment.name, ethersFragment.name)
+        assert.strictEqual(zenFragment.outputs.length, ethersFragment.outputs.length)
+        assert.strictEqual(zenFragment.outputs[0].type, ethersFragment.outputs[0].type)
+        assert.strictEqual(buildSig(zenFragment), ethersFragment.format("sighash"))
+
+        // not found is null in both — the ethers v6 semantic, not a throw
+        assert.strictEqual(contract.interface.getFunction("nope"), null)
+        assert.strictEqual(iface.getFunction("nope"), null)
+    })
+
+    it("getFunction throws on an ambiguous overload name, as ethers does", function () {
+        const contract = new Contract(TEST_ADDR, OVERLOADED_ABI, null)
+        assert.throws(() => new ethers.Interface(OVERLOADED_ABI).getFunction("foo"), /ambiguous function description/)
+        assert.throws(() => contract.interface.getFunction("foo"), /ambiguous function description/)
+        // naming the overload picks one, in both
+        assert.strictEqual(contract.interface.getFunction("foo(string)").inputs[0].type, "string")
+    })
+
+    // ethers accepts a 4-byte selector here; zen cannot, because a selector is
+    // a keccak away and keccak is async in this module. Say so rather than
+    // returning null and looking like the function is missing.
+    it("getFunction refuses a selector by name instead of missing it", function () {
+        const contract = new Contract(TEST_ADDR, ERC20_ABI, null)
+        assert.strictEqual(new ethers.Interface(ERC20_ABI).getFunction("0x70a08231").name, "balanceOf")
+        assert.throws(() => contract.interface.getFunction("0x70a08231"), /is a selector, and resolving one needs keccak/)
+    })
+
+    // The case that opened #101: akao read a live V4 position, asked the
+    // interface how many values each getter returns, and got
+    // `contract.interface.getFunction is not a function`.
+    it("answers akao's V4 position reader: outputs.length per method", function () {
+        const contract = new Contract(TEST_ADDR, V4_POSITION_MANAGER_ABI, null)
+        // akao's line, in shape: one declared output means the connector handed
+        // back a bare value, several means it handed back a list
+        const answerOf = (method, value) =>
+            contract.interface.getFunction(method).outputs.length === 1 ? [value] : Array.from(value)
+
+        assert.strictEqual(contract.interface.getFunction("getPoolAndPositionInfo").outputs.length, 2)
+        assert.strictEqual(contract.interface.getFunction("getPositionLiquidity").outputs.length, 1)
+        assert.deepStrictEqual(answerOf("getPositionLiquidity", 12345n), [12345n])
+        assert.deepStrictEqual(answerOf("getPoolAndPositionInfo", ["poolKey", 7n]), ["poolKey", 7n])
+        // the tuple survives the round trip, so a caller can name the members
+        assert.strictEqual(contract.interface.getFunction("getPoolAndPositionInfo").outputs[0].components.length, 5)
+        // and the same fragment is what a call to it would encode with
+        assert.strictEqual(contract.interface.getFunction("modifyLiquidities"), contract.modifyLiquidities.fragment)
+    })
+
+    it("encodeFunctionData and parseLog are unchanged by the surface declaration", async function () {
+        const contract = new Contract(TEST_ADDR, ERC20_ABI, null)
+        const iface = new ethers.Interface(ERC20_ABI)
+        assert.strictEqual(
+            (await contract.interface.encodeFunctionData("balanceOf", [TEST_ADDR])).toLowerCase(),
+            iface.encodeFunctionData("balanceOf", [TEST_ADDR]).toLowerCase(),
+        )
+        const transfer = new Contract(TEST_ADDR, ["event Transfer(address indexed from, address indexed to, uint256 value)"], null)
+        assert.strictEqual(await transfer.interface.parseLog({ topics: [ethers.id("Nope()")], data: "0x" }), null)
     })
 })
